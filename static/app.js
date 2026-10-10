@@ -20,7 +20,7 @@ technicalMethods.sort(function(a,b){
 });
 var pageTechnicalMethod="";
 try{var initialMethod=document.body.getAttribute("data-tech-method")||new URLSearchParams(window.location.search).get("method");if(technicalMethods.some(function(x){return x[0]===initialMethod;})){pageTechnicalMethod=initialMethod;selectedTechnicalMethod=initialMethod;}}catch(e){}
-var technicalMarkets=[["spot","₿","سبوت"],["futures","⚡","فيوتشر"],["contracts","◉","العقود الأمريكية"],["us","🇺🇸","الأسهم الأمريكية"],["saudi","🇸🇦","السعودي / تاسي"],["forex","💱","فوركس وذهب"]];
+var technicalMarkets=[["spot","₿","سبوت"],["futures","⚡","فيوتشر"],["alpha","α","Binance Alpha"],["contracts","◉","العقود الأمريكية"],["us","🇺🇸","الأسهم الأمريكية"],["saudi","🇸🇦","السعودي / تاسي"],["forex","💱","الفوركس"],["gold","🥇","الذهب"]];
 try{var initialTechnicalMarket=new URLSearchParams(window.location.search).get("market");if(technicalMarkets.some(function(x){return x[0]===initialTechnicalMarket;}))selectedTechnicalMarket=initialTechnicalMarket;}catch(e){}
 function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
 
