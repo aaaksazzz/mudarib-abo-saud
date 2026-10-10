@@ -16,5 +16,7 @@ jobs:
           python-version: "3.12"
       - name: Check Python syntax
         run: python -m compileall -q app.py research_engine.py tests
+      - name: Check JavaScript syntax
+        run: node --check static/app.js && node --check static/auth.js && node --check static/admin-control.js
       - name: Run regression smoke tests
         run: python -m unittest discover -s tests -v
