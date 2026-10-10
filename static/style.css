@@ -25,3 +25,19 @@ form button[type=submit],form .primary{margin-top:8px}
 
 /* Ranked signals: crown for #1, medals for #2/#3 */
 .trade-tracking-card{position:relative;overflow:hidden}.trade-tracking-card.rank-crown{border:1px solid rgba(233,198,107,.9);box-shadow:0 0 0 1px rgba(233,198,107,.14),0 10px 28px rgba(233,198,107,.10)}.trade-tracking-card.rank-crown:before{content:"الأقوى #1";position:absolute;top:0;left:0;padding:5px 10px;border-radius:0 0 12px 0;background:linear-gradient(135deg,#f5d978,#a87922);color:#1a1607;font-size:11px;font-weight:900}.trade-tracking-card.rank-silver{border:1px solid rgba(205,218,232,.72)}.trade-tracking-card.rank-bronze{border:1px solid rgba(204,139,91,.75)}.trade-rank{display:inline-flex;align-items:center;gap:5px;font-weight:900}.rank-crown .trade-rank{color:#f5d978}.rank-silver .trade-rank{color:#d6e0ec}.rank-bronze .trade-rank{color:#e0a276}
+
+/* SMART EDGE: gold same-timeframe movement radar */
+.smart-edge-panel{margin:18px 0 26px;padding:16px;border:1px solid rgba(213,174,69,.35);border-radius:18px;background:linear-gradient(145deg,rgba(26,34,49,.98),rgba(11,18,31,.98))}
+.smart-edge-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.smart-edge-head h2,.edge-signals-head h2{font-size:clamp(19px,3vw,25px);margin:7px 0}
+.smart-edge-head p,.edge-signals-head p{color:var(--muted,#9ca3af);margin:0 0 12px;line-height:1.7;font-size:13px}
+.edge-live{font-size:11px;color:#f5d978;border:1px solid rgba(245,217,120,.3);border-radius:999px;padding:6px 10px;white-space:nowrap}
+.edge-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:14px 0}
+.edge-stat{padding:11px;border-radius:12px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;gap:6px}
+.edge-stat span{font-size:11px;color:var(--muted,#9ca3af)}.edge-stat b{font-size:18px;color:#f5d978}
+.smart-edge-card{border-color:rgba(213,174,69,.28)}
+.edge-change{display:flex;align-items:center;justify-content:space-between;padding:11px 12px;margin:12px 0;border-radius:12px;background:rgba(255,255,255,.035)}
+.edge-change small{font-size:12px;color:var(--muted,#9ca3af)}.edge-change b{font-size:20px;direction:ltr;font-variant-numeric:tabular-nums}
+.edge-positive b{color:#34d399}.edge-negative b{color:#fb7185}
+.edge-signals-head{margin-top:24px}
+@media(max-width:520px){.smart-edge-panel{padding:12px}.edge-summary{gap:6px}.edge-stat{padding:9px}.edge-stat b{font-size:16px}.smart-edge-head h2{font-size:19px}}
