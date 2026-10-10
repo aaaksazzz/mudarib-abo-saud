@@ -102,7 +102,8 @@ function loadTechnical(m,tf){
 }
 function loadCoreMarkets(){
  var box=$("#coreMarkets");if(!box)return;
- box.innerHTML='<article class="core-card market-link" role="link" tabindex="0" data-core-market="technical"><div class="core-title"><span>📈</span><b>تحليل فني</b></div><div class="core-analysis">سبوت · فيوتشر · العقود · الأسهم · السعودي · فوركس وذهب</div><div class="card-foot">اختر السوق والفريم من صفحة واحدة ←</div></article>';
+ var items=[["₿","سبوت","spot","Binance Spot"],["⚡","فيوتشر","futures","Binance Futures"],["α","Binance Alpha","alpha","قسم مستقل"],["◉","العقود الأمريكية","contracts","عقود ومؤشرات"],["🇺🇸","الأسهم الأمريكية","us","سوق الأسهم الأمريكي"],["🇸🇦","السعودي / تاسي","saudi","السوق السعودي"],["💱","الفوركس","forex","أزواج العملات"],["🥇","الذهب","forex","تحليل الذهب"]];
+ box.innerHTML=items.map(function(x){return '<article class="core-card market-link" role="link" tabindex="0" data-core-market="'+x[2]+'"><div class="core-title"><span>'+x[0]+'</span><b>'+x[1]+'</b></div><div class="core-analysis">'+x[3]+'</div><div class="card-foot">فتح القسم ←</div></article>';}).join("")+'<article class="core-card market-link" role="link" tabindex="0" data-core-market="technical"><div class="core-title"><span>📐</span><b>مناهج التحليل الفني</b></div><div class="core-analysis">اختر المنهج ثم السوق والفريم</div><div class="card-foot">عرض المناهج ←</div></article>';
 }
 function loadMarketSectors(){
  var box=$("#marketSectors");if(!box)return;
