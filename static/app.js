@@ -106,11 +106,7 @@ function loadTechnical(m,tf){
   marketSwitch.innerHTML=technicalMarkets.map(function(x){return '<button type="button" class="timeframe-btn '+(x[0]===selectedTechnicalMarket?'active':'')+'" data-technical-market="'+x[0]+'">'+x[1]+' '+x[2]+'</button>';}).join("");
   Array.prototype.forEach.call(marketSwitch.querySelectorAll("[data-technical-market]"),function(b){b.addEventListener("click",function(){loadTechnical(b.getAttribute("data-technical-market"),selectedTimeframe);});});
  }
- var scalpSwitch=$("#scalpTimeframeSwitch");
- if(scalpSwitch){
-  scalpSwitch.innerHTML=scalpTimeframes.map(function(x){return '<button type="button" class="timeframe-btn scalp-timeframe-btn '+(x[0]===selectedTimeframe?'active':'')+'" data-scalp-timeframe="'+x[0]+'">'+x[1]+'</button>';}).join("");
-  Array.prototype.forEach.call(scalpSwitch.querySelectorAll("[data-scalp-timeframe]"),function(b){b.addEventListener("click",function(){loadTechnical(selectedTechnicalMarket,b.getAttribute("data-scalp-timeframe"));});});
- }
+ var quickSwitch=$("#technicalQuickSwitch")||$("#scalpTimeframeSwitch");
  if(quickSwitch){
   var quickFrames=[["1m","⚡ 1د"],["3m","3د"],["5m","5د"],["15m","15د"]];
   quickSwitch.innerHTML=quickFrames.map(function(x){return '<button type="button" class="timeframe-btn '+(x[0]===selectedTimeframe?'active':'')+'" data-quick-timeframe="'+x[0]+'">'+x[1]+'</button>';}).join("");
