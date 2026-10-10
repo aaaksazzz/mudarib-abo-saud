@@ -87,3 +87,10 @@ form button[type=submit],form .primary{margin-top:8px}
 .technical-method-detail b{display:block;margin-bottom:7px}.technical-method-detail p{margin:0 0 8px;line-height:1.7;font-size:13px}.technical-method-detail small{color:var(--muted);font-size:11px;line-height:1.7}
 @media(max-width:760px){.technical-method-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.method-card{padding:11px}.method-card b{font-size:12px}.method-card small{font-size:10px}}
 @media(max-width:380px){.technical-method-grid{grid-template-columns:1fr}}
+
+/* Independent methodology views */
+.method-link{display:flex;flex-direction:column;align-items:flex-start;gap:9px;text-decoration:none;min-height:158px;}
+.method-link b{color:var(--text);font-size:1rem;}
+.method-link small{color:var(--muted);line-height:1.65;}
+.method-open{margin-top:auto;color:var(--cyan);font-size:.84rem;font-weight:700;}
+.method-back-link{display:inline-flex;align-items:center;margin-top:10px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--cyan);text-decoration:none;font-weight:700;}
