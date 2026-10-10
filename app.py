@@ -555,7 +555,7 @@ def sitemap():
 def home(request:Request): return page(request,"الرئيسية")
 
 @app.get("/analysis",response_class=HTMLResponse)
-def analysis_page(request:Request): return page(request,"التحليل الفني")
+def analysis_page(request:Request): return FileResponse(BASE/"static"/"technical.html",headers={"Cache-Control":"no-store"})
 
 @app.get("/strategy",response_class=HTMLResponse)
 def strategy_page(request:Request):
@@ -567,10 +567,13 @@ def strategy_page(request:Request):
 
 @app.get("/market/{market}",response_class=HTMLResponse)
 def market_page(request:Request,market:str):
-    return page(request,MARKETS[market]) if market in MARKETS else RedirectResponse("/",status_code=303)
+    files={"spot":"spot.html","futures":"futures.html","contracts":"contracts.html","us":"us.html","saudi":"saudi.html","forex":"forex.html"}
+    if market not in files:
+        return RedirectResponse("/",status_code=303)
+    return FileResponse(BASE/"static"/files[market],headers={"Cache-Control":"no-store"})
 
 @app.get("/blog",response_class=HTMLResponse)
-def blog_page(request:Request): return page(request,"مدونة التداول")
+def blog_page(request:Request): return FileResponse(BASE/"static"/"blog.html",headers={"Cache-Control":"no-store"})
 
 @app.get("/blog/{slug}",response_class=HTMLResponse)
 def blog_article_page(request:Request,slug:str):
