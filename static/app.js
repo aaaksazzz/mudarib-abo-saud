@@ -305,7 +305,7 @@ function bind(){
    heading.className="side-title";
    heading.textContent="مناهج التحليل الفني";
    methodsNav.appendChild(heading);
-   var methodPageMap={"candles":"candles","candlestick":"candles","indicators":"indicators","support-resistance":"classical","order-flow":"order-flow","raw-volume":"volume","chart-pattern":"patterns","ict-liquidity":"ict","dow":"dow-mtf"};
+   var methodPageMap={"candles":"candles","candlestick":"candles","indicators":"indicators","support-resistance":"classical","order-flow":"order-flow","raw-volume":"volume","chart-pattern":"patterns","ict-liquidity":"ict","dow":"dow-mtf","bos-choch":"smc","fvg":"ict","liquidity":"ict","retest":"classical","divergence":"indicators","momentum":"indicators","vwap":"volume","channels":"classical"};
    technicalMethods.filter(function(x){return x[0]!=="all";}).forEach(function(x){
     var a=document.createElement("a");
     a.className="nav-item technical-nav-link";
