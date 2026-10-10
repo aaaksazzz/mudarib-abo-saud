@@ -41,6 +41,7 @@ function card(x,i){
 function render(el,rows){if(!el)return;var a=(rows||[]).slice().sort(function(x,y){var d=signalScore(y)-signalScore(x);if(d)return d;var sc=Number(y.source_count||y.alignment||0)-Number(x.source_count||x.alignment||0);if(sc)return sc;return Number(y.detected_at||y.updated_at||0)-Number(x.detected_at||x.updated_at||0);});el.innerHTML=a.length?a.map(card).join(""):'<div class="empty">لا توجد توصيات منشورة خلال آخر 24 ساعة حالياً — جاري إعادة الفحص.</div>';}
 function loadMarket(m,tf){
  var el=$("#marketCards"),st=$("#marketStatus");if(!el)return;
+ if(m==="alpha"){el.innerHTML='<div class="empty">قسم Binance Alpha مستقل، لكن مصدر إشارات Alpha غير مربوط حاليًا. ما راح نعرض إشارات الفيوتشر على أنها Alpha.</div>';if(st)st.textContent="Binance Alpha · بانتظار ربط مصدر البيانات المستقل";return;}
  selectedTimeframe=tf||selectedTimeframe||"15m";
  var head=$(".page-head"),sw=$("#timeframeSwitch");
  if(head&&!sw){sw=document.createElement("div");sw.id="timeframeSwitch";sw.className="timeframe-switch";head.insertAdjacentElement("afterend",sw);}
@@ -90,7 +91,8 @@ function loadTechnical(m,tf){
  var marketName=(technicalMarkets.find(function(x){return x[0]===selectedTechnicalMarket;})||technicalMarkets[0])[2];
  var tfName=(timeframes.find(function(x){return x[0]===selectedTimeframe;})||timeframes[2])[1];
  if(status)status.textContent="جاري تحليل "+marketName+" · "+tfName+"…";
- var apiMarket=selectedTechnicalMarket==="alpha"?"futures":selectedTechnicalMarket;
+ if(selectedTechnicalMarket==="alpha"){box.innerHTML='<div class="empty">مصدر Binance Alpha المستقل غير مربوط حاليًا. لن نستبدل بياناته بإشارات الفيوتشر.</div>';if(status)status.textContent=marketName+" · لا توجد بيانات مستقلة متاحة";return;}
+ var apiMarket=selectedTechnicalMarket;
  getJSON("/api/opportunities?market="+encodeURIComponent(apiMarket)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now()).then(function(j){
   var rows=j.opportunities||[],s=j.scan_stats||{};
   var methodRows=filterTechnicalMethods(rows),methodName=(technicalMethods.find(function(x){return x[0]===selectedTechnicalMethod;})||technicalMethods[0])[2];
