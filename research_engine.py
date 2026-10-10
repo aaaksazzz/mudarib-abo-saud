@@ -396,7 +396,8 @@ def _method_analysis(c):
     # 11) Fibonacci-style retracement/extension zones from the latest raw swing.
     swing_hi=max(highs[-30:]); swing_lo=min(lows[-30:]); fib_range=max(swing_hi-swing_lo,price*.0001)
     fib38=swing_hi-fib_range*.382; fib62=swing_hi-fib_range*.618
-    fib=1 if fib62<=price<=fib38 and price>closes[-3] else -1 if fib38<=price<=fib62 and price<closes[-3] else 0
+    fib_up38=swing_lo+fib_range*.382; fib_up62=swing_lo+fib_range*.618
+    fib=1 if fib62<=price<=fib38 and price>closes[-3] else -1 if fib_up38<=price<=fib_up62 and price<closes[-3] else 0
 
     # 12) Classical chart pattern / channel pressure using raw highs and lows.
     first_hi=max(highs[-16:-8]); second_hi=max(highs[-8:])
