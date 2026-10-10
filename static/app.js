@@ -8,11 +8,13 @@ var timeframes=[["1m","1 دقيقة"],["5m","5 دقائق"],["15m","15 دقيق�
 var selectedTechnicalMarket="spot";
 var selectedTechnicalMethod="all";
 var technicalMethods=[["all","✦","التوافق العام","عرض فرص السوق العامة دون نسبتها إلى منهج واحد."],["price-action","📈","برايس أكشن","قراءة حركة السعر والقمم والقيعان والاختراقات بدون الاعتماد الأساسي على المؤشرات."],["smc","🏦","SMC — مفاهيم السيولة","هيكل السوق، BOS وCHOCH، مناطق الطلب المؤسسي، واصطياد السيولة."],["ict","🎯","ICT","توقيت الجلسات، السيولة، FVG، مناطق الخصم والعلاوة، ومناطق الدخول المحتملة."],["classical","📐","التحليل الكلاسيكي","الدعم والمقاومة، الترند لاين، القنوات، والاختراق وإعادة الاختبار."],["candles","🕯️","الشموع اليابانية","ابتلاع شرائي/بيعي، دوجي، مطرقة، نجمة الصباح والمساء."],["patterns","🔺","النماذج السعرية","رأس وكتفين، قمم وقيعان مزدوجة، مثلثات، أعلام وأوتاد."],["indicators","📊","المؤشرات الفنية","المتوسطات EMA/SMA، RSI، MACD، Stochastic، ADX وBollinger Bands."],["fibonacci","🌀","فيبوناتشي","التصحيحات والامتدادات ومناطق التقاء النسب مع الدعم والمقاومة."],["harmonic","🦋","الهارمونيك","نماذج Gartley وBat وButterfly وCrab باستخدام نسب فيبوناتشي."],["elliott","🌊","موجات إليوت","تحليل الموجات الدافعة والتصحيحية والسيناريوهات المحتملة للاتجاه."],["wyckoff","🐋","وايكوف","التجميع والتصريف، الاختبار، Spring وUpthrust وسلوك العرض والطلب."],["volume","📦","الحجم وVSA","مقارنة الحجم بحركة السعر والمدى لاكتشاف قوة الدفع أو ضعف الحركة."],["order-flow","🧾","تدفق الأوامر والسيولة","قراءة دفتر الأوامر والاختلالات والضغط الشرائي/البيعي عند توفر بياناتها."],["ichimoku","☁️","إيشيموكو","السحابة والاتجاه والدعم والمقاومة وخطوط التحول والأساس."],["dow-mtf","🧭","داو وتعدد الفريمات","تأكيد الاتجاه عبر القمم والقيعان وربط الفريم الصغير بالفريم الأكبر."],["quant","🧮","التحليل الكمي والإحصائي","اختبار القواعد تاريخيًا وقياس العائد والمخاطر ونسبة النجاح خارج العينة."],["gann","⏱️","غان ودورات الزمن","دراسة دورات الزمن والزوايا السعرية كإطار تحليلي تجريبي."]];
+var pageTechnicalMethod="";
+try{var initialMethod=new URLSearchParams(window.location.search).get("method");if(technicalMethods.some(function(x){return x[0]===initialMethod;})){pageTechnicalMethod=initialMethod;selectedTechnicalMethod=initialMethod;}}catch(e){}
 var technicalMarkets=[["spot","₿","سبوت"],["futures","⚡","فيوتشر"],["alpha","α","تحليل Alpha"],["contracts","◉","العقود الأمريكية"],["us","🇺🇸","الأسهم الأمريكية"],["saudi","🇸🇦","السعودي / تاسي"],["forex","🥇","فوركس وذهب"]];
 try{var initialTechnicalMarket=new URLSearchParams(window.location.search).get("market");if(technicalMarkets.some(function(x){return x[0]===initialTechnicalMarket;}))selectedTechnicalMarket=initialTechnicalMarket;}catch(e){}
 function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
 
-function displaySymbol(x){var s=String((x&&x.symbol)||"").trim().toUpperCase();var m=String((x&&x.market)||market||"").toLowerCase();if((m==="spot"||m==="futures")&&s&&!/USDT$/.test(s)&&/^[A-Z0-9]+$/.test(s)){s=s+"USDT";}return s;}function go(s){if(["spot","futures","alpha","contracts","us","saudi","forex"].indexOf(s)>=0){window.location.href=routes.technical+"?market="+encodeURIComponent(s);return;}if(routes[s]){window.location.href=routes[s];}}
+function displaySymbol(x){var s=String((x&&x.symbol)||"").trim().toUpperCase();var m=String((x&&x.market)||market||"").toLowerCase();if((m==="spot"||m==="futures")&&s&&!/USDT$/.test(s)&&/^[A-Z0-9]+$/.test(s)){s=s+"USDT";}return s;}function go(s){if(["spot","futures","alpha","contracts","us","saudi","forex"].indexOf(s)>=0){window.location.href="/static/technical.html?method="+encodeURIComponent(pageTechnicalMethod||"price-action")+"&market="+encodeURIComponent(s);return;}if(routes[s]){window.location.href=routes[s];}}
 function closeMenu(){var s=$("#sidebar"),o=$("#overlay");if(s)s.classList.remove("open");if(o)o.classList.remove("show");}
 function getJSON(url){return fetch(url,{cache:"no-store"}).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();});}
 function signalScore(x){return Number(x.recommendation_score||x.ai_pct||x.ai||x.analysis_score||0);}
@@ -50,12 +52,17 @@ function loadMarket(m,tf){
 
 function renderTechnicalMethods(){
  var grid=$("#technicalMethodGrid"),detail=$("#technicalMethodDetail");
- if(!grid)return;
- grid.innerHTML=technicalMethods.map(function(x){return '<button type="button" class="method-card '+(x[0]===selectedTechnicalMethod?'active':'')+'" data-method="'+x[0]+'"><span class="method-icon">'+x[1]+'</span><b>'+x[2]+'</b><small>'+x[3]+'</small></button>';}).join("");
- Array.prototype.forEach.call(grid.querySelectorAll("[data-method]"),function(b){b.addEventListener("click",function(){selectedTechnicalMethod=b.getAttribute("data-method");renderTechnicalMethods();loadTechnical(selectedTechnicalMarket,selectedTimeframe);});});
  var active=technicalMethods.find(function(x){return x[0]===selectedTechnicalMethod;})||technicalMethods[0];
- if(detail)detail.innerHTML='<b>'+active[1]+' '+active[2]+'</b><p>'+active[3]+'</p><small>'+(selectedTechnicalMethod==="all"?"يعرض فرص السوق العامة.":"تظهر هنا فقط الفرص التي تحمل تصويتًا واضحًا من هذا المنهج؛ إذا ما فيه بيانات منهجية كافية ما راح ننسب توصية له بشكل تخميني.")+'</small>';
+ if(pageTechnicalMethod){
+  if(grid)grid.style.display="none";
+  if(detail)detail.innerHTML='<div class="method-detail-head"><b>'+active[1]+' '+active[2]+'</b><p>'+active[3]+'</p><a class="method-back-link" href="/static/technical.html?v=20261010-method-index">← كل مناهج التحليل الفني</a></div>';
+  return;
+ }
+ if(!grid)return;
+ grid.innerHTML=technicalMethods.filter(function(x){return x[0]!=="all";}).map(function(x){return '<a class="method-card method-link" href="/static/technical.html?method='+encodeURIComponent(x[0])+'"><span class="method-icon">'+x[1]+'</span><b>'+x[2]+'</b><small>'+x[3]+'</small><span class="method-open">فتح صفحة المنهج ←</span></a>';}).join("");
+ if(detail)detail.innerHTML='<b>كل منهج في صفحة مستقلة</b><p>اضغط على المنهج لفتح صفحته الخاصة؛ داخل كل صفحة تختار السوق والفريم وتظهر الفرص المطابقة لهذا المنهج فقط.</p>';
 }
+
 function filterTechnicalMethods(rows){
  if(selectedTechnicalMethod==="all")return rows;
  var map={"price-action":["price_action"],smc:["smc"],ict:["ict_liquidity"],classical:["dow","support_resistance","breakout","retest","chart_pattern"],candles:["candlestick"],patterns:["chart_pattern"],indicators:[],fibonacci:["fibonacci"],harmonic:[],elliott:["elliott"],wyckoff:["wyckoff"],volume:["raw_volume"],"order-flow":[],ichimoku:[],"dow-mtf":["dow"],quant:[],gann:[]};
