@@ -587,6 +587,23 @@ def _public_scan(market,internet,timeframe="15m"):
             try:a=fut.result()
             except Exception:a=None
             if not a or a.get("side") not in {"BUY","SELL"}:continue
+            # Validate published levels: never expose negative targets or a stop on the wrong side.
+            entry=float(a.get("entry") or a.get("price") or 0)
+            side=str(a.get("side") or "").upper()
+            if not (entry>0):continue
+            sl=float(a.get("sl") or 0)
+            tps=[float(a.get(k) or 0) for k in ("tp1","tp2","tp3")]
+            valid=(sl>entry and all(tps[i]>tps[i+1]>0 for i in range(2)) and tps[2]<entry) if side=="SELL" else (0<sl<entry and all(0<tps[i]<tps[i+1] for i in range(2)) and tps[0]>entry)
+            if not valid:
+                support=float(a.get("support") or entry); resistance=float(a.get("resistance") or entry)
+                raw_risk=abs(entry-(support if side=="BUY" else resistance))*.45
+                risk=min(entry*.03,max(entry*.005,raw_risk))
+                if side=="BUY":
+                    sl=entry-risk; tps=[entry+risk,entry+2*risk,entry+3*risk]
+                else:
+                    sl=entry+risk; tps=[max(entry-risk,entry*.01),max(entry-2*risk,entry*.005),max(entry-3*risk,entry*.001)]
+                    tps=sorted(tps,reverse=True)
+                a["entry"]=entry; a["sl"]=sl; a["tp1"],a["tp2"],a["tp3"]=tps; a["targets"]=tps
             sym=jobs[fut]; tech=float(a.get("site_score") or 0)
             people=[r for r in internet if r.get("symbol")==sym]
             buy=sum(1 for r in people if r.get("direction")=="BUY")
