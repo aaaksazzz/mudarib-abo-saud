@@ -3264,11 +3264,32 @@ def gold_signals_api(timeframe:str="15m"):
 
 @app.get("/api/blog")
 def blog_api():
+    # Keep the editorial list and published article files in sync automatically.
+    import re
+    from html import unescape
     try:
         from content import BLOG
-        return {"ok":True,"items":BLOG,"updated":time.time()}
+        items=[dict(x) for x in BLOG]
     except Exception:
-        return {"ok":True,"items":[],"updated":time.time()}
+        items=[]
+    seen={str(x.get("slug","")).strip() for x in items}
+    articles_dir=BASE/"static"/"articles"
+    if articles_dir.exists():
+        for file in sorted(articles_dir.glob("*.html")):
+            slug=file.stem
+            if slug in seen:
+                continue
+            try:
+                raw=file.read_text(encoding="utf-8")
+                title_match=re.search(r"<title[^>]*>(.*?)</title>",raw,re.I|re.S)
+                desc_match=re.search(r'<meta[^>]+name=["\\']description["\\'][^>]+content=["\\'](.*?)["\\']',raw,re.I|re.S)
+                title=unescape(re.sub(r"<[^>]+>","",title_match.group(1))).strip() if title_match else slug.replace("-"," ").title()
+                description=unescape(desc_match.group(1)).strip() if desc_match else "مقال تعليمي جديد عن التداول وإدارة المخاطر."
+                items.append({"slug":slug,"title":title,"text":description})
+                seen.add(slug)
+            except Exception:
+                continue
+    return {"ok":True,"items":items,"updated":time.time()}
 
 @app.get("/api/news")
 def news_api_direct():
