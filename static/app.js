@@ -112,7 +112,8 @@ function filterTechnicalMethods(rows){
   retest:["retest"]
  };
  var keys=map[selectedTechnicalMethod]||[];
- if(!keys.length)return (rows||[]);
+ // Fail closed: never label generic market opportunities as signals from an unimplemented method.
+ if(!keys.length)return [];
  return (rows||[]).filter(function(r){
   var votes=r.methods||r.analysis_methods||r.method_votes;
   if(!votes||Array.isArray(votes)||typeof votes!=="object")return false;
@@ -168,7 +169,10 @@ function loadTechnical(m,tf){
    box.insertAdjacentHTML("afterbegin",'<div class="empty">⚠️ هذه فرص مباشرة للسوق والفريم المحددين للاطلاع فقط؛ هذا المنهج لم يُربط بعد بمحرك مستقل، لذلك ليست توصيات صادرة عنه.</div>');
   }
   if(!methodRows.length&&selectedTechnicalMethod!=="all"){
-   box.innerHTML='<div class="empty">ما فيه فرص مطابقة حاليًا في '+esc(marketName)+' على فريم '+esc(tfName)+'. جرّب فريمًا أو سوقًا آخر.</div>';
+   var methodReady=implementedTechnicalMethodIds.indexOf(selectedTechnicalMethod)>=0;
+   box.innerHTML=methodReady
+    ? '<div class="empty">ما فيه إشارات مؤكدة مطابقة لشروط هذا المنهج في '+esc(marketName)+' على فريم '+esc(tfName)+'. ما راح نعرض إشارات من منهج ثاني بدلًا عنه.</div>'
+    : '<div class="empty">هذا المنهج ما اكتمل ربطه باستراتيجية مستقلة بعد؛ أوقفنا عرض الفرص العامة هنا حتى ما تُنسب له تحليلات غير صحيحة.</div>';
   }
   var rawStamp=s.updated_at?new Date(s.updated_at*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):(j.updated_at?new Date(j.updated_at).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):"جاري التحديث");
   if(status)status.textContent=(s.scanning?"الفحص مستمر بالخلفية · ":"")+marketName+" · "+methodName+" · فريم "+tfName+" · "+methodRows.length+" فرصة"+(!methodIsImplemented&&selectedTechnicalMethod!=="all"?" · عرض مرجعي فقط":"")+" · آخر تحديث: "+rawStamp;
