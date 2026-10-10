@@ -599,6 +599,7 @@ def _public_scan(market,internet,timeframe="15m"):
                 "ai_pct":round(final_score,1),
                 "recommendation_score":round(final_score,1),
                 "site_score":tech,"timeframe":timeframe,"signal_label":a.get("signal_label"),"sma20":a.get("sma20"),"ict_votes":a.get("ict_votes"),
+                "methods":a.get("methods") or {}, "support":a.get("support"), "resistance":a.get("resistance"),
                 "external_agreement":round(people_agreement,1),"research_agreement":round(people_agreement,1),
                 "source_count":mentions,"research_sources":mentions,"internet_sources":mentions,
                 "source_titles":[r.get("source_title") for r in people[:10] if r.get("source_title")],
