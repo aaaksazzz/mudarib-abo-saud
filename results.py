@@ -50,21 +50,32 @@ def _results_locked(core):
    c.execute("insert into recommendation_results(market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated) values(?,?,?,?,?,?,?,?,?,?)",(market,x.get("symbol"),x.get("direction"),_num(x.get("entry")),_num(x.get("tp1")),_num(x.get("tp2")),_num(x.get("tp3")),_num(x.get("sl")),created,now))
  c.commit()
  rows=c.execute("select id,market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,status,hit_target,result_price,result_at from recommendation_results where created>=? order by created desc",(cutoff,)).fetchall()
- out=[]
- for row in rows:
-  market,symbol=row[1],row[2]; raw=symbol.replace("/USDT","USDT")
+ # Fetch one quote per unique market/symbol concurrently; serial network calls made this
+ # endpoint wait several minutes when the result history contained many open trades.
+ from concurrent.futures import ThreadPoolExecutor
+ def _quote(key):
+  market,symbol=key; raw=str(symbol or "").replace("/USDT","USDT").replace("/","")
   try:
    if market=="spot":
-    q=core._binance_json("https://api.binance.com/api/v3/ticker/price?symbol="+raw,timeout=5,timeframe="15m",spot_fallback=True)
-    px=float(q.get("price") or 0)
-   elif market=="futures":
-    q=core._binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/price?symbol="+raw,timeout=5)
-    px=float(q.get("price") or 0)
-   else:
-    candles=core._yahoo_chart(symbol,"15m","60d","15m")
-    px=float(candles[-1][0]) if candles else 0
-  except Exception: px=0
-  out.append({"id":row[0],"market":market,"symbol":symbol,"direction":row[3],"entry":row[4],"tp1":row[5],"tp2":row[6],"tp3":row[7],"sl":row[8],"created":row[9],"status":_eval(c,row,px),"hit_target":row[12],"result_price":row[13],"result_at":row[14]})
+    q=core._binance_json("https://api.binance.com/api/v3/ticker/price?symbol="+raw,timeout=3,timeframe="15m",spot_fallback=True)
+    return float(q.get("price") or 0)
+   if market=="futures":
+    q=core._binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/price?symbol="+raw,timeout=3)
+    return float(q.get("price") or 0)
+   candles=core._yahoo_chart(symbol,"15m","60d","15m")
+   return float(candles[-1][0]) if candles else 0
+  except Exception:
+   return 0
+ keys=list(dict.fromkeys((row[1],row[2]) for row in rows if row[11]=="OPEN"))
+ quotes={}
+ if keys:
+  with ThreadPoolExecutor(max_workers=min(12,len(keys))) as pool:
+   for key,px in zip(keys,pool.map(_quote,keys)):
+    quotes[key]=px
+ out=[]
+ for row in rows:
+  key=(row[1],row[2]); px=quotes.get(key,0) if row[11]=="OPEN" else row[13]
+  out.append({"id":row[0],"market":row[1],"symbol":row[2],"direction":row[3],"entry":row[4],"tp1":row[5],"tp2":row[6],"tp3":row[7],"sl":row[8],"created":row[9],"status":_eval(c,row,px),"hit_target":row[12],"result_price":row[13],"result_at":row[14]})
  c.commit(); c.close()
  wins=sum(x["status"]=="WIN" for x in out); losses=sum(x["status"]=="LOSS" for x in out); expired=sum(x["status"]=="EXPIRED" for x in out); opened=sum(x["status"]=="OPEN" for x in out); closed=wins+losses
  stats={"total":len(out),"wins":wins,"losses":losses,"expired":expired,"open":opened,"win_rate":round(wins/closed*100,1) if closed else 0}
