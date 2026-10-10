@@ -406,7 +406,36 @@ def _method_analysis(c):
     # 13) Raw volume / effort-result confirmation (volume itself, not an indicator).
     volume_confirm=1 if effort and candle>=0 else -1 if effort and candle<0 else 0
 
-    votes=[dow,pa,sr,candle,breakout,retest,wyckoff,elliott,smc,ict,fib,pattern,volume_confirm]
+    # 14) Approximate Volume Profile from candle close x volume (not tick-level traded volume).
+    # Use a fixed histogram over recent typical closes and identify the point-of-control bin.
+    vp_n=min(100,len(c))
+    vp_lows=lows[-vp_n:]; vp_highs=highs[-vp_n:]; vp_closes=closes[-vp_n:]; vp_vols=vols[-vp_n:]
+    vp_min=min(vp_lows); vp_max=max(vp_highs); vp_span=max(vp_max-vp_min,price*.0001)
+    vp_bins=24; vp_hist=[0.0]*vp_bins
+    for px,v in zip(vp_closes,vp_vols):
+        bi=max(0,min(vp_bins-1,int((px-vp_min)/vp_span*vp_bins)))
+        vp_hist[bi]+=max(0.0,float(v))
+    vp_poc=vp_min+(vp_hist.index(max(vp_hist))+.5)*vp_span/vp_bins
+    volume_profile=1 if price>vp_poc and price>closes[-4] else -1 if price<vp_poc and price<closes[-4] else 0
+
+    # 15) Market regime: efficiency ratio separates directional movement from noisy/ranging action.
+    regime_n=min(20,len(closes)-1)
+    path=sum(abs(closes[-i]-closes[-i-1]) for i in range(1,regime_n+1))
+    net=closes[-1]-closes[-regime_n-1]
+    efficiency=abs(net)/max(path,1e-12)
+    market_regime=1 if efficiency>=0.38 and net>0 else -1 if efficiency>=0.38 and net<0 else 0
+
+    # 16) Ichimoku cloud direction using raw highs/lows; only available with 52+ candles.
+    ichimoku=0
+    if len(c)>=52:
+        tenkan=(max(highs[-9:])+min(lows[-9:]))/2
+        kijun=(max(highs[-26:])+min(lows[-26:]))/2
+        span_a=(tenkan+kijun)/2
+        span_b=(max(highs[-52:])+min(lows[-52:]))/2
+        cloud_top=max(span_a,span_b); cloud_bottom=min(span_a,span_b)
+        ichimoku=1 if price>cloud_top and tenkan>kijun else -1 if price<cloud_bottom and tenkan<kijun else 0
+
+    votes=[dow,pa,sr,candle,breakout,retest,wyckoff,elliott,smc,ict,fib,pattern,volume_confirm,volume_profile,market_regime,ichimoku]
     bull=sum(v>0 for v in votes); bear=sum(v<0 for v in votes)
     side="BUY" if bull>bear and bull>=4 else "SELL" if bear>bull and bear>=4 else "WAIT"
     agreement=max(bull,bear)/len(votes)*100
@@ -419,7 +448,7 @@ def _method_analysis(c):
             "support":support,"resistance":resistance,
             "methods":{"dow":dow,"price_action":pa,"support_resistance":sr,"candlestick":candle,"breakout":breakout,
             "retest":retest,"wyckoff":wyckoff,"elliott":elliott,"smc":smc,"ict_liquidity":ict,"fibonacci":fib,
-            "chart_pattern":pattern,"raw_volume":volume_confirm}}
+            "chart_pattern":pattern,"raw_volume":volume_confirm,"volume_profile":volume_profile,"market_regime":market_regime,"ichimoku":ichimoku}}
 def _ict_sma20_gate(c):
     """Same-timeframe MA20/MA200 trend gate; stronger structure raises signal grade."""
     if len(c)<200:return None
