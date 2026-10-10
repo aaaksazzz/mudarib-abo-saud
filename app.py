@@ -558,14 +558,6 @@ def home(request:Request): return page(request,"الرئيسية")
 @app.get("/analysis",response_class=HTMLResponse)
 def analysis_page(request:Request): return FileResponse(BASE/"static"/"technical.html",headers={"Cache-Control":"no-store"})
 
-@app.get("/strategy",response_class=HTMLResponse)
-def strategy_page(request:Request):
-    response=FileResponse(BASE/"static"/"strategy.html",media_type="text/html")
-    response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
-    response.headers["Pragma"]="no-cache"
-    response.headers["Expires"]="0"
-    return response
-
 @app.get("/market/{market}",response_class=HTMLResponse)
 def market_page(request:Request,market:str):
     files={"spot":"spot.html","futures":"futures.html","contracts":"contracts.html","us":"us.html","saudi":"saudi.html","forex":"forex.html"}
