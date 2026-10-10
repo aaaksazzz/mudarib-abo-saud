@@ -267,6 +267,19 @@ function bind(){
   }
   side.querySelectorAll('[data-s="technical"]').forEach(function(b){b.classList.toggle("active",page==="technical");});
 
+  /* Alpha قسم مستقل ظاهر دائمًا في القائمة */
+  if(!side.querySelector('[data-s="alpha"]')){
+   var alphaLink=document.createElement("button");
+   alphaLink.className="nav-item";
+   alphaLink.type="button";
+   alphaLink.setAttribute("data-s","alpha");
+   alphaLink.innerHTML="<span>α</span> تحليل Binance Alpha";
+   var spotEntry=side.querySelector('[data-s="spot"]');
+   if(spotEntry&&spotEntry.parentNode)spotEntry.insertAdjacentElement("afterend",alphaLink);
+   else side.appendChild(alphaLink);
+  }
+  side.querySelectorAll('[data-s="alpha"]').forEach(function(b){b.classList.toggle("active",page==="alpha"||new URLSearchParams(window.location.search).get("market")==="alpha");});
+
   var labels={whales:"متابعة الحيتان",results:"النتائج",news:"الأخبار",blog:"المدونة"};
   var icons={whales:"🐋",results:"📊",news:"📰",blog:"✍️"};
   Object.keys(labels).forEach(function(k){
