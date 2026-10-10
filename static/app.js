@@ -139,8 +139,6 @@ function loadWhales(tf,marketChoice){
  var head=$(".page-head"),mw=$("#whaleMarketSwitch"),sw=$("#whaleTimeframes");
  if(head&&!mw){mw=document.createElement("div");mw.id="whaleMarketSwitch";mw.className="timeframe-switch whale-market-switch";head.insertAdjacentElement("afterend",mw);}
  if(mw){mw.innerHTML=Object.keys(names).map(function(m){return '<button type="button" class="timeframe-btn '+(m===selectedWhaleMarket?'active':'')+'" data-whale-market="'+m+'">'+names[m]+'</button>';}).join("");Array.prototype.forEach.call(mw.querySelectorAll("[data-whale-market]"),function(b){b.addEventListener("click",function(){loadWhales(selectedTimeframe,b.getAttribute("data-whale-market"));});});}
- if(head&&!sw){sw=document.createElement("div");sw.id="whaleTimeframes";sw.className="timeframe-switch";head.insertAdjacentElement("afterend",sw);}
- if(sw){sw.innerHTML=timeframes.map(function(t){return '<button type="button" class="timeframe-btn '+(t[0]===selectedTimeframe?'active':'')+'" data-whale-timeframe="'+t[0]+'">'+t[1]+'</button>';}).join("");Array.prototype.forEach.call(sw.querySelectorAll("[data-whale-timeframe]"),function(b){b.addEventListener("click",function(){loadWhales(b.getAttribute("data-whale-timeframe"),selectedWhaleMarket);});});}
  var marketName=names[selectedWhaleMarket]||names.spot;
  if(!["spot","futures"].includes(selectedWhaleMarket)){
   if(summary)summary.innerHTML='<div class="metric"><span>السوق</span><b>'+marketName+'</b><small>لا يوجد مصدر حيتان مباشر موصول لهذا السوق</small></div>';
