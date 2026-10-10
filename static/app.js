@@ -224,7 +224,6 @@ function loadWhales(tf,marketChoice,thresholdChoice){
 function bind(){
  var side=$("#sidebar");
  if(side){
-  ["spot","futures","contracts","us","saudi","forex"].forEach(function(k){var old=side.querySelector('[data-s="'+k+'"]');if(old)old.remove();});
   if(!side.querySelector('[data-s="technical"]')){
    var tb=document.createElement("button");tb.className="nav-item";tb.type="button";tb.setAttribute("data-s","technical");tb.innerHTML="<span>📈</span> تحليل فني";side.insertBefore(tb,side.querySelector('[data-s="signup"]')||null);
   }
