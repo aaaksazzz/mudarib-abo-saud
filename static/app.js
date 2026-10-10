@@ -380,8 +380,6 @@ function bind(){
   makeSection("الرئيسية",["home"],"menu-home");
   makeSection("التداول الذكي",["radar","gold","whales"],"menu-trading");
   if(methodGroup)side.insertBefore(methodGroup,footer||null);
-  /* كل سوق له صفحة مستقلة؛ لا نحول النقر إلى صفحة التحليل الفني */
-  makeSection("الأسواق المستقلة",["spot","alpha","futures","contracts","us","saudi","forex"],"menu-markets");
   makeSection("النتائج والمحتوى",["results","news","blog"],"menu-content");
   makeSection("الحساب والإدارة",["signup","login","admin"],"menu-account");
  }
