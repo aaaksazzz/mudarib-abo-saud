@@ -345,7 +345,7 @@ function bind(){
   makeSection("الرئيسية",["home"],"menu-home");
   makeSection("التداول والتحليل",["radar","gold","technical"],"menu-trading");
   if(methodGroup)side.insertBefore(methodGroup,footer||null);
-  makeSection("الأسواق",["spot","futures","alpha","contracts","us","saudi","forex"],"menu-markets");
+  /* الأسواق تظهر داخل صفحة تحليل فني فقط، وليس كروابط مكررة بالقائمة */
   makeSection("المتابعة والمحتوى",["results","whales","news","blog"],"menu-content");
   makeSection("الحساب والإدارة",["signup","login","admin"],"menu-account");
  }
