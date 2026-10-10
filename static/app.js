@@ -3,7 +3,7 @@
 var $=function(s){return document.querySelector(s);};
 var routes={home:"/",radar:"/static/radar.html?v=20261008-core",gold:"/static/gold.html?v=20261008-core",results:"/static/results.html?v=20261008-core",news:"/static/news.html?v=20261008-core",blog:"/static/blog.html?v=20261010-seo",spot:"/static/spot.html?v=20261008-core",futures:"/static/futures.html?v=20261008-core",alpha:"/static/alpha.html?v=20261010-alpha",whales:"/static/whales.html?v=20261010-whales",contracts:"/static/contracts.html?v=20261008-core",us:"/static/us.html?v=20261008-core",saudi:"/static/saudi.html?v=20261008-core",forex:"/static/forex.html?v=20261008-core",signup:"/static/signup.html?v=20261008-core",login:"/static/login.html?v=20261008-core",admin:"/static/admin.html?v=20261008-core"};
 var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false,trackingTimer=null;
-var selectedTimeframe="15m",timeframes=[["15m","15 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
+var selectedTimeframe="15m";
 function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
 
 function displaySymbol(x){var s=String((x&&x.symbol)||"").trim().toUpperCase();var m=String((x&&x.market)||market||"").toLowerCase();if((m==="spot"||m==="futures")&&s&&!/USDT$/.test(s)&&/^[A-Z0-9]+$/.test(s)){s=s+"USDT";}return s;}function go(s){if(routes[s]){window.location.href=routes[s];}}
@@ -134,7 +134,7 @@ function loadResults(){
 var selectedWhaleMarket="spot";
 function loadWhales(tf,marketChoice){
  var summary=$("#whaleSummary"),markets=$("#whaleMarkets"),box=$("#whaleCards");if(!box)return;
- selectedTimeframe=tf||selectedTimeframe||"15m";if(marketChoice)selectedWhaleMarket=marketChoice;
+ if(marketChoice)selectedWhaleMarket=marketChoice;
  var names={spot:"سبوت بايننس",futures:"فيوتشر بايننس",contracts:"العقود الأمريكية",us:"الأسهم الأمريكية",saudi:"السوق السعودي / تاسي",forex:"فوركس وذهب"};
  var head=$(".page-head"),mw=$("#whaleMarketSwitch"),sw=$("#whaleTimeframes");
  if(head&&!mw){mw=document.createElement("div");mw.id="whaleMarketSwitch";mw.className="timeframe-switch whale-market-switch";head.insertAdjacentElement("afterend",mw);}
@@ -145,7 +145,7 @@ function loadWhales(tf,marketChoice){
   if(markets)markets.innerHTML='<div class="metric"><span>حالة المصدر</span><b>غير موصول</b><small>لن نعرض حركة سعر على أنها صفقات حيتان</small></div>';
   box.innerHTML='<div class="empty">رصد الصفقات الكبيرة الحقيقية موصول حاليًا ببيانات Binance Spot وFutures فقط. هذا السوق يحتاج مصدر صفقات كبيرة مستقل.</div>';return;
  }
- if(summary)summary.innerHTML='<div class="metric"><span>المصدر</span><b>Binance مباشر</b><small>صفقات سوق منفذة</small></div><div class="metric"><span>السوق</span><b>'+marketName+'</b><small>هذا السوق فقط</small></div><div class="metric"><span>حد الصفقة الكبيرة</span><b> $10,000</b><small>قيمة اسمية للصفقة</small></div><div class="metric"><span>الفريم المحدد</span><b>'+esc(selectedTimeframe)+'</b><small>زر الفريم محفوظ للعرض</small></div>';
+ if(summary)summary.innerHTML='<div class="metric"><span>المصدر</span><b>Binance مباشر</b><small>صفقات سوق منفذة</small></div><div class="metric"><span>السوق</span><b>'+marketName+'</b><small>هذا السوق فقط</small></div><div class="metric"><span>حد الصفقة الكبيرة</span><b> $10,000</b><small>قيمة اسمية للصفقة</small></div>';
  if(markets)markets.innerHTML='<div class="metric"><span>حالة الرصد</span><b>جاري الاتصال</b><small>فحص أعلى 30 زوج USDT من حيث حجم التداول</small></div>';
  box.innerHTML='<div class="empty">جاري جلب الصفقات الكبيرة المنفذة من Binance…</div>';
  getJSON('/api/whale-trades?market='+encodeURIComponent(selectedWhaleMarket)+'&min_notional_usdt=10000&x='+Date.now()).then(function(j){
