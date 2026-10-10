@@ -493,60 +493,61 @@ def _analyze_symbol(symbol,market,timeframe="15m"):
     def get(interval):
         return _candles(_crypto_klines(symbol,market,interval)) if market in ("spot","futures") else _yahoo(symbol,market,interval)
     candles=get(timeframe)
-    if len(candles)<32:return None
+    if len(candles)<52:return None
     a=_method_analysis(candles)
-    # Forex is a larger, liquid universe. Keep valid 3-vote price-action setups
-    # instead of allowing the strict 4-vote gate to collapse the page to one pair.
-    if a and a["side"]=="WAIT" and market=="forex":
-        methods=a.get("methods") or {}
-        bull=sum(1 for v in methods.values() if float(v)>0)
-        bear=sum(1 for v in methods.values() if float(v)<0)
-        if max(bull,bear)>=3 and bull!=bear:
-            a["side"]="BUY" if bull>bear else "SELL"
-            price=float(a.get("price") or 0)
-            risk=max(price*.008,abs(price-(a.get("support") if a["side"]=="BUY" else a.get("resistance")))*.45)
-            if a["side"]=="BUY":
-                a["sl"]=price-risk; a["tp1"]=price+risk; a["tp2"]=price+risk*2; a["tp3"]=price+risk*3
-            else:
-                a["sl"]=price+risk; a["tp1"]=price-risk; a["tp2"]=price-risk*2; a["tp3"]=price-risk*3
-            a["targets"]=[a["tp1"],a["tp2"],a["tp3"]]
-            a["site_score"]=round(max(bull,bear)/max(1,len(methods))*100,1)
-    # العقود الأمريكية: لا نخلي شرط 4/13 الصارم يخنق الصفحة.
-    # نحتاج توافق 3 مناهج على الأقل حتى تُنشر فرصة عقد حقيقية.
-    # Saudi market: publish only when at least 3 independent price-action
-    # methods agree, so the scan does not collapse to just one or two symbols.
-    if a and a["side"]=="WAIT" and market=="saudi":
-        methods=a.get("methods") or {}
-        bull=sum(1 for v in methods.values() if float(v)>0)
-        bear=sum(1 for v in methods.values() if float(v)<0)
-        if max(bull,bear)>=3 and bull!=bear:
-            a["side"]="BUY" if bull>bear else "SELL"
-            price=float(a.get("price") or 0)
-            ref=a.get("support") if a["side"]=="BUY" else a.get("resistance")
-            risk=max(price*.006,abs(price-float(ref or price))*.35)
-            if a["side"]=="BUY":
-                a["sl"]=price-risk; a["tp1"]=price+risk; a["tp2"]=price+risk*2; a["tp3"]=price+risk*3
-            else:
-                a["sl"]=price+risk; a["tp1"]=price-risk; a["tp2"]=price-risk*2; a["tp3"]=price-risk*3
-            a["targets"]=[a["tp1"],a["tp2"],a["tp3"]]
-            a["site_score"]=round(max(bull,bear)/max(1,len(methods))*100,1)
+    if not a:return None
+
+    # Strong-confluence engine: structure/liquidity are primary, while
+    # price action, regime, volume and cloud are confirmations, not equal votes.
+    methods=a.get("methods") or {}
+    weights={
+        "smc":2.2,"ict_liquidity":2.2,"market_regime":1.6,
+        "price_action":1.4,"dow":1.3,"breakout":1.2,"retest":1.2,
+        "raw_volume":1.1,"volume_profile":0.9,"ichimoku":0.9,
+        "support_resistance":0.9,"wyckoff":1.0,"candlestick":0.7,
+        "chart_pattern":0.7,"fibonacci":0.6,"elliott":0.5
+    }
+    weighted=sum(weights.get(k,0.5)*max(-1,min(1,float(v or 0))) for k,v in methods.items())
+    total=sum(weights.get(k,0.5) for k,v in methods.items())
+    strength=abs(weighted)/max(total,1e-9)*100.0
+    method_side="BUY" if weighted>0 else "SELL" if weighted<0 else "WAIT"
+    bull=sum(1 for v in methods.values() if float(v or 0)>0)
+    bear=sum(1 for v in methods.values() if float(v or 0)<0)
+
+    # Keep the same-timeframe MA20/MA200 + structure/momentum gate as a trend filter.
     gate=_ict_sma20_gate(candles)
-    if not a or not gate:return None
-    a["side"]=gate["side"]
-    a["site_score"]=float(gate["strength"])
+    if not gate or method_side=="WAIT":return None
+    if method_side!=gate["side"]:return None
+
+    # Require actual structure/liquidity evidence plus broad confluence.
+    core=sum(1 for k in ("smc","ict_liquidity","breakout","retest") if float(methods.get(k) or 0)==(1 if method_side=="BUY" else -1))
+    aligned=bull if method_side=="BUY" else bear
+    opposing=bear if method_side=="BUY" else bull
+    if core<1 or aligned<5 or aligned<=opposing:return None
+
+    # Score is an evidence score, not a probability of winning.
+    score=max(0.0,min(98.0,0.55*strength+0.30*float(gate.get("strength") or 0)+min(12,aligned*1.2)))
+    a["side"]=method_side
+    a["site_score"]=round(score,1)
+    a["ai_pct"]=round(score,1)
+    a["recommendation_score"]=round(score,1)
     a["sma20"]=gate["sma20"]
     a["ict_votes"]=gate["ict_votes"]
     a["momentum_votes"]=gate.get("momentum_votes",0)
-    a["signal_label"]=("شراء قوي" if gate["side"]=="BUY" else "بيع قوي") if gate["strength"]>=82 else ("شراء" if gate["side"]=="BUY" else "بيع")
+    a["confluence"]={"weighted_alignment":round(strength,1),"aligned_methods":aligned,"opposing_methods":opposing,"structure_liquidity_confirmations":core}
+    a["signal_label"]=("شراء قوي" if method_side=="BUY" else "بيع قوي") if score>=78 else ("شراء توافق" if method_side=="BUY" else "بيع توافق")
     price=float(a["price"])
-    ref=a.get("support") if gate["side"]=="BUY" else a.get("resistance")
-    risk=max(price*.008,abs(price-float(ref or price))*.45)
-    if gate["side"]=="BUY":
+    ref=a.get("support") if method_side=="BUY" else a.get("resistance")
+    # Conservative bounded risk levels; validate again before publishing.
+    risk=min(price*.03,max(price*.005,abs(price-float(ref or price))*.35))
+    if method_side=="BUY":
         a["sl"]=price-risk; a["tp1"]=price+risk; a["tp2"]=price+risk*2; a["tp3"]=price+risk*3
     else:
-        a["sl"]=price+risk; a["tp1"]=price-risk; a["tp2"]=price-risk*2; a["tp3"]=price-risk*3
+        a["sl"]=price+risk; a["tp1"]=max(price-risk,price*.01); a["tp2"]=max(price-risk*2,price*.005); a["tp3"]=max(price-risk*3,price*.001)
+        a["tp1"],a["tp2"],a["tp3"]=sorted([a["tp1"],a["tp2"],a["tp3"]],reverse=True)
     a["targets"]=[a["tp1"],a["tp2"],a["tp3"]]
-    a["timeframe"]=timeframe; a["price_fresh"]=True
+    a["timeframe"]=timeframe
+    a["price_fresh"]=True
     return a
 
 SAUDI_UNIVERSE_CACHE={}
