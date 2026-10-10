@@ -3,12 +3,12 @@
   <url><loc>https://raspy-hill-9a85.aaaksazzz1.workers.dev/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>
   <url><loc>https://raspy-hill-9a85.aaaksazzz1.workers.dev/analysis</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
   <url><loc>https://raspy-hill-9a85.aaaksazzz1.workers.dev/strategy</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://raspy-hill-9a85.aaaksazzz1.workers.dev/market/spot</loc><changefreq>hourly</changefreq><priority>0.9</priority></url>
-  <url><loc>https://raspy-hill-9a85.aaaksazzz1.workers.dev/market/futures</loc><changefreq>hourly</changefreq><priority>0.9</priority></url>
-  <url><loc>https://raspy-hill-9a85.aaaksazzz1.workers.dev/market/contracts</loc><changefreq>hourly</changefreq><priority>0.8</priority></url>
-  <url><loc>https://raspy-hill-9a85.aaaksazzz1.workers.dev/market/us</loc><changefreq>daily</changefreq><priority>0.8</priority></url>
-  <url><loc>https://raspy-hill-9a85.aaaksazzz1.workers.dev/market/saudi</loc><changefreq>daily</changefreq><priority>0.8</priority></url>
-  <url><loc>https://raspy-hill-9a85.aaaksazzz1.workers.dev/market/forex</loc><changefreq>daily</changefreq><priority>0.8</priority></url>
+  <url><loc>https://raspy-hill-9a85.aaaksazzz1.workers.dev/static/spot.html</loc><changefreq>hourly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://raspy-hill-9a85.aaaksazzz1.workers.dev/static/futures.html</loc><changefreq>hourly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://raspy-hill-9a85.aaaksazzz1.workers.dev/static/contracts.html</loc><changefreq>hourly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://raspy-hill-9a85.aaaksazzz1.workers.dev/static/us.html</loc><changefreq>daily</changefreq><priority>0.8</priority></url>
+  <url><loc>https://raspy-hill-9a85.aaaksazzz1.workers.dev/static/saudi.html</loc><changefreq>daily</changefreq><priority>0.8</priority></url>
+  <url><loc>https://raspy-hill-9a85.aaaksazzz1.workers.dev/static/forex.html</loc><changefreq>daily</changefreq><priority>0.8</priority></url>
   <url><loc>https://raspy-hill-9a85.aaaksazzz1.workers.dev/static/blog.html</loc><changefreq>daily</changefreq><priority>1.0</priority></url>
   <url><loc>https://raspy-hill-9a85.aaaksazzz1.workers.dev/static/news.html</loc><changefreq>hourly</changefreq><priority>0.6</priority></url>
   <url><loc>https://raspy-hill-9a85.aaaksazzz1.workers.dev/static/results.html</loc><changefreq>daily</changefreq><priority>0.6</priority></url>
