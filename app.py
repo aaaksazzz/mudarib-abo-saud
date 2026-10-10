@@ -3259,16 +3259,16 @@ def _whale_trade_scan(market,min_notional):
             result=[]
             for t in rows if isinstance(rows,list) else []:
                 try:
-                    price_value=float(t.get("price") or 0)
-                    qty=float(t.get("qty") or 0)
+                    price_value=float(t.get("p") or t.get("price") or 0)
+                    qty=float(t.get("q") or t.get("qty") or 0)
                     notional=price_value*qty
                     if notional<min_notional: continue
-                    buyer_is_maker=bool(t.get("isBuyerMaker"))
+                    buyer_is_maker=bool(t.get("m") if "m" in t else t.get("isBuyerMaker"))
                     result.append({
                         "symbol":symbol,"market":market,
                         "side":"SELL" if buyer_is_maker else "BUY",
                         "price":price_value,"quantity":qty,"notional_usdt":round(notional,2),
-                        "trade_time":int(t.get("time") or 0),"trade_id":t.get("a"),
+                        "trade_time":int(t.get("T") or t.get("time") or 0),"trade_id":t.get("a"),
                         "source":"Binance public aggregate trade","confirmed_trade":True,
                         "side_note":"البيع/الشراء يحدد جهة taker في الصفقة المنفذة، وليس هوية المحفظة."
                     })
