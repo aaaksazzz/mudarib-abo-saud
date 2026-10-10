@@ -277,11 +277,38 @@ function bind(){
     side.appendChild(b);
    }
   });
+  /* كل منهج فني رابط مستقل في القائمة الجانبية */
+  var methodsNav=side.querySelector("#technicalMethodsNav");
+  if(!methodsNav){
+   methodsNav=document.createElement("div");
+   methodsNav.id="technicalMethodsNav";
+   methodsNav.className="technical-menu-group";
+   var heading=document.createElement("div");
+   heading.className="side-title";
+   heading.textContent="مناهج التحليل الفني";
+   methodsNav.appendChild(heading);
+   technicalMethods.filter(function(x){return x[0]!=="all";}).forEach(function(x){
+    var a=document.createElement("a");
+    a.className="nav-item technical-nav-link";
+    a.href="/static/technical-"+encodeURIComponent(x[0])+".html?market="+encodeURIComponent(selectedTechnicalMarket);
+    a.setAttribute("data-tech-method-nav",x[0]);
+    a.innerHTML="<span>"+x[1]+"</span> "+x[2];
+    methodsNav.appendChild(a);
+   });
+   var technicalEntry=side.querySelector('[data-s="technical"]');
+   if(technicalEntry&&technicalEntry.parentNode)technicalEntry.insertAdjacentElement("afterend",methodsNav);
+   else side.appendChild(methodsNav);
+  }
+  methodsNav.querySelectorAll("[data-tech-method-nav]").forEach(function(a){
+   a.classList.toggle("active",a.getAttribute("data-tech-method-nav")===pageTechnicalMethod);
+  });
  }
  document.addEventListener("click",function(e){
   var target=e.target;
   if(target&&target.nodeType!==1)target=target.parentElement;
   if(!target)return;
+  var methodNav=target.closest("[data-tech-method-nav]");
+  if(methodNav){closeMenu();return;}
   var nav=target.closest("[data-s]");
   if(nav){var destination=nav.getAttribute("data-s");if(destination){e.preventDefault();closeMenu();go(destination);}return;}
   var marketCard=target.closest("[data-core-market]");
