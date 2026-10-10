@@ -60,7 +60,7 @@ function renderTechnicalMethods(){
   return;
  }
  if(!grid)return;
- grid.innerHTML=technicalMethods.filter(function(x){return x[0]!=="all";}).map(function(x){return '<a class="method-card method-link" href="/static/technical.html?method='+encodeURIComponent(x[0])+'&v=20261010-methodfix"><span class="method-icon">'+x[1]+'</span><b>'+x[2]+'</b><small>'+x[3]+'</small><span class="method-open">فتح صفحة المنهج ←</span></a>';}).join("");
+ grid.innerHTML=technicalMethods.filter(function(x){return x[0]!=="all";}).map(function(x){return '<a class="method-card method-link" href="/static/technical-'+encodeURIComponent(x[0])+ '.html?v=20261010-methodfix"><span class="method-icon">'+x[1]+'</span><b>'+x[2]+'</b><small>'+x[3]+'</small><span class="method-open">فتح صفحة المنهج ←</span></a>';}).join("");
  if(detail)detail.innerHTML='<b>كل منهج في صفحة مستقلة</b><p>اضغط على المنهج لفتح صفحته الخاصة؛ داخل كل صفحة تختار السوق والفريم وتظهر الفرص المطابقة لهذا المنهج فقط.</p>';
 }
 
@@ -114,13 +114,27 @@ function loadTechnical(m,tf){
  if(status)status.textContent="جاري تحليل "+marketName+" · "+tfName+"…";
  if(selectedTechnicalMarket==="alpha"){box.innerHTML='<div class="empty">مصدر Binance Alpha المستقل غير مربوط حاليًا. لن نستبدل بياناته بإشارات الفيوتشر.</div>';if(status)status.textContent=marketName+" · لا توجد بيانات مستقلة متاحة";return;}
  var apiMarket=selectedTechnicalMarket;
- getJSON("/api/opportunities?market="+encodeURIComponent(apiMarket)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now()).then(function(j){
-  var rows=j.opportunities||[],s=j.scan_stats||{};
-  var methodRows=filterTechnicalMethods(rows),methodName=(technicalMethods.find(function(x){return x[0]===selectedTechnicalMethod;})||technicalMethods[0])[2];
+ var methodName=(technicalMethods.find(function(x){return x[0]===selectedTechnicalMethod;})||technicalMethods[0])[2];
+ // Use dedicated, real scanners only where the backend exposes them. Never relabel
+ // generic research recommendations as signals from a specific technical method.
+ var dedicatedEngines={"price-action":"price-action","patterns":"patterns","order-flow":"order-flow"};
+ var engine=selectedTechnicalMarket==="spot"?dedicatedEngines[selectedTechnicalMethod]:"";
+ var endpoint=engine
+  ?"/api/strategy/engine?engine="+encodeURIComponent(engine)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now()
+  :"/api/opportunities?market="+encodeURIComponent(apiMarket)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now();
+ getJSON(endpoint).then(function(j){
+  var s=j.scan_stats||{},rows=j.opportunities||[];
+  var methodRows=engine?rows:filterTechnicalMethods(rows);
+  if(engine)methodRows=methodRows.map(function(r){return Object.assign({},r,{market:"spot",technical_method:selectedTechnicalMethod});});
   render(box,methodRows);
-  if(!methodRows.length&&selectedTechnicalMethod!=="all")box.innerHTML='<div class="empty">ما فيه فرص مؤكدة لهذا المنهج حاليًا على السوق والفريم المختارين. بعض المناهج تحتاج ماسحًا مستقلًا وبيانات خاصة بها قبل إصدار إشارات.</div>';
-  var stamp=s.updated_at?new Date(s.updated_at*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):"جاري التحديث";
-  if(status)status.textContent=(s.scanning?"الفحص مستمر بالخلفية · ":"")+marketName+" · "+methodName+" · فريم "+tfName+" · "+methodRows.length+" فرصة · آخر تحديث: "+stamp;
+  if(!methodRows.length&&selectedTechnicalMethod!=="all"){
+   var hasDedicated=!!engine;
+   box.innerHTML='<div class="empty">'+(hasDedicated
+    ?'اكتمل فحص '+esc(methodName)+' على سبوت وفريم '+esc(tfName)+'، لكن ما ظهرت فرصة تستوفي شروط المنهج الآن.'
+    :'المنهج هذا ما عنده ماسح مستقل مربوط بالسوق المختار حاليًا. ما راح ننسب له إشارات عامة أو إشارات من منهج ثاني.')+'</div>';
+  }
+  var rawStamp=s.updated_at?new Date(s.updated_at*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):(j.updated_at?new Date(j.updated_at).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):"جاري التحديث");
+  if(status)status.textContent=(s.scanning?"الفحص مستمر بالخلفية · ":"")+marketName+" · "+methodName+" · فريم "+tfName+" · "+methodRows.length+" فرصة · آخر تحديث: "+rawStamp;
  }).catch(function(){if(status)status.textContent="تعذر جلب بيانات هذا السوق الآن — جرّب تحديث الصفحة أو غيّر الفريم.";});
 }
 function loadCoreMarkets(){
