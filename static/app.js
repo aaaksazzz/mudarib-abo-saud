@@ -79,29 +79,16 @@ function filterTechnicalMethods(rows){
  var map={"price-action":["price_action"],smc:["smc"],ict:["ict_liquidity"],classical:["dow","support_resistance","breakout","retest","chart_pattern"],candles:["candlestick"],patterns:["chart_pattern"],fibonacci:["fibonacci"],elliott:["elliott"],wyckoff:["wyckoff"],volume:["raw_volume"],"ichimoku":["ichimoku"],"dow-mtf":["dow"],"volume-profile":["volume_profile"],"market-regime":["market_regime"],"bos-choch":["smc"],liquidity:["ict_liquidity"],retest:["retest"]};
  var keys=map[selectedTechnicalMethod]||[];
  if(!keys.length)return [];
- return rows.map(function(r){
+ return rows.filter(function(r){
   var votes=r.methods||r.analysis_methods||r.method_votes||{};
-  var vals=keys.map(function(k){return Number(votes[k]||0);}).filter(function(n){return n!==0;});
-  if(!vals.length)return null;
+  if(!votes||Array.isArray(votes)||typeof votes!=="object")return false;
+  var vals=keys.map(function(k){return Number(votes[k]||0);}).filter(function(n){return Number.isFinite(n)&&n!==0;});
+  if(!vals.length)return false;
   var vote=vals.reduce(function(a,b){return a+b;},0);
-  if(vote===0)return null;
-  var side=vote>0?"BUY":"SELL";
-  var x=Object.assign({},r,{side:side,direction:side,technical_method:selectedTechnicalMethod});
-  var entry=Number(x.entry||x.current_price||x.live_price||x.price||0);
-  if(!(entry>0))return null;
-  var support=Number(x.support||0),resistance=Number(x.resistance||0);
-  var rawRisk=Math.abs(entry-(side==="BUY"?(support||entry):(resistance||entry)))*0.45;
-  var risk=Math.min(entry*0.03,Math.max(entry*0.005,rawRisk));
-  x.entry=entry;
-  x.sl=side==="BUY"?entry-risk:entry+risk;
-  x.tp1=side==="BUY"?entry+risk:Math.max(entry-risk,entry*0.01);
-  x.tp2=side==="BUY"?entry+risk*2:Math.max(entry-risk*2,entry*0.005);
-  x.tp3=side==="BUY"?entry+risk*3:Math.max(entry-risk*3,entry*0.001);
-  x.targets=[x.tp1,x.tp2,x.tp3];
-  x.signal_label=side==="BUY"?"شراء حسب المنهج":"بيع حسب المنهج";
-  x.reason="إشارة مستقلة حسب تصويت منهج "+selectedTechnicalMethod+" من بيانات الشموع؛ الأهداف والوقف محسوبة باتجاه الإشارة وبمخاطرة محدودة";
-  return x;
- }).filter(Boolean);
+  var side=String(r.direction||r.side||"").toUpperCase();
+  /* لا نغيّر اتجاه الصفقة ولا نخترع دخولًا أو أهدافًا؛ نعرض فقط إشارة المصدر إذا وافقها المنهج المحدد. */
+  return vote!==0&&((vote>0&&(side==="BUY"||side==="LONG"))||(vote<0&&(side==="SELL"||side==="SHORT")));
+ }).map(function(r){return Object.assign({},r,{technical_method:selectedTechnicalMethod});});
 }
 function loadTechnical(m,tf){
  var box=$("#marketCards"),status=$("#marketStatus"),marketSwitch=$("#technicalMarketSwitch"),tfSwitch=$("#timeframeSwitch"),scalpSwitch=$("#scalpTimeframeSwitch");
