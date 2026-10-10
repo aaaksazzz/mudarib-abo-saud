@@ -6,8 +6,8 @@ var page=document.body.getAttribute("data-page")||"home",market=document.body.ge
 var selectedTimeframe="15m";
 var timeframes=[["1m","1 دقيقة"],["5m","5 دقائق"],["15m","15 دقيقة"],["30m","30 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
 var selectedTechnicalMarket="spot";
-var selectedTechnicalMethod="price-action";
-var technicalMethods=[["price-action","📈","برايس أكشن","قراءة حركة السعر والقمم والقيعان والاختراقات بدون الاعتماد الأساسي على المؤشرات."],["smc","🏦","SMC — مفاهيم السيولة","هيكل السوق، BOS وCHOCH، مناطق الطلب المؤسسي، واصطياد السيولة."],["ict","🎯","ICT","توقيت الجلسات، السيولة، FVG، مناطق الخصم والعلاوة، ومناطق الدخول المحتملة."],["classical","📐","التحليل الكلاسيكي","الدعم والمقاومة، الترند لاين، القنوات، والاختراق وإعادة الاختبار."],["candles","🕯️","الشموع اليابانية","ابتلاع شرائي/بيعي، دوجي، مطرقة، نجمة الصباح والمساء."],["patterns","🔺","النماذج السعرية","رأس وكتفين، قمم وقيعان مزدوجة، مثلثات، أعلام وأوتاد."],["indicators","📊","المؤشرات الفنية","المتوسطات EMA/SMA، RSI، MACD، Stochastic، ADX وBollinger Bands."],["fibonacci","🌀","فيبوناتشي","التصحيحات والامتدادات ومناطق التقاء النسب مع الدعم والمقاومة."],["harmonic","🦋","الهارمونيك","نماذج Gartley وBat وButterfly وCrab باستخدام نسب فيبوناتشي."],["elliott","🌊","موجات إليوت","تحليل الموجات الدافعة والتصحيحية والسيناريوهات المحتملة للاتجاه."],["wyckoff","🐋","وايكوف","التجميع والتصريف، الاختبار، Spring وUpthrust وسلوك العرض والطلب."],["volume","📦","الحجم وVSA","مقارنة الحجم بحركة السعر والمدى لاكتشاف قوة الدفع أو ضعف الحركة."],["order-flow","🧾","تدفق الأوامر والسيولة","قراءة دفتر الأوامر والاختلالات والضغط الشرائي/البيعي عند توفر بياناتها."],["ichimoku","☁️","إيشيموكو","السحابة والاتجاه والدعم والمقاومة وخطوط التحول والأساس."],["dow-mtf","🧭","داو وتعدد الفريمات","تأكيد الاتجاه عبر القمم والقيعان وربط الفريم الصغير بالفريم الأكبر."],["quant","🧮","التحليل الكمي والإحصائي","اختبار القواعد تاريخيًا وقياس العائد والمخاطر ونسبة النجاح خارج العينة."],["gann","⏱️","غان ودورات الزمن","دراسة دورات الزمن والزوايا السعرية كإطار تحليلي تجريبي."]];
+var selectedTechnicalMethod="all";
+var technicalMethods=[["all","✦","التوافق العام","عرض فرص السوق العامة دون نسبتها إلى منهج واحد."],["price-action","📈","برايس أكشن","قراءة حركة السعر والقمم والقيعان والاختراقات بدون الاعتماد الأساسي على المؤشرات."],["smc","🏦","SMC — مفاهيم السيولة","هيكل السوق، BOS وCHOCH، مناطق الطلب المؤسسي، واصطياد السيولة."],["ict","🎯","ICT","توقيت الجلسات، السيولة، FVG، مناطق الخصم والعلاوة، ومناطق الدخول المحتملة."],["classical","📐","التحليل الكلاسيكي","الدعم والمقاومة، الترند لاين، القنوات، والاختراق وإعادة الاختبار."],["candles","🕯️","الشموع اليابانية","ابتلاع شرائي/بيعي، دوجي، مطرقة، نجمة الصباح والمساء."],["patterns","🔺","النماذج السعرية","رأس وكتفين، قمم وقيعان مزدوجة، مثلثات، أعلام وأوتاد."],["indicators","📊","المؤشرات الفنية","المتوسطات EMA/SMA، RSI، MACD، Stochastic، ADX وBollinger Bands."],["fibonacci","🌀","فيبوناتشي","التصحيحات والامتدادات ومناطق التقاء النسب مع الدعم والمقاومة."],["harmonic","🦋","الهارمونيك","نماذج Gartley وBat وButterfly وCrab باستخدام نسب فيبوناتشي."],["elliott","🌊","موجات إليوت","تحليل الموجات الدافعة والتصحيحية والسيناريوهات المحتملة للاتجاه."],["wyckoff","🐋","وايكوف","التجميع والتصريف، الاختبار، Spring وUpthrust وسلوك العرض والطلب."],["volume","📦","الحجم وVSA","مقارنة الحجم بحركة السعر والمدى لاكتشاف قوة الدفع أو ضعف الحركة."],["order-flow","🧾","تدفق الأوامر والسيولة","قراءة دفتر الأوامر والاختلالات والضغط الشرائي/البيعي عند توفر بياناتها."],["ichimoku","☁️","إيشيموكو","السحابة والاتجاه والدعم والمقاومة وخطوط التحول والأساس."],["dow-mtf","🧭","داو وتعدد الفريمات","تأكيد الاتجاه عبر القمم والقيعان وربط الفريم الصغير بالفريم الأكبر."],["quant","🧮","التحليل الكمي والإحصائي","اختبار القواعد تاريخيًا وقياس العائد والمخاطر ونسبة النجاح خارج العينة."],["gann","⏱️","غان ودورات الزمن","دراسة دورات الزمن والزوايا السعرية كإطار تحليلي تجريبي."]];
 var technicalMarkets=[["spot","₿","سبوت"],["futures","⚡","فيوتشر"],["alpha","α","تحليل Alpha"],["contracts","◉","العقود الأمريكية"],["us","🇺🇸","الأسهم الأمريكية"],["saudi","🇸🇦","السعودي / تاسي"],["forex","🥇","فوركس وذهب"]];
 try{var initialTechnicalMarket=new URLSearchParams(window.location.search).get("market");if(technicalMarkets.some(function(x){return x[0]===initialTechnicalMarket;}))selectedTechnicalMarket=initialTechnicalMarket;}catch(e){}
 function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
@@ -52,9 +52,15 @@ function renderTechnicalMethods(){
  var grid=$("#technicalMethodGrid"),detail=$("#technicalMethodDetail");
  if(!grid)return;
  grid.innerHTML=technicalMethods.map(function(x){return '<button type="button" class="method-card '+(x[0]===selectedTechnicalMethod?'active':'')+'" data-method="'+x[0]+'"><span class="method-icon">'+x[1]+'</span><b>'+x[2]+'</b><small>'+x[3]+'</small></button>';}).join("");
- Array.prototype.forEach.call(grid.querySelectorAll("[data-method]"),function(b){b.addEventListener("click",function(){selectedTechnicalMethod=b.getAttribute("data-method");renderTechnicalMethods();});});
+ Array.prototype.forEach.call(grid.querySelectorAll("[data-method]"),function(b){b.addEventListener("click",function(){selectedTechnicalMethod=b.getAttribute("data-method");renderTechnicalMethods();loadTechnical(selectedTechnicalMarket,selectedTimeframe);});});
  var active=technicalMethods.find(function(x){return x[0]===selectedTechnicalMethod;})||technicalMethods[0];
- if(detail)detail.innerHTML='<b>'+active[1]+' '+active[2]+'</b><p>'+active[3]+'</p><small>ملاحظة: هذه بطاقة تعريف بالمنهجية. الفرص الظاهرة أدناه هي فرص السوق العامة حاليًا وليست إشارات مستقلة مثبتة لهذه المنهجية.</small>';
+ if(detail)detail.innerHTML='<b>'+active[1]+' '+active[2]+'</b><p>'+active[3]+'</p><small>'+(selectedTechnicalMethod==="all"?"يعرض فرص السوق العامة.":"تظهر هنا فقط الفرص التي تحمل تصويتًا واضحًا من هذا المنهج؛ إذا ما فيه بيانات منهجية كافية ما راح ننسب توصية له بشكل تخميني.")+'</small>';
+}
+function filterTechnicalMethods(rows){
+ if(selectedTechnicalMethod==="all")return rows;
+ var map={"price-action":["price_action"],smc:["smc"],ict:["ict_liquidity"],classical:["dow","support_resistance","breakout","retest","chart_pattern"],candles:["candlestick"],patterns:["chart_pattern"],indicators:[],fibonacci:["fibonacci"],harmonic:[],elliott:["elliott"],wyckoff:["wyckoff"],volume:["raw_volume"],"order-flow":[],ichimoku:[],"dow-mtf":["dow"],quant:[],gann:[]};
+ var keys=map[selectedTechnicalMethod]||[];
+ return rows.filter(function(r){var votes=r.methods||r.analysis_methods||r.method_votes||{};if(!keys.length)return false;var side=String(r.side||r.direction||"").toUpperCase();return keys.some(function(k){if(votes[k]===undefined||votes[k]===null)return false;var n=Number(votes[k]);return (side==="BUY"||side==="LONG"||side==="شراء")?n>0:(side==="SELL"||side==="SHORT"||side==="بيع")?n<0:n!==0;});});
 }
 function loadTechnical(m,tf){
  var box=$("#marketCards"),status=$("#marketStatus"),marketSwitch=$("#technicalMarketSwitch"),tfSwitch=$("#timeframeSwitch");
@@ -77,9 +83,11 @@ function loadTechnical(m,tf){
  var apiMarket=selectedTechnicalMarket==="alpha"?"futures":selectedTechnicalMarket;
  getJSON("/api/opportunities?market="+encodeURIComponent(apiMarket)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now()).then(function(j){
   var rows=j.opportunities||[],s=j.scan_stats||{};
-  render(box,rows);
+  var methodRows=filterTechnicalMethods(rows),methodName=(technicalMethods.find(function(x){return x[0]===selectedTechnicalMethod;})||technicalMethods[0])[2];
+  render(box,methodRows);
+  if(!methodRows.length&&selectedTechnicalMethod!=="all")box.innerHTML='<div class="empty">ما فيه فرص مؤكدة لهذا المنهج حاليًا على السوق والفريم المختارين. بعض المناهج تحتاج ماسحًا مستقلًا وبيانات خاصة بها قبل إصدار إشارات.</div>';
   var stamp=s.updated_at?new Date(s.updated_at*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):"جاري التحديث";
-  if(status)status.textContent=(s.scanning?"الفحص مستمر بالخلفية · ":"")+marketName+" · فريم "+tfName+" · آخر تحديث: "+stamp;
+  if(status)status.textContent=(s.scanning?"الفحص مستمر بالخلفية · ":"")+marketName+" · "+methodName+" · فريم "+tfName+" · "+methodRows.length+" فرصة · آخر تحديث: "+stamp;
  }).catch(function(){if(status)status.textContent="تعذر جلب بيانات هذا السوق الآن — جرّب تحديث الصفحة أو غيّر الفريم.";});
 }
 function loadCoreMarkets(){
