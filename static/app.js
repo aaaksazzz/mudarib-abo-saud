@@ -337,27 +337,29 @@ function bind(){
    unifiedTechnicalLink.innerHTML="<span>📐</span> تحليل فني";
    methodsNav.insertBefore(unifiedTechnicalLink,methodsNav.children[1]||null);
   }
-  /* Organize the sidebar into clear, professional groups */
-  side.querySelectorAll('[data-s="technical"]').forEach(function(b,i){if(i>0)b.remove();});
-  side.querySelectorAll('[data-s="alpha"]').forEach(function(b,i){if(i>0)b.remove();});
+  /* Professional sidebar order: home, trading, technical methods, markets, content, account */
   var footer=side.querySelector(".side-footer");
   var byKey={};
-  Array.from(side.querySelectorAll(":scope > .nav-item")).forEach(function(el){var k=el.getAttribute("data-s");if(k&&!byKey[k])byKey[k]=el;else if(k)el.remove();});
+  Array.from(side.querySelectorAll(":scope > .nav-item")).forEach(function(el){
+   var k=el.getAttribute("data-s");
+   if(k&&!byKey[k])byKey[k]=el;else if(k)el.remove();
+  });
   var methodGroup=side.querySelector("#technicalMethodsNav");
-  side.querySelectorAll(":scope > .side-title").forEach(function(el){el.remove();});
+  side.querySelectorAll(":scope > .side-title, :scope > .nav-label").forEach(function(el){el.remove();});
   Array.from(side.querySelectorAll(":scope > .nav-item")).forEach(function(el){el.remove();});
   if(methodGroup)methodGroup.remove();
   var makeSection=function(title,keys,extraClass){
-   var section=document.createElement("div");section.className="menu-section"+(extraClass?" "+extraClass:"");
+   var section=document.createElement("div");
+   section.className="menu-section"+(extraClass?" "+extraClass:"");
    var heading=document.createElement("div");heading.className="side-title";heading.textContent=title;section.appendChild(heading);
    keys.forEach(function(k){if(byKey[k])section.appendChild(byKey[k]);});
    if(section.querySelector(".nav-item"))side.insertBefore(section,footer||null);
   };
   makeSection("الرئيسية",["home"],"menu-home");
-  makeSection("التداول والتحليل",["radar","gold"],"menu-trading");
+  makeSection("التداول الذكي",["radar","gold","whales"],"menu-trading");
   if(methodGroup)side.insertBefore(methodGroup,footer||null);
-  /* الأسواق تظهر داخل صفحة تحليل فني فقط، وليس كروابط مكررة بالقائمة */
-  makeSection("المتابعة والمحتوى",["results","whales","news","blog"],"menu-content");
+  makeSection("الأسواق",["spot","futures","alpha","contracts","us","saudi","forex"],"menu-markets");
+  makeSection("النتائج والمحتوى",["results","news","blog"],"menu-content");
   makeSection("الحساب والإدارة",["signup","login","admin"],"menu-account");
  }
  document.addEventListener("click",function(e){
@@ -385,6 +387,6 @@ function bind(){
  });
  if(overlay)overlay.addEventListener("click",closeMenu);
 }
-function start(){bind();if(page==="technical"){loadTechnical();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadTechnical(selectedTechnicalMarket,selectedTimeframe);},20000);}else if(page==="home")loadHome();else if(page==="radar"){var lr=function(){var box=$("#radarCards");if(!box)return;getJSON("/api/radar?x="+Date.now()).then(function(j){var rows=j.opportunities||[];render(box,rows);}).catch(function(){box.innerHTML='<div class="empty">تعذر تحديث الرادار حالياً — جاري إعادة المحاولة تلقائياً.</div>';});};lr();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(lr,20000);}else if(page==="gold"){loadGold();}else if(page==="results"){loadResults();}else if(page==="whales"){loadWhales();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(loadWhales,60000);}else if(page==="news"){loadNews();}else if(page==="blog"){loadBlog();}else if(market){loadMarket(market);if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadMarket(market,selectedTimeframe);},20000);}}
+function start(){bind();if(page==="technical"){loadTechnical();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadTechnical(selectedTechnicalMarket,selectedTimeframe);},900000);}else if(page==="home")loadHome();else if(page==="radar"){var lr=function(){var box=$("#radarCards");if(!box)return;getJSON("/api/radar?x="+Date.now()).then(function(j){var rows=j.opportunities||[];render(box,rows);}).catch(function(){box.innerHTML='<div class="empty">تعذر تحديث الرادار حالياً — جاري إعادة المحاولة تلقائياً.</div>';});};lr();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(lr,900000);}else if(page==="gold"){loadGold();}else if(page==="results"){loadResults();}else if(page==="whales"){loadWhales();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(loadWhales,900000);}else if(page==="news"){loadNews();}else if(page==="blog"){loadBlog();}else if(market){loadMarket(market);if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadMarket(market,selectedTimeframe);},900000);}}
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();
 })();
