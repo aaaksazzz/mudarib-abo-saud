@@ -348,6 +348,7 @@ def _valid_ohlcv(c, min_count=32):
 
 def _method_analysis(c):
     if not _valid_ohlcv(c):return None
+    c=[{k:float(row[k]) for k in ("open","high","low","close","volume")} for row in c]
     price=c[-1]["close"]; highs=[x["high"] for x in c]; lows=[x["low"] for x in c]; closes=[x["close"] for x in c]
     vols=[x["volume"] for x in c]
 
@@ -517,6 +518,7 @@ def _analyze_symbol(symbol,market,timeframe="15m"):
         return _candles(_crypto_klines(symbol,market,interval)) if market in ("spot","futures") else _yahoo(symbol,market,interval)
     candles=get(timeframe)
     if not _valid_ohlcv(candles, min_count=52):return None
+    candles=[{k:float(row[k]) for k in ("open","high","low","close","volume")} for row in candles]
     a=_method_analysis(candles)
     if not a:return None
 
