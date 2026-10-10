@@ -305,22 +305,12 @@ function bind(){
    heading.className="side-title";
    heading.textContent="مناهج التحليل الفني";
    methodsNav.appendChild(heading);
-   var technicalHub=document.createElement("a");
-   technicalHub.className="nav-item technical-nav-link";
-   technicalHub.href="/static/technical.html?v=20261010-unified-tech";
-   technicalHub.setAttribute("data-technical-hub","true");
-   technicalHub.innerHTML="<span>📐</span> التحليل الفني";
-   methodsNav.appendChild(technicalHub);
-   var unified=document.createElement("a");
-   unified.className="nav-item technical-nav-link technical-hub-link";
-   unified.href="/static/technical.html?v=20261010-unified-tech";
-   unified.setAttribute("data-technical-hub","true");
-   unified.innerHTML="<span>📐</span> تحليل فني";
-   methodsNav.appendChild(unified);
+   var methodPageMap={"candles":"candles","candlestick":"candles","indicators":"indicators","support-resistance":"classical","order-flow":"order-flow","raw-volume":"volume","chart-pattern":"patterns","ict-liquidity":"ict","dow":"dow-mtf"};
    technicalMethods.filter(function(x){return x[0]!=="all";}).forEach(function(x){
     var a=document.createElement("a");
     a.className="nav-item technical-nav-link";
-    a.href="/static/technical-"+encodeURIComponent(x[0])+".html?market="+encodeURIComponent(selectedTechnicalMarket);
+    var pageKey=methodPageMap[x[0]]||x[0];
+    a.href="/static/technical-"+encodeURIComponent(pageKey)+".html?market="+encodeURIComponent(selectedTechnicalMarket);
     a.setAttribute("data-tech-method-nav",x[0]);
     a.innerHTML="<span>"+x[1]+"</span> "+x[2];
     methodsNav.appendChild(a);
