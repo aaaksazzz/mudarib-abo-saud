@@ -88,11 +88,13 @@ def _quote(core, market, symbol):
         return 0.0
 
 def _refresh_outcomes(c, core, cutoff):
-    rows = c.execute("SELECT * FROM azo_signals WHERE created>=? AND status='OPEN' ORDER BY created ASC LIMIT 40", (cutoff,)).fetchall()
+    rows = c.execute("SELECT * FROM azo_signals WHERE created>=? AND status='OPEN' ORDER BY updated ASC LIMIT 40", (cutoff,)).fetchall()
     updated = 0
     for row in rows:
         price = _quote(core, row["market"], row["symbol"])
-        if price <= 0: continue
+        if price <= 0:
+            c.execute("UPDATE azo_signals SET updated=? WHERE id=?", (time.time(), row["id"]))
+            continue
         entry, sl = float(row["entry"]), float(row["sl"])
         side = row["direction"]
         hit = 0
