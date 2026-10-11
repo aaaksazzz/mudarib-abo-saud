@@ -30,7 +30,18 @@ let tvChart=null,tvCandles=null,tvVolume=null,tvOverlays=[],tvPriceLines=[],tvEm
 async function fetchBinanceJson(path){
  const bases=['https://data-api.binance.vision','https://api.binance.com','https://api-gcp.binance.com','https://api1.binance.com','https://api2.binance.com'];
  let lastError=null;
- for(const base of bases){try{const res=await fetch(base+path,{cache:'no-store'});if(!res.ok)throw Error('HTTP '+res.status+' من '+base);const data=await res.json();if(data&&data.code&&data.msg)throw Error(data.msg);return data;}catch(e){lastError=e;}}
+ for(const base of bases){
+  const controller=typeof AbortController!=='undefined'?new AbortController():null;
+  const timer=controller?setTimeout(()=>controller.abort(),4500):null;
+  try{
+   const res=await fetch(base+path,{cache:'no-store',signal:controller?controller.signal:undefined});
+   if(!res.ok)throw Error('HTTP '+res.status+' من '+base);
+   const data=await res.json();
+   if(data&&data.code&&data.msg)throw Error(data.msg);
+   return data;
+  }catch(e){lastError=e;}
+  finally{if(timer)clearTimeout(timer);}
+ }
  throw lastError||Error('تعذر الاتصال بمصادر Binance العامة');
 }
 function detectTechnicalPatterns(data){
