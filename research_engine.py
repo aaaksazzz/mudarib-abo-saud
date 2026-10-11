@@ -619,6 +619,72 @@ def _analyze_symbol(symbol,market,timeframe="15m"):
     a["price_fresh"]=True
     return a
 
+
+# Independent technical-method scanner. It intentionally bypasses the shared
+# confluence gate and external-recommendation ranking used by _analyze_symbol.
+TECHNICAL_METHOD_KEYS = {
+    "price-action": ("price_action",), "smc": ("smc",), "ict": ("ict_liquidity",),
+    "classical": ("dow", "support_resistance", "breakout", "retest"),
+    "candles": ("candlestick",), "patterns": ("chart_pattern",),
+    "fibonacci": ("fibonacci",), "elliott": ("elliott",), "wyckoff": ("wyckoff",),
+    "volume": ("raw_volume",), "ichimoku": ("ichimoku",), "dow-mtf": ("dow",),
+    "volume-profile": ("volume_profile",), "market-regime": ("market_regime",),
+    "bos-choch": ("smc",), "liquidity": ("ict_liquidity",),
+    "retest": ("retest",), "fvg": ("fvg",), "channels": ("chart_pattern",),
+}
+def _analyze_symbol_method(symbol, market, timeframe, method_id):
+    keys=TECHNICAL_METHOD_KEYS.get(method_id)
+    if not keys:return None
+    candles=_candles(_crypto_klines(symbol,market,timeframe)) if market in ("spot","futures") else _yahoo(symbol,market,timeframe)
+    if not _valid_ohlcv(candles,min_count=52):return None
+    candles=[{k:float(row[k]) for k in ("open","high","low","close","volume")} for row in candles]
+    analysis=_method_analysis(candles)
+    if not analysis:return None
+    votes=analysis.get("methods") or {}
+    vals=[float(votes.get(k) or 0) for k in keys]
+    # For a grouped classical-method card, require a directional majority;
+    # never borrow the shared engine's direction or its confirmation gate.
+    total=sum(1 if v>0 else -1 if v<0 else 0 for v in vals)
+    if not total:return None
+    side="BUY" if total>0 else "SELL"
+    entry=float(candles[-1]["close"])
+    support=float(analysis.get("support") or min(x["low"] for x in candles[-30:]))
+    resistance=float(analysis.get("resistance") or max(x["high"] for x in candles[-30:]))
+    risk=min(entry*.03,max(entry*.005,abs(entry-(support if side=="BUY" else resistance))*.35))
+    if side=="BUY":sl=entry-risk;tps=[entry+risk,entry+2*risk,entry+3*risk]
+    else:sl=entry+risk;tps=sorted([max(entry-risk,entry*.01),max(entry-2*risk,entry*.005),max(entry-3*risk,entry*.001)],reverse=True)
+    return {"symbol":symbol,"market":market,"direction":side,"side":side,"timeframe":timeframe,
+            "technical_only":True,"research_only":False,"technical_method_key":method_id,
+            "technical_method_vote":total,"methods":votes,"entry":entry,"price":entry,"current_price":entry,
+            "sl":sl,"tp1":tps[0],"tp2":tps[1],"tp3":tps[2],"targets":tps,
+            "ai_pct":None,"recommendation_score":abs(total)/max(1,len(vals))*100,
+            "site_score":abs(total)/max(1,len(vals))*100,
+            "signal_label":("شراء" if side=="BUY" else "بيع")+" · "+method_id,
+            "support":support,"resistance":resistance,"price_source":"public market data",
+            "reason":"إشارة من قواعد المنهج المحدد فقط؛ بدون بوابة توافق المناهج الأخرى."}
+
+def discover_method(market, timeframe, method_id):
+    if method_id not in TECHNICAL_METHOD_KEYS:
+        return []
+    if timeframe not in {"1m","3m","5m","15m","30m","1h","4h","1d","1w","1M"}:
+        return []
+    symbols=_symbols_for_market(market,[])
+    if market in ("spot","futures"):symbols=[s for s in symbols if str(s).upper().endswith("USDT")]
+    caps={"spot":120,"futures":120,"us":80,"saudi":160,"contracts":20,"forex":34}
+    symbols=symbols[:caps.get(market,40)]
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    rows=[]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        jobs={pool.submit(_analyze_symbol_method,s,market,timeframe,method_id):s for s in symbols}
+        for fut in as_completed(jobs):
+            try:
+                row=fut.result()
+                if row:rows.append(row)
+            except Exception:pass
+    rows.sort(key=lambda r:float(r.get("recommendation_score") or 0),reverse=True)
+    print("[TECHNICAL-METHOD]",market,timeframe,method_id,"rows",len(rows),flush=True)
+    return rows[:100]
+
 SAUDI_UNIVERSE_CACHE={}
 
 def _saudi_universe(min_volume=1000000):
