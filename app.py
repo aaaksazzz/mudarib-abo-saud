@@ -464,17 +464,10 @@ def startup():
             self_improver.start_worker()
         except Exception as _learn_exc:
             print("[SELF-IMPROVER] startup unavailable:",str(_learn_exc)[:160],flush=True)
-        # AZO scans can take tens of seconds on the 0.2 vCPU / 512 MB host.
-        # Keep the public website responsive by making its continuous scanner opt-in.
-        # Enable with ENABLE_AZO_BACKGROUND=1 only after resource sizing is increased.
-        if os.getenv("ENABLE_AZO_BACKGROUND", "0") == "1":
-            try:
-                import azo_analysis
-                azo_analysis.start_worker()
-            except Exception as _azo_learn_exc:
-                print("[AZO] startup unavailable:",str(_azo_learn_exc)[:160],flush=True)
-        else:
-            print("[AZO] background scanner paused to protect site responsiveness; on-demand API remains available",flush=True)
+        # AZO research is available on demand, but its continuous multi-market worker
+        # is paused on the 0.2 vCPU / 512 MB instance to prevent site-wide stalls.
+        # Re-enable only after increasing service resources and validating load.
+        print("[AZO] background scanner paused for site stability; on-demand API remains available",flush=True)
         # Keep startup lightweight on the 0.2 vCPU / 512 MB service.
         # Heavy analysis/outcome workers are triggered on demand by API routes.
         if os.getenv("ENABLE_BACKGROUND_ANALYSIS","0") == "1":
