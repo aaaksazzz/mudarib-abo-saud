@@ -29,24 +29,10 @@ function line(reg,x){return reg.m*x+reg.b}
 let tvChart=null,tvCandles=null,tvVolume=null,tvOverlays=[],tvPriceLines=[],tvEmbedKey='';
 function initChart(symbol='API3USDT',tf='1h'){
  const el=$('chart');
- const intervalMap={'1m':'1','3m':'3','5m':'5','15m':'15','30m':'30','1h':'60','2h':'120','4h':'240','6h':'360','8h':'480','12h':'720','1d':'D','3d':'3D','1w':'W','1M':'M'};
- const key=symbol+'|'+tf;
- if(tvEmbedKey===key&&el.querySelector('iframe'))return;
- tvEmbedKey=key;
- el.innerHTML='';
- const frame=document.createElement('iframe');
- frame.title='TradingView interactive chart';
- frame.loading='eager';
- frame.referrerPolicy='origin';
- frame.style.cssText='width:100%;height:100%;min-height:300px;border:0;display:block;background:#07111e';
- frame.allow='clipboard-write; fullscreen';
- frame.src='https://s.tradingview.com/widgetembed/?frameElementId=tradingview_chart&symbol='+encodeURIComponent('BINANCE:'+symbol)+'&interval='+(intervalMap[tf]||'60')+'&hidetoptoolbar=0&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=%2307111e&theme=dark&style=1&timezone=Asia%2FRiyadh&locale=ar&withdateranges=1&hideideas=1&hidevolume=0&allow_symbol_change=1&details=0&hotlist=0&calendar=0&studies=%5B%5D';
- el.appendChild(frame);
- tvChart=true;
- return;
- /* Legacy chart implementation retained below but no longer used. */
- if(tvChart)return;
  if(!window.LightweightCharts)throw Error('مكتبة الشارت لم تتحمل؛ تحقق من الاتصال ثم أعد تحميل الصفحة.');
+ if(tvChart&&typeof tvChart==='object'&&tvChart.remove){try{tvChart.remove()}catch(e){}}
+ el.innerHTML='';
+ tvOverlays=[];tvPriceLines=[];tvCandles=null;tvVolume=null;
  tvChart=LightweightCharts.createChart(el,{
   width:el.clientWidth||900,height:el.clientHeight||300,
   layout:{background:{type:'solid',color:'#07111e'},textColor:'#a9bdd2',fontFamily:'Tahoma,Arial,sans-serif',fontSize:12},
@@ -60,7 +46,7 @@ function initChart(symbol='API3USDT',tf='1h'){
  tvCandles=tvChart.addCandlestickSeries({upColor:'#26a69a',downColor:'#ef5350',borderUpColor:'#26a69a',borderDownColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350',lastValueVisible:true,priceLineVisible:true});
  tvVolume=tvChart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'volume',lastValueVisible:false,priceLineVisible:false});
  tvChart.priceScale('volume').applyOptions({scaleMargins:{top:.84,bottom:0},borderVisible:false});
- const resize=()=>{if(tvChart){const w=$('chart').clientWidth;if(w>0)tvChart.applyOptions({width:w,height:$('chart').clientHeight||300})}};
+ const resize=()=>{if(tvChart&&typeof tvChart.applyOptions==='function'){const w=$('chart').clientWidth;if(w>0)tvChart.applyOptions({width:w,height:$('chart').clientHeight||300})}};
  if(window.ResizeObserver){new ResizeObserver(resize).observe(el)}else{window.addEventListener('resize',resize)}
 }
 function render(data,symbol,tf,cup=null){
@@ -85,10 +71,8 @@ function render(data,symbol,tf,cup=null){
  $('lastClose').textContent=fmt(close);$('chartTitle').textContent=symbol.replace(/USDT$/,'')+'/USDT · '+tf;
  $('chartUpdated').textContent='آخر شمعة: '+new Date(last.time*1000).toLocaleString('ar-SA');
  $('entry').textContent=fmt(entry);$('sl').textContent=fmt(sl);$('tp1').textContent=fmt(tps[0]);$('tp2').textContent=fmt(tps[1]);$('tp3').textContent=fmt(tps[2]);
- $('explain').textContent=cup?'تم رصد شكل كوب وعروة مبدئي على '+symbol+' بفريم '+tf+'. الرسم فوق الشموع مباشرة؛ الذهبي يحدد الكوب والتركوازي يحدد العروة. التأكيد يكون باختراق حافة الكوب مع تحسّن الحجم.':'الشارت تفاعلي: تقدر تسحب الرسم، تكبّر وتصغّر، وتحرك المؤشر لقراءة OHLC. تُرسم قناة الاتجاه ومستويات فيبوناتشي والدعم والمقاومة آليًا على الشموع؛ وهي أدوات مشابهة وليست أدوات TradingView الأصلية أو ضمانًا للتوقع.';
- // TradingView's embedded interactive chart owns the candlesticks and drawing toolbar.
- initChart(symbol,tf);
- return;
+ $('explain').textContent=cup?'تم رصد شكل كوب وعروة مبدئي على '+symbol+' بفريم '+tf+'. رُسم الكوب بالذهبي والعروة بالتركوازي فوق الشموع. التأكيد يكون باختراق الحافة مع تحسّن الحجم.':'تم رسم قناة الاتجاه باللون الأزرق، ومستويات فيبوناتشي، والدعم والمقاومة، والدخول ووقف الخسارة والأهداف مباشرة فوق الشموع. الرسم تقديري وليس توصية مضمونة.';
+ // Draw the detected pattern and technical levels directly over the candles.
  tvCandles.setData(recent.map(c=>({time:c.time,open:c.open,high:c.high,low:c.low,close:c.close})));
  tvVolume.setData(recent.map(c=>({time:c.time,value:c.volume,color:c.close>=c.open?'rgba(38,166,154,.45)':'rgba(239,83,80,.45)'})));
  tvOverlays.forEach(x=>{try{tvChart.removeSeries(x)}catch(e){}});tvOverlays=[];
