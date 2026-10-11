@@ -464,6 +464,11 @@ def startup():
             self_improver.start_worker()
         except Exception as _learn_exc:
             print("[SELF-IMPROVER] startup unavailable:",str(_learn_exc)[:160],flush=True)
+        try:
+            import azo_analysis
+            azo_analysis.start_worker()
+        except Exception as _azo_learn_exc:
+            print("[AZO] startup unavailable:",str(_azo_learn_exc)[:160],flush=True)
         # Keep startup lightweight on the 0.2 vCPU / 512 MB service.
         # Heavy analysis/outcome workers are triggered on demand by API routes.
         if os.getenv("ENABLE_BACKGROUND_ANALYSIS","0") == "1":
