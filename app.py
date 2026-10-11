@@ -2011,6 +2011,30 @@ def explosion_radar_api(market:str="spot",timeframe:str="15m",limit:int=25):
             direction="هبوط محتمل"; score=round(down_score); target_distance=distance_low
             near=f"يبعد {distance_low:.2f}% عن قاع آخر 20 شمعة"
             structure_score=down_structure; direction_pressure=100-pressure
+        # Conditional entry trigger plus ATR-based risk levels; not an automatic order.
+        true_ranges=[]
+        for j in range(1,len(cs)):
+            bar=cs[j]; prior_close=cs[j-1]["close"]
+            true_ranges.append(max(bar["high"]-bar["low"],abs(bar["high"]-prior_close),abs(bar["low"]-prior_close)))
+        atr_values=true_ranges[-14:]
+        atr14=sum(atr_values)/max(len(atr_values),1)
+        risk_unit=max(atr14*1.2,last["close"]*0.005)
+        if up_score>=down_score:
+            direction="صعود محتمل"; score=round(up_score); target_distance=distance_high
+            near=f"يبعد {distance_high:.2f}% عن قمة آخر 20 شمعة"
+            structure_score=up_structure; direction_pressure=pressure
+            entry=hi20*1.001
+            stop=entry-risk_unit
+            targets=[entry+risk_unit*n for n in (1,2,3)]
+            entry_rule="دخول مشروط بعد اختراق القمة الأخيرة"
+        else:
+            direction="هبوط محتمل"; score=round(down_score); target_distance=distance_low
+            near=f"يبعد {distance_low:.2f}% عن قاع آخر 20 شمعة"
+            structure_score=down_structure; direction_pressure=100-pressure
+            entry=lo20*0.999
+            stop=entry+risk_unit
+            targets=[entry-risk_unit*n for n in (1,2,3)]
+            entry_rule="دخول مشروط بعد كسر القاع الأخير"
         if abs(momentum5)>=7 or abs(momentum10)>=12:
             stage="ممتد — لا تطارده"
         elif score>=72 and abs(target_distance)<=0.65:
@@ -2038,6 +2062,9 @@ def explosion_radar_api(market:str="spot",timeframe:str="15m",limit:int=25):
                 "buy_pressure":round(pressure,1),"directional_pressure":round(direction_pressure,1),
                 "momentum_5_pct":round(momentum5,2),"momentum_10_pct":round(momentum10,2),
                 "distance_high_pct":round(distance_high,2),"distance_low_pct":round(distance_low,2),"distance_to_level_pct":round(target_distance,2),
+                "entry":round(entry,10),"entry_rule":entry_rule,"stop_loss":round(stop,10),
+                "tp1":round(targets[0],10),"tp2":round(targets[1],10),"tp3":round(targets[2],10),
+                "risk_per_unit":round(risk_unit,10),
                 "reasons":reasons,"timeframe":timeframe,"early_candidate":stage in {"تجميع مبكر","قرب الانطلاق — ينتظر الاختراق"}}
     rows=[]; failures=0
     with ThreadPoolExecutor(max_workers=8) as pool:
