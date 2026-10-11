@@ -744,8 +744,10 @@ def _public_scan(market,internet,timeframe="15m"):
         symbols=[s for s in symbols if str(s).upper().endswith("USDT")]
     # Keep refreshes fast on the small service; the next refresh continues from
     # the liquid universe rather than requiring external headlines.
-    caps={"spot":120,"futures":120,"us":80,"saudi":160,"contracts":20,"forex":34}
-    cap=caps.get(market,40)
+    # Keep the 512 MB / 0.2 vCPU service responsive. Non-crypto feeds are slower,
+    # so scan a focused liquid shortlist first and expand only after the cache is warm.
+    caps={"spot":120,"futures":80,"us":24,"saudi":28,"contracts":12,"forex":24}
+    cap=caps.get(market,24)
     if len(symbols)>cap:
         if market in ("spot","futures"):
             q=dict(_crypto_universe(market))
@@ -758,6 +760,18 @@ def _public_scan(market,internet,timeframe="15m"):
         for fut in as_completed(jobs):
             try:a=fut.result()
             except Exception:a=None
+            # Some non-crypto markets were returning zero cards because the strict
+            # multi-method gate rejected every candidate. Use a separately labeled
+            # classical price/structure read as a fallback, still requiring real candles.
+            if not a and market not in {"spot"}:
+                try:
+                    a=_analyze_symbol_method(jobs[fut],market,timeframe,"classical")
+                    if a:
+                        a["signal_label"]="شراء · كلاسيكي (بديل)" if a.get("side")=="BUY" else "بيع · كلاسيكي (بديل)"
+                        a["fallback_scan"]=True
+                        a["reason"]="قراءة فنية كلاسيكية من بيانات الشموع الفعلية؛ لا تعني ضمان الربح."
+                except Exception:
+                    a=None
             if not a or a.get("side") not in {"BUY","SELL"}:continue
             # Validate published levels: never expose negative targets or a stop on the wrong side.
             entry=float(a.get("entry") or a.get("price") or 0)
