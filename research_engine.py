@@ -694,24 +694,25 @@ def discover_method(market, timeframe, method_id):
 
 SAUDI_UNIVERSE_CACHE={}
 
-def _saudi_universe(min_volume=1000000):
-    key=str(min_volume); now=time.time(); cached=SAUDI_UNIVERSE_CACHE.get(key)
+def _saudi_universe(min_volume=0):
+    """Discover Saudi-listed equities without any daily-volume threshold."""
+    key="all_saudi_equities"; now=time.time(); cached=SAUDI_UNIVERSE_CACHE.get(key)
     if cached and now-cached[0]<900:return list(cached[1])
     symbols=[]; seen=set()
     try:
         for offset in range(0,5000,250):
-            body={"offset":offset,"size":250,"sortField":"dayvolume","sortType":"DESC","quoteType":"EQUITY","query":{"operator":"AND","operands":[{"operator":"EQ","operands":["region","sa"]},{"operator":"GT","operands":["dayvolume",int(min_volume)]}]}}
+            # Deliberately filter by Saudi region only; zero/missing volume must not exclude a listing.
+            body={"offset":offset,"size":250,"sortField":"dayvolume","sortType":"DESC","quoteType":"EQUITY","query":{"operator":"EQ","operands":["region","sa"]}}
             req=urllib.request.Request("https://query1.finance.yahoo.com/v1/finance/screener",data=json.dumps(body).encode(),headers={"User-Agent":UA,"Content-Type":"application/json"},method="POST")
             raw=json.loads(urllib.request.urlopen(req,timeout=8).read().decode("utf-8","ignore"))
             quotes=(((raw.get("finance") or {}).get("result") or [{}])[0]).get("quotes") or []
             if not quotes:break
             for q in quotes:
                 sym=str(q.get("symbol") or "").strip()
-                # Yahoo screener already returns Saudi tickers with .SR; store the
-                # canonical bare TASI/Nomu symbol because the analysis layer adds .SR.
+                # Yahoo screener returns Saudi tickers with .SR; store the canonical bare symbol.
                 if sym.upper().endswith(".SR"): sym=sym[:-3]
-                vol=float(q.get("regularMarketVolume") or q.get("dayvolume") or 0)
-                if sym and vol>min_volume and sym not in seen:seen.add(sym);symbols.append(sym)
+                if sym and sym not in seen:
+                    seen.add(sym); symbols.append(sym)
             if len(quotes)<250:break
     except Exception:pass
     if not symbols:symbols=list(BASE_UNIVERSE.get("saudi",[]))
