@@ -152,6 +152,37 @@ def _leaderboard(c):
         item["rank_label"] = "المركز الأول" if i == 1 and item["eligible"] else ("بانتظار عينة كافية" if not item["eligible"] else "منافس")
     return out
 
+
+_worker_started = False
+_worker_lock = __import__("threading").Lock()
+
+def _background_loop():
+    # Keep the small host cool: scan one market every 15 minutes, rotate through the full universe.
+    time.sleep(90)
+    index = 0
+    markets = ["spot", "futures", "contracts", "us", "saudi", "forex"]
+    class BackgroundRequest:
+        session = {}
+    while True:
+        market = markets[index % len(markets)]
+        index += 1
+        try:
+            azo_scan(BackgroundRequest(), market=market, timeframe="15m")
+            print("[AZO] background learning cycle:", market, flush=True)
+        except Exception as exc:
+            print("[AZO] background cycle failed:", market, str(exc)[:140], flush=True)
+        time.sleep(900)
+
+def start_worker():
+    global _worker_started
+    with _worker_lock:
+        if _worker_started:
+            return
+        _worker_started = True
+    import threading
+    threading.Thread(target=_background_loop, daemon=True, name="azo-learning-15m").start()
+    print("[AZO] private learning worker enabled; one market per 15 minutes", flush=True)
+
 @router.get("/api/azo/status")
 def azo_status(request: Request):
     c = _db()
@@ -187,8 +218,6 @@ def azo_scan(request: Request, market: str = "spot", timeframe: str = "15m"):
     try:
         stats = _closed_stats(c)
         lab = _is_lab(request)
-        if not stats["unlocked"] and not lab:
-            return {"ok":True,"locked":True,"public":False,"message":"تحليل AZO ما زال تحت الاختبار الخاص.","opportunities":[]}
         import app as core
         cutoff = time.time() - RETENTION
         try:
