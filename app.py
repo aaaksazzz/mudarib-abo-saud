@@ -1888,6 +1888,130 @@ def market_chart(market:str="us",symbol:str="AAPL",timeframe:str="15m",limit:int
     return JSONResponse({"ok":False,"message":"تعذر جلب بيانات "+ticker+" من مزودي الأسعار: "+" | ".join(errors)},status_code=502)
 
 
+
+
+@app.get("/api/explosion-radar")
+def explosion_radar_api(market:str="spot",timeframe:str="15m",limit:int=25):
+    """Rank assets showing pre-breakout compression/volume/structure; not a price prediction."""
+    import math
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    market=(market or "spot").lower().strip()
+    allowed_tf={"15m","30m","1h","4h","1d"}
+    if market not in {"spot","futures","us","saudi","contracts","forex"}:
+        return JSONResponse({"ok":False,"message":"السوق غير مدعوم"},status_code=400)
+    if timeframe not in allowed_tf:
+        return JSONResponse({"ok":False,"message":"الفريم غير مدعوم"},status_code=400)
+    limit=max(5,min(int(limit or 25),40))
+    tf_map={"15m":"15m","30m":"30m","1h":"1h","4h":"4h","1d":"1d"}
+    candidates=[]
+    try:
+        if market in {"spot","futures"}:
+            base="https://api.binance.com/api/v3/ticker/24hr" if market=="spot" else "https://fapi.binance.com/fapi/v1/ticker/24hr"
+            tickers=_binance_json(base,timeout=7,spot_fallback=True) if market=="spot" else _json_get(base,timeout=7)
+            excluded={"USDCUSDT","FDUSDUSDT","TUSDUSDT","USDPUSDT","DAIUSDT","BUSDUSDT","USDEUSDT","USDSUSDT","USD1USDT","PYUSDUSDT","EURUSDT"}
+            for t in tickers if isinstance(tickers,list) else []:
+                sym=str(t.get("symbol") or "").upper()
+                if not sym.endswith("USDT") or sym in excluded: continue
+                try:
+                    qv=float(t.get("quoteVolume") or 0)
+                    px=float(t.get("lastPrice") or 0)
+                    ch=float(t.get("priceChangePercent") or 0)
+                except (TypeError,ValueError): continue
+                if qv>=1_000_000 and px>0:
+                    candidates.append({"symbol":sym,"market":market,"quote_volume":qv,"price":px,"change_24h":ch})
+            candidates.sort(key=lambda x:x["quote_volume"],reverse=True)
+            candidates=candidates[:35]
+        elif market=="us":
+            candidates=[{"symbol":s,"market":market} for s in US_SYMBOLS]
+        elif market=="saudi":
+            candidates=[{"symbol":s.replace(".SR",""),"market":market} for s in SAUDI_SYMBOLS]
+        elif market=="contracts":
+            candidates=[{"symbol":s.replace("=F",""),"market":market} for s in US_CONTRACT_SYMBOLS]
+        else:
+            candidates=[{"symbol":s.replace("=X",""),"market":market} for s in FOREX_SYMBOLS[:20]]
+    except Exception as exc:
+        return {"ok":False,"market":market,"timeframe":timeframe,"candidates":[],"message":"تعذر جلب قائمة الأصول: "+str(exc)[:140]}
+
+    def candles_for(item):
+        sym=item["symbol"]
+        if market in {"spot","futures"}:
+            params=urllib.parse.urlencode({"symbol":sym,"interval":tf_map[timeframe],"limit":100})
+            url=("https://api.binance.com/api/v3/klines?" if market=="spot" else "https://fapi.binance.com/fapi/v1/klines?")+params
+            raw=_binance_json(url,timeout=5,timeframe=timeframe,spot_fallback=True) if market=="spot" else _json_get(url,timeout=5)
+            cs=[{"open":float(k[1]),"high":float(k[2]),"low":float(k[3]),"close":float(k[4]),"volume":float(k[5])} for k in raw if isinstance(k,(list,tuple)) and len(k)>=6]
+        else:
+            chart_market=market
+            chart_symbol=sym
+            if market=="contracts" and not sym.endswith("=F"): chart_symbol=sym+"=F"
+            if market=="forex" and not sym.endswith("=X"): chart_symbol=sym+"=X"
+            if market=="saudi" and not sym.endswith(".SR"): chart_symbol=sym+".SR"
+            interval={"15m":"15m","30m":"30m","1h":"60m","4h":"60m","1d":"1d"}[timeframe]
+            range_={"15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y"}[timeframe]
+            url=f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(chart_symbol,safe='')}?interval={interval}&range={range_}"
+            data=_json_get(url,timeout=5,source="yahoo1")
+            result=(data.get("chart",{}).get("result") or [None])[0]
+            if not result: return None
+            quote=((result.get("indicators") or {}).get("quote") or [{}])[0]
+            op=quote.get("open") or []; hi=quote.get("high") or []; lo=quote.get("low") or []; cl=quote.get("close") or []; vo=quote.get("volume") or []
+            cs=[]
+            for i in range(min(len(op),len(hi),len(lo),len(cl))):
+                if None not in (op[i],hi[i],lo[i],cl[i]):
+                    cs.append({"open":float(op[i]),"high":float(hi[i]),"low":float(lo[i]),"close":float(cl[i]),"volume":float(vo[i] or 0) if i<len(vo) else 0})
+        if len(cs)<65: return None
+        cs=cs[:-1]
+        if len(cs)<60: return None
+        last=cs[-1]; prev=cs[-2]; closes=[x["close"] for x in cs]
+        ranges=[(x["high"]-x["low"])/max(x["close"],1e-12)*100 for x in cs]
+        r20=sum(ranges[-20:])/20; r60=sum(ranges[-60:])/60
+        if r60<=0 or last["close"]<=0: return None
+        compression=max(0,min(100,(1-r20/r60)*100))
+        vol20=sum(x["volume"] for x in cs[-20:])/20
+        vol_prev=sum(x["volume"] for x in cs[-40:-20])/20
+        vol_ratio=vol20/max(vol_prev,1e-12) if vol_prev>0 else 1
+        vol_score=max(0,min(100,(vol_ratio-0.7)*55))
+        hi20=max(x["high"] for x in cs[-21:-1]); lo20=min(x["low"] for x in cs[-21:-1])
+        distance_high=(hi20-last["close"])/last["close"]*100
+        distance_low=(last["close"]-lo20)/last["close"]*100
+        near_edge=max(0,100-min(100,min(abs(distance_high),abs(distance_low))*12))
+        # Structure: progressive higher lows or lower highs in recent 5-candle blocks.
+        blocks=[cs[-25+i*5:-20+i*5] for i in range(5)]
+        lows=[min(x["low"] for x in b) for b in blocks if b]
+        highs=[max(x["high"] for x in b) for b in blocks if b]
+        rising_lows=sum(1 for i in range(1,len(lows)) if lows[i]>lows[i-1])
+        falling_highs=sum(1 for i in range(1,len(highs)) if highs[i]<highs[i-1])
+        structure=max(rising_lows,falling_highs)*25
+        score=round(min(99,max(0,compression*.38+vol_score*.27+near_edge*.20+structure*.15)))
+        if distance_high<=distance_low:
+            direction="صعود محتمل"; near=f"يبعد {distance_high:.2f}% عن قمة آخر 20 شمعة"
+        else:
+            direction="هبوط محتمل"; near=f"يبعد {distance_low:.2f}% عن قاع آخر 20 شمعة"
+        reasons=[]
+        if compression>=25: reasons.append("انكماش التذبذب")
+        if vol_ratio>=1.15: reasons.append("تحسن الحجم")
+        if structure>=50: reasons.append("ضغط سعري متدرج")
+        if min(abs(distance_high),abs(distance_low))<=1.5: reasons.append("قرب مستوى حاسم")
+        if not reasons: reasons.append("مرشح أولي يحتاج تأكيد")
+        return {"symbol":sym,"market":market,"price":last["close"],"change_24h":item.get("change_24h"),
+                "quote_volume":item.get("quote_volume"),"score":score,"direction":direction,
+                "compression":round(compression,1),"volume_ratio":round(vol_ratio,2),
+                "distance_high_pct":round(distance_high,2),"distance_low_pct":round(distance_low,2),
+                "reasons":reasons,"timeframe":timeframe}
+    rows=[]
+    failures=0
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        jobs=[pool.submit(candles_for,x) for x in candidates]
+        for job in as_completed(jobs):
+            try:
+                row=job.result()
+                if row and row["score"]>=25: rows.append(row)
+            except Exception:
+                failures+=1
+    rows.sort(key=lambda x:(x["score"],x.get("quote_volume") or 0),reverse=True)
+    return {"ok":True,"market":market,"timeframe":timeframe,"candidates_checked":len(candidates),
+            "results_count":len(rows),"failures":failures,"candidates":rows[:limit],
+            "updated_at":time.time(),"message":"ترتيب احتمالات استعداد للحركة، وليس توقعًا مضمونًا أو توصية شراء/بيع."}
+
+
 @app.get("/api/analysis/latest")
 def analysis_latest():
     c=db()
