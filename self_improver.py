@@ -17,6 +17,20 @@ def _db():
     c=sqlite3.connect(DB,timeout=8)
     c.row_factory=sqlite3.Row
     c.execute("pragma busy_timeout=8000")
+    c.execute("""create table if not exists recommendation_results(
+      id integer primary key,market text,symbol text,direction text,entry real,tp1 real,tp2 real,tp3 real,sl real,
+      created real,updated real,status text default 'OPEN',hit_target integer default 0,result_price real,result_at real,
+      timeframe text default '15m',strategy_key text default 'technical-confluence',method_votes text default '{}',base_score real default 0)""")
+    for col,ddl in (
+      ("timeframe","alter table recommendation_results add column timeframe text default '15m'"),
+      ("strategy_key","alter table recommendation_results add column strategy_key text default 'technical-confluence'"),
+      ("method_votes","alter table recommendation_results add column method_votes text default '{}'"),
+      ("base_score","alter table recommendation_results add column base_score real default 0"),
+    ):
+        try: c.execute("select "+col+" from recommendation_results limit 1")
+        except Exception:
+            try: c.execute(ddl)
+            except Exception: pass
     c.execute("""create table if not exists self_improver_weights(
         market text not null,timeframe text not null,method text not null,
         weight real not null default 1.0,sample integer not null default 0,
