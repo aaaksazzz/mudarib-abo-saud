@@ -49,7 +49,7 @@ async def _cache_control_middleware(request:Request,call_next):
 async def _block_legacy_technical_apis(request:Request,call_next):
     blocked={
         "/api/strategy/performance","/api/strategy/signals","/api/strategy/engine",
-        "/api/analysis/chart","/api/analysis/latest","/api/strategy/scan",
+        "/api/analysis/latest","/api/strategy/scan",
         "/api/strategy/scan-all","/api/market-breadth","/api/spot/analysis",
         "/api/binance/analysis"
     }
