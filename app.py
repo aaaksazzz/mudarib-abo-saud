@@ -1763,6 +1763,57 @@ def analysis_chart(symbol:str="BTCUSDT",timeframe:str="15m",limit:int=180):
             **a,"chart_svg":_pa_svg(symbol,candles,a),
             "conditions":[{"name":p["name"],"ok":p["confidence"]>=75} for p in a["patterns"]]}
 
+@app.get("/api/market/chart")
+def market_chart(market:str="us",symbol:str="AAPL",timeframe:str="15m",limit:int=180):
+    """Same-origin OHLCV proxy for US, Saudi, futures contracts and FX charts."""
+    import re
+    market=(market or "us").lower().strip()
+    raw=(symbol or "").upper().strip()
+    raw=re.sub(r"[^A-Z0-9.]", "", raw)
+    if market not in {"contracts","us","saudi","forex"}:
+        return JSONResponse({"ok":False,"message":"السوق غير مدعوم في خدمة الشموع"},status_code=400)
+    if not raw or len(raw)>20:
+        return JSONResponse({"ok":False,"message":"رمز السوق غير صالح"},status_code=400)
+    contract_map={"ES":"ES=F","NQ":"NQ=F","YM":"YM=F","GC":"GC=F","CL":"CL=F","SI":"SI=F"}
+    forex_map={"XAUUSD":"XAUUSD=X","XAGUSD":"XAGUSD=X","EURUSD":"EURUSD=X","GBPUSD":"GBPUSD=X","USDJPY":"USDJPY=X","AUDUSD":"AUDUSD=X","USDCAD":"USDCAD=X","NZDUSD":"NZDUSD=X"}
+    if market=="contracts":
+        base=re.sub(r"[0-9!].*$","",raw)
+        ticker=contract_map.get(base,contract_map.get(raw,raw))
+    elif market=="saudi":
+        ticker=raw if raw.endswith(".SR") else raw+".SR"
+    elif market=="forex":
+        ticker=forex_map.get(raw,raw)
+    else:
+        ticker=raw.replace("NASDAQ:","").replace("NYSE:","")
+    tf_map={"1m":("1m","7d"),"3m":("5m","30d"),"5m":("5m","30d"),"15m":("15m","60d"),"30m":("30m","60d"),"1h":("60m","60d"),"2h":("60m","60d"),"4h":("60m","1y"),"6h":("60m","1y"),"8h":("60m","1y"),"12h":("60m","1y"),"1d":("1d","2y"),"3d":("1d","5y"),"1w":("1wk","5y"),"1M":("1mo","10y")}
+    interval,range_=tf_map.get(timeframe,("15m","60d"))
+    q=urllib.parse.quote(ticker,safe="")
+    errors=[]
+    for base in YAHOO_BASES:
+        try:
+            source="yahoo1" if base.endswith("query1.finance.yahoo.com") else "yahoo2"
+            url=f"{base}/v8/finance/chart/{q}?interval={interval}&range={range_}&events=history"
+            data=_json_get(url,timeout=8,source=source)
+            result=(data.get("chart",{}).get("result") or [None])[0]
+            if not result:
+                err=data.get("chart",{}).get("error") or {}
+                raise ValueError(err.get("description") or "المصدر لم يرجع بيانات")
+            quote=((result.get("indicators") or {}).get("quote") or [{}])[0]
+            timestamps=result.get("timestamp") or []
+            candles=[]
+            for i,stamp in enumerate(timestamps):
+                vals=[(quote.get(k) or [None]*len(timestamps))[i] for k in ("open","high","low","close")]
+                if all(v is not None for v in vals):
+                    volume=(quote.get("volume") or [0]*len(timestamps))[i] or 0
+                    candles.append({"time":int(stamp),"open":float(vals[0]),"high":float(vals[1]),"low":float(vals[2]),"close":float(vals[3]),"volume":float(volume)})
+            if len(candles)<10:
+                raise ValueError("البيانات المتاحة أقل من 10 شموع")
+            return {"ok":True,"market":market,"symbol":raw,"ticker":ticker,"provider":"Yahoo Finance عبر الخادم","candles":candles[-max(10,min(int(limit or 180),240)):]}
+        except Exception as exc:
+            errors.append(str(exc)[:120])
+    return JSONResponse({"ok":False,"message":"تعذر جلب بيانات "+ticker+" من مزودي الأسعار: "+" | ".join(errors)},status_code=502)
+
+
 @app.get("/api/analysis/latest")
 def analysis_latest():
     c=db()
