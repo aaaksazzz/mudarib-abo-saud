@@ -533,6 +533,13 @@ def _analyze_symbol(symbol,market,timeframe="15m"):
         "chart_pattern":0.7,"fibonacci":0.6,"elliott":0.5
     }
     weighted=sum(weights.get(k,0.5)*max(-1,min(1,float(v or 0))) for k,v in methods.items())
+    # Hourly self-improver can adjust method influence only within a bounded range.
+    try:
+        from strategy_feedback import get_method_weights
+        learned_weights=get_method_weights(market,timeframe)
+        weights={k:weights.get(k,0.5)*learned_weights.get(k,1.0) for k in set(weights)|set(learned_weights)}
+    except Exception:
+        pass
     total=sum(weights.get(k,0.5) for k,v in methods.items())
     strength=abs(weighted)/max(total,1e-9)*100.0
     method_side="BUY" if weighted>0 else "SELL" if weighted<0 else "WAIT"
