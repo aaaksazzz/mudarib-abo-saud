@@ -3559,12 +3559,17 @@ def market_saudi_page(request:Request):
 def market_forex_page(request:Request):
     return FileResponse(str(BASE/"static/forex.html"),headers={"Cache-Control":"no-store"})
 
-# Results is a first-class API, not a side-loaded router.
+# Results and AZO are first-class API routers.
 try:
     import results as _results_module
     app.include_router(_results_module.router)
-except Exception:
-    pass
+except Exception as _results_exc:
+    print('[RESULTS] router install failed:',str(_results_exc)[:160],flush=True)
+try:
+    import azo_analysis as _azo_module
+    app.include_router(_azo_module.router)
+except Exception as _azo_exc:
+    print('[AZO] router install failed:',str(_azo_exc)[:160],flush=True)
 
 # Admin/auth controls are installed explicitly during normal app import.
 try:
