@@ -84,12 +84,12 @@ let bottom=left+1;for(let i=left+2;i<Math.floor(n*.72);i++)if(win[i].l<win[botto
 let right=bottom+1;for(let i=bottom+2;i<Math.floor(n*.88);i++)if(win[i].h>win[right].h)right=i;
 if(!(left<bottom&&bottom<right&&right<n-8))return null;
 const rim=(win[left].h+win[right].h)/2, bottomPrice=win[bottom].l, depth=rim-bottomPrice;
-if(depth<=0||Math.abs(win[left].h-win[right].h)/rim>.035||depth/rim<.025||depth/rim>.22)return null;
-const bottomPos=(bottom-left)/(right-left);if(bottomPos<.32||bottomPos>.72)return null;
+if(depth<=0||Math.abs(win[left].h-win[right].h)/rim>.055||depth/rim<.018||depth/rim>.28)return null;
+const bottomPos=(bottom-left)/(right-left);if(bottomPos<.25||bottomPos>.75)return null;
 const handleStart=Math.min(n-5,right+1),handle=win.slice(handleStart);
 if(handle.length<4)return null;
 const handleLow=Math.min(...handle.map(x=>x.l)),handleHigh=Math.max(...handle.map(x=>x.h));
-if(handleLow<bottomPrice+depth*.48||handleLow>rim||handleHigh>rim+depth*.08)return null;
+if(handleLow<bottomPrice+depth*.30||handleLow>rim+depth*.04||handleHigh>rim+depth*.12)return null;
 const last=win[n-1],volBase=win.slice(Math.max(0,right-12),right).map(x=>x.v).sort((a,b)=>a-b),med=volBase[Math.floor(volBase.length/2)]||1;
 const volRatio=last.v/med,close=last.c;
 let score=68;
@@ -97,7 +97,7 @@ score+=Math.max(0,12-Math.abs(win[left].h-win[right].h)/rim*400);
 score+=Math.max(0,10-Math.abs(bottomPos-.5)*35);
 score+=Math.min(8,Math.max(0,volRatio-1)*4);
 score=Math.min(96,Math.round(score));
-if(score<72)return null;
+if(score<55)return null;
 return {score,left,bottom,right,handleStart,rim,bottomPrice,depth,handleLow,volRatio,close,breakout:close>rim};
 }
 async function scan(){
@@ -105,9 +105,9 @@ const btn=$('scan');if(btn.disabled)return;btn.disabled=true;$('scanResults').te
 try{
 const tickRes=await fetch('https://api.binance.com/api/v3/ticker/24hr',{cache:'no-store'});if(!tickRes.ok)throw Error('تعذر جلب قائمة أزواج Binance');const tickers=await tickRes.json();
 const stable=new Set(['USDCUSDT','FDUSDUSDT','TUSDUSDT','USDPUSDT','USDEUSDT','DAIUSDT','USDSUSDT','BUSDUSDT','EURUSDT','AEURUSDT']);
-const list=tickers.filter(t=>t.symbol.endsWith('USDT')&&!stable.has(t.symbol)&&+t.quoteVolume>1000000).sort((a,b)=>+b.quoteVolume-+a.quoteVolume).slice(0,35);
+const list=tickers.filter(t=>t.symbol.endsWith('USDT')&&!stable.has(t.symbol)&&+t.quoteVolume>1000000).sort((a,b)=>+b.quoteVolume-+a.quoteVolume).slice(0,60);
 let cursor=0,found=[];
-async function worker(){while(cursor<list.length){const item=list[cursor++];try{const res=await fetch('https://api.binance.com/api/v3/klines?symbol='+item.symbol+'&interval=15m&limit=100',{cache:'no-store'});if(!res.ok)continue;const data=await res.json();const pat=detectCup(data);if(pat)found.push({symbol:item.symbol,data,pat,volume:+item.quoteVolume,change:+item.priceChangePercent});}catch(e){}}}
+async function worker(){while(cursor<list.length){const item=list[cursor++];$('scanResults').textContent='جاري فحص '+item.symbol+' — '+cursor+' من '+list.length+' زوجًا على فريم 15 دقيقة…';try{const res=await fetch('https://api.binance.com/api/v3/klines?symbol='+item.symbol+'&interval=15m&limit=100',{cache:'no-store'});if(!res.ok)continue;const data=await res.json();const pat=detectCup(data);if(pat)found.push({symbol:item.symbol,data,pat,volume:+item.quoteVolume,change:+item.priceChangePercent});}catch(e){}}}
 await Promise.all(Array.from({length:5},worker));
 found.sort((a,b)=>(b.pat.breakout?1:0)-(a.pat.breakout?1:0)||b.pat.score-a.pat.score||b.volume-a.volume);
 if(found.length){
@@ -118,6 +118,6 @@ $('scanResults').innerHTML='<b>ما لقيت نموذج كوب وعروة مطا
 }
 }catch(e){$('scanResults').textContent='تعذر إكمال المسح: '+(e.message||e)+'. جرّب تحديث الصفحة.';$('chartUpdated').textContent='فشل المسح'}finally{btn.disabled=false}
 }
-$('scan').addEventListener('click',scan);$('refresh').addEventListener('click',load);$('tf').addEventListener('change',load);$('symbol').addEventListener('keydown',e=>{if(e.key==='Enter')load()});load();setInterval(()=>{if(!$('scan').disabled)load()},60000);
+$('scan').addEventListener('click',scan);$('refresh').addEventListener('click',load);$('tf').addEventListener('change',load);$('symbol').addEventListener('keydown',e=>{if(e.key==='Enter')load()});load();setTimeout(()=>{if(!$('scan').disabled)scan()},1200);setInterval(()=>{if(!$('scan').disabled)load()},60000);
 })();
 </script></body></html>
