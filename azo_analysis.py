@@ -88,7 +88,7 @@ def _quote(core, market, symbol):
         return 0.0
 
 def _refresh_outcomes(c, core, cutoff):
-    rows = c.execute("SELECT * FROM azo_signals WHERE created>=? AND status='OPEN' ORDER BY created DESC LIMIT 250", (cutoff,)).fetchall()
+    rows = c.execute("SELECT * FROM azo_signals WHERE created>=? AND status='OPEN' ORDER BY created ASC LIMIT 40", (cutoff,)).fetchall()
     updated = 0
     for row in rows:
         price = _quote(core, row["market"], row["symbol"])
@@ -185,6 +185,11 @@ def start_worker():
 
 @router.get("/api/azo/status")
 def azo_status(request: Request):
+    try:
+        import results as results_module
+        results_module.results()
+    except Exception:
+        pass
     c = _db()
     try:
         stats = _closed_stats(c)
