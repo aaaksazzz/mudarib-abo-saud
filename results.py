@@ -33,11 +33,53 @@ def _eval(c,row,p):
  if time.time()-float(created or 0)>=RETENTION:
   c.execute("update recommendation_results set status='EXPIRED',updated=?,result_price=?,result_at=? where id=?",(time.time(),p,time.time(),rid)); return "EXPIRED"
  return "OPEN"
+_RESULTS_REFRESHING=False
+_RESULTS_REFRESH_LOCK=threading.Lock()
+
 @router.get("/api/results")
 def results():
- import app as core
- with RESULTS_LOCK:
-  return _results_locked(core)
+ # Respond quickly from SQLite; never make the browser wait for market scans
+ # and dozens of live quotes. Refresh runs once in the background.
+ global _RESULTS_REFRESHING
+ with _RESULTS_REFRESH_LOCK:
+  if not _RESULTS_REFRESHING:
+   _RESULTS_REFRESHING=True
+   threading.Thread(target=_refresh_worker,daemon=True,name="results-refresh").start()
+ return _snapshot()
+
+def _refresh_worker():
+ global _RESULTS_REFRESHING
+ try:
+  import app as core
+  with RESULTS_LOCK:
+   _results_locked(core)
+ except Exception as exc:
+  print("[RESULTS] background refresh failed:",str(exc)[:200],flush=True)
+ finally:
+  with _RESULTS_REFRESH_LOCK:
+   _RESULTS_REFRESHING=False
+
+def _snapshot():
+ c=db(); now=time.time(); cutoff=now-RETENTION
+ c.execute("delete from recommendation_results where created<?",(cutoff,))
+ rows=c.execute("select id,market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,status,hit_target,result_price,result_at from recommendation_results where created>=? order by created desc",(cutoff,)).fetchall()
+ c.commit(); c.close()
+ out=[]
+ for row in rows:
+  out.append({"id":row[0],"market":row[1],"symbol":row[2],"direction":row[3],"entry":row[4],
+   "tp1":row[5],"tp2":row[6],"tp3":row[7],"sl":row[8],"created":row[9],
+   "status":row[11],"hit_target":row[12],"result_price":row[13],"result_at":row[14]})
+ wins=sum(x["status"]=="WIN" for x in out); losses=sum(x["status"]=="LOSS" for x in out)
+ expired=sum(x["status"]=="EXPIRED" for x in out); opened=sum(x["status"]=="OPEN" for x in out)
+ closed=wins+losses
+ stats={"total":len(out),"wins":wins,"losses":losses,"expired":expired,"open":opened,
+  "win_rate":round(wins/closed*100,1) if closed else 0}
+ by={}
+ for m in MARKETS:
+  a=[x for x in out if x["market"]==m]; w=sum(x["status"]=="WIN" for x in a); l=sum(x["status"]=="LOSS" for x in a)
+  by[m]={"total":len(a),"wins":w,"losses":l,"open":sum(x["status"]=="OPEN" for x in a),
+   "win_rate":round(w/(w+l)*100,1) if w+l else 0}
+ return {"ok":True,"stats":stats,"by_market":by,"results":out[:200],"updated":now,"refreshing":_RESULTS_REFRESHING}
 
 def _results_locked(core):
  c=db(); now=time.time(); cutoff=now-RETENTION; c.execute("delete from recommendation_results where created<?",(cutoff,))
