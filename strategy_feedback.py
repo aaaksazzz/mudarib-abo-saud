@@ -76,3 +76,14 @@ def apply_feedback(market,timeframe,rows):
     except Exception as exc:
         print("[STRATEGY-LEARNING] feedback unavailable:",str(exc)[:160],flush=True)
         return rows
+
+
+def get_method_weights(market,timeframe):
+    """Read safe, bounded hourly weights; fall back to neutral weights on any issue."""
+    try:
+        c=_connect()
+        rows=c.execute("select method,weight from self_improver_weights where market=? and timeframe=?",(str(market),str(timeframe))).fetchall()
+        c.close()
+        return {str(k):max(0.75,min(1.25,float(v))) for k,v in rows}
+    except Exception:
+        return {}
