@@ -69,8 +69,8 @@ function tvMarketSymbol(symbol){
  if(market==='contracts'&&/^(ES|NQ|YM|GC|CL|SI)[A-Z0-9!]*$/.test(symbol))return 'CME_MINI:'+symbol+'1!';
  return /^[A-Z0-9_!.-]+:[A-Z0-9_!.-]+$/.test(symbol)?symbol:'BINANCE:'+symbol;
 }
-function drawOwnChart(data,symbol,tf){
- const el=$('chart'),rows=data.slice(-60).map(k=>({time:Math.floor(+k[0]/1000),o:+k[1],h:+k[2],l:+k[3],c:+k[4]}));
+function drawOwnChart(data,symbol,tf,cup,patterns,levels){
+ const el=$('chart'),visibleStart=Math.max(0,data.length-100),rows=data.slice(-100).map(k=>({time:Math.floor(+k[0]/1000),o:+k[1],h:+k[2],l:+k[3],c:+k[4]}));
  if(rows.length<10)throw Error('بيانات الشارت غير كافية');
  const W=1000,H=390,L=18,R=82,T=18,B=28,plotW=W-L-R,plotH=H-T-B,hi=Math.max(...rows.map(z=>z.h)),lo=Math.min(...rows.map(z=>z.l)),pad=(hi-lo)*.08||hi*.01,min=lo-pad,max=hi+pad;
  const y=p=>T+(max-p)/(max-min)*plotH,x=i=>L+(i+.5)*plotW/rows.length;
@@ -83,7 +83,24 @@ function drawOwnChart(data,symbol,tf){
  for(const period of [20,50])if(rows.length>=period){let pts=[];for(let i=period-1;i<rows.length;i++){let sum=0;for(let j=i-period+1;j<=i;j++)sum+=rows[j].c;pts.push((i?'L':'M')+x(i).toFixed(2)+' '+y(sum/period).toFixed(2))}svg+='<path d="'+pts.join(' ')+'" fill="none" stroke="'+(period===20?'#e0aaff':'#8ba7ff')+'" stroke-width="1.5"/>'}
  const support=Math.min(...rows.slice(-24).map(z=>z.l)),resistance=Math.max(...rows.slice(-24).map(z=>z.h));
  [{p:support,c:'#2bd69a',t:'دعم آلي'},{p:resistance,c:'#ff9f43',t:'مقاومة آلية'}].forEach(q=>{svg+='<line x1="'+L+'" y1="'+y(q.p)+'" x2="'+(W-R)+'" y2="'+y(q.p)+'" stroke="'+q.c+'" stroke-width="1.5" stroke-dasharray="4 4"/><text x="'+(W-R-5)+'" y="'+(y(q.p)-5)+'" fill="'+q.c+'" font-size="11" text-anchor="end">'+q.t+'</text>'});
- const last=rows[rows.length-1];svg+='<text x="'+L+'" y="13" fill="#c7d8eb" font-size="12">'+symbol+' · '+tf+' · رسم تلقائي</text><text x="'+L+'" y="'+(H-6)+'" fill="#829bb5" font-size="10">'+new Date(rows[0].time*1000).toLocaleDateString('ar-SA')+'</text><text x="'+(W-R-2)+'" y="'+(H-6)+'" fill="#829bb5" font-size="10" text-anchor="end">'+new Date(last.time*1000).toLocaleDateString('ar-SA')+'</text></svg>';
+ const last=rows[rows.length-1];
+ // Draw explicit entry, stop and all three take-profit levels on the chart.
+ const lv=levels||{},entry=Number(lv.entry)||0,sl=Number(lv.sl)||0,tps=Array.isArray(lv.tps)?lv.tps:[];
+ const pct=v=>entry>0?Math.abs((v-entry)/entry)*100:0;
+ const drawLevel=(price,color,label,pctLabel)=>{if(!(price>min&&price<max))return;const yy=y(price);svg+='<line x1="'+L+'" y1="'+yy+'" x2="'+(W-R+3)+'" y2="'+yy+'" stroke="'+color+'" stroke-width="2" stroke-dasharray="6 4"/><rect x="'+(W-R+4)+'" y="'+(yy-10)+'" width="'+(R-8)+'" height="20" rx="4" fill="'+color+'"/><text x="'+(W-8)+'" y="'+(yy+4)+'" fill="#07111e" font-size="10" font-weight="800" text-anchor="end">'+label+' '+fmt(price)+(pctLabel?' · '+pctLabel:'')+'</text>'};
+ if(entry)drawLevel(entry,'#45dbc8','دخول','0.00%');
+ if(sl)drawLevel(sl,'#ff7186','وقف','−'+pct(sl).toFixed(2)+'%');
+ tps.forEach((v,i)=>drawLevel(Number(v),'#2bd69a','TP'+(i+1),'+'+pct(Number(v)).toFixed(2)+'%'));
+ // Draw the detected chart pattern geometry over the actual candles.
+ const patList=Array.isArray(patterns)?patterns:[];
+ patList.slice(0,3).forEach((pat,pi)=>{
+   const pts=(pat.points||[]).map(q=>({i:Number(q.i)-visibleStart,v:Number(q.v)})).filter(q=>Number.isFinite(q.i)&&q.i>=0&&q.i<rows.length&&Number.isFinite(q.v));
+   const color=pi===0?'#f4bd50':pi===1?'#c084fc':'#60a5fa';
+   if(pts.length>=2){const d=pts.map((q,j)=>(j?'L':'M')+x(q.i).toFixed(2)+' '+y(q.v).toFixed(2)).join(' ');svg+='<path d="'+d+'" fill="none" stroke="'+color+'" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>';pts.forEach(q=>{svg+='<circle cx="'+x(q.i)+'" cy="'+y(q.v)+'" r="4" fill="'+color+'" stroke="#07111e" stroke-width="1.5"/>'})}
+   else {svg+='<rect x="'+(L+8)+'" y="'+(T+8+pi*22)+'" width="190" height="19" rx="5" fill="'+color+'" opacity=".95"/><text x="'+(L+14)+'" y="'+(T+21+pi*22)+'" fill="#07111e" font-size="11" font-weight="800">'+String(pat.name||'نموذج فني')+'</text>'}
+ });
+ if(cup){const x1=x(Math.max(0,Math.min(rows.length-1,Number(cup.left)-visibleStart))),xb=x(Math.max(0,Math.min(rows.length-1,Number(cup.bottom)-visibleStart))),x2=x(Math.max(0,Math.min(rows.length-1,Number(cup.right)-visibleStart)));const yy=y(Number(cup.rim)||entry);svg+='<path d="M'+x1+' '+yy+' Q'+xb+' '+y(Number(cup.bottomPrice)||lo)+' '+x2+' '+yy+'" fill="none" stroke="#f4bd50" stroke-width="3"/><text x="'+Math.min(W-R-8,x2+4)+'" y="'+(yy-8)+'" fill="#f4bd50" font-size="11" text-anchor="end">كوب وعروة</text>'}
+ svg+='<text x="'+L+'" y="13" fill="#c7d8eb" font-size="12">'+symbol+' · '+tf+' · رسم تلقائي بلا شعار</text><text x="'+L+'" y="'+(H-6)+'" fill="#829bb5" font-size="10">'+new Date(rows[0].time*1000).toLocaleDateString('ar-SA')+'</text><text x="'+(W-R-2)+'" y="'+(H-6)+'" fill="#829bb5" font-size="10" text-anchor="end">'+new Date(last.time*1000).toLocaleDateString('ar-SA')+'</text></svg>';
  el.innerHTML=svg;
 }
 function render(data,symbol,tf,cup=null,patterns=[]){
@@ -102,7 +119,7 @@ function render(data,symbol,tf,cup=null,patterns=[]){
  if(breakout==='watch'){sl=Math.min(...recent.slice(-8).map(c=>c.low));if(sl>=entry)sl=entry*.985}
  const risk=Math.max(Math.abs(entry-sl),entry*.002),dir=short?-1:1;
  const tps=cup?[entry+cup.depth,entry+cup.depth*1.25,entry+cup.depth*1.5]:[entry+dir*risk,entry+dir*risk*2,entry+dir*risk*3];
- const patternNames=[...(cup?[{name:'كوب وعروة',score:cup.score}]:[]),...patterns].map(x=>x.name);
+ drawOwnChart(data,symbol,tf,cup,patterns,{entry:entry,sl:sl,tps:tps});\n const patternNames=[...(cup?[{name:'كوب وعروة',score:cup.score}]:[]),...patterns].map(x=>x.name);
  $('patternName').textContent=patternNames.length?patternNames.join(' · '):'قناة سعرية تقديرية';
  $('signalState').textContent=cup?(close>=cup.rim?'اختراق المقاومة المحتمل':'العروة تتكوّن — بانتظار الاختراق'):long?'اختراق صاعد محتمل':short?'كسر هابط محتمل':'داخل القناة — بانتظار التأكيد';
  $('signalState').className=long?'p-up':short?'p-down':'';
