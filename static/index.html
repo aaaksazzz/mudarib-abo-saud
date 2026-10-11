@@ -40,7 +40,36 @@
 <div id="overlay" class="overlay"></div>
 <main class="content">
 <section id="home" class="page active">
-  <div class="section-head market-section-head"><div><span class="eyebrow">TRADING WORKSPACE</span><h2>الرئيسية · جميع الأقسام</h2><p>اختر أي أداة أو سوق من هنا؛ القائمة الجانبية مخصصة للمناهج والحساب والإدارة.</p></div></div>
+  <section class="home-hero" aria-labelledby="homeHeroTitle">
+    <div class="home-hero-copy">
+      <span class="home-kicker"><i></i> SMART MARKET INTELLIGENCE</span>
+      <h1 id="homeHeroTitle">كل الأسواق.<br><strong>رؤية أوضح لقرارك.</strong></h1>
+      <p>مساحة تداول عربية تجمع متابعة الأسواق، الرادار، الصفقات المصنّفة، ومناهج التحليل الفني — وكل سوق في قسم مستقل.</p>
+      <div class="home-hero-actions">
+        <button class="primary home-cta" type="button" data-s="radar">استكشف الرادار <span>←</span></button>
+        <button class="secondary home-cta" type="button" data-s="technical">مناهج التحليل الفني</button>
+      </div>
+      <div class="home-trust-line"><span>◉</span> عرض البيانات المتاحة بوضوح <b>·</b> <span>⌁</span> متابعة مستقلة لكل سوق <b>·</b> <span>◇</span> إدارة المخاطر أولاً</div>
+    </div>
+    <div class="home-hero-visual" aria-hidden="true">
+      <div class="home-chart-grid"></div>
+      <div class="home-chart-label label-one">MARKET RADAR <i></i></div>
+      <svg class="home-chart" viewBox="0 0 420 220" role="img">
+        <defs><linearGradient id="homeChartFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#45dbc8" stop-opacity=".32"/><stop offset="100%" stop-color="#45dbc8" stop-opacity="0"/></linearGradient></defs>
+        <path d="M8 182 L38 165 L64 174 L92 128 L118 144 L146 104 L172 119 L204 78 L231 97 L261 56 L289 82 L318 42 L348 57 L380 24 L410 34 L410 220 L8 220 Z" fill="url(#homeChartFill)"/>
+        <path d="M8 182 L38 165 L64 174 L92 128 L118 144 L146 104 L172 119 L204 78 L231 97 L261 56 L289 82 L318 42 L348 57 L380 24 L410 34" fill="none" stroke="#45dbc8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="380" cy="24" r="5" fill="#45dbc8"/><circle cx="380" cy="24" r="11" fill="none" stroke="#45dbc8" stroke-opacity=".35"/>
+      </svg>
+      <div class="home-chart-label label-two"><span>↗</span> قراءة متعددة الأسواق</div>
+      <div class="home-visual-orb">S<span>PRO</span></div>
+    </div>
+  </section>
+  <div class="home-overview-strip" aria-label="ملخص المنصة">
+    <div class="home-overview-item"><span class="overview-icon">◈</span><div><b>8 أقسام للأسواق</b><small>كل سوق ببياناته المستقلة</small></div></div>
+    <div class="home-overview-item"><span class="overview-icon">⌁</span><div><b>مناهج فنية متعددة</b><small>صفحات مستقلة لكل منهج</small></div></div>
+    <div class="home-overview-item"><span class="overview-icon">◷</span><div><b>متابعة مستمرة</b><small>حالة التحديث تظهر داخل القسم</small></div></div>
+  </div>
+  <div class="section-head market-section-head"><div><span class="eyebrow">YOUR WORKSPACE</span><h2>أدواتك الأساسية</h2><p>ابدأ بالرادار، راجع النتائج، أو انتقل مباشرة إلى الأداة التي تحتاجها.</p></div></div>
   <div id="platformTools" class="core-markets tool-grid"></div>
   <div class="section-head market-section-head"><div><span class="eyebrow">MARKETS</span><h2>الأسواق والأقسام</h2><p>كل قسم يفتح صفحته المستقلة.</p></div></div>
   <div id="coreMarkets" class="core-markets"></div>
