@@ -3149,10 +3149,9 @@ def _refresh_opportunities(market,timeframe,key):
         except Exception as feedback_exc:
             print("[STRATEGY-LEARNING] skipped",str(feedback_exc)[:120],flush=True)
         rows.sort(key=lambda x:(
-            1 if not x.get("research_only") else 0,
+            float(x.get("recommendation_score") or x.get("ai_pct") or 0),
             int(x.get("source_count") or x.get("research_sources") or 0),
-            float(x.get("external_agreement") or x.get("research_agreement") or 0),
-            float(x.get("recommendation_score") or x.get("ai_pct") or 0)
+            float(x.get("external_agreement") or x.get("research_agreement") or 0)
         ),reverse=True)
         # Deduplicate per symbol AND direction. Grouping only by symbol
         # silently dropped SELL when BUY ranked first (and vice versa).
