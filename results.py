@@ -13,7 +13,18 @@ def db():
  try: c.execute("pragma journal_mode=WAL")
  except sqlite3.OperationalError: pass
  c.execute("pragma synchronous=NORMAL")
- c.execute("""create table if not exists recommendation_results(id integer primary key,market text,symbol text,direction text,entry real,tp1 real,tp2 real,tp3 real,sl real,created real,updated real,status text default 'OPEN',hit_target integer default 0,result_price real,result_at real)"""); c.commit(); return c
+ c.execute("""create table if not exists recommendation_results(id integer primary key,market text,symbol text,direction text,entry real,tp1 real,tp2 real,tp3 real,sl real,created real,updated real,status text default 'OPEN',hit_target integer default 0,result_price real,result_at real,timeframe text default '15m',strategy_key text default 'technical-confluence',method_votes text default '{}',base_score real default 0)""")
+ for col,ddl in (
+  ("timeframe","ALTER TABLE recommendation_results ADD COLUMN timeframe text DEFAULT '15m'"),
+  ("strategy_key","ALTER TABLE recommendation_results ADD COLUMN strategy_key text DEFAULT 'technical-confluence'"),
+  ("method_votes","ALTER TABLE recommendation_results ADD COLUMN method_votes text DEFAULT '{}'"),
+  ("base_score","ALTER TABLE recommendation_results ADD COLUMN base_score real DEFAULT 0"),
+ ):
+  try: c.execute("SELECT "+col+" FROM recommendation_results LIMIT 1")
+  except Exception:
+   try: c.execute(ddl)
+   except Exception: pass
+ c.commit(); return c
 def _num(v):
  try:return float(v)
  except:return None
@@ -62,13 +73,13 @@ def _refresh_worker():
 def _snapshot():
  c=db(); now=time.time(); cutoff=now-RETENTION
  c.execute("delete from recommendation_results where created<?",(cutoff,))
- rows=c.execute("select id,market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,status,hit_target,result_price,result_at from recommendation_results where created>=? order by created desc",(cutoff,)).fetchall()
+ rows=c.execute("select id,market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,status,hit_target,result_price,result_at,timeframe,strategy_key,method_votes,base_score from recommendation_results where created>=? order by created desc",(cutoff,)).fetchall()
  c.commit(); c.close()
  out=[]
  for row in rows:
   out.append({"id":row[0],"market":row[1],"symbol":row[2],"direction":row[3],"entry":row[4],
    "tp1":row[5],"tp2":row[6],"tp3":row[7],"sl":row[8],"created":row[9],
-   "status":row[11],"hit_target":row[12],"result_price":row[13],"result_at":row[14]})
+   "status":row[11],"hit_target":row[12],"result_price":row[13],"result_at":row[14], "timeframe":row[15] or "15m","strategy_key":row[16] or "technical-confluence","method_votes":row[17] or "{}","base_score":row[18] or 0})
  wins=sum(x["status"]=="WIN" for x in out); losses=sum(x["status"]=="LOSS" for x in out)
  expired=sum(x["status"]=="EXPIRED" for x in out); opened=sum(x["status"]=="OPEN" for x in out)
  closed=wins+losses
@@ -91,7 +102,7 @@ def _results_locked(core):
    if c.execute("select id from recommendation_results where market=? and symbol=? and direction=? and entry=? and created>=?",(*sig,cutoff)).fetchone(): continue
    c.execute("insert into recommendation_results(market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated) values(?,?,?,?,?,?,?,?,?,?)",(market,x.get("symbol"),x.get("direction"),_num(x.get("entry")),_num(x.get("tp1")),_num(x.get("tp2")),_num(x.get("tp3")),_num(x.get("sl")),created,now))
  c.commit()
- rows=c.execute("select id,market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,status,hit_target,result_price,result_at from recommendation_results where created>=? order by created desc",(cutoff,)).fetchall()
+ rows=c.execute("select id,market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,status,hit_target,result_price,result_at,timeframe,strategy_key,method_votes,base_score from recommendation_results where created>=? order by created desc",(cutoff,)).fetchall()
  # Fetch one quote per unique market/symbol concurrently; serial network calls made this
  # endpoint wait several minutes when the result history contained many open trades.
  from concurrent.futures import ThreadPoolExecutor
