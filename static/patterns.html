@@ -306,21 +306,30 @@ $('marketLabel').textContent=marketNames[market]||market;
 if(market!=='spot'){
  const btn=$('scan');if(btn.disabled)return;btn.disabled=true;
  const markets=market==='all'?['spot','futures','contracts','us','saudi','forex']:[market];
- const tf=$('tf').value;let all=[],errors=[];
- $('scanResults').textContent='جاري فحص الأسواق المحددة على فريم '+tf+'…';
+ const tf=$('tf').value;let all=[],errors=[],pending=[];
+ $('scanResults').textContent='بدأ فحص الأسواق المحددة على فريم '+tf+'…';
+ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+ async function scanMarket(m){
+  try{
+   let j=null;
+   for(let attempt=0;attempt<18;attempt++){
+    $('scanResults').textContent='جاري فحص '+marketNames[m]+'… محاولة '+(attempt+1)+' من 18';
+    const r=await fetch('/api/fast-market?market='+encodeURIComponent(m)+'&timeframe='+encodeURIComponent(tf)+'&_='+Date.now(),{cache:'no-store'});
+    j=await r.json();
+    if(!r.ok||!j.ok)throw Error(j.message||('HTTP '+r.status));
+    if((j.trades||[]).length||!j.scanning)return j;
+    await sleep(2500);
+   }
+   if(j&&j.scanning)pending.push(marketNames[m]);
+   return j||{trades:[]};
+  }catch(e){errors.push(marketNames[m]+': '+(e.message||e));return {trades:[]};}
+ }
  try{
-  for(const m of markets){
-   $('scanResults').textContent='جاري فحص '+marketNames[m]+'…';
-   try{
-    const r=await fetch('/api/fast-market?market='+encodeURIComponent(m)+'&timeframe='+encodeURIComponent(tf),{cache:'no-store'});
-    const j=await r.json();
-    if(!r.ok||!j.ok)throw Error(j.message||'تعذر الفحص');
-    (j.trades||[]).forEach(t=>all.push({...t,marketKey:m,marketName:marketNames[m]}));
-   }catch(e){errors.push(marketNames[m]+': '+(e.message||e))}
-  }
+  const results=await Promise.all(markets.map(scanMarket));
+  results.forEach((j,i)=>(j.trades||[]).forEach(t=>all.push({...t,marketKey:markets[i],marketName:marketNames[markets[i]]})));
   all.sort((a,b)=>(Number(b.ai_pct)||0)-(Number(a.ai_pct)||0)||Math.abs(Number(b.change_pct)||0)-Math.abs(Number(a.change_pct)||0));
   if(all.length){
-   $('scanResults').innerHTML='<b style="color:#65e7d3">نتائج من '+new Set(all.map(x=>x.marketKey)).size+' سوق · '+all.length+' إشارة</b><br>'+all.slice(0,30).map((t,i)=>'<div style="padding:9px 0;border-bottom:1px solid #20364d"><b>'+(i+1)+'. '+String(t.symbol||'—')+'</b> · '+t.marketName+' · '+String(t.side||'—')+' · '+String(t.timeframe||tf)+'<br><small>تغير: '+(Number(t.change_pct)||0).toFixed(2)+'% · تقييم AI: '+(Number(t.ai_pct)||0)+'% · دخول: '+fmt(Number(t.entry)||0)+' · SL: '+fmt(Number(t.sl)||0)+' · TP1: '+fmt(Number(t.tp1)||0)+'</small></div>').join('')+(errors.length?'<small>بعض الأسواق تعذر فحصها: '+errors.join('، ')+'</small>':'')+'<br><small>هذه نتائج الماسح الخاص بكل سوق، وليست كلها نماذج كلاسيكية مرسومة على الشارت.</small>';
+   $('scanResults').innerHTML='<b style="color:#65e7d3">نتائج من '+new Set(all.map(x=>x.marketKey)).size+' سوق · '+all.length+' إشارة</b><br>'+all.slice(0,30).map((t,i)=>'<div style="padding:9px 0;border-bottom:1px solid #20364d"><b>'+(i+1)+'. '+String(t.symbol||'—')+'</b> · '+t.marketName+' · '+String(t.side||'—')+' · '+String(t.timeframe||tf)+'<br><small>تغير: '+(Number(t.change_pct)||0).toFixed(2)+'% · تقييم AI: '+(Number(t.ai_pct)||0)+'% · دخول: '+fmt(Number(t.entry)||0)+' · SL: '+fmt(Number(t.sl)||0)+' · TP1: '+fmt(Number(t.tp1)||0)+'</small></div>').join('')+(pending.length?'<small>لا يزال الفحص يعمل بالخلفية: '+pending.join('، ')+'. اضغط «تابع البحث» بعد قليل لإكماله.</small>':'')+(errors.length?'<small>تعذر فحص: '+errors.join('، ')+'</small>':'')+'<br><small>كل سوق يُفحص من مصدره الخاص؛ النتائج ليست كلها نماذج كلاسيكية مرسومة على الشارت.</small>';
    const first=all[0];$('symbol').value=first.symbol||$('symbol').value;
    $('patternName').textContent=first.marketName+' · '+(first.side||'إشارة');
    $('signalState').textContent='أفضل نتيجة حسب تقييم الماسح';$('lastClose').textContent=fmt(Number(first.entry)||0);
@@ -328,8 +337,11 @@ if(market!=='spot'){
    const e=Number(first.entry)||0, pct=p=>e>0?Math.abs((Number(p)-e)/e)*100:0;
    $('slPct').textContent='−'+pct(first.sl).toFixed(2)+'% من الدخول';$('tp1Pct').textContent='+'+pct(first.tp1).toFixed(2)+'% من الدخول';$('tp2Pct').textContent='+'+pct(first.tp2).toFixed(2)+'% من الدخول';$('tp3Pct').textContent='+'+pct(first.tp3).toFixed(2)+'% من الدخول';
    $('chartTitle').textContent=String(first.symbol||'')+' · '+first.marketName+' · '+tf;
-   $('explain').textContent='تم جلب الإشارات من ماسح السوق المستقل. لعرض الشارت، استخدم رمزًا متوافقًا مع مزود البيانات لذلك السوق.';
-  }else $('scanResults').textContent='ما رجع الماسح إشارات حاليًا.'+(errors.length?' تعذر فحص: '+errors.join('، '):'');
+   $('explain').textContent='تم جلب الإشارات من ماسح مستقل للسوق المختار. استخدم رمزًا متوافقًا مع مزود بيانات السوق لعرض الشارت.';
+  }else{
+   let msg=pending.length?'الفحص ما زال يعمل بالخلفية للأسواق: '+pending.join('، ')+'. اضغط «تابع البحث» بعد قليل.':'انتهى الفحص ولم تظهر إشارات مطابقة حاليًا.';
+   $('scanResults').textContent=msg+(errors.length?' تعذر فحص: '+errors.join('، '):'');
+  }
  }finally{btn.disabled=false}
  return;
 }
