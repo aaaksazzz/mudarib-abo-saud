@@ -2683,32 +2683,60 @@ _EQUITY_UNIVERSE_TTL=900
 _EQUITY_UNIVERSE_LOCK=__import__('threading').Lock()
 
 def _yahoo_equity_universe(region='us', min_daily_volume=1000000):
+    """Discover a broad live equity universe; Saudi listings are not filtered by volume."""
     import time
-    key=str(region)+':'+str(int(min_daily_volume))
+    region=str(region or 'us').lower()
+    min_daily_volume=max(0,int(min_daily_volume))
+    key=region+':'+str(min_daily_volume)
     with _EQUITY_UNIVERSE_LOCK:
         cached=_EQUITY_UNIVERSE_CACHE.get(key)
         if cached and time.time()-cached[0] < _EQUITY_UNIVERSE_TTL:
             return list(cached[1])
+
     symbols=[]; seen=set()
+    # Saudi equities must not be excluded just because Yahoo reports missing/zero volume.
+    operands=[{'operator':'EQ','operands':['region',region]}]
+    if region!='sa' and min_daily_volume>0:
+        operands.append({'operator':'GT','operands':['dayvolume',min_daily_volume]})
     for offset in range(0,5000,250):
-        body={'offset':offset,'size':250,'sortField':'dayvolume','sortType':'DESC','quoteType':'EQUITY','query':{'operator':'AND','operands':[{'operator':'EQ','operands':['region',region]},{'operator':'GT','operands':['dayvolume',int(min_daily_volume)]}]}}
+        body={
+            'offset':offset,'size':250,'sortField':'dayvolume','sortType':'DESC',
+            'quoteType':'EQUITY','query':{'operator':'AND','operands':operands}
+        }
         try:
-            req=urllib.request.Request('https://query1.finance.yahoo.com/v1/finance/screener',data=json.dumps(body).encode('utf-8'),headers={'User-Agent':'mudarib-pro/1.0','Content-Type':'application/json'},method='POST')
+            req=urllib.request.Request(
+                'https://query1.finance.yahoo.com/v1/finance/screener',
+                data=json.dumps(body).encode('utf-8'),
+                headers={'User-Agent':'mudarib-pro/1.0','Content-Type':'application/json'},
+                method='POST'
+            )
             with urllib.request.urlopen(req,timeout=10) as resp:
                 raw=json.loads(resp.read().decode('utf-8'))
             result=((raw.get('finance') or {}).get('result') or [{}])[0]
             quotes=result.get('quotes') or []
-            if not quotes: break
+            if not quotes:
+                break
             for q in quotes:
-                s=str(q.get('symbol') or '').strip()
-                vol=float(q.get('regularMarketVolume') or q.get('dayvolume') or 0)
-                if s and vol>min_daily_volume and s not in seen:
-                    seen.add(s); symbols.append(s)
-            if len(quotes)<250: break
+                symbol=str(q.get('symbol') or '').strip()
+                if not symbol or symbol in seen:
+                    continue
+                try:
+                    volume=float(q.get('regularMarketVolume') or q.get('dayvolume') or 0)
+                except Exception:
+                    volume=0
+                # The API query already applies the US liquidity threshold. For Saudi,
+                # include listed equities even when volume is absent from the quote.
+                if region=='sa' or min_daily_volume<=0 or volume>min_daily_volume:
+                    seen.add(symbol)
+                    symbols.append(symbol)
+            if len(quotes)<250:
+                break
         except Exception:
+            # Keep already discovered symbols; only use fallback when discovery returned none.
             break
+
     if not symbols:
-        symbols=list(US_SYMBOLS if region=='us' else SAUDI_SYMBOLS)
+        symbols=list(US_SYMBOLS if region=='us' else SAUDI_SYMBOLS) if region in {'us','sa'} else []
     with _EQUITY_UNIVERSE_LOCK:
         _EQUITY_UNIVERSE_CACHE[key]=(time.time(),list(symbols))
     return symbols
