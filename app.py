@@ -3381,6 +3381,24 @@ def whale_trades_api(market:str="spot",min_notional_usdt:float=10000):
     threshold=max(1000.0,min(float(min_notional_usdt or 10000),1000000000.0))
     return _whale_trade_scan(market,threshold)
 
+@app.get("/api/technical-methods")
+def technical_methods_api(market:str="spot",timeframe:str="15m",method:str="price-action"):
+    if market not in MARKETS or timeframe not in TIMEFRAMES:
+        return JSONResponse({"ok":False,"message":"قسم سوق أو فريم غير صالح"},status_code=400)
+    try:
+        import research_engine
+        if method not in research_engine.TECHNICAL_METHOD_KEYS:
+            return {"ok":True,"market":market,"method":method,"opportunities":[],
+                    "message":"هذا المنهج يحتاج محركًا مستقلًا قبل إصدار إشارات موثوقة."}
+        rows=research_engine.discover_method(market,timeframe,method)
+        return {"ok":True,"market":market,"method":method,"opportunities":rows,
+                "scan_stats":{"count":len(rows),"updated_at":time.time(),"scanning":False},
+                "message":"فحص مستقل للمنهج المحدد فقط."}
+    except Exception as exc:
+        print("[TECHNICAL-METHOD API] failed",market,timeframe,method,str(exc)[:160],flush=True)
+        return {"ok":False,"market":market,"method":method,"opportunities":[],
+                "message":"تعذر تشغيل فحص المنهج المحدد الآن."}
+
 @app.get("/api/opportunities")
 def opportunities_api(market:str="spot",timeframe:str="15m"):
     if market not in MARKETS or timeframe not in TIMEFRAMES:
