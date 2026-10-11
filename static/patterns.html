@@ -27,6 +27,36 @@ const fmt=n=>Number(n).toLocaleString('en-US',{maximumFractionDigits:8});
 function regression(arr){const n=arr.length;let sx=0,sy=0,sxx=0,sxy=0;arr.forEach((v,i)=>{sx+=i;sy+=v;sxx+=i*i;sxy+=i*v});const d=n*sxx-sx*sx;const m=d?(n*sxy-sx*sy)/d:0;return {m,b:(sy-m*sx)/n};}
 function line(reg,x){return reg.m*x+reg.b}
 let tvChart=null,tvCandles=null,tvVolume=null,tvOverlays=[],tvPriceLines=[],tvEmbedKey='';
+function detectTechnicalPatterns(data){
+ const a=data.map(k=>({h:+k[2],l:+k[3],o:+k[1],c:+k[4],v:+k[5]})),n=a.length,p=a.slice(-72),off=n-p.length;
+ const highs=[],lows=[];
+ for(let i=2;i<p.length-2;i++){
+  if(p[i].h>=p[i-1].h&&p[i].h>=p[i-2].h&&p[i].h>=p[i+1].h&&p[i].h>=p[i+2].h)highs.push({i:i+off,v:p[i].h});
+  if(p[i].l<=p[i-1].l&&p[i].l<=p[i-2].l&&p[i].l<=p[i+1].l&&p[i].l<=p[i+2].l)lows.push({i:i+off,v:p[i].l});
+ }
+ const out=[],near=(x,y,t=.025)=>Math.abs(x-y)/Math.max(Math.abs(x),Math.abs(y),1e-12)<t;
+ const ph=highs.slice(-3),pl=lows.slice(-3);
+ if(ph.length>=2&&near(ph.at(-2).v,ph.at(-1).v,.02))out.push({name:'قمة مزدوجة',score:78,dir:'هبوط محتمل',points:[ph.at(-2),ph.at(-1)]});
+ if(pl.length>=2&&near(pl.at(-2).v,pl.at(-1).v,.02))out.push({name:'قاع مزدوج',score:78,dir:'صعود محتمل',points:[pl.at(-2),pl.at(-1)]});
+ if(ph.length>=3&&ph[1].v>ph[0].v&&ph[1].v>ph[2].v&&near(ph[0].v,ph[2].v,.045))out.push({name:'رأس وكتفين',score:76,dir:'انعكاس هابط محتمل',points:ph});
+ if(pl.length>=3&&pl[1].v<pl[0].v&&pl[1].v<pl[2].v&&near(pl[0].v,pl[2].v,.045))out.push({name:'رأس وكتفين مقلوب',score:76,dir:'انعكاس صاعد محتمل',points:pl});
+ if(ph.length>=2&&pl.length>=2){
+  const h1=ph.at(-2),h2=ph.at(-1),l1=pl.at(-2),l2=pl.at(-1);
+  if(h2.v<h1.v&&l2.v>l1.v)out.push({name:'مثلث متماثل',score:72,dir:'انتظار الاختراق',points:[h1,h2,l1,l2]});
+  if(near(h1.v,h2.v,.035)&&l2.v>l1.v)out.push({name:'مثلث صاعد',score:73,dir:'اختراق صاعد محتمل',points:[h1,h2,l1,l2]});
+  if(h2.v<h1.v&&near(l1.v,l2.v,.035))out.push({name:'مثلث هابط',score:73,dir:'كسر هابط محتمل',points:[h1,h2,l1,l2]});
+  if(h2.v<h1.v&&l2.v<l1.v)out.push({name:'وتد هابط',score:68,dir:'انعكاس صاعد محتمل',points:[h1,h2,l1,l2]});
+  if(h2.v>h1.v&&l2.v>l1.v)out.push({name:'وتد صاعد',score:68,dir:'انعكاس هابط محتمل',points:[h1,h2,l1,l2]});
+ }
+ const last=a.at(-1),prev=a.at(-2);
+ if(last.c>last.o&&prev.c<prev.o&&last.c>=prev.o&&last.o<=prev.c)out.push({name:'ابتلاع شرائي',score:66,dir:'صعود محتمل',points:[]});
+ if(last.c<last.o&&prev.c>prev.o&&last.c<=prev.o&&last.o>=prev.c)out.push({name:'ابتلاع بيعي',score:66,dir:'هبوط محتمل',points:[]});
+ if(p.length>=20){
+  const first=p.slice(0,10),tail=p.slice(-10),mean=x=>x.reduce((s,z)=>s+z.c,0)/x.length,drift=(mean(tail)-mean(first))/Math.max(mean(first),1e-12);
+  if(Math.abs(drift)>.025){const recent=p.slice(-12),r=(Math.max(...recent.map(x=>x.h))-Math.min(...recent.map(x=>x.l)))/Math.max(mean(recent),1e-12);if(r<.06)out.push({name:drift>0?'علم صاعد محتمل':'علم هابط محتمل',score:63,dir:'يحتاج تأكيد',points:[]});}
+ }
+ return out;
+}
 function initChart(symbol='API3USDT',tf='1h'){
  const el=$('chart');
  if(!window.LightweightCharts)throw Error('مكتبة الشارت لم تتحمل؛ تحقق من الاتصال ثم أعد تحميل الصفحة.');
@@ -49,7 +79,7 @@ function initChart(symbol='API3USDT',tf='1h'){
  const resize=()=>{if(tvChart&&typeof tvChart.applyOptions==='function'){const w=$('chart').clientWidth;if(w>0)tvChart.applyOptions({width:w,height:$('chart').clientHeight||300})}};
  if(window.ResizeObserver){new ResizeObserver(resize).observe(el)}else{window.addEventListener('resize',resize)}
 }
-function render(data,symbol,tf,cup=null){
+function render(data,symbol,tf,cup=null,patterns=[]){
  initChart(symbol,tf);
  const candles=data.map(k=>({time:Math.floor(+k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}));
  if(candles.length<10)throw Error('بيانات الشارت غير كافية');
@@ -65,13 +95,13 @@ function render(data,symbol,tf,cup=null){
  if(breakout==='watch'){sl=Math.min(...recent.slice(-8).map(c=>c.low));if(sl>=entry)sl=entry*.985}
  const risk=Math.max(Math.abs(entry-sl),entry*.002),dir=short?-1:1;
  const tps=cup?[entry+cup.depth,entry+cup.depth*1.25,entry+cup.depth*1.5]:[entry+dir*risk,entry+dir*risk*2,entry+dir*risk*3];
- $('patternName').textContent=cup?'كوب وعروة — '+cup.score+'%':'قناة سعرية تقديرية';
+ const patternNames=[...(cup?[{name:'كوب وعروة',score:cup.score}]:[]),...patterns].map(x=>x.name);\n $('patternName').textContent=patternNames.length?patternNames.join(' · '):'قناة سعرية تقديرية';
  $('signalState').textContent=cup?(close>=cup.rim?'اختراق المقاومة المحتمل':'العروة تتكوّن — بانتظار الاختراق'):long?'اختراق صاعد محتمل':short?'كسر هابط محتمل':'داخل القناة — بانتظار التأكيد';
  $('signalState').className=long?'p-up':short?'p-down':'';
  $('lastClose').textContent=fmt(close);$('chartTitle').textContent=symbol.replace(/USDT$/,'')+'/USDT · '+tf;
  $('chartUpdated').textContent='آخر شمعة: '+new Date(last.time*1000).toLocaleString('ar-SA');
  $('entry').textContent=fmt(entry);$('sl').textContent=fmt(sl);$('tp1').textContent=fmt(tps[0]);$('tp2').textContent=fmt(tps[1]);$('tp3').textContent=fmt(tps[2]);
- $('explain').textContent=cup?'تم رصد شكل كوب وعروة مبدئي على '+symbol+' بفريم '+tf+'. رُسم الكوب بالذهبي والعروة بالتركوازي فوق الشموع. التأكيد يكون باختراق الحافة مع تحسّن الحجم.':'تم رسم قناة الاتجاه باللون الأزرق، ومستويات فيبوناتشي، والدعم والمقاومة، والدخول ووقف الخسارة والأهداف مباشرة فوق الشموع. الرسم تقديري وليس توصية مضمونة.';
+ $('explain').textContent='النماذج المكتشفة: '+(patternNames.join('، ')||'لم يظهر نموذج واضح')+'. تم رسم القناة، المتوسطات ومستويات فيبوناتشي والدعم والمقاومة فوق الشموع. النماذج آلية تقديرية وتحتاج تأكيد.';
  // Draw the detected pattern and technical levels directly over the candles.
  tvCandles.setData(recent.map(c=>({time:c.time,open:c.open,high:c.high,low:c.low,close:c.close})));
  tvVolume.setData(recent.map(c=>({time:c.time,value:c.volume,color:c.close>=c.open?'rgba(38,166,154,.45)':'rgba(239,83,80,.45)'})));
@@ -92,6 +122,20 @@ function render(data,symbol,tf,cup=null){
   addOverlay(recent.map((c,i)=>({time:c.time,value:line(hr,i)})),'#4b8cff',2,LightweightCharts.LineStyle.Dashed);
   addOverlay(recent.map((c,i)=>({time:c.time,value:line(lr,i)})),'#4b8cff',2,LightweightCharts.LineStyle.Dashed);
  }
+ // Plot detected classic chart-pattern geometry on the actual candle timestamps.
+ const pivotHighs=[],pivotLows=[];
+ for(let i=2;i<recent.length-2;i++){
+  if(recent[i].high>=recent[i-1].high&&recent[i].high>=recent[i-2].high&&recent[i].high>=recent[i+1].high&&recent[i].high>=recent[i+2].high)pivotHighs.push({i,v:recent[i].high});
+  if(recent[i].low<=recent[i-1].low&&recent[i].low<=recent[i-2].low&&recent[i].low<=recent[i+1].low&&recent[i].low<=recent[i+2].low)pivotLows.push({i,v:recent[i].low});
+ }
+ const drawPivotLine=(pts,color,width=3,style=LightweightCharts.LineStyle.Solid)=>{const valid=pts.filter(p=>p.i>=0&&p.i<n);if(valid.length>=2)addOverlay(valid.map(p=>({time:recent[p.i].time,value:p.v})),color,width,style)};
+ const hi3=pivotHighs.slice(-3),lo3=pivotLows.slice(-3);
+ if(hi3.length>=2&&Math.abs(hi3.at(-1).v-hi3.at(-2).v)/Math.max(hi3.at(-1).v,hi3.at(-2).v)<.03)drawPivotLine(hi3.slice(-2),'#ff7186',3);
+ if(lo3.length>=2&&Math.abs(lo3.at(-1).v-lo3.at(-2).v)/Math.max(lo3.at(-1).v,lo3.at(-2).v)<.03)drawPivotLine(lo3.slice(-2),'#2bd69a',3);
+ if(hi3.length>=3&&hi3[1].v>hi3[0].v&&hi3[1].v>hi3[2].v&&Math.abs(hi3[0].v-hi3[2].v)/hi3[0].v<.06)drawPivotLine(hi3,'#f4bd50',3);
+ if(lo3.length>=3&&lo3[1].v<lo3[0].v&&lo3[1].v<lo3[2].v&&Math.abs(lo3[0].v-lo3[2].v)/lo3[0].v<.06)drawPivotLine(lo3,'#65e7d3',3);
+ // Moving averages: SMA20 and SMA50, useful across classic technical methods.
+ for(const period of [20,50]){const pts=[];for(let i=period-1;i<n;i++){let sum=0;for(let j=i-period+1;j<=i;j++)sum+=recent[j].close;pts.push({time:recent[i].time,value:sum/period})}if(pts.length>1)addOverlay(pts,period===20?'#e0aaff':'#8ba7ff',1,LightweightCharts.LineStyle.Solid)}
  // Automatic Fibonacci retracement levels from the visible swing range.
  const swingHigh=Math.max(...recent.map(c=>c.high)), swingLow=Math.min(...recent.map(c=>c.low));
  const swingRange=swingHigh-swingLow;
@@ -188,10 +232,10 @@ const tickRes=await fetch('https://api.binance.com/api/v3/ticker/24hr',{cache:'n
 const stable=new Set(['USDCUSDT','FDUSDUSDT','TUSDUSDT','USDPUSDT','USDEUSDT','DAIUSDT','USDSUSDT','BUSDUSDT','EURUSDT','AEURUSDT']);
 const list=tickers.filter(t=>t.symbol.endsWith('USDT')&&!stable.has(t.symbol)&&Number(t.quoteVolume)>1000000).sort((a,b)=>Number(b.quoteVolume)-Number(a.quoteVolume));
 state.cursor=Math.min(state.cursor,list.length);const start=state.cursor,end=Math.min(start+60,list.length);const batch=list.slice(start,end);let cursor=0,found=state.found;
-async function worker(){while(cursor<batch.length){const item=batch[cursor++];$('scanResults').textContent='جاري فحص '+item.symbol+' — '+(start+cursor)+' من '+list.length+' زوجًا على فريم '+tf+'…';try{const res=await fetch('https://api.binance.com/api/v3/klines?symbol='+item.symbol+'&interval='+tf+'&limit=100',{cache:'no-store'});if(!res.ok)continue;const data=await res.json();const cup=detectCup(data),classic=detectClassic(data),pat=cup?{...cup,name:'كوب وعروة',dir:cup.breakout?'اختراق صاعد محتمل':'العروة تتكوّن'}:classic;if(pat){const id=item.symbol+'|'+tf+'|'+pat.name;if(!state.symbols.includes(id)){found.push({symbol:item.symbol,data,pat,volume:+item.quoteVolume,change:+item.priceChangePercent,tf});state.symbols.push(id)}}}catch(e){}}}
+async function worker(){while(cursor<batch.length){const item=batch[cursor++];$('scanResults').textContent='جاري فحص '+item.symbol+' — '+(start+cursor)+' من '+list.length+' زوجًا على فريم '+tf+'…';try{const res=await fetch('https://api.binance.com/api/v3/klines?symbol='+item.symbol+'&interval='+tf+'&limit=100',{cache:'no-store'});if(!res.ok)continue;const data=await res.json();const cup=detectCup(data),patterns=detectTechnicalPatterns(data),classic=detectClassic(data),pat=cup?{...cup,name:'كوب وعروة',dir:cup.breakout?'اختراق صاعد محتمل':'العروة تتكوّن'}:(patterns[0]||classic);if(pat){const names=[...(cup?[{name:'كوب وعروة',score:cup.score,dir:pat.dir,points:[]}]:[]),...patterns];const id=item.symbol+'|'+tf+'|'+names.map(x=>x.name).join(',');if(!state.symbols.includes(id)){found.push({symbol:item.symbol,data,pat,patterns:names,volume:+item.quoteVolume,change:+item.priceChangePercent,tf});state.symbols.push(id)}}}catch(e){}}}
 await Promise.all(Array.from({length:5},worker));state.cursor=end;state.found=found;try{sessionStorage.setItem(key,JSON.stringify(state))}catch(e){}
 found.sort((a,b)=>(b.pat.breakout?1:0)-(a.pat.breakout?1:0)||(b.pat.score||0)-(a.pat.score||0)||b.volume-a.volume);
-if(found.length){const best=found[found.length-1];$('symbol').value=best.symbol;$('tf').value=best.tf;render(best.data,best.symbol,best.tf,best.pat.name==='كوب وعروة'?best.pat:null);
+if(found.length){const best=found[found.length-1];$('symbol').value=best.symbol;$('tf').value=best.tf;render(best.data,best.symbol,best.tf,best.pat.name==='كوب وعروة'?best.pat:null,best.patterns||[]);
 $('scanResults').innerHTML='<b style="color:#65e7d3">نتائج متراكمة: '+found.length+' نموذج</b><br>آخر نموذج جديد: <b>'+best.symbol.replace('USDT','/USDT')+'</b> · '+best.pat.name+' · '+(best.pat.dir||'مراقبة')+'<br>تغير 24 ساعة: '+best.change.toFixed(2)+'% · حجم 24 ساعة: '+(best.volume/1e6).toFixed(2)+' مليون USDT<br><small>تم فحص '+end+' من '+list.length+' زوجًا مؤهلًا بحجم تداول يومي يتجاوز مليون USDT. اضغط متابعة البحث لإكمال القائمة؛ النتائج السابقة محفوظة في هذه الجلسة.</small>';
 }else{$('scanResults').innerHTML='<b>ما ظهر نموذج مطابق في الدفعة الحالية.</b><br>تم فحص '+end+' من '+list.length+' زوجًا على '+tf+'. اضغط «تابع البحث» لإكمال من نفس المكان.';}
 
