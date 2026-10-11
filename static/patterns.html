@@ -310,19 +310,13 @@ if(market!=='spot'){
  const markets=market==='all'?['spot','futures','contracts','us','saudi','forex']:[market];
  const tf=$('tf').value;let all=[],errors=[],pending=[];
  $('scanResults').textContent='بدأ فحص الأسواق المحددة على فريم '+tf+'…';
- const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
  async function scanMarket(m){
   try{
-   let j=null;
-   for(let attempt=0;attempt<18;attempt++){
-    $('scanResults').textContent='جاري فحص '+marketNames[m]+'… محاولة '+(attempt+1)+' من 18';
-    const r=await fetch('/api/fast-market?market='+encodeURIComponent(m)+'&timeframe='+encodeURIComponent(tf)+'&_='+Date.now(),{cache:'no-store'});
-    j=await r.json();
-    if(!r.ok||!j.ok)throw Error(j.message||('HTTP '+r.status));
-    if((j.trades||[]).length||!j.scanning)return j;
-    await sleep(2500);
-   }
-   if(j&&j.scanning)pending.push(marketNames[m]);
+   $('scanResults').textContent='جاري فحص '+marketNames[m]+'…';
+   const r=await fetch('/api/fast-market?market='+encodeURIComponent(m)+'&timeframe='+encodeURIComponent(tf)+'&_='+Date.now(),{cache:'no-store'});
+   const j=await r.json();
+   if(!r.ok||!j.ok)throw Error(j.message||('HTTP '+r.status));
+   if(j.scanning)pending.push(marketNames[m]);
    return j||{trades:[]};
   }catch(e){errors.push(marketNames[m]+': '+(e.message||e));return {trades:[]};}
  }
@@ -331,7 +325,7 @@ if(market!=='spot'){
   results.forEach((j,i)=>(j.trades||[]).forEach(t=>all.push({...t,marketKey:markets[i],marketName:marketNames[markets[i]]})));
   all.sort((a,b)=>(Number(b.ai_pct)||0)-(Number(a.ai_pct)||0)||Math.abs(Number(b.change_pct)||0)-Math.abs(Number(a.change_pct)||0));
   if(all.length){
-   $('scanResults').innerHTML='<b style="color:#65e7d3">نتائج من '+new Set(all.map(x=>x.marketKey)).size+' سوق · '+all.length+' إشارة</b><br>'+all.slice(0,30).map((t,i)=>'<div style="padding:9px 0;border-bottom:1px solid #20364d"><b>'+(i+1)+'. '+String(t.symbol||'—')+'</b> · '+t.marketName+' · '+String(t.side||'—')+' · '+String(t.timeframe||tf)+'<br><small>تغير: '+(Number(t.change_pct)||0).toFixed(2)+'% · تقييم AI: '+(Number(t.ai_pct)||0)+'% · دخول: '+fmt(Number(t.entry)||0)+' · SL: '+fmt(Number(t.sl)||0)+' · TP1: '+fmt(Number(t.tp1)||0)+'</small></div>').join('')+(pending.length?'<small>لا يزال الفحص يعمل بالخلفية: '+pending.join('، ')+'. اضغط «تابع البحث» بعد قليل لإكماله.</small>':'')+(errors.length?'<small>تعذر فحص: '+errors.join('، ')+'</small>':'')+'<br><small>كل سوق يُفحص من مصدره الخاص؛ النتائج ليست كلها نماذج كلاسيكية مرسومة على الشارت.</small>';
+   $('scanResults').innerHTML='<b style="color:#65e7d3">نتائج من '+new Set(all.map(x=>x.marketKey)).size+' سوق · '+all.length+' إشارة</b><br>'+all.slice(0,30).map((t,i)=>'<div style="padding:9px 0;border-bottom:1px solid #20364d"><b>'+(i+1)+'. '+String(t.symbol||'—')+'</b> · '+t.marketName+' · '+String(t.side||'—')+' · '+String(t.timeframe||tf)+'<br><small>تغير: '+(Number(t.change_pct)||0).toFixed(2)+'% · تقييم AI: '+(Number(t.ai_pct)||0)+'% · دخول: '+fmt(Number(t.entry)||0)+' · SL: '+fmt(Number(t.sl)||0)+' · TP1: '+fmt(Number(t.tp1)||0)+'</small></div>').join('')+(pending.length?'<small>الفحص يعمل بالخلفية: '+pending.join('، ')+'. ستتم إعادة المحاولة تلقائيًا بعد قليل.</small>':'')+(errors.length?'<small>تعذر فحص: '+errors.join('، ')+'</small>':'')+'<br><small>كل سوق يُفحص من مصدره الخاص؛ النتائج ليست كلها نماذج كلاسيكية مرسومة على الشارت.</small>';
    const first=all[0];$('symbol').value=first.symbol||$('symbol').value;
    $('patternName').textContent=first.marketName+' · '+(first.side||'إشارة');
    $('signalState').textContent='أفضل نتيجة حسب تقييم الماسح';$('lastClose').textContent=fmt(Number(first.entry)||0);
@@ -344,7 +338,7 @@ if(market!=='spot'){
    let msg=pending.length?'الفحص ما زال يعمل بالخلفية للأسواق: '+pending.join('، ')+'. الفحص المستمر سيعيد المحاولة تلقائيًا.':(autoScan?'ما ظهرت إشارات مطابقة في هذه الدورة؛ الفحص المستمر شغال وبيكمل تلقائيًا.':'انتهى الفحص ولم تظهر إشارات مطابقة حاليًا.');
    $('scanResults').textContent=msg+(errors.length?' تعذر فحص: '+errors.join('، '):'');
   }
- }finally{scanInProgress=false;btn.disabled=false;if(autoScan){clearTimeout(scanTimer);scanTimer=setTimeout(()=>{if(autoScan)scan()},2500)}}
+ }finally{scanInProgress=false;btn.disabled=false;if(autoScan){clearTimeout(scanTimer);scanTimer=setTimeout(()=>{if(autoScan)scan()},8000)}}
  return;
 }
 const btn=$('scan');if(scanInProgress)return;scanInProgress=true;btn.disabled=false;const tf=$('tf').value;const key='patternScan:'+market+':'+tf;let state={cursor:0,found:[],symbols:[],loopCount:0};try{state=JSON.parse(sessionStorage.getItem(key)||'null')||state}catch(e){};if(!Array.isArray(state.found))state={cursor:0,found:[],symbols:[],loopCount:0};if(!Array.isArray(state.symbols))state.symbols=[];if(!Number.isFinite(Number(state.cursor))||Number(state.cursor)<0)state.cursor=0;if(!Number.isFinite(Number(state.loopCount)))state.loopCount=0;$('scanResults').textContent='يكمل البحث من الزوج رقم '+(state.cursor+1)+' على فريم '+tf+'…';$('chartUpdated').textContent='البحث المتواصل يعمل…';
@@ -360,7 +354,7 @@ if(found.length){const newlyFound=found.slice(priorFoundCount);const rankedBatch
 $('scanResults').innerHTML='<b style="color:#65e7d3">نتائج متراكمة: '+found.length+' نموذج</b><br>آخر نموذج جديد: <b>'+best.symbol.replace('USDT','/USDT')+'</b> · '+best.pat.name+' · '+(best.pat.dir||'مراقبة')+'<br>تغير 24 ساعة: '+best.change.toFixed(2)+'% · حجم 24 ساعة: '+(best.volume/1e6).toFixed(2)+' مليون USDT<br><small>تم فحص الدفعة '+start+'–'+end+' من '+list.length+' زوجًا مؤهلًا بحجم تداول يومي يتجاوز مليون USDT. دورة الفحص: '+Math.max(1,Number(state.loopCount)||0)+'؛ النتائج السابقة محفوظة ويستمر الفحص تلقائيًا.</small>';
 }else{$('scanResults').innerHTML='<b>ما ظهر نموذج مطابق في الدفعة الحالية.</b><br>تم فحص '+start+'–'+end+' من '+list.length+' زوجًا على '+tf+'. دورة الفحص: '+Math.max(1,Number(state.loopCount)||0)+'؛ سيواصل البحث تلقائيًا.';}
 
-}catch(e){$('scanResults').textContent='تعذر إكمال المسح: '+(e.message||e)+'. المؤشر الحالي محفوظ؛ سيعيد المحاولة تلقائيًا إذا كان الفحص المستمر مفعّلًا.';$('chartUpdated').textContent='فشل المسح'}finally{scanInProgress=false;btn.disabled=false;if(autoScan){clearTimeout(scanTimer);scanTimer=setTimeout(()=>{if(autoScan)scan()},2500)}}
+}catch(e){$('scanResults').textContent='تعذر إكمال المسح: '+(e.message||e)+'. المؤشر الحالي محفوظ؛ سيعيد المحاولة تلقائيًا إذا كان الفحص المستمر مفعّلًا.';$('chartUpdated').textContent='فشل المسح'}finally{scanInProgress=false;btn.disabled=false;if(autoScan){clearTimeout(scanTimer);scanTimer=setTimeout(()=>{if(autoScan)scan()},8000)}}
 }
 $('zoomIn').addEventListener('click',()=>{zoomBars=zoomSteps[Math.max(0,zoomSteps.indexOf(zoomBars)-1)]||15;load()});$('zoomOut').addEventListener('click',()=>{zoomBars=zoomSteps[Math.min(zoomSteps.length-1,Math.max(0,zoomSteps.indexOf(zoomBars))+1)]||180;load()});$('zoomReset').addEventListener('click',()=>{zoomBars=60;load()});$('chart').addEventListener('wheel',e=>{if(Math.abs(e.deltaY)<2)return;e.preventDefault();const idx=zoomSteps.indexOf(zoomBars);zoomBars=zoomSteps[Math.max(0,Math.min(zoomSteps.length-1,idx+(e.deltaY>0?1:-1)))];load()},{passive:false});$('market').addEventListener('change',()=>{const m=$('market').value;updateSourceLabel();$('marketLabel').textContent=marketNames[m]||m;$('patternName').textContent='جارٍ تحميل السوق';$('scanResults').textContent='تم تغيير السوق إلى '+(marketNames[m]||m)+'؛ يتم تحديث الشارت حسب السوق المختار.';const defaults={all:'BTCUSDT',spot:'BTCUSDT',futures:'BTCUSDT',contracts:'ES',us:'AAPL',saudi:'2222',forex:'XAUUSD'};$('symbol').value=defaults[m]||'BTCUSDT';load()});updateSourceLabel();$('scan').addEventListener('click',()=>{if(autoScan){autoScan=false;clearTimeout(scanTimer);$('scan').textContent='🔎 تابع البحث عن النماذج';$('scanResults').textContent+=' — تم إيقاف الفحص التلقائي؛ المؤشر والنتائج محفوظة.';return}autoScan=true;$('scan').textContent='⏸ إيقاف الفحص المستمر';scan()});$('refresh').addEventListener('click',load);$('tf').addEventListener('change',load);$('symbol').addEventListener('keydown',e=>{if(e.key==='Enter')load()});load();setInterval(()=>{if(!scanInProgress)load()},60000);
 })();
