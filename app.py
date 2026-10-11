@@ -1063,8 +1063,65 @@ def _pa_analysis(candles):
         if hi>lo:
             drawings.append({"type":"fib","hi":hi,"lo":lo,"label":"Fibonacci 0.382 / 0.5 / 0.618"})
 
+    # Additional chart patterns. These are candidate detections; breakouts need confirmation.
+    if len(sh)>=3 and abs(sh[-1][1]-sh[-2][1])<=tol and abs(sh[-2][1]-sh[-3][1])<=tol*1.35:
+        add("قمة ثلاثية","triple_top",84,"ثلاث قمم متقاربة؛ التأكيد بكسر خط العنق")
+        drawings.append({"type":"zone","x1":sh[-3][0],"x2":sh[-1][0],"y1":max(p[1] for p in sh[-3:])-tol,"y2":max(p[1] for p in sh[-3:])+tol,"label":"Triple Top"})
+    if len(sl)>=3 and abs(sl[-1][1]-sl[-2][1])<=tol and abs(sl[-2][1]-sl[-3][1])<=tol*1.35:
+        add("قاع ثلاثي","triple_bottom",84,"ثلاثة قيعان متقاربة؛ التأكيد باختراق خط العنق")
+        drawings.append({"type":"zone","x1":sl[-3][0],"x2":sl[-1][0],"y1":min(p[1] for p in sl[-3:])-tol,"y2":min(p[1] for p in sl[-3:])+tol,"label":"Triple Bottom"})
+
+    # Flag / pennant candidate: impulse followed by a compact counter-trend pause.
+    if len(candles)>=24:
+        impulse=candles[-24:-9]; pause=candles[-9:]
+        impulse_move=(impulse[-1]["close"]-impulse[0]["close"])/max(abs(impulse[0]["close"]),1e-12)
+        pause_hi=max(x["high"] for x in pause); pause_lo=min(x["low"] for x in pause)
+        pause_range=(pause_hi-pause_lo)/max(abs(price),1e-12)
+        pause_move=(pause[-1]["close"]-pause[0]["close"])/max(abs(pause[0]["close"]),1e-12)
+        if abs(impulse_move)>=0.035 and pause_range<=abs(impulse_move)*0.8 and impulse_move*pause_move<=0:
+            add("علم صاعد محتمل" if impulse_move>0 else "علم هابط محتمل","flag",78,"اندفاع يتبعه تماسك؛ ينتظر كسر حدود النموذج")
+            drawings.append({"type":"zone","x1":n-len(pause),"x2":n-1,"y1":pause_lo,"y2":pause_hi,"label":"Flag / Pennant"})
+    # Broadening formation: progressively higher highs and lower lows.
+    if len(sh)>=3 and len(sl)>=3 and sh[-1][1]>sh[-2][1]>sh[-3][1] and sl[-1][1]<sl[-2][1]<sl[-3][1]:
+        add("تكوين متسع","broadening",78,"قمم أعلى وقيعان أدنى؛ تذبذب مرتفع")
+        drawings += [{"type":"line","x1":sh[-3][0],"y1":sh[-3][1],"x2":sh[-1][0],"y2":sh[-1][1],"label":"Broadening Highs"},
+                     {"type":"line","x1":sl[-3][0],"y1":sl[-3][1],"x2":sl[-1][0],"y2":sl[-1][1],"label":"Broadening Lows"}]
+
+    # Cup-and-handle candidate: approximate rounded recovery and shallow handle.
+    if len(candles)>=35:
+        win=candles[-35:]
+        left_rim=max(x["high"] for x in win[:8]); bottom=min(x["low"] for x in win[8:27])
+        right_rim=max(x["high"] for x in win[20:30]); handle_low=min(x["low"] for x in win[30:])
+        rim=max(left_rim,right_rim)
+        if bottom<left_rim*0.94 and abs(right_rim-left_rim)<=max(tol*2,left_rim*0.035) and handle_low>bottom and price<=rim*1.015 and price>=handle_low:
+            add("كوب وعروة محتمل","cup_handle",78,"تقارب حافتي الكوب مع تراجع محدود؛ يلزم اختراق الحافة")
+            drawings.append({"type":"zone","x1":n-35,"x2":n-1,"y1":rim-tol,"y2":rim+tol,"label":"Cup Rim"})
+
+    # Harmonic-style XABCD ratio screening. This is approximate, not strict pattern validation.
+    pivots=sorted([(i,v,"H") for i,v in sh]+[(i,v,"L") for i,v in sl],key=lambda z:z[0])
+    alternating=[]
+    for p in pivots:
+        if alternating and alternating[-1][2]==p[2]:
+            if (p[2]=="H" and p[1]>alternating[-1][1]) or (p[2]=="L" and p[1]<alternating[-1][1]): alternating[-1]=p
+        elif not alternating or p[0]>alternating[-1][0]:
+            alternating.append(p)
+    if len(alternating)>=5:
+        x,a,b,c,d=alternating[-5:]
+        xa=abs(a[1]-x[1]); ab=abs(b[1]-a[1]); bc=abs(c[1]-b[1]); cd=abs(d[1]-c[1])
+        if min(xa,ab,bc)>max(price*1e-6,1e-12):
+            r_ab=ab/xa; r_bc=bc/ab; r_cd=cd/bc
+            harmonic_name=None
+            if 0.55<=r_ab<=0.68 and 0.35<=r_bc<=0.9 and 1.1<=r_cd<=1.8: harmonic_name="هارمونيك محتمل (Gartley/Bat)"
+            elif 0.35<=r_ab<=0.9 and 0.35<=r_bc<=0.9 and 1.5<=r_cd<=2.8: harmonic_name="هارمونيك محتمل (Butterfly/Crab)"
+            if harmonic_name:
+                add(harmonic_name,"harmonic",74,"نسب XABCD تقريبية؛ تحتاج تحقق أدق قبل الاعتماد")
+                drawings += [{"type":"line","x1":x[0],"y1":x[1],"x2":a[0],"y2":a[1],"label":"X-A"},
+                             {"type":"line","x1":a[0],"y1":a[1],"x2":b[0],"y2":b[1],"label":"A-B"},
+                             {"type":"line","x1":b[0],"y1":b[1],"x2":c[0],"y2":c[1],"label":"B-C"},
+                             {"type":"line","x1":c[0],"y1":c[1],"x2":d[0],"y2":d[1],"label":"C-D"}]
+
     # اختيار الاتجاه والصفقة من السعر والبنية فقط.
-    bullish=sum(1 for p in patterns if p["kind"] in {"breakout","inverse_head_shoulders","double_bottom","engulfing"} and p["confidence"]>=80)
+    bullish=sum(1 for p in patterns if p["kind"] in {"breakout","inverse_head_shoulders","double_bottom","triple_bottom","engulfing"} and p["confidence"]>=80)
     bearish=sum(1 for p in patterns if p["kind"] in {"breakdown","head_shoulders","double_top"} and p["confidence"]>=80)
     if bullish and not bearish: side="BUY"
     elif bearish and not bullish: side="SELL"
