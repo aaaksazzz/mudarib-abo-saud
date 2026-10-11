@@ -29,7 +29,7 @@ def _num(v):
  try:return float(v)
  except:return None
 def _eval(c,row,p):
- rid,market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,status,hit_target,result_price,result_at=row
+ rid,market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,status,hit_target,result_price,result_at=row[:15]
  if status in ("WIN","LOSS","EXPIRED"): return status
  p=_num(p); e=_num(entry)
  if not p or not e:return "OPEN"
@@ -100,7 +100,7 @@ def _results_locked(core):
   for x in rows or []:
    created=float(x.get("detected_at") or now); sig=(market,str(x.get("symbol") or ""),str(x.get("direction") or ""),str(x.get("entry") or ""))
    if c.execute("select id from recommendation_results where market=? and symbol=? and direction=? and entry=? and created>=?",(*sig,cutoff)).fetchone(): continue
-   c.execute("insert into recommendation_results(market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated) values(?,?,?,?,?,?,?,?,?,?)",(market,x.get("symbol"),x.get("direction"),_num(x.get("entry")),_num(x.get("tp1")),_num(x.get("tp2")),_num(x.get("tp3")),_num(x.get("sl")),created,now))
+   c.execute("insert into recommendation_results(market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,timeframe,strategy_key,method_votes,base_score) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(market,x.get("symbol"),x.get("direction"),_num(x.get("entry")),_num(x.get("tp1")),_num(x.get("tp2")),_num(x.get("tp3")),_num(x.get("sl")),created,now,str(x.get("timeframe") or "15m"),str(x.get("technical_method_key") or "technical-confluence"),__import__("json").dumps(x.get("methods") or {},ensure_ascii=False,separators=(",",":")),_num(x.get("recommendation_score") or x.get("ai_pct")) or 0))
  c.commit()
  rows=c.execute("select id,market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,status,hit_target,result_price,result_at,timeframe,strategy_key,method_votes,base_score from recommendation_results where created>=? order by created desc",(cutoff,)).fetchall()
  # Fetch one quote per unique market/symbol concurrently; serial network calls made this
