@@ -119,7 +119,8 @@ function render(data,symbol,tf,cup=null,patterns=[]){
  if(breakout==='watch'){sl=Math.min(...recent.slice(-8).map(c=>c.low));if(sl>=entry)sl=entry*.985}
  const risk=Math.max(Math.abs(entry-sl),entry*.002),dir=short?-1:1;
  const tps=cup?[entry+cup.depth,entry+cup.depth*1.25,entry+cup.depth*1.5]:[entry+dir*risk,entry+dir*risk*2,entry+dir*risk*3];
- drawOwnChart(data,symbol,tf,cup,patterns,{entry:entry,sl:sl,tps:tps});\n const patternNames=[...(cup?[{name:'كوب وعروة',score:cup.score}]:[]),...patterns].map(x=>x.name);
+ drawOwnChart(data,symbol,tf,cup,patterns,{entry:entry,sl:sl,tps:tps});
+ const patternNames=[...(cup?[{name:'كوب وعروة',score:cup.score}]:[]),...patterns].map(x=>x.name);
  $('patternName').textContent=patternNames.length?patternNames.join(' · '):'قناة سعرية تقديرية';
  $('signalState').textContent=cup?(close>=cup.rim?'اختراق المقاومة المحتمل':'العروة تتكوّن — بانتظار الاختراق'):long?'اختراق صاعد محتمل':short?'كسر هابط محتمل':'داخل القناة — بانتظار التأكيد';
  $('signalState').className=long?'p-up':short?'p-down':'';
