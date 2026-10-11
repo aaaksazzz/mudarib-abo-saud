@@ -195,22 +195,23 @@ function loadTechnical(m,tf){
  if(selectedTechnicalMarket==="alpha"){box.innerHTML='<div class="empty">مصدر Binance Alpha المستقل غير مربوط حاليًا. لن نستبدل بياناته بإشارات الفيوتشر.</div>';if(status)status.textContent=marketName+" · لا توجد بيانات مستقلة متاحة";return;}
  var apiMarket=selectedTechnicalMarket;
  var methodName=(technicalMethods.find(function(x){return x[0]===selectedTechnicalMethod;})||technicalMethods[0])[2];
-  // Use the live opportunities API only. The legacy strategy/engine endpoint is
- // intentionally disabled by the server (410); calling it causes noisy errors.
- var endpoint="/api/opportunities?market="+encodeURIComponent(apiMarket)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now();
+  // Each named methodology uses its own backend scan. The consensus feed is
+ // used only for the explicitly selected "all methods" view.
+ var independentMethodIds=["price-action","smc","ict","classical","candles","patterns","fibonacci","elliott","wyckoff","volume","ichimoku","dow-mtf","volume-profile","market-regime","bos-choch","liquidity","retest","fvg","channels"];
+ if(selectedTechnicalMethod!=="all"&&independentMethodIds.indexOf(selectedTechnicalMethod)<0){
+  box.innerHTML='<div class="empty">هذا المنهج ما عنده محرك مستقل جاهز حتى الآن. أوقفنا الإشارات هنا بدل استعارة نتائج منهج آخر.</div>';
+  if(status)status.textContent=marketName+" · "+methodName+" · يحتاج محركًا مستقلًا";
+  return;
+ }
+ var endpoint=(selectedTechnicalMethod!=="all"?"/api/technical-methods?market="+encodeURIComponent(apiMarket)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&method="+encodeURIComponent(selectedTechnicalMethod):"/api/opportunities?market="+encodeURIComponent(apiMarket)+"&timeframe="+encodeURIComponent(selectedTimeframe))+"&x="+Date.now();
  getJSON(endpoint).then(function(j){
   var s=j.scan_stats||{},rows=j.opportunities||[];
-  var methodRows=filterTechnicalMethods(rows);
+  var methodRows=selectedTechnicalMethod==="all"?filterTechnicalMethods(rows):rows.filter(function(r){return r.technical_method_key===selectedTechnicalMethod&&r.technical_only===true;});
   render(box,methodRows);
-  var methodIsImplemented=implementedTechnicalMethodIds.indexOf(selectedTechnicalMethod)>=0;
-  if(!methodIsImplemented&&selectedTechnicalMethod!=="all"&&methodRows.length){
-   box.insertAdjacentHTML("afterbegin",'<div class="empty">⚠️ هذه فرص مباشرة للسوق والفريم المحددين للاطلاع فقط؛ هذا المنهج لم يُربط بعد بمحرك مستقل، لذلك ليست توصيات صادرة عنه.</div>');
-  }
+  var methodIsImplemented=selectedTechnicalMethod==="all"||independentMethodIds.indexOf(selectedTechnicalMethod)>=0;
+
   if(!methodRows.length&&selectedTechnicalMethod!=="all"){
-   var methodReady=implementedTechnicalMethodIds.indexOf(selectedTechnicalMethod)>=0;
-   box.innerHTML=methodReady
-    ? '<div class="empty">ما فيه إشارات مؤكدة مطابقة لشروط هذا المنهج في '+esc(marketName)+' على فريم '+esc(tfName)+'. ما راح نعرض إشارات من منهج ثاني بدلًا عنه.</div>'
-    : '<div class="empty">هذا المنهج ما اكتمل ربطه باستراتيجية مستقلة بعد؛ أوقفنا عرض الفرص العامة هنا حتى ما تُنسب له تحليلات غير صحيحة.</div>';
+   box.innerHTML='<div class="empty">ما ظهرت إشارة من قواعد هذا المنهج في '+esc(marketName)+' على فريم '+esc(tfName)+'. ما راح نعرض إشارات من منهج ثاني بدلًا عنه.</div>';
   }
   var rawStamp=s.updated_at?new Date(s.updated_at*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):(j.updated_at?new Date(j.updated_at).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):"جاري التحديث");
   if(status)status.textContent=(s.scanning?"الفحص مستمر بالخلفية · ":"")+marketName+" · "+methodName+" · فريم "+tfName+" · "+methodRows.length+" فرصة"+(!methodIsImplemented&&selectedTechnicalMethod!=="all"?" · عرض مرجعي فقط":"")+" · آخر تحديث: "+rawStamp;
