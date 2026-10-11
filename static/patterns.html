@@ -11,18 +11,18 @@
 </style></head>
 <body data-page="patterns">
 <div class="app-shell"><header class="topbar"><div class="brand"><a href="/" class="brand-mark" style="text-decoration:none;color:inherit">S</a><div><b>التداول الذكي <em>PRO</em></b><small>SMART MARKET INTELLIGENCE</small></div></div><div class="top-actions"><span class="live"><i></i> شارت مباشر</span><a class="ghost-btn" href="/">الرئيسية</a></div></header>
-<div class="ticker"><b>نموذج فني</b><span>شموع السوق الفعلية من Binance</span><span>•</span><span>الرسم تقديري وليس توصية مضمونة</span></div>
+<div class="ticker"><b>نموذج فني</b><span>فحص الأسواق المتاحة بالموقع</span><span>•</span><span>الرسم تقديري وليس توصية مضمونة</span></div>
 <div class="layout"><aside class="sidebar" style="display:block"><div class="side-title">أدوات التحليل</div><a class="nav-item" href="/" style="text-decoration:none;display:block">⌂ الرئيسية</a><a class="nav-item" href="/static/technical.html" style="text-decoration:none;display:block">📐 تحليل فني</a><a class="nav-item active" href="/static/patterns.html" style="text-decoration:none;display:block">📈 النماذج الفنية</a><div class="side-footer"><span class="dot"></span> نموذج مستقل</div></aside>
 <main class="content"><div class="pattern-wrap"><div class="page-head pattern-top"><div><span class="eyebrow">SMART CHART LAB · PRICE ACTION</span><h1>النماذج الفنية <span style="color:#65e7d3">PRO</span></h1><p>شارت شموع تفاعلي مع أدوات تحليل آلية مستوحاة من TradingView: قناة اتجاه، فيبوناتشي، دعم ومقاومة، ومستويات الدخول والأهداف والوقف.</p></div><span class="p-chip"><span class="p-live-dot"></span>بيانات سوق مباشرة<strong>تحديث تلقائي كل دقيقة</strong></span></div>
-<div class="pattern-controls"><input id="symbol" value="API3USDT" aria-label="رمز العملة" placeholder="مثال BTCUSDT"><select id="tf" aria-label="الفريم"><option value="1m">دقيقة</option><option value="3m">3 دقائق</option><option value="5m">5 دقائق</option><option value="15m" selected>15 دقيقة</option><option value="30m">30 دقيقة</option><option value="1h">ساعة</option><option value="2h">ساعتين</option><option value="4h">4 ساعات</option><option value="6h">6 ساعات</option><option value="8h">8 ساعات</option><option value="12h">12 ساعة</option><option value="1d">يومي</option><option value="3d">3 أيام</option><option value="1w">أسبوعي</option><option value="1M">شهري</option></select><button id="scan" type="button">🔎 تابع البحث عن النماذج</button><button id="refresh" type="button">↻ تحديث الشارت</button></div>
-<div class="pattern-status"><div class="p-chip">السوق<strong>SPOT · USDT</strong></div><div class="p-chip">النموذج الفني<strong id="patternName">جارٍ تحليل القناة…</strong></div><div class="p-chip">قراءة النموذج<strong id="signalState">جارٍ جلب البيانات</strong></div><div class="p-chip">آخر سعر إغلاق<strong id="lastClose">—</strong></div></div>
+<div class="pattern-controls"><select id="market" aria-label="السوق"><option value="all" selected>كل الأسواق</option><option value="spot">السبوت</option><option value="futures">الفيوتشر</option><option value="contracts">العقود الأمريكية</option><option value="us">الأسهم الأمريكية</option><option value="saudi">الأسهم السعودية</option><option value="forex">الفوركس والذهب</option></select><input id="symbol" value="API3USDT" aria-label="رمز العملة" placeholder="مثال BTCUSDT"><select id="tf" aria-label="الفريم"><option value="1m">دقيقة</option><option value="3m">3 دقائق</option><option value="5m">5 دقائق</option><option value="15m" selected>15 دقيقة</option><option value="30m">30 دقيقة</option><option value="1h">ساعة</option><option value="2h">ساعتين</option><option value="4h">4 ساعات</option><option value="6h">6 ساعات</option><option value="8h">8 ساعات</option><option value="12h">12 ساعة</option><option value="1d">يومي</option><option value="3d">3 أيام</option><option value="1w">أسبوعي</option><option value="1M">شهري</option></select><button id="scan" type="button">🔎 تابع البحث عن النماذج</button><button id="refresh" type="button">↻ تحديث الشارت</button></div>
+<div class="pattern-status"><div class="p-chip">السوق<strong id="marketLabel">كل الأسواق</strong></div><div class="p-chip">النموذج الفني<strong id="patternName">جارٍ تحليل القناة…</strong></div><div class="p-chip">قراءة النموذج<strong id="signalState">جارٍ جلب البيانات</strong></div><div class="p-chip">آخر سعر إغلاق<strong id="lastClose">—</strong></div></div>
 <div class="p-chart-card"><div class="p-chart-head"><b id="chartTitle">API3/USDT · 1H</b><small id="chartUpdated">جارٍ الاتصال ببايننس…</small></div><div id="chart" class="p-chart" role="img" aria-label="شارت شموع تفاعلي بأسلوب TradingView مع نموذج الكوب والعروة" style="height:300px;min-height:240px"></div><div class="pattern-foot"><span><span class="p-live-dot"></span>شموع مباشرة من Binance</span><span>القناة الزرقاء · فيبوناتشي ملون · دعم أخضر · مقاومة برتقالي · الأهداف أخضر</span></div><div class="p-warn">تنبيه: القناة آلية وتقديرية، والأهداف مبنية على مضاعفات المخاطرة وليست إشارة مضمونة أو توصية مالية.</div></div>
 <div id="scanResults" class="p-explain" style="margin-bottom:12px">البحث المتواصل: كل ضغطة تكمل من آخر زوج وصلت له، ولا تعيد المؤشر إلى البداية. يتم فحص النماذج الكلاسيكية على الفريم المحدد.</div><div class="p-levels"><div class="p-level entry"><small>الدخول المرجعي</small><b id="entry">—</b></div><div class="p-level stop"><small>وقف الخسارة SL</small><b id="sl">—</b></div><div class="p-level target"><small>الهدف TP1</small><b id="tp1">—</b></div><div class="p-level target"><small>الهدف TP2</small><b id="tp2">—</b></div><div class="p-level target"><small>الهدف TP3</small><b id="tp3">—</b></div></div>
 <div id="explain" class="p-explain">يتم تحميل بيانات الشموع ثم تقدير القناة السعرية ومستويات المخاطرة.</div></div></main></div></div>
 <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
 <script>
 (function(){
-const $=id=>document.getElementById(id);let busy=false;
+const $=id=>document.getElementById(id);let busy=false;const marketNames={all:'كل الأسواق',spot:'السبوت',futures:'الفيوتشر',contracts:'العقود الأمريكية',us:'الأسهم الأمريكية',saudi:'الأسهم السعودية',forex:'الفوركس والذهب'};
 const fmt=n=>Number(n).toLocaleString('en-US',{maximumFractionDigits:8});
 function regression(arr){const n=arr.length;let sx=0,sy=0,sxx=0,sxy=0;arr.forEach((v,i)=>{sx+=i;sy+=v;sxx+=i*i;sxy+=i*v});const d=n*sxx-sx*sx;const m=d?(n*sxy-sx*sy)/d:0;return {m,b:(sy-m*sx)/n};}
 function line(reg,x){return reg.m*x+reg.b}
@@ -168,7 +168,37 @@ function detectClassic(data){
  return null;
 }
 async function scan(){
-const btn=$('scan');if(btn.disabled)return;btn.disabled=true;const tf=$('tf').value;const key='patternScan:'+tf;let state={cursor:0,found:[],symbols:[]};try{state=JSON.parse(sessionStorage.getItem(key)||'null')||state}catch(e){};if(!Array.isArray(state.found))state={cursor:0,found:[],symbols:[]};$('scanResults').textContent='يكمل البحث من الزوج رقم '+(state.cursor+1)+' على فريم '+tf+'…';$('chartUpdated').textContent='البحث المتواصل يعمل…';
+const market=$('market').value;
+$('marketLabel').textContent=marketNames[market]||market;
+if(market!=='spot'){
+ const btn=$('scan');if(btn.disabled)return;btn.disabled=true;
+ const markets=market==='all'?['spot','futures','contracts','us','saudi','forex']:[market];
+ const tf=$('tf').value;let all=[],errors=[];
+ $('scanResults').textContent='جاري فحص الأسواق المحددة على فريم '+tf+'…';
+ try{
+  for(const m of markets){
+   $('scanResults').textContent='جاري فحص '+marketNames[m]+'…';
+   try{
+    const r=await fetch('/api/fast-market?market='+encodeURIComponent(m)+'&timeframe='+encodeURIComponent(tf),{cache:'no-store'});
+    const j=await r.json();
+    if(!r.ok||!j.ok)throw Error(j.message||'تعذر الفحص');
+    (j.trades||[]).forEach(t=>all.push({...t,marketKey:m,marketName:marketNames[m]}));
+   }catch(e){errors.push(marketNames[m]+': '+(e.message||e))}
+  }
+  all.sort((a,b)=>(Number(b.ai_pct)||0)-(Number(a.ai_pct)||0)||Math.abs(Number(b.change_pct)||0)-Math.abs(Number(a.change_pct)||0));
+  if(all.length){
+   $('scanResults').innerHTML='<b style="color:#65e7d3">نتائج من '+new Set(all.map(x=>x.marketKey)).size+' سوق · '+all.length+' إشارة</b><br>'+all.slice(0,30).map((t,i)=>'<div style="padding:9px 0;border-bottom:1px solid #20364d"><b>'+(i+1)+'. '+String(t.symbol||'—')+'</b> · '+t.marketName+' · '+String(t.side||'—')+' · '+String(t.timeframe||tf)+'<br><small>تغير: '+(Number(t.change_pct)||0).toFixed(2)+'% · تقييم AI: '+(Number(t.ai_pct)||0)+'% · دخول: '+fmt(Number(t.entry)||0)+' · SL: '+fmt(Number(t.sl)||0)+' · TP1: '+fmt(Number(t.tp1)||0)+'</small></div>').join('')+(errors.length?'<small>بعض الأسواق تعذر فحصها: '+errors.join('، ')+'</small>':'')+'<br><small>هذه نتائج الماسح الخاص بكل سوق، وليست كلها نماذج كلاسيكية مرسومة على الشارت.</small>';
+   const first=all[0];$('symbol').value=first.symbol||$('symbol').value;
+   $('patternName').textContent=first.marketName+' · '+(first.side||'إشارة');
+   $('signalState').textContent='أفضل نتيجة حسب تقييم الماسح';$('lastClose').textContent=fmt(Number(first.entry)||0);
+   $('entry').textContent=fmt(Number(first.entry)||0);$('sl').textContent=fmt(Number(first.sl)||0);$('tp1').textContent=fmt(Number(first.tp1)||0);$('tp2').textContent=fmt(Number(first.tp2)||0);$('tp3').textContent=fmt(Number(first.tp3)||0);
+   $('chartTitle').textContent=String(first.symbol||'')+' · '+first.marketName+' · '+tf;
+   $('explain').textContent='تم جلب الإشارات من ماسح السوق المستقل. لعرض الشارت، استخدم رمزًا متوافقًا مع مزود TradingView لذلك السوق.';
+  }else $('scanResults').textContent='ما رجع الماسح إشارات حاليًا.'+(errors.length?' تعذر فحص: '+errors.join('، '):'');
+ }finally{btn.disabled=false}
+ return;
+}
+const btn=$('scan');if(btn.disabled)return;btn.disabled=true;const tf=$('tf').value;const key='patternScan:'+market+':'+tf;let state={cursor:0,found:[],symbols:[]};try{state=JSON.parse(sessionStorage.getItem(key)||'null')||state}catch(e){};if(!Array.isArray(state.found))state={cursor:0,found:[],symbols:[]};$('scanResults').textContent='يكمل البحث من الزوج رقم '+(state.cursor+1)+' على فريم '+tf+'…';$('chartUpdated').textContent='البحث المتواصل يعمل…';
 try{
 const tickRes=await fetch('https://api.binance.com/api/v3/ticker/24hr',{cache:'no-store'});if(!tickRes.ok)throw Error('تعذر جلب قائمة أزواج Binance');const tickers=await tickRes.json();
 const stable=new Set(['USDCUSDT','FDUSDUSDT','TUSDUSDT','USDPUSDT','USDEUSDT','DAIUSDT','USDSUSDT','BUSDUSDT','EURUSDT','AEURUSDT']);
@@ -183,6 +213,6 @@ $('scanResults').innerHTML='<b style="color:#65e7d3">نتائج متراكمة: 
 
 }catch(e){$('scanResults').textContent='تعذر إكمال المسح: '+(e.message||e)+'. المؤشر الحالي محفوظ، أعد المحاولة للمتابعة.';$('chartUpdated').textContent='فشل المسح'}finally{btn.disabled=false}
 }
-$('scan').addEventListener('click',scan);$('refresh').addEventListener('click',load);$('tf').addEventListener('change',load);$('symbol').addEventListener('keydown',e=>{if(e.key==='Enter')load()});load();setInterval(()=>{if(!$('scan').disabled)load()},60000);
+$('market').addEventListener('change',()=>{$('marketLabel').textContent=marketNames[$('market').value]||$('market').value;$('patternName').textContent='اختر فحص السوق';$('scanResults').textContent='اضغط متابعة البحث لفحص السوق المحدد.'});$('scan').addEventListener('click',scan);$('refresh').addEventListener('click',load);$('tf').addEventListener('change',load);$('symbol').addEventListener('keydown',e=>{if(e.key==='Enter')load()});load();setInterval(()=>{if(!$('scan').disabled)load()},60000);
 })();
 </script></body></html>
