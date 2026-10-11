@@ -99,7 +99,7 @@ def _refresh_outcomes(c, core, cutoff):
         status = "OPEN"
         if (side == "BUY" and price <= sl) or (side == "SELL" and price >= sl):
             status = "LOSS"
-            result_r = -1.0
+            result_r = -1.0 - max(0.0, float(os.getenv("AZO_ROUNDTRIP_COST_PCT", "0.002"))) * entry / max(abs(entry-sl), 1e-12)
         else:
             targets = [row["tp1"], row["tp2"], row["tp3"]]
             for i, target in enumerate(targets, 1):
@@ -110,7 +110,7 @@ def _refresh_outcomes(c, core, cutoff):
                 target = float(targets[hit-1])
                 risk = abs(entry-sl)
                 status = "WIN"
-                result_r = abs(target-entry)/risk if risk else 0.0
+                result_r = (abs(target-entry)/risk - max(0.0, float(os.getenv("AZO_ROUNDTRIP_COST_PCT", "0.002"))) * entry / risk) if risk else 0.0
             elif time.time()-float(row["created"]) >= RETENTION:
                 status = "EXPIRED"
                 result_r = 0.0
@@ -218,10 +218,14 @@ def azo_scan(request: Request, market: str = "spot", timeframe: str = "15m"):
             symbol = str(row.get("symbol") or "").strip()
             if not symbol: continue
             try:
-                c.execute("""INSERT OR IGNORE INTO azo_signals(market,symbol,direction,timeframe,entry,tp1,tp2,tp3,sl,score,method_votes,created,updated)
-                  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (market,symbol,side,timeframe,entry,*[float(x) if x not in (None,"") else None for x in tps],sl,score,
-                   json.dumps(votes,ensure_ascii=False,separators=(",",":")),time.time(),time.time()))
+                exists = c.execute("SELECT id FROM azo_signals WHERE market=? AND symbol=? AND direction=? AND timeframe=? AND ABS(entry-?)<0.00000001 AND created>=? LIMIT 1",
+                                   (market,symbol,side,timeframe,entry,time.time()-900)).fetchone()
+                if not exists:
+                    now = time.time()
+                    c.execute("""INSERT INTO azo_signals(market,symbol,direction,timeframe,entry,tp1,tp2,tp3,sl,score,method_votes,created,updated)
+                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      (market,symbol,side,timeframe,entry,*[float(x) if x not in (None,"") else None for x in tps],sl,score,
+                       json.dumps(votes,ensure_ascii=False,separators=(",",":")),now,now))
             except Exception:
                 pass
             results.append({"market":market,"symbol":symbol,"direction":side,"timeframe":timeframe,"entry":entry,
