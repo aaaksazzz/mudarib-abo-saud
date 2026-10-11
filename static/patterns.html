@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#07111f"><meta name="description" content="شارت شموع مباشر مع رسم القناة السعرية ومستويات الدخول والأهداف ووقف الخسارة.">
+<meta http-equiv="Cache-Control" content="no-store"><title>النماذج الفنية | التداول الذكي PRO</title>
+<link rel="stylesheet" href="/static/style.css?v=20261011-pattern-chart">
+<style>
+.pattern-wrap{max-width:1100px;margin:auto}.pattern-top{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}.pattern-controls{display:flex;gap:8px;flex-wrap:wrap}.pattern-controls input,.pattern-controls select,.pattern-controls button{background:#102238;color:#f1f6fd;border:1px solid #29445f;border-radius:10px;padding:10px 12px;font:inherit;min-height:42px}.pattern-controls button{cursor:pointer;background:#1b4b7b}.pattern-status{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}.p-chip{background:#102238;border:1px solid #203750;border-radius:999px;padding:7px 11px;font-size:13px;color:#c7d8eb}.p-chip strong{color:#fff}.p-chart-card{background:#0b1727;border:1px solid #203750;border-radius:18px;padding:12px;overflow:hidden}.p-chart-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 2px 10px}.p-chart-head small{color:#93a9c1}.p-chart{width:100%;height:auto;display:block;min-height:280px}.p-chart text{font-family:Tahoma,Arial,sans-serif}.p-levels{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:12px}.p-level{background:#0c1a2b;border:1px solid #203750;border-radius:12px;padding:12px;min-width:0}.p-level small{display:block;color:#93a9c1;font-size:12px;margin-bottom:6px}.p-level b{font-size:14px;overflow-wrap:anywhere}.p-level.entry b{color:#45dbc8}.p-level.target b{color:#2bd69a}.p-level.stop b{color:#ff7186}.p-explain{background:#0c1a2b;border:1px solid #203750;border-radius:14px;padding:14px;margin-top:12px;color:#c7d8eb;line-height:1.8}.p-warn{color:#e9c66b;font-size:12px;margin:10px 2px 2px}.p-error{color:#ff9cac}.p-up{color:#2bd69a}.p-down{color:#ff7186}@media(max-width:650px){.p-levels{grid-template-columns:repeat(2,minmax(0,1fr))}.p-level:last-child{grid-column:span 2}.p-chart-card{padding:7px}.p-chart{min-height:240px}.pattern-controls input{width:125px}}
+</style></head>
+<body data-page="patterns">
+<div class="app-shell"><header class="topbar"><div class="brand"><a href="/" class="brand-mark" style="text-decoration:none;color:inherit">S</a><div><b>التداول الذكي <em>PRO</em></b><small>SMART MARKET INTELLIGENCE</small></div></div><div class="top-actions"><span class="live"><i></i> شارت مباشر</span><a class="ghost-btn" href="/">الرئيسية</a></div></header>
+<div class="ticker"><b>نموذج فني</b><span>شموع السوق الفعلية من Binance</span><span>•</span><span>الرسم تقديري وليس توصية مضمونة</span></div>
+<div class="layout"><aside class="sidebar" style="display:block"><div class="side-title">أدوات التحليل</div><a class="nav-item" href="/" style="text-decoration:none;display:block">⌂ الرئيسية</a><a class="nav-item" href="/static/technical.html" style="text-decoration:none;display:block">📐 تحليل فني</a><a class="nav-item active" href="/static/patterns.html" style="text-decoration:none;display:block">📈 النماذج الفنية</a><div class="side-footer"><span class="dot"></span> نموذج مستقل</div></aside>
+<main class="content"><div class="pattern-wrap"><div class="page-head pattern-top"><div><span class="eyebrow">PRICE ACTION / CHART PATTERN</span><h1>📈 النماذج الفنية — الشارت والأهداف</h1><p>شموع حقيقية مع قناة سعرية مرسومة ومستويات دخول وأهداف ووقف خسارة محسوبة من حركة السعر.</p></div></div>
+<div class="pattern-controls"><input id="symbol" value="API3USDT" aria-label="رمز العملة" placeholder="مثال BTCUSDT"><select id="tf" aria-label="الفريم"><option value="15m">15 دقيقة</option><option value="30m">30 دقيقة</option><option value="1h" selected>ساعة</option><option value="4h">4 ساعات</option><option value="1d">يومي</option><option value="1w">أسبوعي</option></select><button id="refresh" type="button">↻ تحديث الشارت</button></div>
+<div class="pattern-status"><span class="p-chip">السوق: <strong>Spot</strong></span><span class="p-chip">النموذج: <strong id="patternName">جارٍ تحليل القناة…</strong></span><span class="p-chip">الحالة: <strong id="signalState">جارٍ جلب البيانات</strong></span><span class="p-chip">آخر إغلاق: <strong id="lastClose">—</strong></span></div>
+<div class="p-chart-card"><div class="p-chart-head"><b id="chartTitle">API3/USDT · 1H</b><small id="chartUpdated">جارٍ الاتصال ببايننس…</small></div><svg id="chart" class="p-chart" viewBox="0 0 1000 560" role="img" aria-label="شارت شموع مع القناة السعرية وخطوط الدخول والأهداف ووقف الخسارة"></svg><div class="p-warn">ملاحظة: الشموع من بيانات Binance العامة. القناة تُرسم آليًا كتقدير من القمم والقيعان الأخيرة، والأهداف حسابية وليست توصية مالية.</div></div>
+<div class="p-levels"><div class="p-level entry"><small>الدخول المرجعي</small><b id="entry">—</b></div><div class="p-level stop"><small>وقف الخسارة SL</small><b id="sl">—</b></div><div class="p-level target"><small>الهدف TP1</small><b id="tp1">—</b></div><div class="p-level target"><small>الهدف TP2</small><b id="tp2">—</b></div><div class="p-level target"><small>الهدف TP3</small><b id="tp3">—</b></div></div>
+<div id="explain" class="p-explain">يتم تحميل بيانات الشموع ثم تقدير القناة السعرية ومستويات المخاطرة.</div></div></main></div></div>
+<script>
+(function(){
+const $=id=>document.getElementById(id);let busy=false;
+const fmt=n=>Number(n).toLocaleString('en-US',{maximumFractionDigits:8});
+function regression(arr){const n=arr.length;let sx=0,sy=0,sxx=0,sxy=0;arr.forEach((v,i)=>{sx+=i;sy+=v;sxx+=i*i;sxy+=i*v});const d=n*sxx-sx*sx;const m=d?(n*sxy-sx*sy)/d:0;return {m,b:(sy-m*sx)/n};}
+function line(reg,x){return reg.m*x+reg.b}
+function render(data,symbol,tf){
+const candles=data.map(k=>({t:k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4],v:+k[5]}));
+if(candles.length<10)throw Error('بيانات الشارت غير كافية');
+const recent=candles.slice(-36),n=recent.length,last=candles[candles.length-1],lo=recent.map(c=>c.l),hi=recent.map(c=>c.h),lr=regression(lo),hr=regression(hi);
+const xEnd=n-1,lowerEnd=line(lr,xEnd),upperEnd=line(hr,xEnd),close=last.c;
+const breakout=close>upperEnd?'up':close<lowerEnd?'down':'watch';
+const long=breakout==='up',short=breakout==='down';
+let entry=close,sl=long?Math.min(...recent.slice(-8).map(c=>c.l)):short?Math.max(...recent.slice(-8).map(c=>c.h)):Math.min(...recent.slice(-8).map(c=>c.l));
+if(long&&sl>=entry)sl=entry-(Math.max(...recent.map(c=>c.h))-Math.min(...recent.map(c=>c.l)))*.25;
+if(short&&sl<=entry)sl=entry+(Math.max(...recent.map(c=>c.h))-Math.min(...recent.map(c=>c.l)))*.25;
+if(breakout==='watch'){sl=Math.min(...recent.slice(-8).map(c=>c.l));if(sl>=entry)sl=entry*.985;}
+const risk=Math.max(Math.abs(entry-sl),entry*.002),dir=short?-1:1;
+const tps=[entry+dir*risk,entry+dir*risk*2,entry+dir*risk*3];
+$('patternName').textContent='قناة سعرية هابطة/صاعدة (تقديرية)';
+$('signalState').textContent=long?'اختراق صاعد محتمل':short?'كسر هابط محتمل':'داخل القناة — بانتظار التأكيد';
+$('signalState').className=long?'p-up':short?'p-down':'';
+$('lastClose').textContent=fmt(close);$('chartTitle').textContent=symbol.replace(/USDT$/,'')+'/USDT · '+tf;
+$('chartUpdated').textContent='آخر شمعة: '+new Date(last.t).toLocaleString('ar-SA');
+$('entry').textContent=fmt(entry);$('sl').textContent=fmt(sl);$('tp1').textContent=fmt(tps[0]);$('tp2').textContent=fmt(tps[1]);$('tp3').textContent=fmt(tps[2]);
+$('explain').textContent=long?'أغلق السعر أعلى الحد العلوي المقدّر للقناة. راقب إعادة الاختبار قبل اعتبار الاختراق مؤكدًا. مستويات الأهداف محسوبة على أساس مضاعفات المخاطرة 1R و2R و3R.':short?'أغلق السعر أسفل الحد السفلي المقدّر للقناة. السيناريو هابط مبدئيًا؛ انتبه لاحتمال الاختراق الكاذب. الأهداف محسوبة على أساس 1R و2R و3R.':'السعر ما زال داخل حدود القناة المقدّرة؛ لا توجد إشارة اختراق مؤكدة حسب هذا النموذج. الخطوط المعروضة مستويات افتراضية للتخطيط فقط وليست أمر دخول.';
+const W=1000,H=560,p={l:24,r:110,t:24,b:38},cw=W-p.l-p.r,ch=H-p.t-p.b;
+let min=Math.min(...recent.map(c=>c.l),sl,...tps),max=Math.max(...recent.map(c=>c.h),entry,...tps);let pad=(max-min)*.1||close*.01;min-=pad;max+=pad;
+const X=i=>p.l+i*cw/(n-1),Y=v=>p.t+(max-v)*ch/(max-min);
+let s='';
+for(let i=0;i<6;i++){const y=p.t+i*ch/5,val=max-i*(max-min)/5;s+='<line x1="'+p.l+'" y1="'+y+'" x2="'+(W-p.r)+'" y2="'+y+'" stroke="#203750" stroke-width="1"/><text x="'+(W-p.r+8)+'" y="'+(y+4)+'" fill="#93a9c1" font-size="12">'+fmt(val)+'</text>'}
+for(let i=0;i<n;i++){const c=recent[i],x=X(i),yo=Y(c.o),yc=Y(c.c),yh=Y(c.h),yl=Y(c.l),up=c.c>=c.o,col=up?'#2bd69a':'#ff7186',body=Math.max(2,Math.abs(yc-yo));s+='<line x1="'+x+'" y1="'+yh+'" x2="'+x+'" y2="'+yl+'" stroke="'+col+'" stroke-width="2"/><rect x="'+(x-5)+'" y="'+Math.min(yo,yc)+'" width="10" height="'+body+'" fill="'+col+'" rx="1"/>'}
+const drawLine=(x1,y1,x2,y2,color,dash,label)=>{s+='<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="'+color+'" stroke-width="2" stroke-dasharray="'+(dash||'')+'"/>';if(label)s+='<text x="'+(W-p.r+8)+'" y="'+(y2-5)+'" fill="'+color+'" font-size="12" font-weight="bold">'+label+'</text>'};
+drawLine(X(0),Y(line(hr,0)),X(n-1),Y(line(hr,n-1)),'#4b8cff','6 4','حد القناة');
+drawLine(X(0),Y(line(lr,0)),X(n-1),Y(line(lr,n-1)),'#4b8cff','6 4','حد القناة');
+const level=(v,color,label)=>{const y=Y(v);drawLine(p.l,y,W-p.r,y,color,'5 4',label+' '+fmt(v))};
+level(entry,'#45dbc8','دخول');level(sl,'#ff7186','SL');tps.forEach((v,i)=>level(v,'#2bd69a','TP'+(i+1)));
+const arrowColor=long?'#2bd69a':short?'#ff7186':'#e9c66b';const ax=X(n-1),ay=Y(close),ex=ax-55,ey=Y(close+(long?1:short?-1:0)*risk*2);
+if(long||short)s+='<path d="M '+ax+' '+ay+' Q '+(ax-20)+' '+((ay+ey)/2)+' '+ex+' '+ey+'" fill="none" stroke="'+arrowColor+'" stroke-width="4" stroke-linecap="round"/><path d="M '+(ex+10)+' '+(ey+(long?10:-10))+' L '+ex+' '+ey+' L '+(ex-10)+' '+(ey+(long?10:-10))+'" fill="none" stroke="'+arrowColor+'" stroke-width="3"/>';
+s+='<text x="'+p.l+'" y="'+(H-8)+'" fill="#93a9c1" font-size="12">آخر '+n+' شمعة · بيانات Binance</text>';$('chart').innerHTML=s;
+}
+async function load(){if(busy)return;busy=true;const symbol=$('symbol').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');const tf=$('tf').value;if(!symbol){$('explain').textContent='اكتب رمز العملة مثل BTCUSDT';busy=false;return}
+$('chartUpdated').textContent='جارٍ تحميل الشموع…';$('refresh').disabled=true;
+try{const url='https://api.binance.com/api/v3/klines?symbol='+encodeURIComponent(symbol)+'&interval='+encodeURIComponent(tf)+'&limit=60';const res=await fetch(url,{cache:'no-store'});if(!res.ok)throw Error('تعذر جلب بيانات هذا الرمز من Binance ('+res.status+'). تأكد من الرمز أو جرّب BTCUSDT.');const data=await res.json();if(!Array.isArray(data))throw Error(data.msg||'صيغة بيانات غير متوقعة');render(data,symbol,tf)}catch(e){$('chart').innerHTML='';$('patternName').textContent='غير متاح';$('signalState').textContent='تعذر التحميل';$('explain').innerHTML='<span class="p-error">'+String(e.message||e)+'</span>';$('chartUpdated').textContent='فشل التحديث'}finally{busy=false;$('refresh').disabled=false}}
+$('refresh').addEventListener('click',load);$('tf').addEventListener('change',load);$('symbol').addEventListener('keydown',e=>{if(e.key==='Enter')load()});load();setInterval(load,60000);
+})();
+</script></body></html>
