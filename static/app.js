@@ -46,7 +46,7 @@ function card(x,i){
  else if(current>0&&tps.length){for(var ti=tps.length-1;ti>=0;ti--){if((sell&&current<=tps[ti])||(!sell&&current>=tps[ti])){hit="TP"+(ti+1);hitText="🟢 وصل الهدف "+(ti+1);hitClass="track-win";break;}}}
  var pnlText=pnl===null?"الربح/الخسارة بانتظار السعر":((pnl>=0?"+":"")+pnl.toFixed(2)+"% "+(pnl>=0?"ربح":"خسارة"));
  var ageText=age===null?"التحديث غير متاح":age<1?"محدث الآن":"محدث قبل "+age+" د";
- return '<article class="card trade-tracking-card '+tier+'"><div class="card-top"><div><span class="rank trade-rank">'+mark+' '+(i+1)+' · '+esc(x.signal_label||(sell?"بيع":"شراء"))+'</span><div class="symbol">'+esc(displaySymbol(x)||"")+'</div></div><span class="direction '+(sell?"sell":"buy")+'">'+(sell?"بيع":"شراء")+'</span></div><div class="trade-track '+hitClass+'" aria-live="polite"><span class="track-dot"></span><b>'+hitText+'</b><strong>'+pnlText+'</strong></div><div class="score"><b>الثقة '+Math.round(score)+'%</b><div class="score-bar"><i style="width:'+w+'%"></i></div><span class="rank">'+(hit==="OPEN"?"الصفقة قيد المتابعة":hitText)+'</span></div><div class="levels">'+lv+'</div><div class="card-foot">📡 متابعة السعر · 🎯 تنبيه عند الهدف أو الوقف · '+ageText+'</div></article>';
+ return '<article class="card trade-tracking-card '+tier+'"><div class="card-top"><div><span class="rank trade-rank">'+mark+' '+(i+1)+' · '+esc(x.signal_label||(sell?"بيع":"شراء"))+'</span><div class="symbol">'+esc(displaySymbol(x)||"")+'</div></div><span class="direction '+(sell?"sell":"buy")+'">'+(sell?"بيع":"شراء")+'</span></div><div class="trade-track '+hitClass+'" aria-live="polite"><span class="track-dot"></span><b>'+hitText+'</b><strong>'+pnlText+'</strong></div><div class="score">'+(x.technical_method_key?'<b>اتجاه المنهج: '+(sell?'بيع':'شراء')+'</b><span class="rank">إشارة من قراءة المنهج للشموع؛ ليست نسبة نجاح أو احتمال ربح</span>':'<b>الثقة '+Math.round(score)+'%</b><div class="score-bar"><i style="width:'+w+'%"></i></div><span class="rank">'+(hit==="OPEN"?"الصفقة قيد المتابعة":hitText)+'</span>')+'</div><div class="levels">'+lv+'</div><div class="card-foot">📡 متابعة السعر · 🎯 تنبيه عند الهدف أو الوقف · '+ageText+'</div></article>';
 }
 function render(el,rows){if(!el)return;var a=(rows||[]).slice().sort(function(x,y){var d=signalScore(y)-signalScore(x);if(d)return d;var sc=Number(y.source_count||y.alignment||0)-Number(x.source_count||x.alignment||0);if(sc)return sc;return Number(y.detected_at||y.updated_at||0)-Number(x.detected_at||x.updated_at||0);});el.innerHTML=a.length?a.map(card).join(""):'<div class="empty">لا توجد توصيات منشورة خلال آخر 24 ساعة حالياً — جاري إعادة الفحص.</div>';}
 function loadMarket(m,tf){
@@ -74,7 +74,7 @@ function renderTechnicalMethods(){
   }
   if(detail){
    var methodReady=implementedTechnicalMethodIds.indexOf(pageTechnicalMethod)>=0;
-   var methodStatus=methodReady?'<p class="method-status method-status-ready">✓ المنهج مدعوم جزئيًا بمحرك الإشارات الحالي؛ قد لا تتوفر فرص مطابقة دائمًا.</p>':'<p class="method-status method-status-pending">ℹ هذا المنهج غير مربوط حاليًا بمحرك إشارات مستقل؛ لن نعرض إشارات عامة على أنها ناتجة عنه.</p>';
+   var methodStatus=methodReady?'<p class="method-status method-status-ready">⚠️ هذه قراءة أولية من تصويت شموع/سعر داخل الماسح المشترك، وليست استراتيجية مستقلة مكتملة أو باك تست مثبتًا. اتجاه ومستويات الصفقة تُعاد حسب تصويت المنهج.</p>':'<p class="method-status method-status-pending">ℹ هذا المنهج غير مربوط حاليًا بمحرك مستقل؛ لن نعرض إشارات عامة على أنها ناتجة عنه.</p>';
    detail.innerHTML='<div class="method-detail-head"><b>'+active[1]+' '+active[2]+'</b><p>'+active[3]+'</p>'+methodStatus+'<a class="method-back-link" href="/static/technical.html?v=20261011-method-pages">← كل مناهج التحليل الفني</a></div>';
    var panel=$("#technicalTradingPanel");
    if(panel){panel.style.display="";}
@@ -138,10 +138,29 @@ function filterTechnicalMethods(rows){
   if(!votes||Array.isArray(votes)||typeof votes!=="object")return false;
   var values=keys.map(function(k){return Number(votes[k]);}).filter(function(n){return Number.isFinite(n)&&n!==0;});
   if(!values.length)return false;
+  return true;
+ }).map(function(r){
+  var votes=r.methods||r.analysis_methods||r.method_votes||{};
+  var values=keys.map(function(k){return Number(votes[k]);}).filter(function(n){return Number.isFinite(n)&&n!==0;});
   var vote=values.reduce(function(a,b){return a+b;},0);
-  var side=String(r.direction||r.side||"").toUpperCase();
-  return vote>0&&(side==="BUY"||side==="LONG")||vote<0&&(side==="SELL"||side==="SHORT");
- });
+  if(!vote)return null;
+  var side=vote>0?"BUY":"SELL",x=Object.assign({},r);
+  x.direction=side;x.side=side;x.technical_method_key=selectedTechnicalMethod;
+  x.technical_method_vote=vote;
+  x.signal_label=(side==="BUY"?"شراء":"بيع")+" · إشارة المنهج";
+  // Recalculate risk levels for this method's own direction instead of reusing
+  // targets created for the shared confluence direction.
+  var entry=Number(x.current_price||x.live_price||x.price||x.entry||0);
+  if(entry>0){
+   var ref=Number(side==="BUY"?(x.support||entry):(x.resistance||entry));
+   var risk=Math.min(entry*.03,Math.max(entry*.005,Math.abs(entry-ref)*.35));
+   x.entry=entry;
+   if(side==="BUY"){x.sl=entry-risk;x.tp1=entry+risk;x.tp2=entry+2*risk;x.tp3=entry+3*risk;}
+   else{x.sl=entry+risk;x.tp1=Math.max(entry-risk,entry*.01);x.tp2=Math.max(entry-risk*2,entry*.005);x.tp3=Math.max(entry-risk*3,entry*.001);var ts=[x.tp1,x.tp2,x.tp3].sort(function(a,b){return b-a;});x.tp1=ts[0];x.tp2=ts[1];x.tp3=ts[2];}
+   x.targets=[x.tp1,x.tp2,x.tp3];
+  }
+  return x;
+ }).filter(Boolean);
 }
 function loadTechnical(m,tf){
  var box=$("#marketCards"),status=$("#marketStatus"),marketSwitch=$("#technicalMarketSwitch"),tfSwitch=$("#timeframeSwitch"),scalpSwitch=$("#scalpTimeframeSwitch");
