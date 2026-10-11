@@ -548,7 +548,9 @@ def _analyze_symbol(symbol,market,timeframe="15m"):
     core=sum(1 for k in ("smc","ict_liquidity","breakout","retest") if float(methods.get(k) or 0)==(1 if method_side=="BUY" else -1))
     aligned=bull if method_side=="BUY" else bear
     opposing=bear if method_side=="BUY" else bull
-    if core<1 or aligned<5 or aligned<=opposing:return None
+    # Publish regular-grade setups when three or more independent candle methods align.
+    # Stronger setups naturally rank higher; requiring five votes was suppressing nearly every live candidate.
+    if core<1 or aligned<3 or aligned<=opposing:return None
 
     # Score is an evidence score, not a probability of winning.
     score=max(0.0,min(98.0,0.55*strength+0.30*float(gate.get("strength") or 0)+min(12,aligned*1.2)))
