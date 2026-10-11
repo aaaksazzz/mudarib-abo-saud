@@ -3142,6 +3142,12 @@ def _refresh_opportunities(market,timeframe,key):
               if x.get("symbol") and x.get("direction") in {"BUY","SELL"}
               and not x.get("research_only")
               and str(x.get("timeframe") or timeframe)==timeframe]
+        # Results-driven ranking: only closed 24h outcomes with a minimum sample can adjust scores.
+        try:
+            from strategy_feedback import apply_feedback
+            rows=apply_feedback(market,timeframe,rows)
+        except Exception as feedback_exc:
+            print("[STRATEGY-LEARNING] skipped",str(feedback_exc)[:120],flush=True)
         rows.sort(key=lambda x:(
             1 if not x.get("research_only") else 0,
             int(x.get("source_count") or x.get("research_sources") or 0),
