@@ -2,7 +2,7 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#07111f"><meta name="description" content="شارت شموع مباشر مع رسم القناة السعرية ومستويات الدخول والأهداف ووقف الخسارة.">
+<meta name="theme-color" content="#07111f"><meta name="description" content="شارت TradingView مباشر بأدوات الرسم الأصلية.">
 <meta http-equiv="Cache-Control" content="no-store"><title>النماذج الفنية | التداول الذكي PRO</title>
 <link rel="stylesheet" href="/static/style.css?v=20261011-pattern-chart">
 <style>
@@ -13,13 +13,13 @@
 <div class="app-shell"><header class="topbar"><div class="brand"><a href="/" class="brand-mark" style="text-decoration:none;color:inherit">S</a><div><b>التداول الذكي <em>PRO</em></b><small>SMART MARKET INTELLIGENCE</small></div></div><div class="top-actions"><span class="live"><i></i> شارت مباشر</span><a class="ghost-btn" href="/">الرئيسية</a></div></header>
 <div class="ticker"><b>نموذج فني</b><span>فحص الأسواق المتاحة بالموقع</span><span>•</span><span>الرسم تقديري وليس توصية مضمونة</span></div>
 <div class="layout"><aside class="sidebar" style="display:block"><div class="side-title">أدوات التحليل</div><a class="nav-item" href="/" style="text-decoration:none;display:block">⌂ الرئيسية</a><a class="nav-item" href="/static/technical.html" style="text-decoration:none;display:block">📐 تحليل فني</a><a class="nav-item active" href="/static/patterns.html" style="text-decoration:none;display:block">📈 النماذج الفنية</a><div class="side-footer"><span class="dot"></span> نموذج مستقل</div></aside>
-<main class="content"><div class="pattern-wrap"><div class="page-head pattern-top"><div><span class="eyebrow">SMART CHART LAB · PRICE ACTION</span><h1>النماذج الفنية <span style="color:#65e7d3">PRO</span></h1><p>شارت شموع تفاعلي مع أدوات تحليل آلية مستوحاة من TradingView: قناة اتجاه، فيبوناتشي، دعم ومقاومة، ومستويات الدخول والأهداف والوقف.</p></div><span class="p-chip"><span class="p-live-dot"></span>بيانات سوق مباشرة<strong>تحديث تلقائي كل دقيقة</strong></span></div>
+<main class="content"><div class="pattern-wrap"><div class="page-head pattern-top"><div><span class="eyebrow">SMART CHART LAB · PRICE ACTION</span><h1>النماذج الفنية <span style="color:#65e7d3">PRO</span></h1><p>شارت TradingView الأصلي بأدوات الرسم والتحليل التفاعلية، مع مستويات الدخول والأهداف والوقف المعروضة بشكل منفصل.</p></div><span class="p-chip"><span class="p-live-dot"></span>بيانات سوق مباشرة<strong>تحديث تلقائي كل دقيقة</strong></span></div>
 <div class="pattern-controls"><select id="market" aria-label="السوق"><option value="all" selected>كل الأسواق</option><option value="spot">السبوت</option><option value="futures">الفيوتشر</option><option value="contracts">العقود الأمريكية</option><option value="us">الأسهم الأمريكية</option><option value="saudi">الأسهم السعودية</option><option value="forex">الفوركس والذهب</option></select><input id="symbol" value="API3USDT" aria-label="رمز العملة" placeholder="مثال BTCUSDT"><select id="tf" aria-label="الفريم"><option value="1m">دقيقة</option><option value="3m">3 دقائق</option><option value="5m">5 دقائق</option><option value="15m" selected>15 دقيقة</option><option value="30m">30 دقيقة</option><option value="1h">ساعة</option><option value="2h">ساعتين</option><option value="4h">4 ساعات</option><option value="6h">6 ساعات</option><option value="8h">8 ساعات</option><option value="12h">12 ساعة</option><option value="1d">يومي</option><option value="3d">3 أيام</option><option value="1w">أسبوعي</option><option value="1M">شهري</option></select><button id="scan" type="button">🔎 تابع البحث عن النماذج</button><button id="refresh" type="button">↻ تحديث الشارت</button></div>
 <div class="pattern-status"><div class="p-chip">السوق<strong id="marketLabel">كل الأسواق</strong></div><div class="p-chip">النموذج الفني<strong id="patternName">جارٍ تحليل القناة…</strong></div><div class="p-chip">قراءة النموذج<strong id="signalState">جارٍ جلب البيانات</strong></div><div class="p-chip">آخر سعر إغلاق<strong id="lastClose">—</strong></div></div>
-<div class="p-chart-card"><div class="p-chart-head"><b id="chartTitle">API3/USDT · 1H</b><small id="chartUpdated">جارٍ الاتصال ببايننس…</small></div><div id="chart" class="p-chart" role="img" aria-label="شارت شموع تفاعلي بأسلوب TradingView مع نموذج الكوب والعروة" style="height:300px;min-height:240px"></div><div class="pattern-foot"><span><span class="p-live-dot"></span>شموع مباشرة من Binance</span><span>القناة الزرقاء · فيبوناتشي ملون · دعم أخضر · مقاومة برتقالي · الأهداف أخضر</span></div><div class="p-warn">تنبيه: القناة آلية وتقديرية، والأهداف مبنية على مضاعفات المخاطرة وليست إشارة مضمونة أو توصية مالية.</div></div>
+<div class="p-chart-card"><div class="p-chart-head"><b id="chartTitle">API3/USDT · 1H</b><small id="chartUpdated">جارٍ الاتصال ببايننس…</small></div><div id="chart" class="p-chart" role="img" aria-label="شارت TradingView الأصلي بأدوات الرسم" style="height:300px;min-height:240px"></div><div class="pattern-foot"><span><span class="p-live-dot"></span>شموع مباشرة من Binance</span><span>أدوات الرسم الأصلية من TradingView</span></div><div class="p-warn">تنبيه: القناة آلية وتقديرية، والأهداف مبنية على مضاعفات المخاطرة وليست إشارة مضمونة أو توصية مالية.</div></div>
 <div id="scanResults" class="p-explain" style="margin-bottom:12px">البحث المتواصل: كل ضغطة تكمل من آخر زوج وصلت له، ولا تعيد المؤشر إلى البداية. يتم فحص النماذج الكلاسيكية على الفريم المحدد.</div><div class="p-levels"><div class="p-level entry"><small>الدخول المرجعي</small><b id="entry">—</b></div><div class="p-level stop"><small>وقف الخسارة SL</small><b id="sl">—</b><span class="pct" id="slPct">—</span></div><div class="p-level target"><small>الهدف TP1</small><b id="tp1">—</b><span class="pct" id="tp1Pct">—</span></div><div class="p-level target"><small>الهدف TP2</small><b id="tp2">—</b><span class="pct" id="tp2Pct">—</span></div><div class="p-level target"><small>الهدف TP3</small><b id="tp3">—</b><span class="pct" id="tp3Pct">—</span></div></div>
 <div id="explain" class="p-explain">يتم تحميل بيانات الشموع ثم تقدير القناة السعرية ومستويات المخاطرة.</div></div></main></div></div>
-<script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
+
 <script>
 (function(){
 const $=id=>document.getElementById(id);let busy=false;const marketNames={all:'كل الأسواق',spot:'السبوت',futures:'الفيوتشر',contracts:'العقود الأمريكية',us:'الأسهم الأمريكية',saudi:'الأسهم السعودية',forex:'الفوركس والذهب'};
@@ -57,27 +57,44 @@ function detectTechnicalPatterns(data){
  }
  return out;
 }
+function tvResolution(tf){return ({'1m':'1','3m':'3','5m':'5','15m':'15','30m':'30','1h':'60','2h':'120','4h':'240','6h':'360','8h':'480','12h':'720','1d':'D','3d':'3D','1w':'W','1M':'M'})[tf]||'60'}
+function tvMarketSymbol(symbol){
+ const market=$('market').value;
+ symbol=String(symbol||'').trim().toUpperCase().replace(/[^A-Z0-9.]/g,'');
+ if(market==='futures'&&/^[A-Z0-9]+USDT$/.test(symbol))return 'BINANCE:'+symbol+'.P';
+ if((market==='all'||market==='spot'||market==='futures')&&/^[A-Z0-9]+USDT$/.test(symbol))return 'BINANCE:'+symbol;
+ if(market==='saudi')return 'TADAWUL:'+symbol.replace(/^TADAWUL:/,'');
+ if(market==='forex'&&/^(XAUUSD|XAGUSD|EURUSD|GBPUSD|USDJPY|AUDUSD|USDCAD|NZDUSD)$/.test(symbol))return 'OANDA:'+symbol;
+ if(market==='us'&&/^[A-Z.]{1,8}$/.test(symbol))return 'NASDAQ:'+symbol;
+ if(market==='contracts'&&/^(ES|NQ|YM|GC|CL|SI)[A-Z0-9!]*$/.test(symbol))return 'CME_MINI:'+symbol+'1!';
+ return /^[A-Z0-9_!.-]+:[A-Z0-9_!.-]+$/.test(symbol)?symbol:'BINANCE:'+symbol;
+}
 function initChart(symbol='API3USDT',tf='1h'){
- const el=$('chart');
- if(!window.LightweightCharts)throw Error('مكتبة الشارت لم تتحمل؛ تحقق من الاتصال ثم أعد تحميل الصفحة.');
- if(tvChart&&typeof tvChart==='object'&&tvChart.remove){try{tvChart.remove()}catch(e){}}
- el.innerHTML='';
- tvOverlays=[];tvPriceLines=[];tvCandles=null;tvVolume=null;
- tvChart=LightweightCharts.createChart(el,{
-  width:el.clientWidth||900,height:el.clientHeight||300,
-  layout:{background:{type:'solid',color:'#07111e'},textColor:'#a9bdd2',fontFamily:'Tahoma,Arial,sans-serif',fontSize:12},
-  grid:{vertLines:{color:'#14283b'},horzLines:{color:'#14283b'}},
-  crosshair:{mode:LightweightCharts.CrosshairMode.Normal,vertLine:{color:'#647c95',width:1,style:LightweightCharts.LineStyle.Dashed},horzLine:{color:'#647c95',width:1,style:LightweightCharts.LineStyle.Dashed}},
-  rightPriceScale:{borderColor:'#263d53',scaleMargins:{top:.08,bottom:.23}},
-  timeScale:{borderColor:'#263d53',timeVisible:true,secondsVisible:false,rightOffset:5,barSpacing:10},
-  handleScroll:{mouseWheel:true,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:true},
-  handleScale:{mouseWheel:true,pinch:true,axisPressedMouseMove:true}
- });
- tvCandles=tvChart.addCandlestickSeries({upColor:'#26a69a',downColor:'#ef5350',borderUpColor:'#26a69a',borderDownColor:'#ef5350',wickUpColor:'#26a69a',wickDownColor:'#ef5350',lastValueVisible:true,priceLineVisible:true});
- tvVolume=tvChart.addHistogramSeries({priceFormat:{type:'volume'},priceScaleId:'volume',lastValueVisible:false,priceLineVisible:false});
- tvChart.priceScale('volume').applyOptions({scaleMargins:{top:.84,bottom:0},borderVisible:false});
- const resize=()=>{if(tvChart&&typeof tvChart.applyOptions==='function'){const w=$('chart').clientWidth;if(w>0)tvChart.applyOptions({width:w,height:$('chart').clientHeight||300})}};
- if(window.ResizeObserver){new ResizeObserver(resize).observe(el)}else{window.addEventListener('resize',resize)}
+ const el=$('chart'),tvSymbol=tvMarketSymbol(symbol),resolution=tvResolution(tf),key=tvSymbol+'|'+resolution;
+ if(tvEmbedKey===key&&el.querySelector('iframe'))return;
+ tvEmbedKey=key;
+ el.innerHTML='<div id="tradingview_chart" style="width:100%;height:100%;min-height:240px"></div>';
+ const mount=()=>{
+  if(typeof window.TradingView==='undefined'){el.innerHTML='<div style="padding:18px;color:#ff9cac">تعذر تحميل شارت TradingView. تحقق من الاتصال ثم حدّث الصفحة.</div>';return}
+  new window.TradingView.widget({
+   autosize:true, symbol:tvSymbol, interval:resolution, timezone:'Asia/Riyadh',
+   theme:'dark',style:'1',locale:'ar',toolbar_bg:'#07111e',
+   enable_publishing:false,allow_symbol_change:true,hide_side_toolbar:false,
+   hide_top_toolbar:false,save_image:true,details:false,hotlist:false,calendar:false,
+   withdateranges:true,hide_legend:false,studies:[],
+   container_id:'tradingview_chart'
+  });
+ };
+ if(window.TradingView){mount();return}
+ if(!window.__tvWidgetScriptLoading){
+  window.__tvWidgetScriptLoading=true;
+  const script=document.createElement('script');script.src='https://s3.tradingview.com/tv.js';script.async=true;
+  script.onload=mount;script.onerror=()=>{el.innerHTML='<div style="padding:18px;color:#ff9cac">تعذر الاتصال بخدمات TradingView. أعد تحميل الصفحة.</div>';tvEmbedKey=''};
+  document.head.appendChild(script);
+ }else{
+  const wait=()=>{if(window.TradingView)mount();else setTimeout(wait,150)};
+  wait();
+ }
 }
 function render(data,symbol,tf,cup=null,patterns=[]){
  initChart(symbol,tf);
@@ -105,8 +122,10 @@ function render(data,symbol,tf,cup=null,patterns=[]){
  const pctOf=price=>entry>0?Math.abs((price-entry)/entry)*100:0;
  $('slPct').textContent='−'+pctOf(sl).toFixed(2)+'% من الدخول';
  tps.forEach((price,i)=>{const el=$('tp'+(i+1)+'Pct');if(el)el.textContent='+'+pctOf(price).toFixed(2)+'% من الدخول'});
- $('explain').textContent='النماذج المكتشفة: '+(patternNames.join('، ')||'لم يظهر نموذج واضح')+'. تم رسم القناة، المتوسطات ومستويات فيبوناتشي والدعم والمقاومة فوق الشموع. النماذج آلية تقديرية وتحتاج تأكيد.';
- // Draw the detected pattern and technical levels directly over the candles.
+ $('explain').textContent='الشارت من TradingView بأدوات الرسم الأصلية. تقدر تستخدم خطوط الاتجاه، فيبوناتشي، القنوات، الفرشاة، النصوص، المؤشرات والتنبيهات من شريط الأدوات. التحليل الآلي الظاهر هنا تقديري ويحتاج تأكيد.';
+ // TradingView owns the chart, native drawing toolbar and chart interactions.
+ return;
+ // Legacy overlay renderer retained below but intentionally disabled.
  tvCandles.setData(recent.map(c=>({time:c.time,open:c.open,high:c.high,low:c.low,close:c.close})));
  tvVolume.setData(recent.map(c=>({time:c.time,value:c.volume,color:c.close>=c.open?'rgba(38,166,154,.45)':'rgba(239,83,80,.45)'})));
  tvOverlays.forEach(x=>{try{tvChart.removeSeries(x)}catch(e){}});tvOverlays=[];
