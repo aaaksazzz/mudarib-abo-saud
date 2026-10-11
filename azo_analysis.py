@@ -245,6 +245,12 @@ def azo_scan(request: Request, market: str = "spot", timeframe: str = "15m"):
 
 @router.get("/api/azo/leaderboard")
 def azo_leaderboard():
+    # Kick off the existing background result refresh without making the page wait for scans.
+    try:
+        import results as results_module
+        results_module.results()
+    except Exception:
+        pass
     c = _db()
     try: return {"ok":True,"leaderboard":_leaderboard(c),"window_hours":24}
     finally: c.close()
