@@ -2,9 +2,9 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#07111f"><meta name="description" content="شارت TradingView مباشر بأدوات الرسم الأصلية.">
+<meta name="theme-color" content="#07111f"><meta name="description" content="شارت شموع مباشر مع خطوط اتجاه ودعم ومقاومة مرسومة آليًا دون شعارات.">
 <meta http-equiv="Cache-Control" content="no-store"><title>النماذج الفنية | التداول الذكي PRO</title>
-<link rel="stylesheet" href="/static/style.css?v=20261011-pattern-chart">
+<link rel="stylesheet" href="/static/style.css?v=20261011-auto-chart-nologo">
 <style>
 :root{color-scheme:dark}.pattern-wrap{max-width:1280px;margin:0 auto}.pattern-top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}.pattern-top h1{font-size:clamp(22px,3vw,32px);letter-spacing:-.5px;margin:8px 0}.pattern-top p{color:#91a8c2;margin:0;line-height:1.8;max-width:720px}.eyebrow{font-size:11px;letter-spacing:1.5px;color:#67e8d4;font-weight:800}.pattern-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#0a1422;border:1px solid #1b3047;border-radius:16px;padding:10px;margin:16px 0}.pattern-controls input,.pattern-controls select,.pattern-controls button{background:#101f32;color:#f2f7ff;border:1px solid #2a4059;border-radius:10px;padding:10px 13px;font:inherit;min-height:42px}.pattern-controls input{width:160px;font-weight:700;direction:ltr;text-align:left}.pattern-controls select{min-width:120px}.pattern-controls button{cursor:pointer;background:linear-gradient(135deg,#1a8c83,#166b77);border-color:#279f98;font-weight:800}.pattern-controls button:disabled{opacity:.6}.pattern-status{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}.p-chip{background:linear-gradient(145deg,#101e30,#0b1625);border:1px solid #20364d;border-radius:13px;padding:12px 14px;font-size:12px;color:#9eb3ca;min-width:0}.p-chip strong{display:block;color:#f2f7ff;font-size:14px;margin-top:5px;overflow-wrap:anywhere}.p-chart-card{background:#07111e;border:1px solid #20364d;border-radius:18px;padding:12px;overflow:hidden;box-shadow:0 14px 40px #0002;max-width:900px;margin:0 auto}.p-chart-head{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 14px;padding-bottom:13px;border-bottom:1px solid #1c3045}.p-chart-head b{font-size:18px;direction:ltr;display:inline-block}.p-chart-head small{color:#829bb5}.p-chart{width:100%;height:300px;min-height:240px;background:#07111e;border-radius:12px;overflow:hidden}.p-chart a{display:none!important}.p-levels{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:14px}.p-level{background:#0b1726;border:1px solid #20364d;border-radius:14px;padding:14px;min-width:0;position:relative;overflow:hidden}.p-level:before{content:"";position:absolute;top:0;right:0;left:0;height:2px;background:#40556e}.p-level small{display:block;color:#91a8c2;font-size:12px;margin-bottom:9px}.p-level .pct{display:block;font-size:12px;font-weight:800;margin-top:7px;direction:ltr;text-align:right}.p-level.target .pct{color:#2bd69a}.p-level.stop .pct{color:#ff7186}.p-level b{font-size:clamp(13px,1.5vw,17px);overflow-wrap:anywhere;direction:ltr;display:block;text-align:right;font-variant-numeric:tabular-nums}.p-level.entry:before{background:#45dbc8}.p-level.target:before{background:#2bd69a}.p-level.stop:before{background:#ff7186}.p-level.entry b{color:#45dbc8}.p-level.target b{color:#2bd69a}.p-level.stop b{color:#ff7186}.p-explain{background:linear-gradient(120deg,#0c1d2e,#0a1726);border:1px solid #20364d;border-radius:15px;padding:16px;margin-top:14px;color:#c7d8eb;line-height:1.9}.p-warn{color:#a7b9ce;font-size:12px;margin:12px 3px 0;line-height:1.8}.p-error{color:#ff9cac}.p-up{color:#2bd69a}.p-down{color:#ff7186}.pattern-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;color:#7f96b0;font-size:12px;margin:12px 2px}.p-live-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#2bd69a;box-shadow:0 0 12px #2bd69a;margin-left:7px}
 @media(max-width:760px){.pattern-status{grid-template-columns:repeat(2,minmax(0,1fr))}.p-levels{grid-template-columns:repeat(2,minmax(0,1fr))}.p-level:last-child{grid-column:auto}.p-chart-card{padding:9px;border-radius:15px}.p-chart{height:250px;min-height:220px}.pattern-controls{padding:8px}.pattern-controls input{width:130px;flex:1}.pattern-controls select{flex:1;min-width:100px}.p-chart-head b{font-size:15px}}
@@ -13,10 +13,10 @@
 <div class="app-shell"><header class="topbar"><div class="brand"><a href="/" class="brand-mark" style="text-decoration:none;color:inherit">S</a><div><b>التداول الذكي <em>PRO</em></b><small>SMART MARKET INTELLIGENCE</small></div></div><div class="top-actions"><span class="live"><i></i> شارت مباشر</span><a class="ghost-btn" href="/">الرئيسية</a></div></header>
 <div class="ticker"><b>نموذج فني</b><span>فحص الأسواق المتاحة بالموقع</span><span>•</span><span>الرسم تقديري وليس توصية مضمونة</span></div>
 <div class="layout"><aside class="sidebar" style="display:block"><div class="side-title">أدوات التحليل</div><a class="nav-item" href="/" style="text-decoration:none;display:block">⌂ الرئيسية</a><a class="nav-item" href="/static/technical.html" style="text-decoration:none;display:block">📐 تحليل فني</a><a class="nav-item active" href="/static/patterns.html" style="text-decoration:none;display:block">📈 النماذج الفنية</a><div class="side-footer"><span class="dot"></span> نموذج مستقل</div></aside>
-<main class="content"><div class="pattern-wrap"><div class="page-head pattern-top"><div><span class="eyebrow">SMART CHART LAB · PRICE ACTION</span><h1>النماذج الفنية <span style="color:#65e7d3">PRO</span></h1><p>شارت TradingView الأصلي بأدوات الرسم والتحليل التفاعلية، مع مستويات الدخول والأهداف والوقف المعروضة بشكل منفصل.</p></div><span class="p-chip"><span class="p-live-dot"></span>بيانات سوق مباشرة<strong>تحديث تلقائي كل دقيقة</strong></span></div>
+<main class="content"><div class="pattern-wrap"><div class="page-head pattern-top"><div><span class="eyebrow">SMART CHART LAB · PRICE ACTION</span><h1>النماذج الفنية <span style="color:#65e7d3">PRO</span></h1><p>شارت شموع يرسم خطوط الاتجاه والدعم والمقاومة والمتوسطات تلقائيًا، دون حاجة للرسم اليدوي.</p></div><span class="p-chip"><span class="p-live-dot"></span>بيانات سوق مباشرة<strong>تحديث تلقائي كل دقيقة</strong></span></div>
 <div class="pattern-controls"><select id="market" aria-label="السوق"><option value="all" selected>كل الأسواق</option><option value="spot">السبوت</option><option value="futures">الفيوتشر</option><option value="contracts">العقود الأمريكية</option><option value="us">الأسهم الأمريكية</option><option value="saudi">الأسهم السعودية</option><option value="forex">الفوركس والذهب</option></select><input id="symbol" value="API3USDT" aria-label="رمز العملة" placeholder="مثال BTCUSDT"><select id="tf" aria-label="الفريم"><option value="1m">دقيقة</option><option value="3m">3 دقائق</option><option value="5m">5 دقائق</option><option value="15m" selected>15 دقيقة</option><option value="30m">30 دقيقة</option><option value="1h">ساعة</option><option value="2h">ساعتين</option><option value="4h">4 ساعات</option><option value="6h">6 ساعات</option><option value="8h">8 ساعات</option><option value="12h">12 ساعة</option><option value="1d">يومي</option><option value="3d">3 أيام</option><option value="1w">أسبوعي</option><option value="1M">شهري</option></select><button id="scan" type="button">🔎 تابع البحث عن النماذج</button><button id="refresh" type="button">↻ تحديث الشارت</button></div>
 <div class="pattern-status"><div class="p-chip">السوق<strong id="marketLabel">كل الأسواق</strong></div><div class="p-chip">النموذج الفني<strong id="patternName">جارٍ تحليل القناة…</strong></div><div class="p-chip">قراءة النموذج<strong id="signalState">جارٍ جلب البيانات</strong></div><div class="p-chip">آخر سعر إغلاق<strong id="lastClose">—</strong></div></div>
-<div class="p-chart-card"><div class="p-chart-head"><b id="chartTitle">API3/USDT · 1H</b><small id="chartUpdated">جارٍ الاتصال ببايننس…</small></div><div id="chart" class="p-chart" role="img" aria-label="شارت TradingView الأصلي بأدوات الرسم" style="height:300px;min-height:240px"></div><div class="pattern-foot"><span><span class="p-live-dot"></span>شموع مباشرة من Binance</span><span>أدوات الرسم الأصلية من TradingView</span></div><div class="p-warn">تنبيه: القناة آلية وتقديرية، والأهداف مبنية على مضاعفات المخاطرة وليست إشارة مضمونة أو توصية مالية.</div></div>
+<div class="p-chart-card"><div class="p-chart-head"><b id="chartTitle">API3/USDT · 1H</b><small id="chartUpdated">جارٍ الاتصال ببايننس…</small></div><div id="chart" class="p-chart" role="img" aria-label="شارت شموع مرسومة آليًا" style="height:300px;min-height:240px"></div><div class="pattern-foot"><span><span class="p-live-dot"></span>شموع مباشرة من Binance</span><span>رسم آلي للاتجاهات والدعم والمقاومة</span></div><div class="p-warn">تنبيه: القناة آلية وتقديرية، والأهداف مبنية على مضاعفات المخاطرة وليست إشارة مضمونة أو توصية مالية.</div></div>
 <div id="scanResults" class="p-explain" style="margin-bottom:12px">البحث المتواصل: كل ضغطة تكمل من آخر زوج وصلت له، ولا تعيد المؤشر إلى البداية. يتم فحص النماذج الكلاسيكية على الفريم المحدد.</div><div class="p-levels"><div class="p-level entry"><small>الدخول المرجعي</small><b id="entry">—</b></div><div class="p-level stop"><small>وقف الخسارة SL</small><b id="sl">—</b><span class="pct" id="slPct">—</span></div><div class="p-level target"><small>الهدف TP1</small><b id="tp1">—</b><span class="pct" id="tp1Pct">—</span></div><div class="p-level target"><small>الهدف TP2</small><b id="tp2">—</b><span class="pct" id="tp2Pct">—</span></div><div class="p-level target"><small>الهدف TP3</small><b id="tp3">—</b><span class="pct" id="tp3Pct">—</span></div></div>
 <div id="explain" class="p-explain">يتم تحميل بيانات الشموع ثم تقدير القناة السعرية ومستويات المخاطرة.</div></div></main></div></div>
 
@@ -69,35 +69,25 @@ function tvMarketSymbol(symbol){
  if(market==='contracts'&&/^(ES|NQ|YM|GC|CL|SI)[A-Z0-9!]*$/.test(symbol))return 'CME_MINI:'+symbol+'1!';
  return /^[A-Z0-9_!.-]+:[A-Z0-9_!.-]+$/.test(symbol)?symbol:'BINANCE:'+symbol;
 }
-function initChart(symbol='API3USDT',tf='1h'){
- const el=$('chart'),tvSymbol=tvMarketSymbol(symbol),resolution=tvResolution(tf),key=tvSymbol+'|'+resolution;
- if(tvEmbedKey===key&&el.querySelector('iframe'))return;
- tvEmbedKey=key;
- el.innerHTML='<div id="tradingview_chart" style="width:100%;height:100%;min-height:240px"></div>';
- const mount=()=>{
-  if(typeof window.TradingView==='undefined'){el.innerHTML='<div style="padding:18px;color:#ff9cac">تعذر تحميل شارت TradingView. تحقق من الاتصال ثم حدّث الصفحة.</div>';return}
-  new window.TradingView.widget({
-   autosize:true, symbol:tvSymbol, interval:resolution, timezone:'Asia/Riyadh',
-   theme:'dark',style:'1',locale:'ar',toolbar_bg:'#07111e',
-   enable_publishing:false,allow_symbol_change:true,hide_side_toolbar:false,
-   hide_top_toolbar:false,save_image:true,details:false,hotlist:false,calendar:false,
-   withdateranges:true,hide_legend:false,studies:[],
-   container_id:'tradingview_chart'
-  });
- };
- if(window.TradingView){mount();return}
- if(!window.__tvWidgetScriptLoading){
-  window.__tvWidgetScriptLoading=true;
-  const script=document.createElement('script');script.src='https://s3.tradingview.com/tv.js';script.async=true;
-  script.onload=mount;script.onerror=()=>{el.innerHTML='<div style="padding:18px;color:#ff9cac">تعذر الاتصال بخدمات TradingView. أعد تحميل الصفحة.</div>';tvEmbedKey=''};
-  document.head.appendChild(script);
- }else{
-  const wait=()=>{if(window.TradingView)mount();else setTimeout(wait,150)};
-  wait();
- }
+function drawOwnChart(data,symbol,tf){
+ const el=$('chart'),rows=data.slice(-60).map(k=>({time:Math.floor(+k[0]/1000),o:+k[1],h:+k[2],l:+k[3],c:+k[4]}));
+ if(rows.length<10)throw Error('بيانات الشارت غير كافية');
+ const W=1000,H=390,L=18,R=82,T=18,B=28,plotW=W-L-R,plotH=H-T-B,hi=Math.max(...rows.map(z=>z.h)),lo=Math.min(...rows.map(z=>z.l)),pad=(hi-lo)*.08||hi*.01,min=lo-pad,max=hi+pad;
+ const y=p=>T+(max-p)/(max-min)*plotH,x=i=>L+(i+.5)*plotW/rows.length;
+ const reg=arr=>{const n=arr.length;let sx=0,sy=0,sxx=0,sxy=0;arr.forEach((v,i)=>{sx+=i;sy+=v;sxx+=i*i;sxy+=i*v});const d=n*sxx-sx*sx,m=d?(n*sxy-sx*sy)/d:0;return {m,b:(sy-m*sx)/n}},hr=reg(rows.map(z=>z.h)),lr=reg(rows.map(z=>z.l)),line=(q,i)=>q.m*i+q.b;
+ let svg='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="شارت شموع مرسوم آليًا مع خطوط الاتجاه والدعم والمقاومة" style="display:block;width:100%;height:100%;min-height:220px;background:#07111e;font-family:Arial,sans-serif">';
+ for(let j=0;j<=5;j++){const yy=T+j*plotH/5,p=max-j*(max-min)/5;svg+='<line x1="'+L+'" y1="'+yy+'" x2="'+(W-R+5)+'" y2="'+yy+'" stroke="#1c3045"/><text x="'+(W-5)+'" y="'+(yy+4)+'" fill="#91a8c2" font-size="11" text-anchor="end">'+fmt(p)+'</text>'}
+ rows.forEach((z,i)=>{const xx=x(i),cw=Math.max(3,plotW/rows.length*.58),up=z.c>=z.o,color=up?'#2bd69a':'#ff7186';svg+='<line x1="'+xx+'" y1="'+y(z.h)+'" x2="'+xx+'" y2="'+y(z.l)+'" stroke="'+color+'" stroke-width="1.2"/><rect x="'+(xx-cw/2)+'" y="'+Math.min(y(z.o),y(z.c))+'" width="'+cw+'" height="'+Math.max(1,Math.abs(y(z.o)-y(z.c)))+'" fill="'+color+'" rx=".6"/>'});
+ const pathFor=fn=>rows.map((z,i)=>(i?'L':'M')+x(i).toFixed(2)+' '+y(fn(i)).toFixed(2)).join(' ');
+ svg+='<path d="'+pathFor(i=>line(hr,i))+'" fill="none" stroke="#4b8cff" stroke-width="2" stroke-dasharray="7 5"/><path d="'+pathFor(i=>line(lr,i))+'" fill="none" stroke="#4b8cff" stroke-width="2" stroke-dasharray="7 5"/>';
+ for(const period of [20,50])if(rows.length>=period){let pts=[];for(let i=period-1;i<rows.length;i++){let sum=0;for(let j=i-period+1;j<=i;j++)sum+=rows[j].c;pts.push((i?'L':'M')+x(i).toFixed(2)+' '+y(sum/period).toFixed(2))}svg+='<path d="'+pts.join(' ')+'" fill="none" stroke="'+(period===20?'#e0aaff':'#8ba7ff')+'" stroke-width="1.5"/>'}
+ const support=Math.min(...rows.slice(-24).map(z=>z.l)),resistance=Math.max(...rows.slice(-24).map(z=>z.h));
+ [{p:support,c:'#2bd69a',t:'دعم آلي'},{p:resistance,c:'#ff9f43',t:'مقاومة آلية'}].forEach(q=>{svg+='<line x1="'+L+'" y1="'+y(q.p)+'" x2="'+(W-R)+'" y2="'+y(q.p)+'" stroke="'+q.c+'" stroke-width="1.5" stroke-dasharray="4 4"/><text x="'+(W-R-5)+'" y="'+(y(q.p)-5)+'" fill="'+q.c+'" font-size="11" text-anchor="end">'+q.t+'</text>'});
+ const last=rows[rows.length-1];svg+='<text x="'+L+'" y="13" fill="#c7d8eb" font-size="12">'+symbol+' · '+tf+' · رسم تلقائي</text><text x="'+L+'" y="'+(H-6)+'" fill="#829bb5" font-size="10">'+new Date(rows[0].time*1000).toLocaleDateString('ar-SA')+'</text><text x="'+(W-R-2)+'" y="'+(H-6)+'" fill="#829bb5" font-size="10" text-anchor="end">'+new Date(last.time*1000).toLocaleDateString('ar-SA')+'</text></svg>';
+ el.innerHTML=svg;
 }
 function render(data,symbol,tf,cup=null,patterns=[]){
- initChart(symbol,tf);
+ drawOwnChart(data,symbol,tf);
  const candles=data.map(k=>({time:Math.floor(+k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}));
  if(candles.length<10)throw Error('بيانات الشارت غير كافية');
  const recent=candles.slice(-72),n=recent.length,last=recent[n-1];
@@ -122,7 +112,7 @@ function render(data,symbol,tf,cup=null,patterns=[]){
  const pctOf=price=>entry>0?Math.abs((price-entry)/entry)*100:0;
  $('slPct').textContent='−'+pctOf(sl).toFixed(2)+'% من الدخول';
  tps.forEach((price,i)=>{const el=$('tp'+(i+1)+'Pct');if(el)el.textContent='+'+pctOf(price).toFixed(2)+'% من الدخول'});
- $('explain').textContent='الشارت من TradingView بأدوات الرسم الأصلية. تقدر تستخدم خطوط الاتجاه، فيبوناتشي، القنوات، الفرشاة، النصوص، المؤشرات والتنبيهات من شريط الأدوات. التحليل الآلي الظاهر هنا تقديري ويحتاج تأكيد.';
+ $('explain').textContent='الرسم آلي: شموع السعر، قناة اتجاه، متوسطات 20 و50، وأقرب دعم ومقاومة. لا يحتاج منك رسمًا يدويًا، وهذه مستويات تقديرية تحتاج تأكيد.';
  // TradingView owns the chart, native drawing toolbar and chart interactions.
  return;
  // Legacy overlay renderer retained below but intentionally disabled.
@@ -247,7 +237,7 @@ if(market!=='spot'){
    const e=Number(first.entry)||0, pct=p=>e>0?Math.abs((Number(p)-e)/e)*100:0;
    $('slPct').textContent='−'+pct(first.sl).toFixed(2)+'% من الدخول';$('tp1Pct').textContent='+'+pct(first.tp1).toFixed(2)+'% من الدخول';$('tp2Pct').textContent='+'+pct(first.tp2).toFixed(2)+'% من الدخول';$('tp3Pct').textContent='+'+pct(first.tp3).toFixed(2)+'% من الدخول';
    $('chartTitle').textContent=String(first.symbol||'')+' · '+first.marketName+' · '+tf;
-   $('explain').textContent='تم جلب الإشارات من ماسح السوق المستقل. لعرض الشارت، استخدم رمزًا متوافقًا مع مزود TradingView لذلك السوق.';
+   $('explain').textContent='تم جلب الإشارات من ماسح السوق المستقل. لعرض الشارت، استخدم رمزًا متوافقًا مع مزود البيانات لذلك السوق.';
   }else $('scanResults').textContent='ما رجع الماسح إشارات حاليًا.'+(errors.length?' تعذر فحص: '+errors.join('، '):'');
  }finally{btn.disabled=false}
  return;
