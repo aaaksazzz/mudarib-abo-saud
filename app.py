@@ -458,6 +458,12 @@ def startup():
                 except Exception:
                     pass
             threading.Thread(target=run,daemon=True,name=name).start()
+        # Hourly self-improvement evaluates closed outcomes and bounded method weights.
+        try:
+            import self_improver
+            self_improver.start_worker()
+        except Exception as _learn_exc:
+            print("[SELF-IMPROVER] startup unavailable:",str(_learn_exc)[:160],flush=True)
         # Keep startup lightweight on the 0.2 vCPU / 512 MB service.
         # Heavy analysis/outcome workers are triggered on demand by API routes.
         if os.getenv("ENABLE_BACKGROUND_ANALYSIS","0") == "1":
@@ -3567,3 +3573,12 @@ try:
 except Exception as _admin_exc:
     print("[ADMIN] install failed:",_admin_exc,flush=True)
 
+
+
+@app.get("/api/self-improver/status")
+def self_improver_status():
+    try:
+        import self_improver
+        return self_improver.status()
+    except Exception as exc:
+        return {"ok":False,"enabled":False,"state":"unavailable","message":str(exc)[:160]}
