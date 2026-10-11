@@ -14,10 +14,10 @@
 <div class="ticker"><b>نموذج فني</b><span>شموع السوق الفعلية من Binance</span><span>•</span><span>الرسم تقديري وليس توصية مضمونة</span></div>
 <div class="layout"><aside class="sidebar" style="display:block"><div class="side-title">أدوات التحليل</div><a class="nav-item" href="/" style="text-decoration:none;display:block">⌂ الرئيسية</a><a class="nav-item" href="/static/technical.html" style="text-decoration:none;display:block">📐 تحليل فني</a><a class="nav-item active" href="/static/patterns.html" style="text-decoration:none;display:block">📈 النماذج الفنية</a><div class="side-footer"><span class="dot"></span> نموذج مستقل</div></aside>
 <main class="content"><div class="pattern-wrap"><div class="page-head pattern-top"><div><span class="eyebrow">SMART CHART LAB · PRICE ACTION</span><h1>النماذج الفنية <span style="color:#65e7d3">PRO</span></h1><p>شارت شموع تفاعلي مع أدوات تحليل آلية مستوحاة من TradingView: قناة اتجاه، فيبوناتشي، دعم ومقاومة، ومستويات الدخول والأهداف والوقف.</p></div><span class="p-chip"><span class="p-live-dot"></span>بيانات سوق مباشرة<strong>تحديث تلقائي كل دقيقة</strong></span></div>
-<div class="pattern-controls"><input id="symbol" value="API3USDT" aria-label="رمز العملة" placeholder="مثال BTCUSDT"><select id="tf" aria-label="الفريم"><option value="15m" selected>15 دقيقة</option><option value="30m">30 دقيقة</option><option value="1h">ساعة</option><option value="4h">4 ساعات</option><option value="1d">يومي</option><option value="1w">أسبوعي</option></select><button id="scan" type="button">☕ ابحث عن كوب وعروة</button><button id="refresh" type="button">↻ تحديث الشارت</button></div>
+<div class="pattern-controls"><input id="symbol" value="API3USDT" aria-label="رمز العملة" placeholder="مثال BTCUSDT"><select id="tf" aria-label="الفريم"><option value="1m">دقيقة</option><option value="3m">3 دقائق</option><option value="5m">5 دقائق</option><option value="15m" selected>15 دقيقة</option><option value="30m">30 دقيقة</option><option value="1h">ساعة</option><option value="2h">ساعتين</option><option value="4h">4 ساعات</option><option value="6h">6 ساعات</option><option value="8h">8 ساعات</option><option value="12h">12 ساعة</option><option value="1d">يومي</option><option value="3d">3 أيام</option><option value="1w">أسبوعي</option><option value="1M">شهري</option></select><button id="scan" type="button">🔎 تابع البحث عن النماذج</button><button id="refresh" type="button">↻ تحديث الشارت</button></div>
 <div class="pattern-status"><div class="p-chip">السوق<strong>SPOT · USDT</strong></div><div class="p-chip">النموذج الفني<strong id="patternName">جارٍ تحليل القناة…</strong></div><div class="p-chip">قراءة النموذج<strong id="signalState">جارٍ جلب البيانات</strong></div><div class="p-chip">آخر سعر إغلاق<strong id="lastClose">—</strong></div></div>
 <div class="p-chart-card"><div class="p-chart-head"><b id="chartTitle">API3/USDT · 1H</b><small id="chartUpdated">جارٍ الاتصال ببايننس…</small></div><div id="chart" class="p-chart" role="img" aria-label="شارت شموع تفاعلي بأسلوب TradingView مع نموذج الكوب والعروة" style="height:300px;min-height:240px"></div><div class="pattern-foot"><span><span class="p-live-dot"></span>شموع مباشرة من Binance</span><span>القناة الزرقاء · فيبوناتشي ملون · دعم أخضر · مقاومة برتقالي · الأهداف أخضر</span></div><div class="p-warn">تنبيه: القناة آلية وتقديرية، والأهداف مبنية على مضاعفات المخاطرة وليست إشارة مضمونة أو توصية مالية.</div></div>
-<div id="scanResults" class="p-explain" style="margin-bottom:12px">اضغط «ابحث عن كوب وعروة» لمسح أزواج Spot/USDT الأعلى تداولًا على فريم 15 دقيقة.</div><div class="p-levels"><div class="p-level entry"><small>الدخول المرجعي</small><b id="entry">—</b></div><div class="p-level stop"><small>وقف الخسارة SL</small><b id="sl">—</b></div><div class="p-level target"><small>الهدف TP1</small><b id="tp1">—</b></div><div class="p-level target"><small>الهدف TP2</small><b id="tp2">—</b></div><div class="p-level target"><small>الهدف TP3</small><b id="tp3">—</b></div></div>
+<div id="scanResults" class="p-explain" style="margin-bottom:12px">البحث المتواصل: كل ضغطة تكمل من آخر زوج وصلت له، ولا تعيد المؤشر إلى البداية. يتم فحص النماذج الكلاسيكية على الفريم المحدد.</div><div class="p-levels"><div class="p-level entry"><small>الدخول المرجعي</small><b id="entry">—</b></div><div class="p-level stop"><small>وقف الخسارة SL</small><b id="sl">—</b></div><div class="p-level target"><small>الهدف TP1</small><b id="tp1">—</b></div><div class="p-level target"><small>الهدف TP2</small><b id="tp2">—</b></div><div class="p-level target"><small>الهدف TP3</small><b id="tp3">—</b></div></div>
 <div id="explain" class="p-explain">يتم تحميل بيانات الشموع ثم تقدير القناة السعرية ومستويات المخاطرة.</div></div></main></div></div>
 <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
 <script>
@@ -29,7 +29,7 @@ function line(reg,x){return reg.m*x+reg.b}
 let tvChart=null,tvCandles=null,tvVolume=null,tvOverlays=[],tvPriceLines=[],tvEmbedKey='';
 function initChart(symbol='API3USDT',tf='1h'){
  const el=$('chart');
- const intervalMap={'15m':'15','30m':'30','1h':'60','4h':'240','1d':'D','1w':'W'};
+ const intervalMap={'1m':'1','3m':'3','5m':'5','15m':'15','30m':'30','1h':'60','2h':'120','4h':'240','6h':'360','8h':'480','12h':'720','1d':'D','3d':'3D','1w':'W','1M':'M'};
  const key=symbol+'|'+tf;
  if(tvEmbedKey===key&&el.querySelector('iframe'))return;
  tvEmbedKey=key;
@@ -154,24 +154,35 @@ score=Math.min(96,Math.round(score));
 if(score<55)return null;
 return {score,left,bottom,right,handleStart,rim,bottomPrice,depth,handleLow,volRatio,close,breakout:close>rim};
 }
+function detectClassic(data){
+ const a=data.map(k=>({h:+k[2],l:+k[3],c:+k[4],v:+k[5]}));if(a.length<30)return null;
+ const n=a.length, p=a.slice(-40), hi=p.map(x=>x.h),lo=p.map(x=>x.l),close=p[n>40?39:p.length-1].c;
+ const max=Math.max(...hi),min=Math.min(...lo),range=max-min;if(!range)return null;
+ const peaks=[],troughs=[];for(let i=2;i<p.length-2;i++){if(p[i].h>=p[i-1].h&&p[i].h>=p[i-2].h&&p[i].h>=p[i+1].h&&p[i].h>=p[i+2].h)peaks.push({i,v:p[i].h});if(p[i].l<=p[i-1].l&&p[i].l<=p[i-2].l&&p[i].l<=p[i+1].l&&p[i].l<=p[i+2].l)troughs.push({i,v:p[i].l});}
+ const near=(x,y,t)=>Math.abs(x-y)/Math.max(Math.abs(x),Math.abs(y),1e-12)<t;
+ if(peaks.length>=2){const x=peaks[peaks.length-2],y=peaks[peaks.length-1];if(near(x.v,y.v,.018)&&y.i-x.i>=5)return {name:'قمة مزدوجة',score:74,dir:'هبوط محتمل'};}
+ if(troughs.length>=2){const x=troughs[troughs.length-2],y=troughs[troughs.length-1];if(near(x.v,y.v,.018)&&y.i-x.i>=5)return {name:'قاع مزدوج',score:74,dir:'صعود محتمل'};}
+ if(peaks.length>=2&&troughs.length>=2){const ph=peaks[peaks.length-1].v,pl=peaks[peaks.length-2].v,th=troughs[troughs.length-1].v,tl=troughs[troughs.length-2].v;if(ph<pl&&th>tl)return {name:'مثلث متماثل',score:70,dir:'انتظار الاختراق'};if(ph<pl&&th<tl)return {name:'وتد هابط',score:68,dir:'مراقبة انعكاس صاعد'};if(ph>pl&&th>tl)return {name:'وتد صاعد',score:68,dir:'مراقبة انعكاس هابط'};}
+ const first=p.slice(0,12),last=p.slice(-12),avg=x=>x.reduce((s,z)=>s+z.c,0)/x.length;const drift=(avg(last)-avg(first))/Math.max(avg(first),1e-12);
+ if(Math.abs(drift)>.035&&range/Math.max(min,1e-12)>.045)return {name:drift>0?'علم صاعد محتمل':'علم هابط محتمل',score:62,dir:'يحتاج تأكيد'};
+ return null;
+}
 async function scan(){
-const btn=$('scan');if(btn.disabled)return;btn.disabled=true;$('scanResults').textContent='جارٍ مسح أزواج Spot/USDT على فريم 15 دقيقة…';$('chartUpdated').textContent='ماسح الكوب والعروة يعمل…';
+const btn=$('scan');if(btn.disabled)return;btn.disabled=true;const tf=$('tf').value;const key='patternScan:'+tf;let state={cursor:0,found:[],symbols:[]};try{state=JSON.parse(sessionStorage.getItem(key)||'null')||state}catch(e){};if(!Array.isArray(state.found))state={cursor:0,found:[],symbols:[]};$('scanResults').textContent='يكمل البحث من الزوج رقم '+(state.cursor+1)+' على فريم '+tf+'…';$('chartUpdated').textContent='البحث المتواصل يعمل…';
 try{
 const tickRes=await fetch('https://api.binance.com/api/v3/ticker/24hr',{cache:'no-store'});if(!tickRes.ok)throw Error('تعذر جلب قائمة أزواج Binance');const tickers=await tickRes.json();
 const stable=new Set(['USDCUSDT','FDUSDUSDT','TUSDUSDT','USDPUSDT','USDEUSDT','DAIUSDT','USDSUSDT','BUSDUSDT','EURUSDT','AEURUSDT']);
-const list=tickers.filter(t=>t.symbol.endsWith('USDT')&&!stable.has(t.symbol)&&+t.quoteVolume>1000000).sort((a,b)=>+b.quoteVolume-+a.quoteVolume).slice(0,60);
-let cursor=0,found=[];
-async function worker(){while(cursor<list.length){const item=list[cursor++];$('scanResults').textContent='جاري فحص '+item.symbol+' — '+cursor+' من '+list.length+' زوجًا على فريم 15 دقيقة…';try{const res=await fetch('https://api.binance.com/api/v3/klines?symbol='+item.symbol+'&interval=15m&limit=100',{cache:'no-store'});if(!res.ok)continue;const data=await res.json();const pat=detectCup(data);if(pat)found.push({symbol:item.symbol,data,pat,volume:+item.quoteVolume,change:+item.priceChangePercent});}catch(e){}}}
-await Promise.all(Array.from({length:5},worker));
-found.sort((a,b)=>(b.pat.breakout?1:0)-(a.pat.breakout?1:0)||b.pat.score-a.pat.score||b.volume-a.volume);
-if(found.length){
-const best=found[0];$('symbol').value=best.symbol;$('tf').value='15m';render(best.data,best.symbol,'15m',best.pat);
-$('scanResults').innerHTML='<b style="color:#65e7d3">تم العثور على '+found.length+' نموذج مبدئي</b><br>الأفضل الآن: <b>'+best.symbol.replace('USDT','/USDT')+'</b> · جودة الشكل '+best.pat.score+'% · '+(best.pat.breakout?'السعر فوق حافة الكوب — راقب تأكيد الإغلاق':'العروة قيد التكوّن — لم يتأكد الاختراق')+'<br>تغير 24 ساعة: '+best.change.toFixed(2)+'% · حجم 24 ساعة: '+(best.volume/1e6).toFixed(2)+' مليون USDT<br><small>تم فحص '+list.length+' زوجًا سائلًا. النسبة تقييم هندسي لشكل النموذج وليست احتمال نجاح.</small>';
-}else{
-$('scanResults').innerHTML='<b>ما لقيت نموذج كوب وعروة مطابق للشروط في أفضل '+list.length+' زوجًا حاليًا.</b><br>هذا أفضل من اختراع إشارة؛ جرّب المسح بعد عدة شموع 15 دقيقة.';$('chartUpdated').textContent='اكتمل المسح — لا توجد مطابقة';
+const list=tickers.filter(t=>t.symbol.endsWith('USDT')&&!stable.has(t.symbol)&&+t.quoteVolume>1000000).sort((a,b)=>+b.quoteVolume-+a.quoteVolume);
+state.cursor=Math.min(state.cursor,list.length);const start=state.cursor,end=Math.min(start+60,list.length);const batch=list.slice(start,end);let cursor=0,found=state.found;
+async function worker(){while(cursor<batch.length){const item=batch[cursor++];$('scanResults').textContent='جاري فحص '+item.symbol+' — '+(start+cursor)+' من '+list.length+' زوجًا على فريم '+tf+'…';try{const res=await fetch('https://api.binance.com/api/v3/klines?symbol='+item.symbol+'&interval='+tf+'&limit=100',{cache:'no-store'});if(!res.ok)continue;const data=await res.json();const cup=detectCup(data),classic=detectClassic(data),pat=cup?{...cup,name:'كوب وعروة',dir:cup.breakout?'اختراق صاعد محتمل':'العروة تتكوّن'}:classic;if(pat){const id=item.symbol+'|'+tf+'|'+pat.name;if(!state.symbols.includes(id)){found.push({symbol:item.symbol,data,pat,volume:+item.quoteVolume,change:+item.priceChangePercent,tf});state.symbols.push(id)}}}catch(e){}}}
+await Promise.all(Array.from({length:5},worker));state.cursor=end;state.found=found;try{sessionStorage.setItem(key,JSON.stringify(state))}catch(e){}
+found.sort((a,b)=>(b.pat.breakout?1:0)-(a.pat.breakout?1:0)||(b.pat.score||0)-(a.pat.score||0)||b.volume-a.volume);
+if(found.length){const best=found[found.length-1];$('symbol').value=best.symbol;$('tf').value=best.tf;render(best.data,best.symbol,best.tf,best.pat.name==='كوب وعروة'?best.pat:null);
+$('scanResults').innerHTML='<b style="color:#65e7d3">نتائج متراكمة: '+found.length+' نموذج</b><br>آخر نموذج جديد: <b>'+best.symbol.replace('USDT','/USDT')+'</b> · '+best.pat.name+' · '+(best.pat.dir||'مراقبة')+'<br>تغير 24 ساعة: '+best.change.toFixed(2)+'% · حجم 24 ساعة: '+(best.volume/1e6).toFixed(2)+' مليون USDT<br><small>تم فحص '+end+' من '+list.length+' زوجًا. اضغط متابعة البحث لإكمال القائمة؛ النتائج السابقة محفوظة في هذه الجلسة.</small>';
+}else{$('scanResults').innerHTML='<b>ما ظهر نموذج مطابق في الدفعة الحالية.</b><br>تم فحص '+end+' من '+list.length+' زوجًا على '+tf+'. اضغط «تابع البحث» لإكمال من نفس المكان.';}
+
+}catch(e){$('scanResults').textContent='تعذر إكمال المسح: '+(e.message||e)+'. المؤشر الحالي محفوظ، أعد المحاولة للمتابعة.';$('chartUpdated').textContent='فشل المسح'}finally{btn.disabled=false}
 }
-}catch(e){$('scanResults').textContent='تعذر إكمال المسح: '+(e.message||e)+'. جرّب تحديث الصفحة.';$('chartUpdated').textContent='فشل المسح'}finally{btn.disabled=false}
-}
-$('scan').addEventListener('click',scan);$('refresh').addEventListener('click',load);$('tf').addEventListener('change',load);$('symbol').addEventListener('keydown',e=>{if(e.key==='Enter')load()});load();setTimeout(()=>{if(!$('scan').disabled)scan()},1200);setInterval(()=>{if(!$('scan').disabled)load()},60000);
+$('scan').addEventListener('click',scan);$('refresh').addEventListener('click',load);$('tf').addEventListener('change',load);$('symbol').addEventListener('keydown',e=>{if(e.key==='Enter')load()});load();setInterval(()=>{if(!$('scan').disabled)load()},60000);
 })();
 </script></body></html>
