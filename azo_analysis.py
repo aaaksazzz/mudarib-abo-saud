@@ -187,11 +187,8 @@ def start_worker():
 
 @router.get("/api/azo/status")
 def azo_status(request: Request):
-    try:
-        import results as results_module
-        results_module.results()
-    except Exception:
-        pass
+    # Read-only status endpoint: do not launch expensive cross-market refreshes
+    # on every page load; the dedicated /api/results endpoint owns that worker.
     c = _db()
     try:
         stats = _closed_stats(c)
@@ -281,12 +278,8 @@ def azo_scan(request: Request, market: str = "spot", timeframe: str = "15m"):
 
 @router.get("/api/azo/leaderboard")
 def azo_leaderboard():
-    # Kick off the existing background result refresh without making the page wait for scans.
-    try:
-        import results as results_module
-        results_module.results()
-    except Exception:
-        pass
+    # Keep the leaderboard fast and read-only. Result refresh is triggered only
+    # by /api/results, preventing each home-page visit from starting market scans.
     c = _db()
     try: return {"ok":True,"leaderboard":_leaderboard(c),"window_hours":24}
     finally: c.close()
