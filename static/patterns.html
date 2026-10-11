@@ -157,7 +157,7 @@ function render(data,symbol,tf,cup=null,patterns=[]){
  addLevel(entry,'#45dbc8','ENTRY');addLevel(sl,'#ff7186','SL −'+pctOfLevel(sl).toFixed(2)+'%');tps.forEach((v,i)=>addLevel(v,'#2bd69a','TP'+(i+1)+' +'+pctOfLevel(v).toFixed(2)+'%'));
  tvChart.timeScale().fitContent();
 }
-async async function load(){if(busy)return;busy=true;const symbol=$('symbol').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');const tf=$('tf').value;if(!symbol){$('explain').textContent='اكتب رمز العملة مثل BTCUSDT';busy=false;return}
+async function load(){if(busy)return;busy=true;const symbol=$('symbol').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');const tf=$('tf').value;if(!symbol){$('explain').textContent='اكتب رمز العملة مثل BTCUSDT';busy=false;return}
 $('chartUpdated').textContent='جارٍ تحميل الشموع…';$('refresh').disabled=true;
 try{const url='https://api.binance.com/api/v3/klines?symbol='+encodeURIComponent(symbol)+'&interval='+encodeURIComponent(tf)+'&limit=60';const res=await fetch(url,{cache:'no-store'});if(!res.ok)throw Error('تعذر جلب بيانات هذا الرمز من Binance ('+res.status+'). تأكد من الرمز أو جرّب BTCUSDT.');const data=await res.json();if(!Array.isArray(data))throw Error(data.msg||'صيغة بيانات غير متوقعة');render(data,symbol,tf)}catch(e){$('chart').innerHTML='';$('patternName').textContent='غير متاح';$('signalState').textContent='تعذر التحميل';$('explain').innerHTML='<span class="p-error">'+String(e.message||e)+'</span>';$('chartUpdated').textContent='فشل التحديث'}finally{busy=false;$('refresh').disabled=false}}
 function detectCup(data){
@@ -200,7 +200,7 @@ function detectClassic(data){
  if(Math.abs(drift)>.035&&range/Math.max(min,1e-12)>.045)return {name:drift>0?'علم صاعد محتمل':'علم هابط محتمل',score:62,dir:'يحتاج تأكيد'};
  return null;
 }
-async async function scan(){
+async function scan(){
 const market=$('market').value;
 $('marketLabel').textContent=marketNames[market]||market;
 if(market!=='spot'){
