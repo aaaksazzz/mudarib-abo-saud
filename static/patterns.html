@@ -13,10 +13,10 @@
 <div class="app-shell"><header class="topbar"><div class="brand"><a href="/" class="brand-mark" style="text-decoration:none;color:inherit">S</a><div><b>التداول الذكي <em>PRO</em></b><small>SMART MARKET INTELLIGENCE</small></div></div><div class="top-actions"><span class="live"><i></i> شارت مباشر</span><a class="ghost-btn" href="/">الرئيسية</a></div></header>
 <div class="ticker"><b>نموذج فني</b><span>شموع السوق الفعلية من Binance</span><span>•</span><span>الرسم تقديري وليس توصية مضمونة</span></div>
 <div class="layout"><aside class="sidebar" style="display:block"><div class="side-title">أدوات التحليل</div><a class="nav-item" href="/" style="text-decoration:none;display:block">⌂ الرئيسية</a><a class="nav-item" href="/static/technical.html" style="text-decoration:none;display:block">📐 تحليل فني</a><a class="nav-item active" href="/static/patterns.html" style="text-decoration:none;display:block">📈 النماذج الفنية</a><div class="side-footer"><span class="dot"></span> نموذج مستقل</div></aside>
-<main class="content"><div class="pattern-wrap"><div class="page-head pattern-top"><div><span class="eyebrow">SMART CHART LAB · PRICE ACTION</span><h1>النماذج الفنية <span style="color:#65e7d3">PRO</span></h1><p>شارت احترافي مباشر، قناة سعرية مرسومة على الشموع، ومستويات الدخول والأهداف ووقف الخسارة في لوحة واحدة.</p></div><span class="p-chip"><span class="p-live-dot"></span>بيانات سوق مباشرة<strong>تحديث تلقائي كل دقيقة</strong></span></div>
+<main class="content"><div class="pattern-wrap"><div class="page-head pattern-top"><div><span class="eyebrow">SMART CHART LAB · PRICE ACTION</span><h1>النماذج الفنية <span style="color:#65e7d3">PRO</span></h1><p>شارت شموع تفاعلي مع أدوات تحليل آلية مستوحاة من TradingView: قناة اتجاه، فيبوناتشي، دعم ومقاومة، ومستويات الدخول والأهداف والوقف.</p></div><span class="p-chip"><span class="p-live-dot"></span>بيانات سوق مباشرة<strong>تحديث تلقائي كل دقيقة</strong></span></div>
 <div class="pattern-controls"><input id="symbol" value="API3USDT" aria-label="رمز العملة" placeholder="مثال BTCUSDT"><select id="tf" aria-label="الفريم"><option value="15m" selected>15 دقيقة</option><option value="30m">30 دقيقة</option><option value="1h">ساعة</option><option value="4h">4 ساعات</option><option value="1d">يومي</option><option value="1w">أسبوعي</option></select><button id="scan" type="button">☕ ابحث عن كوب وعروة</button><button id="refresh" type="button">↻ تحديث الشارت</button></div>
 <div class="pattern-status"><div class="p-chip">السوق<strong>SPOT · USDT</strong></div><div class="p-chip">النموذج الفني<strong id="patternName">جارٍ تحليل القناة…</strong></div><div class="p-chip">قراءة النموذج<strong id="signalState">جارٍ جلب البيانات</strong></div><div class="p-chip">آخر سعر إغلاق<strong id="lastClose">—</strong></div></div>
-<div class="p-chart-card"><div class="p-chart-head"><b id="chartTitle">API3/USDT · 1H</b><small id="chartUpdated">جارٍ الاتصال ببايننس…</small></div><div id="chart" class="p-chart" role="img" aria-label="شارت شموع تفاعلي بأسلوب TradingView مع نموذج الكوب والعروة" style="height:520px;min-height:320px"></div><div class="pattern-foot"><span><span class="p-live-dot"></span>شموع مباشرة من Binance</span><span>القناة الزرقاء · الدخول تركوازي · الأهداف أخضر · الوقف أحمر</span></div><div class="p-warn">تنبيه: القناة آلية وتقديرية، والأهداف مبنية على مضاعفات المخاطرة وليست إشارة مضمونة أو توصية مالية.</div></div>
+<div class="p-chart-card"><div class="p-chart-head"><b id="chartTitle">API3/USDT · 1H</b><small id="chartUpdated">جارٍ الاتصال ببايننس…</small></div><div id="chart" class="p-chart" role="img" aria-label="شارت شموع تفاعلي بأسلوب TradingView مع نموذج الكوب والعروة" style="height:520px;min-height:320px"></div><div class="pattern-foot"><span><span class="p-live-dot"></span>شموع مباشرة من Binance</span><span>القناة الزرقاء · فيبوناتشي ملون · دعم أخضر · مقاومة برتقالي · الأهداف أخضر</span></div><div class="p-warn">تنبيه: القناة آلية وتقديرية، والأهداف مبنية على مضاعفات المخاطرة وليست إشارة مضمونة أو توصية مالية.</div></div>
 <div id="scanResults" class="p-explain" style="margin-bottom:12px">اضغط «ابحث عن كوب وعروة» لمسح أزواج Spot/USDT الأعلى تداولًا على فريم 15 دقيقة.</div><div class="p-levels"><div class="p-level entry"><small>الدخول المرجعي</small><b id="entry">—</b></div><div class="p-level stop"><small>وقف الخسارة SL</small><b id="sl">—</b></div><div class="p-level target"><small>الهدف TP1</small><b id="tp1">—</b></div><div class="p-level target"><small>الهدف TP2</small><b id="tp2">—</b></div><div class="p-level target"><small>الهدف TP3</small><b id="tp3">—</b></div></div>
 <div id="explain" class="p-explain">يتم تحميل بيانات الشموع ثم تقدير القناة السعرية ومستويات المخاطرة.</div></div></main></div></div>
 <script src="https://unpkg.com/lightweight-charts@4.2.2/dist/lightweight-charts.standalone.production.js"></script>
@@ -69,7 +69,7 @@ function render(data,symbol,tf,cup=null){
  $('lastClose').textContent=fmt(close);$('chartTitle').textContent=symbol.replace(/USDT$/,'')+'/USDT · '+tf;
  $('chartUpdated').textContent='آخر شمعة: '+new Date(last.time*1000).toLocaleString('ar-SA');
  $('entry').textContent=fmt(entry);$('sl').textContent=fmt(sl);$('tp1').textContent=fmt(tps[0]);$('tp2').textContent=fmt(tps[1]);$('tp3').textContent=fmt(tps[2]);
- $('explain').textContent=cup?'تم رصد شكل كوب وعروة مبدئي على '+symbol+' بفريم '+tf+'. الرسم فوق الشموع مباشرة؛ الذهبي يحدد الكوب والتركوازي يحدد العروة. التأكيد يكون باختراق حافة الكوب مع تحسّن الحجم.':'الشارت تفاعلي: تقدر تسحب الرسم، تكبّر وتصغّر، وتحرك المؤشر لقراءة OHLC. القناة ومستويات الأسعار تقديرية وليست توصية مالية.';
+ $('explain').textContent=cup?'تم رصد شكل كوب وعروة مبدئي على '+symbol+' بفريم '+tf+'. الرسم فوق الشموع مباشرة؛ الذهبي يحدد الكوب والتركوازي يحدد العروة. التأكيد يكون باختراق حافة الكوب مع تحسّن الحجم.':'الشارت تفاعلي: تقدر تسحب الرسم، تكبّر وتصغّر، وتحرك المؤشر لقراءة OHLC. تُرسم قناة الاتجاه ومستويات فيبوناتشي والدعم والمقاومة آليًا على الشموع؛ وهي أدوات مشابهة وليست أدوات TradingView الأصلية أو ضمانًا للتوقع.';
  tvCandles.setData(recent.map(c=>({time:c.time,open:c.open,high:c.high,low:c.low,close:c.close})));
  tvVolume.setData(recent.map(c=>({time:c.time,value:c.volume,color:c.close>=c.open?'rgba(38,166,154,.45)':'rgba(239,83,80,.45)'})));
  tvOverlays.forEach(x=>{try{tvChart.removeSeries(x)}catch(e){}});tvOverlays=[];
@@ -85,9 +85,22 @@ function render(data,symbol,tf,cup=null){
   addOverlay(handlePts,'#65e7d3',4);
   addOverlay([{time:recent[a].time,value:cup.rim},{time:recent[d].time,value:cup.rim}],'#f4bd50',1,LightweightCharts.LineStyle.Dashed);
  }else{
+  // Auto-drawn trend channel, similar to common TradingView chart-analysis tools.
   addOverlay(recent.map((c,i)=>({time:c.time,value:line(hr,i)})),'#4b8cff',2,LightweightCharts.LineStyle.Dashed);
   addOverlay(recent.map((c,i)=>({time:c.time,value:line(lr,i)})),'#4b8cff',2,LightweightCharts.LineStyle.Dashed);
  }
+ // Automatic Fibonacci retracement levels from the visible swing range.
+ const swingHigh=Math.max(...recent.map(c=>c.high)), swingLow=Math.min(...recent.map(c=>c.low));
+ const swingRange=swingHigh-swingLow;
+ if(swingRange>0){
+  const fibs=[{r:.236,t:'Fib 23.6%',c:'#a78bfa'},{r:.382,t:'Fib 38.2%',c:'#60a5fa'},{r:.5,t:'Fib 50%',c:'#fbbf24'},{r:.618,t:'Fib 61.8%',c:'#fb923c'},{r:.786,t:'Fib 78.6%',c:'#f472b6'}];
+  fibs.forEach(f=>{const p=swingHigh-swingRange*f.r;addOverlay([{time:recent[0].time,value:p},{time:recent[n-1].time,value:p}],f.c,1,LightweightCharts.LineStyle.Dotted)});
+ }
+ // Mark nearest recent swing support/resistance zones as horizontal rays.
+ const support=Math.min(...recent.slice(-24).map(c=>c.low));
+ const resistance=Math.max(...recent.slice(-24).map(c=>c.high));
+ addOverlay([{time:recent[Math.max(0,n-24)].time,value:support},{time:recent[n-1].time,value:support}],'#2bd69a',2,LightweightCharts.LineStyle.Dashed);
+ addOverlay([{time:recent[Math.max(0,n-24)].time,value:resistance},{time:recent[n-1].time,value:resistance}],'#ff9f43',2,LightweightCharts.LineStyle.Dashed);
  const addLevel=(price,color,title)=>tvPriceLines.push(tvCandles.createPriceLine({price,color,lineWidth:1,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title}));
  addLevel(entry,'#45dbc8','ENTRY');addLevel(sl,'#ff7186','SL');tps.forEach((v,i)=>addLevel(v,'#2bd69a','TP'+(i+1)));
  tvChart.timeScale().fitContent();
