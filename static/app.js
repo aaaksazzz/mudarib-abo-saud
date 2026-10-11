@@ -1,7 +1,7 @@
 (function(){
 "use strict";
 var $=function(s){return document.querySelector(s);};
-var routes={home:"/",technical:"/static/technical.html?v=20261010-sitefix",radar:"/static/radar.html?v=20261008-core",gold:"/static/gold.html?v=20261008-core",results:"/static/results.html?v=20261008-core",news:"/static/news.html?v=20261008-core",blog:"/static/blog.html?v=20261010-seo",spot:"/static/spot.html?v=20261008-core",futures:"/static/futures.html?v=20261008-core",alpha:"/static/alpha.html?v=20261010-alpha",whales:"/static/whales.html?v=20261010-whales",contracts:"/static/contracts.html?v=20261008-core",us:"/static/us.html?v=20261008-core",saudi:"/static/saudi.html?v=20261008-core",forex:"/static/forex.html?v=20261008-core",signup:"/static/signup.html?v=20261008-core",login:"/static/login.html?v=20261008-core",admin:"/static/admin.html?v=20261008-core"};
+var routes={home:"/",technical:"/static/technical.html?v=20261010-sitefix",radar:"/static/radar.html?v=20261008-core",gold:"/static/gold.html?v=20261008-core",results:"/static/results.html?v=20261008-core",news:"/static/news.html?v=20261008-core",blog:"/static/blog.html?v=20261010-seo",spot:"/static/spot.html?v=20261008-core",futures:"/static/futures.html?v=20261008-core",alpha:"/static/alpha.html?v=20261010-alpha",whales:"/static/whales.html?v=20261010-whales",contracts:"/static/contracts.html?v=20261008-core",us:"/static/us.html?v=20261008-core",saudi:"/static/saudi.html?v=20261008-core",forex:"/static/forex.html?v=20261008-core",signup:"/static/signup.html?v=20261008-core",login:"/static/login.html?v=20261008-core",admin:"/static/admin.html?v=20261008-core",azo:"/static/azo.html?v=20261011-azo"};
 var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false,trackingTimer=null;
 var timeframes=[["15m","15 دقيقة"],["30m","30 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
 var selectedTimeframe="15m";
@@ -220,12 +220,19 @@ function loadTechnical(m,tf){
 function loadCoreMarkets(){
  var toolsBox=$("#platformTools"),marketsBox=$("#coreMarkets");
  if(toolsBox){
-  var toolsItems=[["◈","الرادار الذكي","radar","فرص الأسواق مرتبة بحسب البيانات المتاحة"],["💎","الصفقات الذهبية","gold","متابعة أقوى الفرص المصنّفة"],["🐋","متابعة الحيتان","whales","رصد نشاط الحيتان عند توفر البيانات"],["📊","نتائج الأداء","results","مراجعة نتائج التوصيات السابقة"],["📰","الأخبار","news","متابعة أخبار السوق"],["✍️","مركز المعرفة","blog","مقالات التداول وإدارة المخاطر"],["📐","مناهج التحليل الفني","technical","افتح كل منهج مع اختيار السوق والفريم"]];
+  var toolsItems=[["◈","الرادار الذكي","radar","فرص الأسواق مرتبة بحسب البيانات المتاحة"],["💎","الصفقات الذهبية","gold","متابعة أقوى الفرص المصنّفة"],["🐋","متابعة الحيتان","whales","رصد نشاط الحيتان عند توفر البيانات"],["📊","نتائج الأداء","results","مراجعة نتائج التوصيات السابقة"],["📰","الأخبار","news","متابعة أخبار السوق"],["✍️","مركز المعرفة","blog","مقالات التداول وإدارة المخاطر"],["📐","مناهج التحليل الفني","technical","افتح كل منهج مع اختيار السوق والفريم"],["🧪","تحليل AZO","azo","مختبر تحليل جديد لا يُنشر للعامة إلا بعد إثبات نتائجه"]];
   toolsBox.innerHTML=toolsItems.map(function(x){return '<article class="core-card tool-card" role="link" tabindex="0" data-s="'+x[2]+'"><div class="core-title"><span>'+x[0]+'</span><b>'+x[1]+'</b></div><div class="core-analysis">'+x[3]+'</div><div class="card-foot">استكشف القسم ←</div></article>';}).join("");
  }
  if(marketsBox){
   var markets=[["₿","سبوت","spot","Binance Spot"],["⚡","فيوتشر","futures","Binance Futures"],["α","Binance Alpha","alpha","فرص Alpha في صفحة مستقلة"],["◉","العقود الأمريكية","contracts","العقود والمؤشرات الأمريكية"],["🇺🇸","الأسهم الأمريكية","us","تحليل الأسهم الأمريكية"],["🇸🇦","السوق السعودي / تاسي","saudi","تحليل السوق السعودي"],["💱","الفوركس","forex","أزواج العملات"],["🥇","الذهب","gold","تحليل الذهب في قسم مستقل"]];
   marketsBox.innerHTML=markets.map(function(x){return '<article class="core-card market-link" role="link" tabindex="0" data-core-market="'+x[2]+'"><div class="core-title"><span>'+x[0]+'</span><b>'+x[1]+'</b></div><div class="core-analysis">'+x[3]+'</div><div class="card-foot">فتح السوق ←</div></article>';}).join("");
+  getJSON("/api/azo/leaderboard?x="+Date.now()).then(function(j){
+   var ranks={};(j.leaderboard||[]).forEach(function(x){ranks[x.key]=x;});
+   var cards=Array.prototype.slice.call(marketsBox.querySelectorAll("[data-core-market]"));
+   cards.sort(function(a,b){var ka=ranks[a.getAttribute("data-core-market")]||{},kb=ranks[b.getAttribute("data-core-market")]||{};return Number(ka.rank||999)-Number(kb.rank||999);});
+   cards.forEach(function(card){marketsBox.appendChild(card);var k=card.getAttribute("data-core-market"),r=ranks[k];var title=card.querySelector(".core-title b"),foot=card.querySelector(".card-foot");if(title&&r&&!title.getAttribute("data-ranked")){title.setAttribute("data-ranked","1");title.innerHTML=esc(title.textContent)+' <small style="display:inline-block;color:#82e8d9;font-size:10px;margin-inline-start:5px">'+(r.rank===1&&r.eligible?'👑 ':'#')+esc(r.rank)+'</small>';}if(foot&&r)foot.textContent=(r.rank===1&&r.eligible?'👑 المركز الأول':('المركز '+r.rank))+' · '+(r.closed?('نجاح '+r.win_rate+'% من '+r.closed+' مغلقة'):'بانتظار نتائج كافية')+' ←';});
+  }).catch(function(){});
+
  }
 }
 function loadHome(){loadCoreMarkets();}
@@ -390,8 +397,8 @@ function bind(){
   }
   side.querySelectorAll('[data-s="alpha"]').forEach(function(b){b.classList.toggle("active",page==="alpha"||new URLSearchParams(window.location.search).get("market")==="alpha");});
 
-  var labels={whales:"متابعة الحيتان",results:"النتائج",news:"الأخبار",blog:"المدونة"};
-  var icons={whales:"🐋",results:"📊",news:"📰",blog:"✍️"};
+  var labels={whales:"متابعة الحيتان",results:"النتائج",news:"الأخبار",blog:"المدونة",azo:"تحليل AZO"};
+  var icons={whales:"🐋",results:"📊",news:"📰",blog:"✍️",azo:"🧪"};
   Object.keys(labels).forEach(function(k){
    if(!side.querySelector('[data-s="'+k+'"]')){
     var b=document.createElement("button");
@@ -455,6 +462,7 @@ function bind(){
   };
   makeSection("الرئيسية",["home"],"menu-home");
   makeSection("التداول الذكي",["radar","gold","whales"],"menu-trading");
+  makeSection("مختبر التحليل",["azo"],"menu-azo");
   if(methodGroup)side.insertBefore(methodGroup,footer||null);
   makeSection("النتائج والمحتوى",["results","news","blog"],"menu-content");
   makeSection("الحساب والإدارة",["signup","login","admin"],"menu-account");
