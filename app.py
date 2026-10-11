@@ -1827,10 +1827,27 @@ def market_chart(market:str="us",symbol:str="AAPL",timeframe:str="15m",limit:int
     market=(market or "us").lower().strip()
     raw=(symbol or "").upper().strip()
     raw=re.sub(r"[^A-Z0-9.]", "", raw)
-    if market not in {"contracts","us","saudi","forex"}:
+    if market not in {"spot","futures","contracts","us","saudi","forex"}:
         return JSONResponse({"ok":False,"message":"السوق غير مدعوم في خدمة الشموع"},status_code=400)
     if not raw or len(raw)>20:
         return JSONResponse({"ok":False,"message":"رمز السوق غير صالح"},status_code=400)
+    if market in {"spot","futures"}:
+        interval_map={"15m":"15m","30m":"30m","1h":"1h","2h":"2h","4h":"4h","6h":"6h","8h":"8h","12h":"12h","1d":"1d","3d":"3d","1w":"1w","1M":"1M"}
+        interval=interval_map.get(timeframe)
+        if not interval:
+            return JSONResponse({"ok":False,"message":"الفريم غير مدعوم"},status_code=400)
+        params=urllib.parse.urlencode({"symbol":raw,"interval":interval,"limit":min(max(int(limit or 1000),60),1000)})
+        try:
+            if market=="spot":
+                data=_binance_json("https://api.binance.com/api/v3/klines?"+params,timeout=9,timeframe=timeframe,spot_fallback=True)
+            else:
+                data=_json_get("https://fapi.binance.com/fapi/v1/klines?"+params,timeout=9)
+            candles=[{"time":int(k[0])//1000,"open":float(k[1]),"high":float(k[2]),"low":float(k[3]),"close":float(k[4]),"volume":float(k[5])} for k in data if len(k)>=6]
+            if len(candles)<60:
+                raise ValueError("الشموع المستلمة غير كافية")
+            return {"ok":True,"market":market,"symbol":raw,"provider":"Binance عبر الخادم","candles":candles}
+        except Exception as exc:
+            return JSONResponse({"ok":False,"message":"تعذر تحميل شموع "+market+" من Binance: "+str(exc)[:180]},status_code=502)
     contract_map={"ES":"ES=F","NQ":"NQ=F","YM":"YM=F","GC":"GC=F","CL":"CL=F","SI":"SI=F"}
     forex_map={"XAUUSD":"XAUUSD=X","XAGUSD":"XAGUSD=X","EURUSD":"EURUSD=X","GBPUSD":"GBPUSD=X","USDJPY":"USDJPY=X","AUDUSD":"AUDUSD=X","USDCAD":"USDCAD=X","NZDUSD":"NZDUSD=X"}
     if market=="contracts":
