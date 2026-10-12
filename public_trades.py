@@ -7,7 +7,7 @@ from fastapi import APIRouter
 
 router = APIRouter()
 RETENTION = 86400
-CACHE_TTL = 900
+CACHE_TTL = 300
 MARKETS = ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex", "gold")
 LABELS = {"spot":"سبوت","futures":"فيوتشر","contracts":"العقود الأمريكية","us":"الأسهم الأمريكية","saudi":"السوق السعودي","forex":"الفوركس","gold":"الذهب","alpha":"Binance Alpha"}
 DATA_DIR = "/data" if os.path.isdir("/data") else os.path.dirname(__file__)
