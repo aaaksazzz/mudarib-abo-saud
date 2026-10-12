@@ -111,16 +111,21 @@ def _parse_news_xml(raw):
     out=[]
     for x in root.findall(".//item"):
         out.append({"title":html.unescape(x.findtext("title") or ""),"text":html.unescape(re.sub("<[^>]+>"," ",x.findtext("description") or "")),"url":x.findtext("link") or "","published":x.findtext("pubDate") or ""})
-    return out[:20]
+    return out[:30]
 
 def _news(q):
     # Strict 24-hour search window. Merge all providers instead of returning
     # the first non-empty feed, so recommendation coverage is broad.
     # Search two indexes and a second regional Google News feed; merge/dedupe below.
+    # Multi-region discovery: Google News US/UK/Canada/Australia + Saudi Arabic and Bing.
+    # Results are deduplicated by article URL and filtered to the recent research window below.
     urls=[
         "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:2d","hl":"en-US","gl":"US","ceid":"US:en"}),
         "https://www.bing.com/news/search?"+urllib.parse.urlencode({"q":q,"format":"rss","freshness":"Week"}),
-        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:2d","hl":"en-GB","gl":"GB","ceid":"GB:en"})
+        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:2d","hl":"en-GB","gl":"GB","ceid":"GB:en"}),
+        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:2d","hl":"en-CA","gl":"CA","ceid":"CA:en"}),
+        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:2d","hl":"en-AU","gl":"AU","ceid":"AU:en"}),
+        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:2d","hl":"ar","gl":"SA","ceid":"SA:ar"})
     ]
     cutoff=time.time()-MAX_SOURCE_AGE
     merged=[]; seen=set(); now=time.time()
@@ -137,7 +142,7 @@ def _news(q):
             if not key or key in seen:continue
             seen.add(key); merged.append(h)
     merged.sort(key=lambda x:float(x.get("published_ts") or 0),reverse=True)
-    return merged[:40]
+    return merged[:60]
 
 def _article(url):
     if not url:return ""
@@ -855,7 +860,7 @@ def _public_scan(market,internet,timeframe="15m"):
     # the liquid universe rather than requiring external headlines.
     # Keep the 512 MB / 0.2 vCPU service responsive. Non-crypto feeds are slower,
     # so scan a focused liquid shortlist first and expand only after the cache is warm.
-    caps={"spot":120,"futures":80,"us":24,"saudi":28,"contracts":12,"forex":24}
+    caps={"spot":240,"futures":180,"us":60,"saudi":28,"contracts":16,"forex":36}
     cap=caps.get(market,24)
     if len(symbols)>cap:
         if market in ("spot","futures"):
