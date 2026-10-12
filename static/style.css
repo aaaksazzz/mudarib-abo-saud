@@ -135,3 +135,30 @@ form button[type=submit],form .primary{margin-top:8px}
 .trade-tracking-card .trade-track,.trade-tracking-card>.card-foot{display:none!important}
 .trade-tracking-card .levels{gap:6px}
 .trade-tracking-card .level b{font-size:13px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+
+
+/* Radar method performance: compact, collapsible, Arabic-first cards. */
+.method-performance{margin:14px 0 18px;border:1px solid #203c52;border-radius:14px;background:linear-gradient(145deg,#0c1d2b,#0a1723);overflow:hidden}
+.method-performance>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 15px;cursor:pointer}
+.method-performance>summary::-webkit-details-marker{display:none}
+.method-performance>summary:after{content:"＋";color:#83dacf;font-size:18px;flex:0 0 auto}
+.method-performance[open]>summary:after{content:"−"}
+.method-performance>summary>span{font-weight:800;color:#e8f3fb;font-size:14px}
+.method-performance>summary>small{color:#8ba9bd;font-size:11px;text-align:left}
+.method-performance-body{padding:0 12px 12px;border-top:1px solid #1b3447}
+.method-performance-note{font-size:11px;line-height:1.8;color:#91aabd;margin:10px 2px}
+.method-performance-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.method-performance-card{min-width:0;border:1px solid #20394c;background:#0c1b29;border-radius:10px;padding:10px}
+.method-performance-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:5px;margin-bottom:9px}
+.method-performance-card-head>b{font-size:12px;color:#e1edf6;line-height:1.6;overflow-wrap:anywhere}
+.method-sample{font-size:9px;white-space:nowrap;border-radius:5px;padding:3px 5px;background:#12372f;color:#8ce4bf}
+.method-sample.is-small{background:#3a2d19;color:#f2c878}
+.method-rate{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.method-rate>span{font-size:10px;color:#9ab2c5}
+.method-rate>b{font-size:18px;color:#67dfac;font-variant-numeric:tabular-nums}
+.method-rate-loss{display:flex;justify-content:space-between;gap:4px;margin-top:4px;font-size:10px;color:#f08b91}
+.method-rate-loss span:last-child{color:#8ca5b8;text-align:left}
+.method-rate-track{height:4px;background:#47262d;border-radius:10px;overflow:hidden;margin-top:8px}
+.method-rate-track>i{display:block;height:100%;background:#54d6a0;border-radius:10px}
+@media(max-width:760px){.method-performance-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.method-performance>summary{padding:12px}.method-performance>summary>small{max-width:55%;font-size:10px}.method-performance-card{padding:9px}.method-performance-card-head>b{font-size:11px}.method-rate>b{font-size:16px}}
+@media(max-width:360px){.method-performance-grid{grid-template-columns:1fr}.method-performance>summary{align-items:flex-start;flex-wrap:wrap}.method-performance>summary>small{max-width:none;text-align:right}}
