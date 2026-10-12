@@ -3,7 +3,7 @@ from fastapi import APIRouter
 router=APIRouter()
 DB="/data/trading.db" if __import__("os").path.isdir("/data") else "trading.db"
 RETENTION=86400  # results and closed outcomes are retained for 24 hours only
-MARKETS=["spot","futures","contracts","us","saudi","forex","alpha"]
+MARKETS=["spot","futures","alpha","contracts","us","saudi","forex","gold"]
 # Serialize result collection inside the single Uvicorn process. The endpoint both reads and writes
 # the same SQLite file, so overlapping refreshes can otherwise contend on the writer lock.
 RESULTS_LOCK=threading.RLock()
@@ -140,7 +140,6 @@ def _results_locked(core):
  reset_at=float(reset_row[0]) if reset_row else 0
  for x in public_rows:
   market=str(x.get("market") or "").lower()
-  if market=="gold": market="forex"
   if market not in MARKETS: continue
   symbol=str(x.get("symbol") or "").strip().upper()
   if market in ("spot","futures") and allowed_symbols.get(market) and symbol not in allowed_symbols[market]: continue
