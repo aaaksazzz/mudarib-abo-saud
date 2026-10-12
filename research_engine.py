@@ -90,6 +90,54 @@ MARKET_QUERIES={
  "alpha":["Binance Alpha token buy sell signal today","Binance Alpha token recommendation entry target stop loss","Binance Alpha new token analysis today","site:binance.com/en/alpha token listing today"]
 }
 
+# Expanded source discovery for broader coverage across market-specific communities and publishers.
+MARKET_QUERIES["spot"] += [
+ "altcoin market analysis today volume breakout cryptocurrency",
+ "crypto analyst picks today BTC ETH SOL XRP",
+ "site:cryptopanic.com crypto bullish bearish market today",
+ "site:coinmarketcap.com/community crypto token analysis today"
+]
+MARKET_QUERIES["futures"] += [
+ "perpetual futures open interest funding rate trading setup today",
+ "BTC ETH SOL perpetual futures analysis long short today",
+ "site:cryptoslate.com crypto futures market analysis",
+ "site:coingape.com crypto price prediction today"
+]
+MARKET_QUERIES["us"] += [
+ "large cap US stocks analyst upgrades downgrades today",
+ "US stocks unusual volume breakout analysis today",
+ "site:marketwatch.com investing stocks analyst rating today",
+ "site:finance.yahoo.com/news stock analyst price target today"
+]
+MARKET_QUERIES["saudi"] += [
+ "تحليل فني أسهم تاسي اليوم دعم مقاومة",
+ "السوق السعودي أسهم نشاط تداول اليوم تحليل",
+ "site:aleqt.com الأسهم السعودية تحليل اليوم",
+ "site:argaam.com السوق السعودي نتائج الشركات اليوم"
+]
+MARKET_QUERIES["contracts"] += [
+ "E-mini Nasdaq S&P futures market outlook today",
+ "WTI crude oil natural gas futures outlook today",
+ "Treasury futures trading analysis today",
+ "site:cmegroup.com market commentary futures today"
+]
+MARKET_QUERIES["forex"] += [
+ "forex market outlook economic calendar currency pairs today",
+ "EURUSD GBPUSD USDJPY technical outlook today",
+ "site:dailyfx.com forex technical analysis today",
+ "site:forexlive.com currency market analysis today"
+]
+MARKET_QUERIES["gold"] += [
+ "XAUUSD gold price technical outlook today",
+ "gold market analysis support resistance today",
+ "site:kitco.com gold price analysis today",
+ "site:gold.org gold market commentary"
+]
+MARKET_QUERIES["alpha"] += [
+ "Binance Alpha new listings token ecosystem analysis",
+ "Binance Alpha token volume price action today"
+]
+
 # Syntax-checked baseline universes: external recommendations confirm the setup, but do not decide
 # which instruments are eligible for analysis. This prevents empty markets when news has no ticker.
 BASE_UNIVERSE={
