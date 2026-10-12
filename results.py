@@ -71,6 +71,16 @@ def _refresh_worker():
  global _RESULTS_REFRESHING
  try:
   import app as core
+  # Populate the shared public-trades cache first; results must not depend on
+  # someone visiting the separate public-trades page before this page works.
+  try:
+   import public_trades as public
+   payload=public._build(None,24)
+   with public._lock:
+    public._cache=payload
+   print("[RESULTS] public recommendations refreshed",len(payload.get("trades",[])),flush=True)
+  except Exception as scan_exc:
+   print("[RESULTS] public recommendation refresh skipped:",str(scan_exc)[:180],flush=True)
   with RESULTS_LOCK:
    _results_locked(core)
  except Exception as exc:
