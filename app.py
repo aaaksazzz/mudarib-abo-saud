@@ -84,12 +84,24 @@ async def _enforce_market_switches(request:Request,call_next):
     # Legacy standalone market pages now redirect to the single, market-filtered feed.
     legacy_market_redirects={
         "/static/spot.html":"/static/public-trades.html?market=spot&hours=24",
+        "/market/spot":"/static/public-trades.html?market=spot&hours=24",
+        "/fast-spot":"/static/public-trades.html?market=spot&hours=24",
         "/static/futures.html":"/static/public-trades.html?market=futures&hours=24",
+        "/market/futures":"/static/public-trades.html?market=futures&hours=24",
+        "/fast-futures":"/static/public-trades.html?market=futures&hours=24",
         "/static/alpha.html":"/static/public-trades.html?market=alpha&hours=24",
         "/static/contracts.html":"/static/public-trades.html?market=contracts&hours=24",
+        "/market/contracts":"/static/public-trades.html?market=contracts&hours=24",
+        "/fast-contracts":"/static/public-trades.html?market=contracts&hours=24",
         "/static/us.html":"/static/public-trades.html?market=us&hours=24",
+        "/market/us":"/static/public-trades.html?market=us&hours=24",
+        "/fast-us":"/static/public-trades.html?market=us&hours=24",
         "/static/saudi.html":"/static/public-trades.html?market=saudi&hours=24",
+        "/market/saudi":"/static/public-trades.html?market=saudi&hours=24",
+        "/fast-saudi":"/static/public-trades.html?market=saudi&hours=24",
         "/static/forex.html":"/static/public-trades.html?market=forex&hours=24",
+        "/market/forex":"/static/public-trades.html?market=forex&hours=24",
+        "/fast-forex":"/static/public-trades.html?market=forex&hours=24",
         "/static/gold.html":"/static/public-trades.html?market=forex&hours=24",
     }
     if path in legacy_market_redirects:
