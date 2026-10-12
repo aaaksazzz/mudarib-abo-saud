@@ -292,7 +292,7 @@ function loadRadar(tf){
    var stamp=Number(x.detected_at||x.updated_at||0);if(stamp>1e12)stamp/=1000;
    var age=stamp?Math.max(0,(Date.now()/1000-stamp)/3600):null;
    var method=x.technical_method_name||x.method_name||x.method_label||x.strategy_name||x.analysis_type||x.method||x.school||"منهج التحليل";
-   var quality=Math.max(0,Math.min(100,(mv===null?0:Math.min(35,Math.abs(mv)*7))+Math.max(0,Math.min(100,score))*.25+Math.min(10,Math.max(0,source))*1.5+(age===null?0:age<=1?10:age<=6?7:age<=24?3:-15)+((mv>0&&side==="BUY")||(mv<0&&side==="SELL")?10:((mv<0&&side==="BUY")||(mv>0&&side==="SELL")?-18:0)));
+   var momentumScore=mv===null?0:Math.min(35,Math.abs(mv)*7); var scorePart=Math.max(0,Math.min(100,score))*.25; var sourcePart=Math.min(10,Math.max(0,source))*1.5; var agePart=age===null?0:age<=1?10:age<=6?7:age<=24?3:-15; var directionPart=0; if(mv!==null){if((mv>0&&side==="BUY")||(mv<0&&side==="SELL"))directionPart=10;else if((mv<0&&side==="BUY")||(mv>0&&side==="SELL"))directionPart=-18;} var quality=Math.max(0,Math.min(100,momentumScore+scorePart+sourcePart+agePart+directionPart));
    var z={x:x,market:g.market,move:mv,score:quality,method:method};all.push(z);seen[key]=z;
   });});
   all.sort(function(a,b){return b.score-a.score;});
