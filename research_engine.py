@@ -358,9 +358,9 @@ def _alpha_universe():
 
 def _alpha_klines(symbol,interval="15m",limit=260):
     """Read real Alpha candles; symbols must be Alpha pair IDs such as ALPHA_175USDT."""
-    interval_map={"1m":"INTERVAL_1m","3m":"INTERVAL_1m","5m":"INTERVAL_5m","15m":"INTERVAL_15m",
-                  "30m":"INTERVAL_30m","1h":"INTERVAL_1h","4h":"INTERVAL_4h","1d":"INTERVAL_1d",
-                  "1w":"INTERVAL_1w","1M":"INTERVAL_1M"}
+    interval_map={"1m":"1m","3m":"3m","5m":"5m","15m":"15m",
+                  "30m":"30m","1h":"1h","4h":"4h","1d":"1d",
+                  "1w":"1w","1M":"1M"}
     api_interval=interval_map.get(interval,"INTERVAL_15m")
     try:
         url="https://www.binance.com/bapi/defi/v1/public/alpha-trade/klines?"+urllib.parse.urlencode(
