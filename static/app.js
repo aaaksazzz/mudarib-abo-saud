@@ -220,7 +220,7 @@ function loadTechnical(m,tf){
 function loadCoreMarkets(){
  var toolsBox=$("#platformTools"),marketsBox=$("#coreMarkets");
  if(toolsBox){
-  var toolsItems=[["📈","أولوية: النماذج الفنية والشارت","patterns","شارت مباشر وتحليل النماذج والأهداف والوقف"],["◈","الرادار الذكي","radar","فرص الأسواق مرتبة بحسب البيانات المتاحة"],["💎","الصفقات الذهبية","gold","متابعة أقوى الفرص المصنّفة"],["🐋","متابعة الحيتان","whales","رصد نشاط الحيتان عند توفر البيانات"],["📊","نتائج الأداء","results","مراجعة نتائج التوصيات السابقة"],["📰","الأخبار","news","متابعة أخبار السوق"],["✍️","مركز المعرفة","blog","مقالات التداول وإدارة المخاطر"],["📐","مناهج التحليل الفني","technical","افتح كل منهج مع اختيار السوق والفريم"],["🧪","تحليل AZO","azo","مختبر تحليل جديد لا يُنشر للعامة إلا بعد إثبات نتائجه"]];
+  var toolsItems=[["📈","النماذج الفنية والشارت","patterns","شارت مباشر وتحليل النماذج والأهداف والوقف"],["◈","الرادار الذكي","radar","فرص الأسواق مرتبة بحسب البيانات المتاحة"],["💎","الصفقات الذهبية","gold","متابعة أقوى الفرص المصنّفة"],["🐋","متابعة الحيتان","whales","رصد نشاط الحيتان عند توفر البيانات"],["📊","نتائج الأداء","results","مراجعة نتائج التوصيات السابقة"],["📰","الأخبار","news","متابعة أخبار السوق"],["✍️","مركز المعرفة","blog","مقالات التداول وإدارة المخاطر"],["📐","مناهج التحليل الفني","technical","افتح كل منهج مع اختيار السوق والفريم"],["🧪","تحليل AZO","azo","مختبر تحليل جديد لا يُنشر للعامة إلا بعد إثبات نتائجه"]];
   toolsBox.innerHTML=toolsItems.map(function(x){return '<article class="core-card tool-card" role="link" tabindex="0" data-s="'+x[2]+'"><div class="core-title"><span>'+x[0]+'</span><b>'+x[1]+'</b></div><div class="core-analysis">'+x[3]+'</div><div class="card-foot">استكشف القسم ←</div></article>';}).join("");
  }
  if(marketsBox){
@@ -465,7 +465,7 @@ function bind(){
   };
   makeSection("الرئيسية",["home"],"menu-home");
   makeSection("التداول الذكي",["radar","gold","whales"],"menu-trading");
-  makeSection("مختبر التحليل",["azo"],"menu-azo");
+  makeSection("النماذج والتحليل",["patterns","azo"],"menu-azo");
   if(methodGroup)side.insertBefore(methodGroup,footer||null);
   makeSection("النتائج والمحتوى",["results","news","blog"],"menu-content");
   makeSection("الحساب والإدارة",["signup","login","admin"],"menu-account");
