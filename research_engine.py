@@ -860,7 +860,7 @@ def _rotating_batch(symbols, size, market):
     """Cycle through the full eligible universe between refreshes instead of ignoring its tail."""
     symbols=list(dict.fromkeys(str(s).strip() for s in (symbols or []) if str(s).strip()))
     if not symbols:return []
-    size=max(1,int(size))
+    size=min(len(symbols),max(1,int(size)))
     # Use the 15-minute refresh slot so one cache refresh scans a stable batch.
     slot=int(time.time()//900)
     offset=(slot*size)%len(symbols)
