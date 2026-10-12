@@ -66,10 +66,20 @@ def _prepare(engine, market, raw, ticker_maps):
     direction = str(raw.get("direction") or "").upper().strip()
     if not symbol or direction not in ("BUY", "SELL"): return None
     entry, targets, sl = engine._external_trade_fields(title + " " + body)
+    # Do not treat generic market commentary as a precise actionable signal.
+    title_direction = engine._direction(title)
+    if title_direction and title_direction != direction:
+        return None
+    actionable = ("entry", "target", "take profit", "stop loss", "price target",
+                  "buy signal", "sell signal", "long", "short", "upgrade",
+                  "downgrade", "شراء", "بيع", "دخول", "هدف", "وقف الخسارة",
+                  "توصية", "إشارة", "السعر المستهدف")
+    if not any(term in (title + " " + body).lower() for term in actionable):
+        return None
     level_type = "مستويات منشورة بالمصدر"
-    price = 0.0
+    price = _last_price(engine, market, symbol, ticker_maps)
+    explicit_levels = bool(entry and targets and sl)
     if not entry or not targets or not sl:
-        price = _last_price(engine, market, symbol, ticker_maps)
         if not price: return None
         entry = float(entry or price)
         risk = abs(entry * 0.01)
@@ -95,7 +105,20 @@ def _prepare(engine, market, raw, ticker_maps):
     targets = targets[:3]
     if direction == "BUY" and not (float(sl) < float(entry) < targets[0] <= targets[1] <= targets[2]): return None
     if direction == "SELL" and not (targets[2] <= targets[1] <= targets[0] < float(entry) < float(sl)): return None
-    return {"market":market,"market_label":LABELS[market],"symbol":symbol,"direction":direction,
+    # Discard published entries that are already materially away from live price.
+    # The limits are intentionally wider for crypto than for FX/indices.
+    if price and explicit_levels:
+        drift = abs(float(price) - float(entry)) / max(float(entry), 1e-12) * 100
+        max_drift = 8.0 if market in ("spot", "futures", "alpha") else 3.0 if market in ("forex", "gold", "contracts") else 5.0
+        if drift > max_drift:
+            return None
+    title_upper = title.upper()
+    text_lower = (title + " " + body).lower()
+    direct_level_score = 35 if explicit_levels else 0
+    title_signal_score = 25 if engine._direction(title) == direction else 0
+    actionable_score = 20 if any(term in text_lower for term in ("entry", "take profit", "stop loss", "price target", "توصية", "دخول", "هدف", "وقف")) else 10
+    source_quality = min(100, direct_level_score + title_signal_score + actionable_score + 20)
+    return {"market":market,"market_label":LABELS[market],"symbol":symbol,"direction":direction,"source_quality":source_quality,"live_price":round(float(price),8) if price else None,
         "entry":round(float(entry),8),"tp1":round(targets[0],8),"tp2":round(targets[1],8),"tp3":round(targets[2],8),"sl":round(float(sl),8),
         "source_title":title,"source_url":url,"source_published":published,"created_at":published_at,"expires_at":published_at+RETENTION,
         "level_type":level_type,"is_estimated":level_type!="مستويات منشورة بالمصدر","status":"نشطة","source_count":1,"source_urls":[url]}
@@ -268,6 +291,7 @@ def _build():
                  float(row.get("created_at") or 0))
         previous=best_by_asset.get(key)
         if previous is None or quality>(0 if previous.get("scan_generated") else 1,
+                                         int(previous.get("source_quality") or 0),
                                          int(previous.get("source_count") or 0),
                                          float(previous.get("ai_pct") or 0),
                                          float(previous.get("created_at") or 0)):
@@ -275,7 +299,7 @@ def _build():
     # Balance the feed so busy markets cannot crowd out quieter markets.
     rows=[]
     for market in MARKETS:
-        market_rows=sorted((x for x in best_by_asset.values() if x["market"]==market),key=lambda x:(0 if x.get("scan_generated") else 1,x["source_count"],float(x.get("ai_pct") or 0),x["created_at"]),reverse=True)
+        market_rows=sorted((x for x in best_by_asset.values() if x["market"]==market),key=lambda x:(0 if x.get("scan_generated") else 1,int(x.get("source_quality") or 0),x["source_count"],float(x.get("ai_pct") or 0),x["created_at"]),reverse=True)
         rows.extend(market_rows[:100])
     rows=sorted(rows,key=lambda x:(x["created_at"],x["source_count"]),reverse=True)[:700]
     payload={"ok":True,"trades":rows,"updated":now,"refreshing":False,"markets":counts}
