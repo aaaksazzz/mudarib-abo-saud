@@ -1,5 +1,6 @@
 """Public internet-sourced trade ideas, rolling 24h, read-only/paper display only."""
 import json, os, sqlite3, threading, time
+from urllib.parse import urlparse
 from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import APIRouter
@@ -123,7 +124,7 @@ def _prepare(engine, market, raw, ticker_maps):
     return {"market":market,"market_label":LABELS[market],"symbol":symbol,"direction":direction,"source_quality":source_quality,"live_price":round(float(price),8) if price else None,
         "entry":round(float(entry),8),"tp1":round(targets[0],8),"tp2":round(targets[1],8),"tp3":round(targets[2],8),"sl":round(float(sl),8),
         "source_title":title,"source_url":url,"source_published":published,"created_at":published_at,"expires_at":published_at+RETENTION,
-        "level_type":level_type,"is_estimated":level_type!="مستويات منشورة بالمصدر","status":"نشطة","source_count":1,"source_urls":[url]}
+        "level_type":level_type,"is_estimated":level_type!="مستويات منشورة بالمصدر","status":"نشطة","source_count":1,"mention_count":1,"source_domains_count":1,"source_domains":[urlparse(url).netloc.lower().removeprefix("www.")],"source_urls":[url], "risk_pct":round(abs(float(entry)-float(sl))/float(entry)*100,2), "tp1_pct":round(((targets[0]-float(entry)) if direction=="BUY" else (float(entry)-targets[0]))/float(entry)*100,2), "tp2_pct":round(((targets[1]-float(entry)) if direction=="BUY" else (float(entry)-targets[1]))/float(entry)*100,2), "tp3_pct":round(((targets[2]-float(entry)) if direction=="BUY" else (float(entry)-targets[2]))/float(entry)*100,2)}
 
 def _scan_fallback(engine, market):
     """Multi-timeframe confirmation scan; never promote a single-candle guess as high confidence."""
@@ -278,7 +279,7 @@ def _build(only_market=None):
     if only_market in (None, "", "all"):
         scan_markets=list(MARKETS)
     elif only_market in ("forex", "gold"):
-        scan_markets=["forex", "gold"]
+        scan_markets=[only_market]
     elif only_market in MARKETS:
         scan_markets=[only_market]
     else:
@@ -302,7 +303,13 @@ def _build(only_market=None):
         else:
             old=merged[key]
             if row["source_url"] and row["source_url"] not in old["source_urls"]:
-                old["source_urls"].append(row["source_url"]); old["source_count"]=len(old["source_urls"])
+                old["source_urls"].append(row["source_url"])
+                old["source_count"]=len(old["source_urls"])
+                old["mention_count"]=old["source_count"]
+                domain=urlparse(row["source_url"]).netloc.lower().removeprefix("www.")
+                domains=old.setdefault("source_domains",[])
+                if domain and domain not in domains: domains.append(domain)
+                old["source_domains_count"]=len(domains)
     now=time.time()
     # Keep one unambiguous direction per asset and market. Prefer a real external
     # recommendation over a generated scan, then source agreement, confidence, and freshness.
@@ -311,22 +318,27 @@ def _build(only_market=None):
         if float(row.get("expires_at") or 0) <= now:
             continue
         key=(row["market"],row["symbol"])
+        row["mention_count"]=max(int(row.get("mention_count") or 0),int(row.get("source_count") or 0))
+        row["source_domains_count"]=max(int(row.get("source_domains_count") or 0),len(row.get("source_domains") or []))
+        row["rank_score"]=round(min(100,(float(row.get("source_quality") or row.get("ai_pct") or 45)*0.55)+min(10,int(row["mention_count"]))*3.0+min(8,int(row["source_domains_count"]))*2.5),1)
         quality=(0 if row.get("scan_generated") else 1,
+                 int(row.get("mention_count") or 0),
+                 int(row.get("source_domains_count") or 0),
                  int(row.get("source_quality") or 0),
-                 int(row.get("source_count") or 0),
                  float(row.get("ai_pct") or 0),
                  float(row.get("created_at") or 0))
         previous=best_by_asset.get(key)
         if previous is None or quality>(0 if previous.get("scan_generated") else 1,
+                                         int(previous.get("mention_count") or previous.get("source_count") or 0),
+                                         int(previous.get("source_domains_count") or 0),
                                          int(previous.get("source_quality") or 0),
-                                         int(previous.get("source_count") or 0),
                                          float(previous.get("ai_pct") or 0),
                                          float(previous.get("created_at") or 0)):
             best_by_asset[key]=row
     # Balance the feed so busy markets cannot crowd out quieter markets.
     rows=[]
     for market in MARKETS:
-        market_rows=sorted((x for x in best_by_asset.values() if x["market"]==market),key=lambda x:(0 if x.get("scan_generated") else 1,int(x.get("source_quality") or 0),x["source_count"],float(x.get("ai_pct") or 0),x["created_at"]),reverse=True)
+        market_rows=sorted((x for x in best_by_asset.values() if x["market"]==market),key=lambda x:(0 if x.get("scan_generated") else 1,int(x.get("mention_count") or x.get("source_count") or 0),int(x.get("source_domains_count") or 0),float(x.get("rank_score") or x.get("source_quality") or 0),x["created_at"]),reverse=True)
         rows.extend(market_rows[:100])
     rows=sorted(rows,key=lambda x:(x["created_at"],x["source_count"]),reverse=True)[:700]
     market_updated={}
@@ -365,7 +377,7 @@ def public_trades(refresh: int = 0, market: str = "all", hours: int = 48):
     now=time.time()
     with _lock:
         _cache["trades"]=[x for x in _cache.get("trades",[]) if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=RETENTION]
-        relevant=("forex","gold") if market in ("forex","gold") else list(MARKETS) if market=="all" else [market]
+        relevant=list(MARKETS) if market=="all" else [market]
         updated_map=_cache.get("market_updated",{})
         stale=any(not updated_map.get(m) or now-float(updated_map.get(m) or 0)>=CACHE_TTL for m in relevant)
         if not _refreshing and (refresh==1 or stale):
@@ -386,12 +398,10 @@ def public_trades(refresh: int = 0, market: str = "all", hours: int = 48):
             con.close()
         except Exception:
             pass
-        if market=="gold": market="forex"
         def market_enabled(row):
             key=str(row.get("market") or "")
-            if key=="gold": key="forex"
             return enabled.get(key,True)
-        filtered=[x for x in _cache["trades"] if float(x.get("created_at") or 0)>=cutoff and market_enabled(x) and (market=="all" or x.get("market")==market or (market=="forex" and x.get("market")=="gold"))]
+        filtered=[x for x in _cache["trades"] if float(x.get("created_at") or 0)>=cutoff and market_enabled(x) and (market=="all" or x.get("market")==market or False)]
         result=dict(_cache); result["trades"]=filtered; result["refreshing"]=_refreshing
         result["selected_market"]=market; result["window_hours"]=hours
         result["market_counts"]={m:sum(1 for x in _cache["trades"] if x.get("market")==m and market_enabled(x) and float(x.get("created_at") or 0)>=cutoff) for m in MARKETS}
