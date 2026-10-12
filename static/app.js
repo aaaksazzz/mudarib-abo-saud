@@ -205,10 +205,12 @@ function loadTechnical(m,tf){
   if(status)status.textContent=marketName+" · "+methodName+" · يحتاج محركًا مستقلًا";
   return;
  }
- var endpoint=(selectedTechnicalMethod!=="all"?"/api/technical-methods?market="+encodeURIComponent(apiMarket)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&method="+encodeURIComponent(selectedTechnicalMethod):"/api/opportunities?market="+encodeURIComponent(apiMarket)+"&timeframe="+encodeURIComponent(selectedTimeframe))+"&x="+Date.now();
+ var scanMarket=selectedTechnicalMarket==="gold"?"forex":apiMarket;
+ var endpoint="/api/technical-methods?market="+encodeURIComponent(scanMarket)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&method="+encodeURIComponent(selectedTechnicalMethod==="all"?"all":selectedTechnicalMethod)+"&x="+Date.now();
  getJSON(endpoint).then(function(j){
   var s=j.scan_stats||{},rows=j.opportunities||[];
-  var methodRows=selectedTechnicalMethod==="all"?filterTechnicalMethods(rows):rows.filter(function(r){return r.technical_method_key===selectedTechnicalMethod&&r.technical_only===true;});
+  if(selectedTechnicalMarket==="gold")rows=rows.filter(function(r){var z=String(r.symbol||"").toUpperCase().replace(/=X$|=F$|\\//g,"");return z==="XAUUSD"||z==="GOLD"||z==="GC";});
+  var methodRows=selectedTechnicalMethod==="all"?rows.filter(function(r){return r.technical_only===true&&r.research_only!==true;}):rows.filter(function(r){return r.technical_method_key===selectedTechnicalMethod&&r.technical_only===true;});
   render(box,methodRows);
   var methodIsImplemented=selectedTechnicalMethod==="all"||independentMethodIds.indexOf(selectedTechnicalMethod)>=0;
 
