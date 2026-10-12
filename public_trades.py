@@ -19,7 +19,7 @@ try:
     with open(CACHE_FILE, "r", encoding="utf-8") as f:
         saved = json.load(f)
     now = time.time()
-    _cache["trades"] = [x for x in saved.get("trades", []) if float(x.get("expires_at") or 0) > now and now-float(x.get("created_at") or 0) <= RETENTION and not x.get("scan_generated")]
+    _cache["trades"] = [x for x in saved.get("trades", []) if float(x.get("expires_at") or 0) > now and now-float(x.get("created_at") or 0) <= RETENTION and (not x.get("scan_generated") or x.get("market")=="alpha")]
     _cache["updated"] = saved.get("updated")
     _cache["markets"] = saved.get("markets", {})
     _cache["market_updated"] = saved.get("market_updated", {})
@@ -152,7 +152,45 @@ def _fetch_market(engine, market, ticker_maps, retention=86400):
         for raw in rows:
             item=_prepare(engine,market,raw,ticker_maps,retention)
             if item: out.append(item)
-        # External published recommendations only; never invent internal scan signals.
+        if market=="alpha":
+            # Supplement sparse external mentions with clearly labelled signals from real Binance Alpha candles.
+            # These are technical scans, not claims that an analyst published the recommendation.
+            try:
+                scanned=engine._public_scan("alpha",[],"15m")
+                now=time.time()
+                for raw in scanned[:48]:
+                    symbol=str(raw.get("symbol") or "").upper()
+                    side=str(raw.get("direction") or raw.get("side") or "").upper()
+                    try:
+                        entry=float(raw.get("entry") or 0); sl=float(raw.get("sl") or 0)
+                        targets=[float(raw.get(k) or 0) for k in ("tp1","tp2","tp3")]
+                        candles=engine._alpha_klines(symbol,"15m",2)
+                        live=float(candles[-1].get("close") or 0) if candles else 0
+                    except Exception:
+                        continue
+                    if side not in ("BUY","SELL") or entry<=0 or sl<=0 or live<=0 or len(targets)!=3 or any(x<=0 for x in targets):
+                        continue
+                    if side=="BUY" and not (sl<entry<targets[0]<targets[1]<targets[2]): continue
+                    if side=="SELL" and not (sl>entry>targets[0]>targets[1]>targets[2]): continue
+                    out.append({
+                        "market":"alpha","market_label":LABELS["alpha"],"symbol":symbol,"direction":side,
+                        "live_price":round(live,10),"entry":round(entry,10),"tp1":round(targets[0],10),
+                        "tp2":round(targets[1],10),"tp3":round(targets[2],10),"sl":round(sl,10),
+                        "source_title":"مسح فني مباشر من شموع Binance Alpha","source_url":"https://www.binance.com/en/alpha",
+                        "source_published":time.strftime("%Y-%m-%dT%H:%M:%SZ",time.gmtime(now)),
+                        "created_at":now,"expires_at":now+retention,"level_type":"مستويات محسوبة من الشموع الحقيقية",
+                        "is_estimated":True,"status":"نشطة","source_count":0,"mention_count":0,
+                        "source_domains_count":0,"source_domains":[],"source_urls":[],
+                        "risk_pct":round(abs(entry-sl)/entry*100,2),
+                        "tp1_pct":round(((targets[0]-entry) if side=="BUY" else (entry-targets[0]))/entry*100,2),
+                        "tp2_pct":round(((targets[1]-entry) if side=="BUY" else (entry-targets[1]))/entry*100,2),
+                        "tp3_pct":round(((targets[2]-entry) if side=="BUY" else (entry-targets[2]))/entry*100,2),
+                        "recommendation_score":float(raw.get("recommendation_score") or raw.get("ai_pct") or 0),
+                        "ai_pct":float(raw.get("ai_pct") or raw.get("recommendation_score") or 0),
+                        "timeframe":"15m","scan_generated":True
+                    })
+            except Exception as exc:
+                print("[PUBLIC-TRADES] Alpha candle scan failed",str(exc)[:140],flush=True)
         return market,out
     except Exception as exc:
         print("[PUBLIC-TRADES] source failed",market,str(exc)[:120],flush=True)
