@@ -101,67 +101,106 @@ def _prepare(engine, market, raw, ticker_maps):
         "level_type":level_type,"is_estimated":level_type!="مستويات منشورة بالمصدر","status":"نشطة","source_count":1,"source_urls":[url]}
 
 def _scan_fallback(engine, market):
-    """Small liquid technical-scan fallback for markets with too few external recommendations."""
-    if market in ("gold","alpha"):
+    """Multi-timeframe confirmation scan; never promote a single-candle guess as high confidence."""
+    if market in ("gold", "alpha"):
         return []
     try:
-        if market in ("spot","futures"):
-            symbols=[s for s,v in engine._crypto_universe(market)[:40]]
-        elif market=="us":
-            symbols=[]
-            for s in engine.BASE_UNIVERSE.get("us",[]):
-                if engine._passes_volume_filter(s,"us"):
-                    symbols.append(s)
-                if len(symbols)>=24: break
+        if market in ("spot", "futures"):
+            # Scan the most liquid eligible USDT pairs first, not an arbitrary symbol list.
+            symbols = [s for s, _ in engine._crypto_universe(market)[:32]]
+        elif market == "us":
+            symbols = []
+            for sym in engine.BASE_UNIVERSE.get("us", []):
+                if engine._passes_volume_filter(sym, "us"):
+                    symbols.append(sym)
+                if len(symbols) >= 18:
+                    break
         else:
-            symbols=list(engine.BASE_UNIVERSE.get(market,[]))[:28 if market=="saudi" else 16]
+            symbols = list(engine.BASE_UNIVERSE.get(market, []))[:24 if market == "saudi" else 14]
         if not symbols:
             return []
-        out=[]
-        frame="1d" if market=="saudi" else "15m"
-        with ThreadPoolExecutor(max_workers=5) as pool:
-            jobs={pool.submit(engine._analyze_symbol,s,market,frame):s for s in symbols}
-            for fut in as_completed(jobs):
-                try: a=fut.result()
-                except Exception: a=None
-                sym=jobs[fut]
-                def complete_levels(z):
-                    if not isinstance(z,dict) or not z.get("sl"): return False
-                    vals=z.get("targets") or [z.get("tp1"),z.get("tp2"),z.get("tp3")]
-                    return len([v for v in vals if v is not None])>=3
-                if not complete_levels(a) and market not in ("spot",):
-                    try:
-                        alt=engine._analyze_symbol_method(sym,market,frame,"classical")
-                        if complete_levels(alt): a=alt
-                    except Exception: pass
-                if not complete_levels(a) and market=="saudi":
-                    try:
-                        alt=engine._analyze_symbol(sym,market,"15m")
-                        if complete_levels(alt): a=alt
-                    except Exception: pass
-                if not isinstance(a,dict): continue
-                side=str(a.get("side") or a.get("direction") or "").upper()
-                entry=float(a.get("entry") or a.get("price") or 0)
-                sl=float(a.get("sl") or 0)
-                targets=a.get("targets") or [a.get("tp1"),a.get("tp2"),a.get("tp3")]
-                try: targets=[float(v) for v in targets if v is not None]
-                except Exception: targets=[]
-                if side not in ("BUY","SELL") or entry<=0 or sl<=0 or len(targets)<3: continue
-                if side=="BUY" and not (sl<entry<targets[0]<=targets[1]<=targets[2]): continue
-                if side=="SELL" and not (targets[2]<=targets[1]<=targets[0]<entry<sl): continue
-                out.append({"market":market,"market_label":LABELS.get(market,market),"symbol":sym,"direction":side,
-                    "entry":round(entry,8),"tp1":round(targets[0],8),"tp2":round(targets[1],8),"tp3":round(targets[2],8),"sl":round(sl,8),
-                    "source_title":"تحليل فني متعدد المناهج","source_url":"","source_published":None,"created_at":time.time(),
-                    "expires_at":time.time()+RETENTION,"level_type":"تحليل فني متعدد المناهج","is_estimated":False,
-                    "status":"نشطة","source_count":0,"source_urls":[],"scan_generated":True,
-                    "ai_pct":round(float(a.get("ai_pct") or a.get("recommendation_score") or 0),1),
-                    "timeframe":frame,"reason":str(a.get("reason") or "")[:240]})
-        out.sort(key=lambda x:(-float(x.get("ai_pct") or 0),x["symbol"]))
+
+        primary_tf = "1d" if market == "saudi" else "15m"
+        confirm_tf = "1w" if market == "saudi" else "1h"
+        out = []
+
+        def analyse(sym, tf):
+            try:
+                result = engine._analyze_symbol(sym, market, tf)
+                if isinstance(result, dict) and result.get("side") in ("BUY", "SELL"):
+                    return result
+            except Exception:
+                pass
+            return None
+
+        # Keep concurrency bounded for the small production service.
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            primary_jobs = {pool.submit(analyse, sym, primary_tf): sym for sym in symbols}
+            for future in as_completed(primary_jobs):
+                sym = primary_jobs[future]
+                try:
+                    primary = future.result()
+                except Exception:
+                    primary = None
+                if not primary:
+                    continue
+
+                primary_score = float(primary.get("ai_pct") or primary.get("recommendation_score") or 0)
+                if primary_score < 65:
+                    continue
+                # Higher-timeframe agreement is mandatory for these candidates.
+                try:
+                    confirm = analyse(sym, confirm_tf)
+                except Exception:
+                    confirm = None
+                if not confirm or confirm.get("side") != primary.get("side"):
+                    continue
+                confirm_score = float(confirm.get("ai_pct") or confirm.get("recommendation_score") or 0)
+                if confirm_score < 58:
+                    continue
+
+                side = str(primary.get("side") or "").upper()
+                entry = float(primary.get("entry") or primary.get("price") or 0)
+                sl = float(primary.get("sl") or 0)
+                raw_targets = primary.get("targets") or [primary.get("tp1"), primary.get("tp2"), primary.get("tp3")]
+                try:
+                    targets = [float(v) for v in raw_targets if v is not None]
+                except Exception:
+                    continue
+                if side not in ("BUY", "SELL") or entry <= 0 or sl <= 0 or len(targets) < 3:
+                    continue
+                risk = abs(entry - sl)
+                if risk <= 0 or risk / entry > 0.04:
+                    continue
+                if side == "BUY" and not (sl < entry < targets[0] <= targets[1] <= targets[2]):
+                    continue
+                if side == "SELL" and not (targets[2] <= targets[1] <= targets[0] < entry < sl):
+                    continue
+
+                # This is a confluence score, not a claimed win probability.
+                confidence = round(min(96.0, primary_score * 0.65 + confirm_score * 0.35), 1)
+                out.append({
+                    "market": market, "market_label": LABELS.get(market, market),
+                    "symbol": sym, "direction": side,
+                    "entry": round(entry, 8), "tp1": round(targets[0], 8),
+                    "tp2": round(targets[1], 8), "tp3": round(targets[2], 8),
+                    "sl": round(sl, 8), "source_title": "مسح فني متعدد الأطر",
+                    "source_url": "", "source_published": None,
+                    "created_at": time.time(), "expires_at": time.time() + RETENTION,
+                    "level_type": "مستويات محسوبة من بيانات السوق",
+                    "is_estimated": True, "status": "نشطة", "source_count": 0,
+                    "source_urls": [], "scan_generated": True, "ai_pct": confidence,
+                    "timeframe": primary_tf, "confirmation_timeframe": confirm_tf,
+                    "primary_score": round(primary_score, 1),
+                    "confirmation_score": round(confirm_score, 1),
+                    "reason": "توافق إطار " + primary_tf + " مع " + confirm_tf + "؛ الدرجة تقيس توافق الأدلة وليست نسبة ربح مضمونة"
+                })
+        # Highest multi-timeframe confluence first; tie-break by fresh generation time.
+        out.sort(key=lambda x: (float(x.get("ai_pct") or 0), float(x.get("primary_score") or 0), x["created_at"]), reverse=True)
         return out[:12]
     except Exception as exc:
-        print("[PUBLIC-TRADES] technical fallback failed",market,str(exc)[:120],flush=True)
+        print("[PUBLIC-TRADES] multi-timeframe scan failed", market, str(exc)[:120], flush=True)
         return []
-
 
 def _fetch_market(engine, market, ticker_maps):
     try:
