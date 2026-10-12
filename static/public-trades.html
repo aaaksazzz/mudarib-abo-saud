@@ -34,7 +34,7 @@
 </aside><div id="sidebarShade" class="sidebar-shade"></div>
 <main class="public-main public-wrap">
 <div class="public-heading"><div><span class="eyebrow">رصد الأسواق</span><h1 id="pageTitle">الصفقات العامة</h1><p>كل سوق له صفقاته الخاصة. البيانات المتاحة ضمن آخر 24 ساعة فقط.</p></div><button id="refresh" class="primary" type="button">↻ تحديث البحث</button></div>
-<div class="public-tools"><label for="hoursFilter">مدة البحث</label><select id="hoursFilter"><option value="12">آخر 12 ساعة</option><option value="24">آخر 24 ساعة</option></select><div id="counts" class="public-counts"></div></div>
+<div class="public-tools"><label for="hoursFilter">مدة البحث</label><select id="hoursFilter"><option value="24">آخر 24 ساعة</option></select><div id="counts" class="public-counts"></div></div>
 <div class="public-note">القرار يفضّل الإشارة الأوضح من حيث جودة التوصية وتعدد المصادر وحداثتها. إذا تعارض الشراء والبيع بدون فارق واضح، يكون القرار انتظار.</div>
 <div id="bestDecision" class="best-decision" role="status" aria-live="polite"><div><div class="decision-title">قرار النظام</div><div class="decision-main">جاري مقارنة قوة الإشارات…</div><div class="decision-detail">لا تدخل لمجرد ظهور إشارتين متعاكستين.</div></div><div class="decision-action">⏳ فحص القوة</div></div>
 <div id="status" class="public-status" role="status" aria-live="polite">جاري البحث...</div><div id="cards" class="public-grid"></div>
@@ -46,7 +46,7 @@
  const marketNames={all:"كل الأسواق",spot:"سبوت",futures:"فيوتشر",alpha:"Binance Alpha",contracts:"العقود الأمريكية",us:"الأسهم الأمريكية",saudi:"السوق السعودي",forex:"الفوركس والذهب"};
  const params=new URLSearchParams(location.search);
  let selectedMarket=params.get("market")==="gold"?"forex":(validMarkets.includes(params.get("market"))?params.get("market"):"all");
- let selectedHours=["12","24"].includes(params.get("hours"))?params.get("hours"):"24";
+ let selectedHours="24";
  $("#hoursFilter").value=selectedHours;$("#pageTitle").textContent=selectedMarket==="all"?"فرص الأسواق — كل الأسواق":"فرص "+marketNames[selectedMarket];
  document.querySelectorAll(".market-link").forEach(a=>{if(a.dataset.market===selectedMarket)a.classList.add("active");});
  const fmt=v=>{if(v===null||v===undefined||v===""||!Number.isFinite(Number(v)))return "—";return Number(v).toLocaleString("en-US",{maximumFractionDigits:8});};
@@ -54,7 +54,7 @@
  function updateUrl(){const p=new URLSearchParams();p.set("market",selectedMarket);p.set("hours",selectedHours);history.replaceState(null,"",location.pathname+"?"+p.toString());}
  function render(data){
   const rows=Array.isArray(data.trades)?data.trades:[];
-  $("#counts").innerHTML="<span>الصفقات: "+rows.length+"</span><span>"+(selectedHours==="12"?"آخر 12 ساعة":"آخر 24 ساعة")+"</span><span>"+esc(marketNames[selectedMarket])+"</span>";
+  $("#counts").innerHTML="<span>الصفقات: "+rows.length+"</span><span>"+"آخر 24 ساعة"+"</span><span>"+esc(marketNames[selectedMarket])+"</span>";
   const marketStamp=selectedMarket==="all"?data.updated:(data.market_updated&&data.market_updated[selectedMarket])||null; $("#status").textContent=data.refreshing?"جاري البحث في "+marketNames[selectedMarket]+"...":(marketStamp?"آخر بحث لهذا السوق: "+new Date(marketStamp*1000).toLocaleString("ar-SA"):"بانتظار أول بحث لهذا السوق...");
   if(!rows.length){$("#bestDecision").classList.add("wait");$("#bestDecision").innerHTML='<div><div class="decision-title">قرار النظام</div><div class="decision-main">⏸️ انتظار — ما فيه فرصة واضحة</div><div class="decision-detail">لا تدخل شراء أو بيع حتى تظهر توصية واضحة بمستويات دخول ووقف وأهداف.</div></div><div class="decision-action">انتظار</div>';$("#cards").innerHTML='<div class="public-empty">'+(data.refreshing?'جاري البحث عن فرص مؤكدة في <b>'+esc(marketNames[selectedMarket])+'</b>…':'ما رُصدت فرصة مطابقة الآن في <b>'+esc(marketNames[selectedMarket])+'</b>. سيعاد الفحص تلقائيًا؛ جرّب تحديث البحث إذا احتجت.')+'</div>';return;}
   const ranked=rows.slice().sort((a,b)=>Number(b.rank_score||b.source_quality||b.ai_pct||0)-Number(a.rank_score||a.source_quality||a.ai_pct||0)||Number(b.mention_count||b.source_count||0)-Number(a.mention_count||a.source_count||0)||Number(b.created_at||0)-Number(a.created_at||0));
