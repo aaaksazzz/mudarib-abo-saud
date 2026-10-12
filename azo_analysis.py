@@ -32,16 +32,61 @@ def _db():
     return c
 
 def _closed_stats(c):
+    """Use the same 24-hour, outcome-tracked results shown by the Results page.
+    This keeps AZO's learning/publication gate aligned with the visible leaderboard.
+    Returns are measured in R multiples from entry/stop/target, not raw price changes.
+    """
     cutoff = time.time() - RETENTION
-    rows = c.execute("SELECT status,result_r FROM azo_signals WHERE created>=? AND status IN ('WIN','LOSS')", (cutoff,)).fetchall()
+    rows = []
+    source = "recommendation_results"
+    try:
+        rows = c.execute(
+            """SELECT status,entry,tp1,tp2,tp3,sl,hit_target
+               FROM recommendation_results
+               WHERE created>=? AND status IN ('WIN','LOSS')""", (cutoff,)
+        ).fetchall()
+    except sqlite3.OperationalError:
+        source = "azo_signals"
+        try:
+            rows = c.execute(
+                "SELECT status,result_r,NULL,NULL,NULL,NULL,hit_target FROM azo_signals WHERE created>=? AND status IN ('WIN','LOSS')",
+                (cutoff,)
+            ).fetchall()
+        except sqlite3.OperationalError:
+            rows = []
+
     wins = sum(1 for r in rows if r["status"] == "WIN")
     losses = sum(1 for r in rows if r["status"] == "LOSS")
-    gross_win = sum(max(0.0, float(r["result_r"] or 0)) for r in rows if r["status"] == "WIN")
-    gross_loss = sum(abs(min(0.0, float(r["result_r"] or 0))) for r in rows if r["status"] == "LOSS")
-    rate = wins * 100.0 / len(rows) if rows else 0.0
+    gross_win = 0.0
+    gross_loss = 0.0
+    for r in rows:
+        if source == "azo_signals":
+            result_r = float(r["entry"] or 0)
+        else:
+            try:
+                entry, stop = float(r["entry"]), float(r["sl"])
+                risk = abs(entry - stop)
+                if risk <= 0:
+                    continue
+                if r["status"] == "LOSS":
+                    result_r = -1.0
+                else:
+                    hit = max(1, min(3, int(r["hit_target"] or 1)))
+                    target = r[f"tp{hit}"]
+                    if target is None:
+                        continue
+                    result_r = abs(float(target) - entry) / risk
+            except (TypeError, ValueError, IndexError):
+                continue
+        if r["status"] == "WIN":
+            gross_win += max(0.0, result_r)
+        else:
+            gross_loss += abs(min(0.0, result_r))
+    closed = wins + losses
+    rate = wins * 100.0 / closed if closed else 0.0
     pf = gross_win / gross_loss if gross_loss > 0 else (99.0 if gross_win > 0 else 0.0)
-    unlocked = len(rows) >= MIN_CLOSED and rate >= MIN_WIN_RATE and pf >= MIN_PROFIT_FACTOR
-    return {"closed":len(rows),"wins":wins,"losses":losses,"win_rate":round(rate,1),
+    unlocked = closed >= MIN_CLOSED and rate >= MIN_WIN_RATE and pf >= MIN_PROFIT_FACTOR
+    return {"closed":closed,"wins":wins,"losses":losses,"win_rate":round(rate,1),
             "profit_factor":round(pf,2),"gross_win_r":round(gross_win,2),"gross_loss_r":round(gross_loss,2),
             "unlocked":unlocked,"minimum_closed":MIN_CLOSED,"required_win_rate":MIN_WIN_RATE,
             "required_profit_factor":MIN_PROFIT_FACTOR}
