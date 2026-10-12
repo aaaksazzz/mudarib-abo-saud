@@ -174,9 +174,9 @@ function drawOwnChart(data,symbol,tf,cup,patterns,levels){
  addLine([{time:candles[Math.max(0,n-24)].time,value:support},{time:candles[n-1].time,value:support}],'#2bd69a',2,LightweightCharts.LineStyle.Dashed);
  addLine([{time:candles[Math.max(0,n-24)].time,value:resistance},{time:candles[n-1].time,value:resistance}],'#ff9f43',2,LightweightCharts.LineStyle.Dashed);
  const lv=levels||{},entry=Number(lv.entry)||0,sl=Number(lv.sl)||0,tps=Array.isArray(lv.tps)?lv.tps:[];
- const pct=v=>entry>0?Math.abs((v-entry)/entry)*100:0;
+ const pct=v=>entry>0?((v-entry)/entry)*100* (Number(v)>=entry?1:-1):0;
  const addLevel=(price,color,title)=>{if(price>0&&Number.isFinite(price))tvPriceLines.push(tvCandles.createPriceLine({price,color,lineWidth:2,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title}))};
- addLevel(entry,'#45dbc8','ENTRY');addLevel(sl,'#ff7186','SL −'+pct(sl).toFixed(2)+'%');tps.forEach((v,i)=>addLevel(Number(v),'#2bd69a','TP'+(i+1)+' +'+pct(Number(v)).toFixed(2)+'%'));
+ addLevel(entry,'#45dbc8','ENTRY');if(entry>0&&sl>0)addLevel(sl,'#ff7186','SL '+pct(sl).toFixed(2)+'%');tps.forEach((v,i)=>{if(Number(v)>0)addLevel(Number(v),'#2bd69a','TP'+(i+1)+' '+pct(Number(v)).toFixed(2)+'%')});
  tvChart.applyOptions({width:Math.max(320,el.clientWidth||900),height:Math.max(280,el.clientHeight||390)});
  tvChart.timeScale().fitContent();
 }
@@ -189,26 +189,33 @@ function render(data,symbol,tf,cup=null,patterns=[],analysis=null){
  const xEnd=n-1,lowerEnd=line(lr,xEnd),upperEnd=line(hr,xEnd),close=last.close;
  const breakout=close>upperEnd?'up':close<lowerEnd?'down':'watch';
  const analysisSide=String(analysis&&analysis.side||'').toUpperCase();
- const long=analysisSide==='BUY'||(!analysisSide&&breakout==='up'),short=analysisSide==='SELL'||(!analysisSide&&breakout==='down');
- let entry=close,sl=long?Math.min(...recent.slice(-8).map(c=>c.low)):short?Math.max(...recent.slice(-8).map(c=>c.high)):Math.min(...recent.slice(-8).map(c=>c.low));
- if(cup){entry=cup.rim;sl=cup.handleLow}
- if(long&&sl>=entry)sl=entry-(Math.max(...recent.map(c=>c.high))-Math.min(...recent.map(c=>c.low)))*.25;
- if(short&&sl<=entry)sl=entry+(Math.max(...recent.map(c=>c.high))-Math.min(...recent.map(c=>c.low)))*.25;
- if(breakout==='watch'){sl=Math.min(...recent.slice(-8).map(c=>c.low));if(sl>=entry)sl=entry*.985}
- const risk=Math.max(Math.abs(entry-sl),entry*.002),dir=short?-1:1;
- let tps=cup?[entry+cup.depth,entry+cup.depth*1.25,entry+cup.depth*1.5]:[entry+dir*risk,entry+dir*risk*2,entry+dir*risk*3];
- if(analysis&&['BUY','SELL'].includes(analysisSide)&&Number(analysis.entry)>0&&Number(analysis.sl)>0&&[analysis.tp1,analysis.tp2,analysis.tp3].every(v=>Number(v)>0)){entry=Number(analysis.entry);sl=Number(analysis.sl);tps=[Number(analysis.tp1),Number(analysis.tp2),Number(analysis.tp3)];}
+ const patternText=[...(cup?['كوب وعروة']:[]),...patterns.map(p=>String(p.name||'')+' '+String(p.dir||''))].join(' ');
+ const patternSide=/هابط|هبوط|بيعي|بيع محتمل|كسر هابط|قمة مزدوجة|قمة ثلاثية|رأس وكتفين(?! مقلوب)|نجمة المساء|غربان سود|وتد صاعد|مثلث هابط/i.test(patternText)?'SELL':/صاعد|صعود|شرائي|شراء محتمل|اختراق صاعد|قاع مزدوج|قاع ثلاثي|رأس وكتفين مقلوب|نجمة الصباح|جنود بيض|وتد هابط|مثلث صاعد/i.test(patternText)?'BUY':'';
+ const side=['BUY','SELL'].includes(analysisSide)?analysisSide:(cup&&close>=cup.rim?'BUY':breakout==='up'?'BUY':breakout==='down'?'SELL':patternSide);
+ const long=side==='BUY',short=side==='SELL',hasSignal=long||short;
+ let entry=close,sl=long?Math.min(...recent.slice(-8).map(c=>c.low)):short?Math.max(...recent.slice(-8).map(c=>c.high)):0;
+ if(cup&&long){entry=cup.rim;sl=cup.handleLow}
+ const swing=Math.max(...recent.map(c=>c.high))-Math.min(...recent.map(c=>c.low));
+ if(long&&(!Number.isFinite(sl)||sl<=0||sl>=entry))sl=entry-Math.max(swing*.25,entry*.005);
+ if(short&&(!Number.isFinite(sl)||sl<=entry))sl=entry+Math.max(swing*.25,entry*.005);
+ const risk=hasSignal?Math.max(Math.abs(entry-sl),entry*.002):0,dir=short?-1:1;
+ let tps=hasSignal?[entry+dir*risk,entry+dir*risk*2,entry+dir*risk*3]:[0,0,0];
+ if(analysis&&side===analysisSide&&Number(analysis.entry)>0&&Number(analysis.sl)>0&&[analysis.tp1,analysis.tp2,analysis.tp3].every(v=>Number(v)>0)){
+  const ae=Number(analysis.entry),as=Number(analysis.sl),at=[Number(analysis.tp1),Number(analysis.tp2),Number(analysis.tp3)];
+  const valid=long?(as<ae&&at[0]>ae&&at[1]>at[0]&&at[2]>at[1]):(as>ae&&at[0]<ae&&at[1]<at[0]&&at[2]<at[1]);
+  if(valid){entry=ae;sl=as;tps=at;}
+ }
  drawOwnChart(data,symbol,tf,cup,patterns,{entry:entry,sl:sl,tps:tps});
  const patternNames=[...(cup?[{name:'كوب وعروة',score:cup.score}]:[]),...patterns,...((analysis&&Array.isArray(analysis.patterns))?analysis.patterns:[])].map(x=>x.name).filter((x,i,a)=>x&&a.indexOf(x)===i);
  $('patternName').textContent=patternNames.length?patternNames.join(' · '):'قناة سعرية تقديرية';
- $('signalState').textContent=analysisSide==='BUY'?'شراء · '+String(analysis.trend||'اتجاه صاعد'):analysisSide==='SELL'?'بيع · '+String(analysis.trend||'اتجاه هابط'):cup?(close>=cup.rim?'اختراق المقاومة المحتمل':'العروة تتكوّن — بانتظار الاختراق'):long?'اختراق صاعد محتمل':short?'كسر هابط محتمل':'داخل القناة — بانتظار التأكيد';
+ $('signalState').textContent=analysisSide==='BUY'?'شراء BUY · '+String(analysis.trend||'اتجاه صاعد'):analysisSide==='SELL'?'بيع SELL · '+String(analysis.trend||'اتجاه هابط'):long?(breakout==='up'?'شراء BUY · اختراق مؤكد':'مرشح شراء · بانتظار التأكيد'):short?(breakout==='down'?'بيع SELL · كسر مؤكد':'مرشح بيع · بانتظار التأكيد'):(cup?'كوب وعروة · بانتظار اختراق المقاومة':'لا توجد صفقة مؤكدة · انتظر اختراقًا أو كسرًا');
  $('signalState').className=long?'p-up':short?'p-down':'';
  $('lastClose').textContent=fmt(close);$('chartTitle').textContent=(marketNames[$('market').value]||'السوق')+' · '+(symbol.endsWith('USDT')?symbol.replace(/USDT$/,'')+'/USDT':symbol)+' · '+tf;
  $('chartUpdated').textContent='آخر شمعة: '+new Date(last.time*1000).toLocaleString('ar-SA');
- $('entry').textContent=fmt(entry);$('sl').textContent=fmt(sl);$('tp1').textContent=fmt(tps[0]);$('tp2').textContent=fmt(tps[1]);$('tp3').textContent=fmt(tps[2]);
- const pctOf=price=>entry>0?Math.abs((price-entry)/entry)*100:0;
- $('slPct').textContent='−'+pctOf(sl).toFixed(2)+'% من الدخول';
- tps.forEach((price,i)=>{const el=$('tp'+(i+1)+'Pct');if(el)el.textContent='+'+pctOf(price).toFixed(2)+'% من الدخول'});
+ $('entry').textContent=hasSignal?fmt(entry):'بانتظار الإشارة';$('sl').textContent=hasSignal?fmt(sl):'—';$('tp1').textContent=hasSignal?fmt(tps[0]):'—';$('tp2').textContent=hasSignal?fmt(tps[1]):'—';$('tp3').textContent=hasSignal?fmt(tps[2]):'—';
+ const pctOf=price=>entry>0?((Number(price)-entry)/entry)*100*dir:0;
+ $('slPct').textContent=hasSignal?(pctOf(sl).toFixed(2)+'% من الدخول'):'لا يوجد وقف قبل تأكيد الاتجاه';
+ tps.forEach((price,i)=>{const el=$('tp'+(i+1)+'Pct');if(el)el.textContent=hasSignal?(pctOf(price).toFixed(2)+'% من الدخول'):'بانتظار الإشارة'});
  $('explain').textContent=(analysis&&analysis.trend?'اتجاه بنية السعر: '+analysis.trend+' · ':'')+'الرسم آلي: شموع مغلقة، خطوط اتجاه، متوسطات مرجعية، دعم ومقاومة، ورسم النموذج عند توفر نقاطه. الدخول والوقف والأهداف ونسبها ظاهرة على الرسم والبطاقات؛ المستويات تقديرية وليست ضمانًا للربح.';
  // TradingView owns the chart, native drawing toolbar and chart interactions.
  return;
