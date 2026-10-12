@@ -204,7 +204,7 @@ function loadTechnical(m,tf){
  var methodName=(technicalMethods.find(function(x){return x[0]===selectedTechnicalMethod;})||technicalMethods[0])[2];
   // Each named methodology uses its own backend scan. The consensus feed is
  // used only for the explicitly selected "all methods" view.
- var independentMethodIds=["price-action","smc","ict","classical","candles","patterns","fibonacci","elliott","wyckoff","volume","ichimoku","dow-mtf","volume-profile","market-regime","bos-choch","liquidity","retest","fvg","channels"];
+ var independentMethodIds=["price-action","smc","ict","classical","candles","patterns","indicators","fibonacci","harmonic","elliott","wyckoff","volume","order-flow","ichimoku","dow-mtf","quant","gann","bos-choch","fvg","liquidity","retest","divergence","momentum","vwap","channels","volume-profile","market-regime"];
  if(selectedTechnicalMethod!=="all"&&independentMethodIds.indexOf(selectedTechnicalMethod)<0){
   box.innerHTML='<div class="empty">هذا المنهج ما عنده محرك مستقل جاهز حتى الآن. أوقفنا الإشارات هنا بدل استعارة نتائج منهج آخر.</div>';
   if(status)status.textContent=marketName+" · "+methodName+" · يحتاج محركًا مستقلًا";
