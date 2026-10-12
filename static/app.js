@@ -447,8 +447,10 @@ function loadWhales(tf,marketChoice,thresholdChoice){
   for(var liquidityWorker=0;liquidityWorker<Math.min(4,liquidityCards.length);liquidityWorker++)loadNextLiquidity();
  }).catch(function(){if(box)box.innerHTML='<div class="empty">تعذر الاتصال ببيانات الصفقات الكبيرة؛ أعد المحاولة بعد قليل.</div>';});
 }
-function bind(){Array.prototype.forEach.call(document.querySelectorAll('.nav-item[data-s="gold"]'),function(item){item.remove();});
+function bind(){
  var side=$("#sidebar");
+ if(side&&!side.querySelector('[data-s="gold"]')){var goldLink=document.createElement("button");goldLink.className="nav-item";goldLink.type="button";goldLink.setAttribute("data-s","gold");goldLink.innerHTML="<span>💎</span> الصفقات الذهبية";var radarEntry=side.querySelector('[data-s="radar"]');if(radarEntry)radarEntry.insertAdjacentElement("afterend",goldLink);else side.appendChild(goldLink);}
+
  if(side){
   if(!side.querySelector('[data-s="technical"]')){
    var tb=document.createElement("button");tb.className="nav-item";tb.type="button";tb.setAttribute("data-s","technical");tb.innerHTML="<span>📈</span> تحليل فني";side.insertBefore(tb,side.querySelector('[data-s="signup"]')||null);
