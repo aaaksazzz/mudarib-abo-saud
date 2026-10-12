@@ -174,7 +174,7 @@ function drawOwnChart(data,symbol,tf,cup,patterns,levels){
  addLine([{time:candles[Math.max(0,n-24)].time,value:support},{time:candles[n-1].time,value:support}],'#2bd69a',2,LightweightCharts.LineStyle.Dashed);
  addLine([{time:candles[Math.max(0,n-24)].time,value:resistance},{time:candles[n-1].time,value:resistance}],'#ff9f43',2,LightweightCharts.LineStyle.Dashed);
  const lv=levels||{},entry=Number(lv.entry)||0,sl=Number(lv.sl)||0,tps=Array.isArray(lv.tps)?lv.tps:[];
- const pct=v=>entry>0?((v-entry)/entry)*100* (Number(v)>=entry?1:-1):0;
+ const tradeDir=Array.isArray(tps)&&Number(tps[0])<entry?-1:1;const pct=v=>entry>0?((Number(v)-entry)/entry)*100*tradeDir:0;
  const addLevel=(price,color,title)=>{if(price>0&&Number.isFinite(price))tvPriceLines.push(tvCandles.createPriceLine({price,color,lineWidth:2,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title}))};
  addLevel(entry,'#45dbc8','ENTRY');if(entry>0&&sl>0)addLevel(sl,'#ff7186','SL '+pct(sl).toFixed(2)+'%');tps.forEach((v,i)=>{if(Number(v)>0)addLevel(Number(v),'#2bd69a','TP'+(i+1)+' '+pct(Number(v)).toFixed(2)+'%')});
  tvChart.applyOptions({width:Math.max(320,el.clientWidth||900),height:Math.max(280,el.clientHeight||390)});
@@ -421,7 +421,7 @@ async function worker(){while(cursor<batch.length){const item=batch[cursor++];$(
 await Promise.all(Array.from({length:4},worker));state.cursor=end>=list.length?0:end;if(end>=list.length)state.loopCount=(Number(state.loopCount)||0)+1;state.found=found;try{sessionStorage.setItem(key,JSON.stringify(state))}catch(e){}
 found.sort((a,b)=>(b.pat.breakout?1:0)-(a.pat.breakout?1:0)||(b.pat.score||0)-(a.pat.score||0)||b.volume-a.volume);
 if(batchFound.length){const rankedBatch=batchFound.slice().sort((a,b)=>(b.pat.breakout?1:0)-(a.pat.breakout?1:0)||(b.pat.score||0)-(a.pat.score||0)||b.volume-a.volume);const best=rankedBatch[0];
-autoScan=false;$('scan').textContent='🔎 ابحث عن نموذج';$('symbol').value=best.symbol;$('tf').value=best.tf;render(best.data,best.symbol,best.tf,best.pat.name==='كوب وعروة'?best.pat:null,best.patterns||[]);
+autoScan=false;$('scan').textContent='🔎 ابحث عن نموذج';$('symbol').value=best.symbol;$('tf').value=best.tf;render(best.data,best.symbol,best.tf,best.pat.name==='كوب وعروة'?best.pat:null,[...(best.patterns||[]),best.pat].filter((p,i,a)=>p&&a.findIndex(x=>x&&x.name===p.name)===i));
 $('scanResults').innerHTML='<b style="color:#65e7d3">نتائج متراكمة: '+found.length+' نموذج</b><br>آخر نموذج جديد: <b>'+best.symbol.replace('USDT','/USDT')+'</b> · '+best.pat.name+' · '+(best.pat.dir||'مراقبة')+'<br>تغير 24 ساعة: '+best.change.toFixed(2)+'% · حجم 24 ساعة: '+(best.volume/1e6).toFixed(2)+' مليون USDT<br><small>تم فحص الدفعة '+start+'–'+end+' من '+list.length+' زوجًا مؤهلًا بحجم تداول يومي يتجاوز مليون USDT. دورة الفحص: '+Math.max(1,Number(state.loopCount)||0)+'؛ النتائج السابقة محفوظة، وسيتوقف البحث عند العثور على نموذج جديد.</small>';
 }else{$('scanResults').innerHTML='<b>ما ظهر نموذج مطابق في الدفعة الحالية.</b><br>تم فحص '+start+'–'+end+' من '+list.length+' زوجًا على '+tf+'. دورة الفحص: '+Math.max(1,Number(state.loopCount)||0)+'؛ سيكمل البحث تلقائيًا حتى يعثر على نموذج، ثم يتوقف.';}
 
