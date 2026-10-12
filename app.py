@@ -24,7 +24,7 @@ except PermissionError:
     DATA_DIR=BASE/"data"; DATA_DIR.mkdir(parents=True,exist_ok=True)
 DB_PATH=DATA_DIR/"app.db"
 SECRET=os.getenv("SESSION_SECRET") or secrets.token_hex(32)
-MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود الأمريكية","us":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس"}
+MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود الأمريكية","us":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس","gold":"الذهب"}
 TIMEFRAMES=["1m","3m","5m","15m","30m","1h","4h","1d","1w","1M"]
 BREADTH_REFERENCE={x:x for x in TIMEFRAMES}
 REFERENCE_TIMEFRAMES=list(TIMEFRAMES)
@@ -2238,7 +2238,8 @@ MARKET_RULES={
     "contracts":{"sides":["BUY","SELL"],"source":"yahoo"},
     "us":{"sides":["BUY","SELL"],"source":"yahoo"},
     "saudi":{"sides":["BUY","SELL"],"source":"yahoo"},
-    "forex":{"sides":["BUY","SELL"],"source":"yahoo"},}
+    "forex":{"sides":["BUY","SELL"],"source":"yahoo"},
+    "gold":{"sides":["BUY","SELL"],"source":"yahoo"},}
 FOREX_SYMBOLS=["EURUSD=X","GBPUSD=X","USDJPY=X","USDCHF=X","USDCAD=X","AUDUSD=X","NZDUSD=X","EURGBP=X","EURJPY=X","EURCHF=X","EURAUD=X","EURCAD=X","EURNZD=X","GBPJPY=X","GBPCHF=X","GBPAUD=X","GBPCAD=X","GBPNZD=X","AUDJPY=X","AUDNZD=X","AUDCAD=X","AUDCHF=X","CADJPY=X","CADCHF=X","CHFJPY=X","NZDJPY=X","NZDCAD=X","NOKUSD=X","SEKUSD=X","SGDUSD=X","HKDUSD=X","CNYUSD=X","MXNUSD=X","ZARUSD=X","TRYUSD=X","INRUSD=X","BRLUSD=X"]
 US_CONTRACT_SYMBOLS=["ES=F","NQ=F","YM=F","RTY=F","CL=F","NG=F","ZB=F","ZN=F"]
 US_SYMBOLS=["AAPL","MSFT","NVDA","AMZN","META","GOOGL","TSLA","AVGO","AMD","NFLX","JPM","V","WMT","COST","ORCL"]
@@ -2659,10 +2660,11 @@ _YAHOO_SCAN_LOCK=__import__('threading').Lock()
 
 def _scan_yahoo_market(market,timeframe):
     """مسح دوّار للأسواق غير Binance: الكون كامل، لكن كل دورة تفحص دفعة صغيرة حتى لا تخنق مزود البيانات."""
-    if market not in {"contracts","us","saudi","forex"} or timeframe not in TIMEFRAMES:
+    if market not in {"contracts","us","saudi","forex","gold"} or timeframe not in TIMEFRAMES:
         return []
-    interval_map={"15m":"15m","30m":"30m","1h":"1h","4h":"1h","1d":"1d","1w":"1wk","1M":"1mo"}
-    range_map={"15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
+    # Yahoo native intervals plus 3m aggregation from 1m candles.
+    interval_map={"1m":"1m","3m":"1m","5m":"5m","15m":"15m","30m":"30m","1h":"60m","4h":"60m","1d":"1d","1w":"1wk","1M":"1mo"}
+    range_map={"1m":"7d","3m":"7d","5m":"60d","15m":"60d","30m":"60d","1h":"60d","4h":"1y","1d":"2y","1w":"5y","1M":"10y"}
     sides=MARKET_RULES.get(market,{}).get("sides",["BUY"])
     symbols=_market_universe(market)
     if not symbols:
@@ -2677,6 +2679,15 @@ def _scan_yahoo_market(market,timeframe):
     def scan_one(symbol):
         try:
             candles=_yahoo_chart(symbol,interval_map[timeframe],range_map[timeframe],timeframe)
+            if timeframe=="3m" and candles:
+                # Yahoo has no native 3m interval; aggregate three 1m closes/low proxies.
+                grouped=[]
+                for pos in range(0,len(candles)-2,3):
+                    group=candles[pos:pos+3]
+                    if len(group)==3:
+                        grouped.append((float(group[-1][0]),min(float(x[1]) for x in group),
+                                        max(float(x[0]) for x in group),float(group[0][0])))
+                candles=grouped
             return _strategy_rows(symbol,timeframe,sides,candles)
         except Exception:
             return []
@@ -3075,6 +3086,7 @@ def _yahoo_equity_universe(region='us', min_daily_volume=1000000):
     return symbols
 
 def _market_universe(market):
+    if market=='gold': return ["GC=F"]
     if market=='forex': return FOREX_SYMBOLS
     if market=='us': return _yahoo_equity_universe('us',1000000)
     if market=='saudi': return _yahoo_equity_universe('sa',0)
