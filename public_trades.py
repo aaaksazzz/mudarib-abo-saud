@@ -280,9 +280,27 @@ def _build(only_market=None, hours=24):
         jobs=[pool.submit(_fetch_market,engine,m,ticker_maps,retention) for m in scan_markets]
         for job in as_completed(jobs):
             market,rows=job.result(); counts[market]=len(rows); combined.extend(rows)
-    # Attach verified Binance 24h movement and quote-volume metrics where available.
+    # Attach verified market-specific movement and traded volume.
+    # Crypto uses Binance 24h tickers; US/Saudi equities use Yahoo daily candles.
     for row in combined:
-        metrics=ticker_metrics.get((row.get("market"),str(row.get("symbol") or "").upper()))
+        market=str(row.get("market") or "")
+        symbol=str(row.get("symbol") or "").upper()
+        metrics=ticker_metrics.get((market,symbol))
+        if not metrics and market in ("us","saudi"):
+            try:
+                candles=engine._yahoo(symbol,market,"1d",3) or []
+                metrics={}
+                if len(candles)>=2:
+                    previous=float(candles[-2].get("close") or 0)
+                    latest=float(candles[-1].get("close") or 0)
+                    if previous>0 and latest>0:
+                        metrics["change_pct"]=(latest-previous)/previous*100
+                if candles:
+                    volume=float(candles[-1].get("volume") or 0)
+                    if volume>0: metrics["quote_volume"]=volume
+                if not metrics: metrics=None
+            except Exception:
+                metrics=None
         if metrics:
             row.update(metrics)
     history_by_market={m:_closed_performance(m) for m in set(x.get("market") for x in combined)}
