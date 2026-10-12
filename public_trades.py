@@ -130,7 +130,10 @@ def _prepare(engine, market, raw, ticker_maps, retention=86400):
     direct_level_score = 35 if explicit_levels else 0
     title_signal_score = 25 if engine._direction(title) == direction else 0
     actionable_score = 20 if any(term in text_lower for term in ("entry", "take profit", "stop loss", "price target", "توصية", "دخول", "هدف", "وقف")) else 10
-    source_quality = min(100, direct_level_score + title_signal_score + actionable_score + 20)
+    source_quality = min(95, direct_level_score + title_signal_score + actionable_score + 20)
+    # Missing published Entry/TP/SL means this is a weaker external idea, not a fully specified trade.
+    if not explicit_levels:
+        source_quality = min(source_quality, 45)
     return {"market":market,"market_label":LABELS[market],"symbol":symbol,"direction":direction,"source_quality":source_quality,"live_price":round(float(price),8) if price else None,
         "entry":round(float(entry),8),"tp1":round(targets[0],8),"tp2":round(targets[1],8),"tp3":round(targets[2],8),"sl":round(float(sl),8),
         "source_title":title,"source_url":url,"source_published":published,"created_at":published_at,"expires_at":published_at+retention,
@@ -153,6 +156,9 @@ def _fetch_market(engine, market, ticker_maps, retention=86400):
         for raw in rows:
             item=_prepare(engine,market,raw,ticker_maps,retention)
             if item: out.append(item)
+        estimated=sum(1 for item in out if item.get("is_estimated"))
+        published=len(out)-estimated
+        print("[PUBLIC-TRADES] source-check market=%s raw=%d accepted=%d published_levels=%d estimated_levels=%d rejected=%d" % (market,len(rows),len(out),published,estimated,max(0,len(rows)-len(out))),flush=True)
         # External-only mode: TOP cards must originate from internet-published
         # recommendations/news parsed by engine._internet (or Alpha news search).
         # Do not fabricate TOP recommendations from the site's own technical scan.
@@ -205,7 +211,9 @@ def _top1_metrics(row, history):
             components["liquidity"]=max(0,min(100,(math.log10(max(1,volume))-4)*16.667))
     except (TypeError,ValueError):
         pass
-    weights={"movement":25,"history":25,"entry_quality":25,"liquidity":25}
+    # Reward traceable source evidence; do not let internally estimated levels rank like published trade levels.
+    components["source_evidence"] = 100.0 if not row.get("is_estimated") else 30.0
+    weights={"movement":20,"history":20,"entry_quality":20,"liquidity":20,"source_evidence":20}
     available=[(name,score,weights[name]) for name,score in components.items()]
     total_weight=sum(w for _,_,w in available)
     score=round(sum(value*weight for _,value,weight in available)/total_weight,1) if total_weight else None
