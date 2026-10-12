@@ -248,7 +248,7 @@ function loadHome(){loadCoreMarkets();}
 function fortuneCard(x,i){var d=x.direction==="SELL",score=Number(x.recommendation_score||x.ai_pct||x.ai||x.analysis_score||0),w=Math.max(0,Math.min(100,score)),ts=[x.tp1,x.tp2,x.tp3,x.tp4,x.tp5,x.tp6].filter(function(v){return v!==null&&v!==undefined&&v!=="";});var lv='<div class="level"><small>الدخول</small><b>'+esc(x.entry||"—")+'</b></div>';ts.forEach(function(v,n){lv+='<div class="level"><small>TP'+(n+1)+'</small><b>'+esc(v)+'</b></div>';});lv+='<div class="level"><small>SL</small><b>'+esc(x.sl||"—")+'</b></div>';return '<article class="card fortune-card"><div class="card-top"><div><span class="rank">#'+(i+1)+' · صفقة</span><div class="symbol">'+esc(displaySymbol(x)||"—")+'</div></div><span class="direction '+(d?"sell":"buy")+'">'+(d?"بيع":"شراء")+'</span></div><div class="score"><b>توافق '+Math.round(score)+'%</b><div class="score-bar"><i style="width:'+w+'%"></i></div><span class="rank">'+esc(x.verdict||"صفقة خارجية")+'</span></div><div class="levels">'+lv+'</div><div class="card-foot">🧠 تحليل مباشر للصفقة · '+esc(x.alignment||0)+'% مصادر مستقلة · 🕒 '+esc(x.published||"—")+'</div></article>';}
 function renderRadarMethodStats(){
  var panel=$("#radarMethodStats");if(!panel)return;
- panel.innerHTML='<div class="empty">جاري حساب نسب الربح والخسارة الفعلية لكل منهج…</div>';
+ panel.innerHTML='<details class="method-performance"><summary><span>📊 أداء المناهج</span><small>جاري تحميل النتائج…</small></summary><div class="method-performance-body"><div class="empty">جاري حساب نسب الربح والخسارة…</div></div></details>';
  getJSON("/api/results?x="+Date.now()).then(function(j){
   var rows=j.results||[],methods={};
   rows.forEach(function(x){
@@ -261,14 +261,19 @@ function renderRadarMethodStats(){
     if(x.status==="WIN")methods[k].wins++;else methods[k].losses++;
    });
   });
+  var labels={breakout:"اختراق",smc:"هيكل السوق SMC",order_flow:"تدفق الأوامر",fvg:"فجوات القيمة FVG",elliott:"موجات إليوت",volume_profile:"حجم التداول",ichimoku:"إيشيموكو",market_regime:"حالة السوق",retest:"إعادة اختبار",channels:"القنوات السعرية",quant:"التحليل الكمي",momentum:"الزخم",price_action:"حركة السعر",gann:"جان",vwap:"متوسط السعر VWAP",chart_pattern:"النماذج السعرية",indicators:"المؤشرات",support_resistance:"الدعم والمقاومة",bos_choch:"كسر وتغيّر الهيكل",dow:"نظرية داو",candlestick:"الشموع اليابانية",divergence:"الدايفرجنس",ict:"منهج ICT",classical:"التحليل الكلاسيكي"};
   var ranked=Object.keys(methods).map(function(k){
    var m=methods[k],n=m.wins+m.losses;
-   return {name:k,wins:m.wins,losses:m.losses,n:n,win:n?m.wins/n*100:0,loss:n?m.losses/n*100:0};
-  }).sort(function(a,b){return b.win-a.win||b.n-a.n;});
-  panel.innerHTML='<div class="page-head"><div><span class="eyebrow">METHOD PERFORMANCE</span><h2>📊 نسبة الربح والخسارة لكل منهج</h2><p>محسوبة من الصفقات المغلقة المسجلة فقط؛ المفتوحة لا تدخل بالحساب.</p></div></div>'+
-   (ranked.length?'<div class="metrics">'+ranked.map(function(m){return '<div class="metric"><span>'+esc(m.name)+'</span><b style="color:#54d6a0">ربح '+m.win.toFixed(1)+'%</b><small style="color:#ff8585">خسارة '+m.loss.toFixed(1)+'%</small><small>'+m.wins+' رابحة · '+m.losses+' خاسرة · '+m.n+' مغلقة'+(m.n<8?' · عينة قليلة':'')+'</small></div>';}).join('')+'</div>':'<div class="empty">ما فيه صفقات مغلقة مرتبطة بالمناهج حتى الآن؛ ما راح نخترع نسبًا.</div>')+
-   '<p class="card-foot">النسبة التاريخية لا تضمن النتائج القادمة، والعينة الأقل من 8 صفقات تعتبر أولية.</p>';
- }).catch(function(){panel.innerHTML='<div class="empty">تعذر تحميل نتائج المناهج حاليًا.</div>';});
+   return {key:k,name:labels[k]||k.replace(/_/g," "),wins:m.wins,losses:m.losses,n:n,win:n?m.wins/n*100:0,loss:n?m.losses/n*100:0};
+  }).sort(function(a,b){return (b.n>=8?1:0)-(a.n>=8?1:0)||b.win-a.win||b.n-a.n;});
+  var reliable=ranked.filter(function(m){return m.n>=8;}).length;
+  var summary=ranked.length?(ranked.length+" منهج · "+reliable+" بعينة 8+ صفقات"):"لا توجد نتائج مغلقة";
+  var cards=ranked.map(function(m){
+   var sample=m.n<8;
+   return '<article class="method-performance-card"><div class="method-performance-card-head"><b>'+esc(m.name)+'</b><span class="method-sample '+(sample?"is-small":"")+'">'+(sample?"عينة قليلة":m.n+" صفقة")+'</span></div><div class="method-rate"><span>ربح</span><b>'+m.win.toFixed(1)+'%</b></div><div class="method-rate-loss"><span>خسارة '+m.loss.toFixed(1)+'%</span><span>'+m.wins+' رابحة · '+m.losses+' خاسرة</span></div><div class="method-rate-track"><i style="width:'+m.win.toFixed(1)+'%"></i></div></article>';
+  }).join("");
+  panel.innerHTML='<details class="method-performance"><summary><span>📊 أداء المناهج</span><small>'+esc(summary)+' · اضغط للعرض</small></summary><div class="method-performance-body">'+(ranked.length?'<p class="method-performance-note">النسب من الصفقات المغلقة فقط. العينات الأقل من 8 صفقات أولية ولا تكفي للحكم على المنهج.</p><div class="method-performance-grid">'+cards+'</div>':'<div class="empty">ما فيه صفقات مغلقة مرتبطة بالمناهج حتى الآن.</div>')+'</div></details>';
+ }).catch(function(){panel.innerHTML='<details class="method-performance"><summary><span>📊 أداء المناهج</span><small>تعذر تحميل النتائج</small></summary><div class="empty">تعذر تحميل نتائج المناهج حاليًا.</div></details>';});
 }
 function loadRadar(tf){
  var box=$("#radarCards");if(!box)return;
