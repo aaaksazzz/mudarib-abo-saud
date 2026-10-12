@@ -80,9 +80,12 @@ def _prepare(engine, market, raw, ticker_maps):
     if title_direction and title_direction != direction:
         return None
     actionable = ("entry", "target", "take profit", "stop loss", "price target",
+                  "target price", "price prediction", "forecast", "outlook",
+                  "analyst", "buy recommendation", "sell recommendation",
+                  "buy rating", "sell rating", "bullish", "bearish",
                   "buy signal", "sell signal", "long", "short", "upgrade",
                   "downgrade", "شراء", "بيع", "دخول", "هدف", "وقف الخسارة",
-                  "توصية", "إشارة", "السعر المستهدف")
+                  "توصية", "إشارة", "توقعات", "نظرة", "السعر المستهدف")
     if not any(term in (title + " " + body).lower() for term in actionable):
         return None
     level_type = "مستويات منشورة بالمصدر"
