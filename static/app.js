@@ -1,7 +1,7 @@
 (function(){
 "use strict";
 var $=function(s){return document.querySelector(s);};
-var routes={home:"/",technical:"/static/technical.html?v=20261010-sitefix",patterns:"/static/patterns.html?v=20261012-patterns-profix2",radar:"/static/radar.html?v=20261008-core",gold:"/static/gold.html?v=20261008-core",results:"/static/results.html?v=20261011-azo-competition-v1",news:"/static/news.html?v=20261008-core",blog:"/static/blog.html?v=20261010-seo",spot:"/static/spot.html?v=20261008-core",futures:"/static/futures.html?v=20261008-core",alpha:"/static/alpha.html?v=20261010-alpha",whales:"/static/whales.html?v=20261010-whales",contracts:"/static/contracts.html?v=20261008-core",us:"/static/us.html?v=20261008-core",saudi:"/static/saudi.html?v=20261008-core",forex:"/static/forex.html?v=20261008-core",signup:"/static/signup.html?v=20261008-core",login:"/static/login.html?v=20261008-core",admin:"/static/admin.html?v=20261008-core",azo:"/static/azo.html?v=20261011-azo",explosion:"/static/explosion.html?v=20261012-direction-fix",flareScanner:"/static/flare-scanner.html?v=20261012-flare-scanner-chart1"};
+var routes={home:"/",technical:"/static/technical.html?v=20261010-sitefix",radar:"/static/radar.html?v=20261008-core",gold:"/static/gold.html?v=20261008-core",results:"/static/results.html?v=20261011-azo-competition-v1",news:"/static/news.html?v=20261008-core",blog:"/static/blog.html?v=20261010-seo",spot:"/static/spot.html?v=20261008-core",futures:"/static/futures.html?v=20261008-core",alpha:"/static/alpha.html?v=20261010-alpha",contracts:"/static/contracts.html?v=20261008-core",us:"/static/us.html?v=20261008-core",saudi:"/static/saudi.html?v=20261008-core",forex:"/static/forex.html?v=20261008-core",signup:"/static/signup.html?v=20261008-core",login:"/static/login.html?v=20261008-core",admin:"/static/admin.html?v=20261008-core",explosion:"/static/explosion.html?v=20261012-direction-fix",flareScanner:"/static/flare-scanner.html?v=20261012-flare-scanner-chart1"};
 var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false,trackingTimer=null;
 /* إضافة رابط شرارات السوق إلى القائمة في جميع الصفحات */
 try{var flareSide=document.getElementById("sidebar");if(flareSide&&!flareSide.querySelector('[data-flare-nav="1"],a[href*="flare-scanner.html"]')){var flareLink=document.createElement("a");flareLink.href="/static/flare-scanner.html?v=20261012-flare-scanner-chart1";flareLink.className="nav-item";flareLink.setAttribute("data-flare-nav","1");flareLink.style.textDecoration="none";flareLink.style.display="block";flareLink.textContent="⚡ شرارات السوق";var flareFooter=flareSide.querySelector(".side-footer");if(flareFooter)flareSide.insertBefore(flareLink,flareFooter);else flareSide.appendChild(flareLink);}}catch(e){}
@@ -224,7 +224,7 @@ function loadTechnical(m,tf){
 function loadCoreMarkets(){
  var toolsBox=$("#platformTools"),marketsBox=$("#coreMarkets");
  if(toolsBox){
-  var toolsItems=[["📈","النماذج الفنية والشارت","patterns","شارت مباشر وتحليل النماذج والأهداف والوقف"],["◈","الرادار الذكي","radar","فرص الأسواق مرتبة بحسب البيانات المتاحة"],["💎","الصفقات الذهبية","gold","متابعة أقوى الفرص المصنّفة"],["🐋","متابعة الحيتان","whales","رصد نشاط الحيتان عند توفر البيانات"],["📊","نتائج الأداء","results","مراجعة نتائج التوصيات السابقة"],["📰","الأخبار","news","متابعة أخبار السوق"],["✍️","مركز المعرفة","blog","مقالات التداول وإدارة المخاطر"],["📐","مناهج التحليل الفني","technical","افتح كل منهج مع اختيار السوق والفريم"],["🧪","تحليل AZO","azo","مختبر تحليل جديد لا يُنشر للعامة إلا بعد إثبات نتائجه"]];
+  var toolsItems=[["◈","الرادار الذكي","radar","فرص الأسواق مرتبة بحسب البيانات المتاحة"],["💎","الصفقات الذهبية","gold","متابعة أقوى الفرص المصنّفة"],["🚀","راصد الانفجار","explosion","رصد الحركة المحتملة مع الأهداف والوقف"],["📐","مناهج التحليل الفني","technical","افتح كل منهج مع اختيار السوق والفريم"],["📊","نتائج الأداء","results","مراجعة نتائج التوصيات السابقة"],["📰","الأخبار","news","متابعة أخبار السوق"],["✍️","المدونة","blog","مقالات التداول وإدارة المخاطر"]];
   toolsBox.innerHTML=toolsItems.map(function(x){return '<article class="core-card tool-card" role="link" tabindex="0" data-s="'+x[2]+'"><div class="core-title"><span>'+x[0]+'</span><b>'+x[1]+'</b></div><div class="core-analysis">'+x[3]+'</div><div class="card-foot">استكشف القسم ←</div></article>';}).join("");
  }
  if(marketsBox){
@@ -404,8 +404,8 @@ function bind(){
   }
   side.querySelectorAll('[data-s="alpha"]').forEach(function(b){b.classList.toggle("active",page==="alpha"||new URLSearchParams(window.location.search).get("market")==="alpha");});
 
-  var labels={whales:"متابعة الحيتان",results:"النتائج",news:"الأخبار",blog:"المدونة",azo:"تحليل AZO",patterns:"نماذج الشارت"};
-  var icons={whales:"🐋",results:"📊",news:"📰",blog:"✍️",azo:"🧪",patterns:"📈"};
+  var labels={results:"النتائج",news:"الأخبار",blog:"المدونة"};
+  var icons={results:"📊",news:"📰",blog:"✍️"};
   Object.keys(labels).forEach(function(k){
    if(!side.querySelector('[data-s="'+k+'"]')){
     var b=document.createElement("button");
