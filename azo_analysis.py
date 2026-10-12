@@ -49,7 +49,7 @@ def _closed_stats(c):
         source = "azo_signals"
         try:
             rows = c.execute(
-                "SELECT status,result_r,NULL,NULL,NULL,NULL,hit_target FROM azo_signals WHERE created>=? AND status IN ('WIN','LOSS')",
+                "SELECT status,result_r AS entry,NULL AS tp1,NULL AS tp2,NULL AS tp3,NULL AS sl,hit_target FROM azo_signals WHERE created>=? AND status IN ('WIN','LOSS')",
                 (cutoff,)
             ).fetchall()
         except sqlite3.OperationalError:
