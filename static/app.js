@@ -1,7 +1,7 @@
 (function(){
 "use strict";
 var $=function(s){return document.querySelector(s);};
-var routes={home:"/static/public-trades.html?market=all&hours=24",technical:"/static/public-trades.html?market=all&hours=24",radar:"/static/radar.html?v=20261012-methods-compact-v2",gold:"/static/forex.html?v=20261014-forex-gold-merged",results:"/static/results.html?v=20261012-results-refreshfix",news:"/static/news.html?v=20261012-methods-compact-v2",blog:"/static/blog.html?v=20261012-methods-compact-v2",spot:"/static/spot.html?v=20261012-methods-compact-v2",futures:"/static/futures.html?v=20261012-methods-compact-v2",alpha:"/static/alpha.html?v=20261012-methods-compact-v2",contracts:"/static/contracts.html?v=20261012-methods-compact-v2",us:"/static/us.html?v=20261012-methods-compact-v2",saudi:"/static/saudi.html?v=20261012-methods-compact-v2",forex:"/static/forex.html?v=20261012-methods-compact-v2",signup:"/static/signup.html?v=20261012-methods-compact-v2",login:"/static/login.html?v=20261012-methods-compact-v2",admin:"/admin",explosion:"/static/explosion.html?v=20261012-direction-fix",flareScanner:"/static/flare-scanner.html?v=20261012-flare-scanner-chart1"};
+var routes={home:"/static/public-trades.html?market=all&hours=24",technical:"/static/technical-classical.html?market=spot",radar:"/static/radar.html?v=20261012-methods-compact-v2",gold:"/static/forex.html?v=20261014-forex-gold-merged",results:"/static/results.html?v=20261012-results-refreshfix",news:"/static/news.html?v=20261012-methods-compact-v2",blog:"/static/blog.html?v=20261012-methods-compact-v2",spot:"/static/spot.html?v=20261012-methods-compact-v2",futures:"/static/futures.html?v=20261012-methods-compact-v2",alpha:"/static/alpha.html?v=20261012-methods-compact-v2",contracts:"/static/contracts.html?v=20261012-methods-compact-v2",us:"/static/us.html?v=20261012-methods-compact-v2",saudi:"/static/saudi.html?v=20261012-methods-compact-v2",forex:"/static/forex.html?v=20261012-methods-compact-v2",signup:"/static/signup.html?v=20261012-methods-compact-v2",login:"/static/login.html?v=20261012-methods-compact-v2",admin:"/admin",explosion:"/static/explosion.html?v=20261012-direction-fix",flareScanner:"/static/flare-scanner.html?v=20261012-flare-scanner-chart1"};
 var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false,trackingTimer=null,marketKeys=["spot","futures","alpha","contracts","us","saudi","forex"];
 /* رابط الصفقات العامة بجوار الرادار في القائمة على كل الصفحات */
 try {
@@ -534,7 +534,7 @@ function bind(){
     var a=document.createElement("a");
     a.className="nav-item technical-nav-link";
     var pageKey=methodPageMap[x[0]]||x[0];
-    a.href="/static/technical.html?method="+encodeURIComponent(x[0])+"&market="+encodeURIComponent(selectedTechnicalMarket)+"&v=20261011-method-audit";
+    a.href="/static/technical-"+pageKey+".html?market="+encodeURIComponent(selectedTechnicalMarket)+"&v=20261014-method-links";
     a.setAttribute("data-tech-method-nav",x[0]);
     a.innerHTML="<span>"+x[1]+"</span> "+x[2];
     methodsNav.appendChild(a);
