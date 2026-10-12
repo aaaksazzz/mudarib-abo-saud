@@ -60,8 +60,121 @@ def status():
         result["database_error"]=str(exc)[:120]
     return result
 
+def record_signals(market, timeframe, rows):
+    """Persist the site's visible market signals as independent learning samples."""
+    if not rows:
+        return 0
+    c=_db()
+    saved=0
+    now=time.time()
+    try:
+        for row in rows[:20]:
+            try:
+                symbol=str(row.get("symbol") or "").strip().upper()
+                side=str(row.get("direction") or row.get("side") or "").upper()
+                entry=float(row.get("entry") or 0)
+                sl=float(row.get("sl") or 0)
+                targets=[float(row.get(k) or 0) for k in ("tp1","tp2","tp3")]
+                tf=str(row.get("timeframe") or timeframe or "15m")
+                if not symbol or side not in ("BUY","SELL") or entry<=0 or sl<=0 or entry==sl or not all(x>0 for x in targets):
+                    continue
+                if side=="BUY" and not (sl<entry<targets[0]<targets[1]<targets[2]): continue
+                if side=="SELL" and not (targets[2]<targets[1]<targets[0]<entry<sl): continue
+                votes=row.get("methods") or row.get("method_votes") or {}
+                if not isinstance(votes,dict) or not votes:
+                    label=str(row.get("strategy_mode") or row.get("strategy_label") or row.get("tag") or "market-signal")
+                    votes={label:1 if side=="BUY" else -1}
+                candle=str(row.get("candle_start") or row.get("candleStart") or "")
+                strategy=str(row.get("strategy_mode") or row.get("strategy_label") or row.get("tag") or "market-signal")
+                # Stable key prevents the same visible signal being counted repeatedly on page refresh.
+                key_created=now
+                if candle:
+                    try:
+                        from datetime import datetime
+                        key_created=datetime.fromisoformat(candle.replace("Z","+00:00")).timestamp()
+                    except Exception: pass
+                exists=c.execute("""select id from recommendation_results
+                    where market=? and symbol=? and direction=? and timeframe=? and abs(entry-?)<0.00000001 and created>=? limit 1""",
+                    (str(market),symbol,side,tf,entry,key_created-60)).fetchone()
+                if exists: continue
+                c.execute("""insert into recommendation_results
+                    (market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,status,hit_target,timeframe,strategy_key,method_votes,base_score)
+                    values(?,?,?,?,?,?,?,?,?,?, 'OPEN',0,?,?,?,?)""",
+                    (str(market),symbol,side,entry,*targets,sl,now,now,tf,strategy,
+                     json.dumps(votes,ensure_ascii=False,separators=(",",":")),
+                     float(row.get("recommendation_score") or row.get("ai_pct") or row.get("score") or 0)))
+                saved+=1
+            except Exception:
+                continue
+        c.commit()
+        return saved
+    finally:
+        c.close()
+
+
+def _market_price(market, symbol):
+    """Read-only current quote for outcome tracking; never places an order."""
+    try:
+        if market in ("spot","alpha"):
+            import urllib.parse
+            q=urllib.parse.urlencode({"symbol":symbol.replace("/","")})
+            from urllib.request import Request, urlopen
+            with urlopen(Request("https://api.binance.com/api/v3/ticker/price?"+q,headers={"User-Agent":"mudarib-pro-learning/1.0"}),timeout=4) as resp:
+                return float(json.loads(resp.read().decode()).get("price") or 0)
+        if market=="futures":
+            import urllib.parse
+            from urllib.request import Request, urlopen
+            q=urllib.parse.urlencode({"symbol":symbol.replace("/","")})
+            with urlopen(Request("https://fapi.binance.com/fapi/v1/ticker/price?"+q,headers={"User-Agent":"mudarib-pro-learning/1.0"}),timeout=4) as resp:
+                return float(json.loads(resp.read().decode()).get("price") or 0)
+        import app as core
+        candles=core._yahoo_chart(symbol,"15m","5d","15m")
+        return float(candles[-1][0]) if candles else 0.0
+    except Exception:
+        return 0.0
+
+
+def refresh_open_outcomes(limit=24):
+    """Close tracked paper recommendations from observed market prices, with stop checked first."""
+    c=_db()
+    closed=0
+    try:
+        cutoff=time.time()-RETENTION
+        rows=c.execute("""select id,market,symbol,direction,entry,sl,tp1,tp2,tp3,created
+            from recommendation_results where status='OPEN' and created>=? order by created asc limit ?""",
+            (cutoff,max(1,min(int(limit),40)))).fetchall()
+        for row in rows:
+            price=_market_price(str(row["market"]),str(row["symbol"]))
+            if price<=0: continue
+            side=str(row["direction"]).upper()
+            entry=float(row["entry"]); stop=float(row["sl"])
+            status="OPEN"; hit=0; result_price=None
+            if (side=="BUY" and price<=stop) or (side=="SELL" and price>=stop):
+                status="LOSS"; result_price=stop
+            else:
+                targets=[row["tp1"],row["tp2"],row["tp3"]]
+                hit_indices=[i+1 for i,t in enumerate(targets) if t is not None and
+                    ((side=="BUY" and price>=float(t)) or (side=="SELL" and price<=float(t)))]
+                if hit_indices:
+                    hit=max(hit_indices); status="WIN"; result_price=float(targets[hit-1])
+                elif time.time()-float(row["created"])>=RETENTION:
+                    status="EXPIRED"; result_price=price
+            if status!="OPEN":
+                c.execute("update recommendation_results set status=?,hit_target=?,result_price=?,result_at=?,updated=? where id=? and status='OPEN'",
+                          (status,hit,result_price,time.time(),time.time(),row["id"]))
+                closed+=1
+        c.commit()
+        return closed
+    finally:
+        c.close()
+
+
 def run_once():
     started=time.time()
+    try:
+        refresh_open_outcomes(24)
+    except Exception as exc:
+        print("[SELF-IMPROVER] outcome refresh skipped:",str(exc)[:120],flush=True)
     cutoff=started-RETENTION
     stats={}
     checked=set()
