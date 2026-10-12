@@ -125,12 +125,20 @@ def _scan_fallback(engine, market):
                 try: a=fut.result()
                 except Exception: a=None
                 sym=jobs[fut]
-                if not a and market not in ("spot",):
-                    try: a=engine._analyze_symbol_method(sym,market,frame,"classical")
-                    except Exception: a=None
-                if not a and market=="saudi":
-                    try: a=engine._analyze_symbol(sym,market,"15m")
-                    except Exception: a=None
+                def complete_levels(z):
+                    if not isinstance(z,dict) or not z.get("sl"): return False
+                    vals=z.get("targets") or [z.get("tp1"),z.get("tp2"),z.get("tp3")]
+                    return len([v for v in vals if v is not None])>=3
+                if not complete_levels(a) and market not in ("spot",):
+                    try:
+                        alt=engine._analyze_symbol_method(sym,market,frame,"classical")
+                        if complete_levels(alt): a=alt
+                    except Exception: pass
+                if not complete_levels(a) and market=="saudi":
+                    try:
+                        alt=engine._analyze_symbol(sym,market,"15m")
+                        if complete_levels(alt): a=alt
+                    except Exception: pass
                 if not isinstance(a,dict): continue
                 side=str(a.get("side") or a.get("direction") or "").upper()
                 entry=float(a.get("entry") or a.get("price") or 0)
