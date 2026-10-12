@@ -130,3 +130,8 @@ form button[type=submit],form .primary{margin-top:8px}
 @media(max-width:760px){.home-hero{grid-template-columns:1fr;gap:18px;min-height:0;padding:25px 20px;border-radius:20px}.home-hero h1{font-size:34px;letter-spacing:-.7px;margin-top:13px}.home-hero-copy>p{font-size:12px}.home-hero-actions{margin-top:19px}.home-cta{flex:1;justify-content:center;min-width:0;padding:10px 12px;font-size:11px}.home-trust-line{margin-top:17px;line-height:1.9}.home-hero-visual{min-height:190px}.home-visual-orb{width:48px;height:48px;left:16px;bottom:18px;border-radius:14px}.home-overview-strip{grid-template-columns:1fr;gap:8px;margin-bottom:24px}.home-overview-item{padding:12px 13px}.home-overview-item .overview-icon{flex-basis:35px;width:35px;height:35px}.market-section-head{margin-top:28px}}
 @media(max-width:380px){.home-hero{padding:21px 16px}.home-hero h1{font-size:29px}.home-cta{font-size:10px}.home-trust-line{font-size:9px;gap:6px}.home-hero-visual{min-height:165px}}
 @media(prefers-reduced-motion:reduce){#platformTools .tool-card,#coreMarkets .market-link{transition:none}}
+
+/* Compact trade cards: remove noisy tracking banners and long float-like prices. */
+.trade-tracking-card .trade-track,.trade-tracking-card>.card-foot{display:none!important}
+.trade-tracking-card .levels{gap:6px}
+.trade-tracking-card .level b{font-size:13px;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
