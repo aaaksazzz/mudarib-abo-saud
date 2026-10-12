@@ -1711,10 +1711,14 @@ def api_results():
     """Real, last-24-hour tracked signal outcomes for the results page.
     Never infer wins/losses from planned TP/SL levels or target percentages.
     """
-    try:
-        _update_spot_signal_outcomes()
-    except Exception as exc:
-        print(f"[PUBLIC-RESULTS] outcome refresh skipped: {type(exc).__name__}: {exc}", flush=True)
+    # Wake each market scanner in the background. The first request may be empty;
+    # the UI polls again while these scans finish.
+    scan_markets = ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex", "gold")
+    for scan_market in scan_markets:
+        try:
+            opportunities(scan_market, "15m")
+        except Exception as exc:
+            print("[PUBLIC-RESULTS] scan wake failed", scan_market, str(exc)[:100], flush=True)
     from datetime import datetime, timezone
     market_names = {
         "spot": "سبوت", "futures": "فيوتشر", "contracts": "العقود",
@@ -1722,7 +1726,6 @@ def api_results():
         "forex": "فوركس وذهب", "gold": "الذهب", "alpha": "Alpha",
     }
     now = datetime.now(timezone.utc)
-    cutoff = now.replace(tzinfo=None).strftime("%Y-%m-%d %H:%M:%S")
     c = db()
     rows = c.execute("""
         SELECT market, symbol, side, timeframe, entry, tp1, tp2, tp3, sl,
@@ -1787,7 +1790,8 @@ def api_results():
         "stats": {"total": len(results), "wins": wins, "losses": losses,
                   "open": opened, "closed": closed,
                   "win_rate": round(wins / denom * 100, 2) if denom else 0},
-        "by_market": by_market, "results": results, "refreshing": False,
+        "by_market": by_market, "results": results,
+        "refreshing": any(opportunities_scanning(m, "15m") for m in scan_markets),
         "note": "الإحصاءات مبنية على سجل الإشارات ونتائج الإغلاق المسجلة فقط؛ لا تُحتسب الأهداف المخططة كأرباح."
     }
 
@@ -3842,6 +3846,29 @@ def _refresh_opportunities(market,timeframe,key):
             elif row.get("source_count",0)>unique[signal_key].get("source_count",0) and not unique[signal_key].get("research_only"):
                 unique[signal_key]["external_mentions"]=row.get("source_count",0)
         rows=list(unique.values())
+        # Persist valid live recommendations to the shared results ledger.
+        # Deduplication is handled by signal_key (market/symbol/timeframe/candle).
+        recorded = 0
+        for signal in rows[:50]:
+            try:
+                side = str(signal.get("direction") or signal.get("side") or "").upper()
+                entry = float(signal.get("entry") or signal.get("price") or 0)
+                tp1 = float(signal.get("tp1") or 0)
+                tp2 = float(signal.get("tp2") or 0)
+                tp3 = float(signal.get("tp3") or 0)
+                sl = float(signal.get("sl") or 0)
+                if side not in {"BUY", "SELL"} or min(entry, tp1, tp2, tp3, sl) <= 0:
+                    continue
+                saved = dict(signal)
+                saved.update({"side": side, "market": market, "timeframe": timeframe,
+                              "entry": entry, "tp1": tp1, "tp2": tp2, "tp3": tp3, "sl": sl,
+                              "score": signal.get("top1_score") or signal.get("recommendation_score") or signal.get("ai_pct") or 0})
+                _record_signal(saved, market=market)
+                recorded += 1
+            except (TypeError, ValueError, OverflowError):
+                continue
+        if recorded:
+            print("[PUBLIC-RESULTS] tracked", market, timeframe, "valid_signals", recorded, flush=True)
         _OPP_CACHE["rows"][key]=list(rows[:100])
         _OPP_CACHE.setdefault("times",{})[key]=time.time()
         _OPP_CACHE["at"]=time.time()
