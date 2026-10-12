@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import APIRouter
 
 router = APIRouter()
-RETENTION = 86400
+RETENTION = 172800
 CACHE_TTL = 300
 MARKETS = ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex", "gold")
 LABELS = {"spot":"سبوت","futures":"فيوتشر","contracts":"العقود الأمريكية","us":"الأسهم الأمريكية","saudi":"السوق السعودي","forex":"الفوركس","gold":"الذهب","alpha":"Binance Alpha"}
@@ -265,8 +265,8 @@ def public_trades(refresh: int = 0, market: str = "all", hours: int = 24):
             _refreshing=True
             threading.Thread(target=_worker,args=(market,),daemon=True,name="public-trades-"+str(market)).start()
         try: hours=int(hours)
-        except Exception: hours=48
-        if hours != 24: hours=24
+        except Exception: hours=24
+        if hours not in (12, 24, 48): hours=24
         if market not in ("all",)+MARKETS: market="all"
         cutoff=now-hours*3600
         # Admin switches affect both individual market pages and the all-markets feed.
