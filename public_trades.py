@@ -285,7 +285,7 @@ def _build(only_market=None):
         scan_markets=list(MARKETS)
     ticker_maps={}
     for market,futures in (("spot",False),("futures",True)):
-        if market not in scan_markets: continue
+        if market not in scan_markets and not (market=="spot" and "alpha" in scan_markets): continue
         try:
             ticker_maps[market]={str(x.get("symbol") or "").upper():float(x.get("lastPrice") or x.get("price") or 0) for x in engine._binance24(futures)}
         except Exception: ticker_maps[market]={}
