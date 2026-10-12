@@ -241,6 +241,44 @@ function loadCoreMarkets(){
 }
 function loadHome(){loadCoreMarkets();}
 function fortuneCard(x,i){var d=x.direction==="SELL",score=Number(x.recommendation_score||x.ai_pct||x.ai||x.analysis_score||0),w=Math.max(0,Math.min(100,score)),ts=[x.tp1,x.tp2,x.tp3,x.tp4,x.tp5,x.tp6].filter(function(v){return v!==null&&v!==undefined&&v!=="";});var lv='<div class="level"><small>الدخول</small><b>'+esc(x.entry||"—")+'</b></div>';ts.forEach(function(v,n){lv+='<div class="level"><small>TP'+(n+1)+'</small><b>'+esc(v)+'</b></div>';});lv+='<div class="level"><small>SL</small><b>'+esc(x.sl||"—")+'</b></div>';return '<article class="card fortune-card"><div class="card-top"><div><span class="rank">#'+(i+1)+' · صفقة</span><div class="symbol">'+esc(displaySymbol(x)||"—")+'</div></div><span class="direction '+(d?"sell":"buy")+'">'+(d?"بيع":"شراء")+'</span></div><div class="score"><b>توافق '+Math.round(score)+'%</b><div class="score-bar"><i style="width:'+w+'%"></i></div><span class="rank">'+esc(x.verdict||"صفقة خارجية")+'</span></div><div class="levels">'+lv+'</div><div class="card-foot">🧠 تحليل مباشر للصفقة · '+esc(x.alignment||0)+'% مصادر مستقلة · 🕒 '+esc(x.published||"—")+'</div></article>';}
+function loadRadar(tf){
+ var box=$("#radarCards");if(!box)return;
+ selectedTimeframe=tf||selectedTimeframe||"15m";
+ var head=$(".page-head"),sw=$("#timeframeSwitch");
+ if(head&&!sw){sw=document.createElement("div");sw.id="timeframeSwitch";sw.className="timeframe-switch";head.insertAdjacentElement("afterend",sw);}
+ if(sw){sw.innerHTML=timeframes.map(function(t){return '<button type="button" class="timeframe-btn '+(t[0]===selectedTimeframe?"active":"")+'" data-timeframe="'+t[0]+'">'+t[1]+'</button>';}).join("");Array.prototype.forEach.call(sw.querySelectorAll("[data-timeframe]"),function(b){b.addEventListener("click",function(){loadRadar(b.getAttribute("data-timeframe"));});});}
+ var markets=[["spot","₿","سبوت"],["futures","⚡","فيوتشر"],["contracts","◉","العقود الأمريكية"],["us","🇺🇸","الأسهم الأمريكية"],["saudi","🇸🇦","السوق السعودي"],["forex","💱","فوركس وذهب"]];
+ box.innerHTML='<div class="empty">جاري جمع صفقات المناهج من جميع الأسواق على فريم '+esc(selectedTimeframe)+'…</div>';
+ Promise.all(markets.map(function(m){return getJSON("/api/opportunities?market="+encodeURIComponent(m[0])+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now()).then(function(j){return {market:m,rows:(j.opportunities||[]),scan:j.scan_stats||{},error:false};}).catch(function(){return {market:m,rows:[],error:true};});})).then(function(groups){
+  var all=[],failed=0,seen={};
+  groups.forEach(function(g){if(g.error)failed++;g.rows.forEach(function(x){
+   if(x.timeframe&&String(x.timeframe)!==selectedTimeframe)return;
+   var symbol=displaySymbol(x),side=String(x.direction||x.side||"").toUpperCase();
+   var key=[g.market[0],symbol,side,selectedTimeframe].join("|");
+   if(seen[key]){if(Number(x.recommendation_score||x.ai_pct||0)>Number(seen[key].x.recommendation_score||seen[key].x.ai_pct||0))seen[key].x=x;return;}
+   var mv=null;["timeframe_change_pct","change_pct","price_change_pct","pct_change","change_percent"].some(function(k){var n=Number(x[k]);if(x[k]!==null&&x[k]!==undefined&&x[k]!==""&&Number.isFinite(n)){mv=n;return true;}return false;});
+   var score=Number(x.recommendation_score||x.ai_pct||x.analysis_score||0);
+   var source=Number(x.source_count||x.alignment||0);
+   var stamp=Number(x.detected_at||x.updated_at||0);if(stamp>1e12)stamp/=1000;
+   var age=stamp?Math.max(0,(Date.now()/1000-stamp)/3600):null;
+   var method=x.technical_method_name||x.method_name||x.method_label||x.strategy_name||x.analysis_type||x.method||x.school||"منهج التحليل";
+   var quality=Math.max(0,Math.min(100,(mv===null?0:Math.min(35,Math.abs(mv)*7))+Math.max(0,Math.min(100,score))*.25+Math.min(10,Math.max(0,source))*1.5+(age===null?0:age<=1?10:age<=6?7:age<=24?3:-15)+((mv>0&&side==="BUY")||(mv<0&&side==="SELL")?10:((mv<0&&side==="BUY")||(mv>0&&side==="SELL")?-18:0)));
+   var z={x:x,market:g.market,move:mv,score:quality,method:method};all.push(z);seen[key]=z;
+  });});
+  all.sort(function(a,b){return b.score-a.score;});
+  function v(n){return n===null||n===undefined||n===""?"—":esc(n);}
+  function make(z,i){
+   var x=z.x,sell=String(x.direction||x.side||"").toUpperCase()==="SELL";
+   var targets=Array.isArray(x.targets)?x.targets:[x.tp1,x.tp2,x.tp3];
+   var lv='<div class="level"><small>الدخول</small><b>'+v(x.entry)+'</b></div>';
+   targets.slice(0,3).forEach(function(t,j){lv+='<div class="level"><small>TP'+(j+1)+'</small><b>'+v(t)+'</b></div>';});
+   lv+='<div class="level"><small>وقف الخسارة</small><b>'+v(x.sl)+'</b></div>';
+   var change=z.move===null?'<span>تغيّر الفريم غير متاح</span>':'<b dir="ltr" class="edge-pct '+(z.move>=0?"edge-up":"edge-down")+'">'+(z.move>0?"+":"")+z.move.toFixed(3)+'%</b>';
+   return '<article class="card smart-edge-card"><div class="card-top"><div><span class="rank">'+(i===0?"👑 الأفضلية الأولى":i===1?"🥈 الأفضلية الثانية":i===2?"🥉 الأفضلية الثالثة":"#"+(i+1))+' · '+esc(z.market[2])+' · '+esc(selectedTimeframe)+'</span><div class="symbol">'+esc(displaySymbol(x)||"—")+'</div></div><span class="direction '+(sell?"sell":"buy")+'">'+(sell?"بيع":"شراء")+'</span></div><div class="card-foot">المنهج: <b>'+esc(z.method)+'</b></div><div class="edge-change"><small>التغيّر على نفس الفريم</small>'+change+'</div><div class="score"><b>درجة ترتيب الفرصة '+Math.round(z.score)+'/100</b><div class="score-bar"><i style="width:'+Math.round(z.score)+'%"></i></div><span class="rank">درجة فرز وليست احتمال ربح</span></div><div class="levels">'+lv+'</div><div class="card-foot">مصادر: '+Number(x.source_count||0)+' · لا تُعرض الصفقة دون بياناتها الفعلية</div></article>';
+  }
+  box.innerHTML=all.length?'<div class="edge-summary"><div class="edge-stat"><span>الفريم</span><b>'+esc(selectedTimeframe)+'</b></div><div class="edge-stat"><span>الأسواق المستجيبة</span><b>'+(markets.length-failed)+'/6</b></div><div class="edge-stat"><span>الصفقات بعد إزالة التكرار</span><b>'+all.length+'</b></div></div><section class="edge-market-group"><div class="edge-market-title"><h3>🏆 الأفضلية بين جميع المناهج والأسواق</h3><span>ترتيب موحّد من الأقوى للأقل</span></div><div class="cards">'+all.slice(0,50).map(make).join("")+'</div></section>':'<div class="empty">ما وصلت صفقات حقيقية من المصادر الحالية على هذا الفريم. ما راح نختلق توصيات.</div>';
+ }).catch(function(){box.innerHTML='<div class="empty">تعذر جمع صفقات المناهج حالياً؛ حاول التحديث لاحقاً.</div>';});
+}
 function loadGold(tf){
  var edge=$("#smartEdgeCards"),summary=$("#smartEdgeSummary"),updated=$("#smartEdgeUpdated");
  if(!edge)return;
@@ -499,7 +537,7 @@ function bind(){
  });
  if(overlay)overlay.addEventListener("click",closeMenu);
 }
-function start(){bind();if(page==="technical"){loadTechnical();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadTechnical(selectedTechnicalMarket,selectedTimeframe);},900000);}else if(page==="home")loadHome();else if(page==="radar"){var lr=function(){var box=$("#radarCards");if(!box)return;getJSON("/api/radar?x="+Date.now()).then(function(j){var rows=j.opportunities||[];render(box,rows);}).catch(function(){box.innerHTML='<div class="empty">تعذر تحديث الرادار حالياً — جاري إعادة المحاولة تلقائياً.</div>';});};lr();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(lr,900000);}else if(page==="gold"){loadGold();}else if(page==="results"){loadResults();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(loadResults,10000);}else if(page==="whales"){loadWhales();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(loadWhales,900000);}else if(page==="news"){loadNews();}else if(page==="blog"){loadBlog();}else if(market){loadMarket(market);if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadMarket(market,selectedTimeframe);},900000);}}
+function start(){bind();if(page==="technical"){loadTechnical();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadTechnical(selectedTechnicalMarket,selectedTimeframe);},900000);}else if(page==="home")loadHome();else if(page==="radar"){loadRadar();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadRadar(selectedTimeframe);},900000);}else if(page==="gold"){loadGold();}else if(page==="results"){loadResults();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(loadResults,10000);}else if(page==="whales"){loadWhales();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(loadWhales,900000);}else if(page==="news"){loadNews();}else if(page==="blog"){loadBlog();}else if(market){loadMarket(market);if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadMarket(market,selectedTimeframe);},900000);}}
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();
 })();
 /* Global language picker: available on all app-shell pages. */
