@@ -401,7 +401,7 @@ def public_trades(refresh: int = 0, market: str = "all", hours: int = 48):
         def market_enabled(row):
             key=str(row.get("market") or "")
             return enabled.get(key,True)
-        filtered=[x for x in _cache["trades"] if float(x.get("created_at") or 0)>=cutoff and market_enabled(x) and (market=="all" or x.get("market")==market or False)]
+        filtered=[x for x in _cache["trades"] if float(x.get("created_at") or 0)>=cutoff and market_enabled(x) and (market=="all" or x.get("market")==market)]
         result=dict(_cache); result["trades"]=filtered; result["refreshing"]=_refreshing
         result["selected_market"]=market; result["window_hours"]=hours
         result["market_counts"]={m:sum(1 for x in _cache["trades"] if x.get("market")==m and market_enabled(x) and float(x.get("created_at") or 0)>=cutoff) for m in MARKETS}
