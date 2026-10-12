@@ -1,5 +1,5 @@
 """Public internet-sourced trade ideas, rolling 24h, read-only/paper display only."""
-import json, os, threading, time
+import json, os, sqlite3, threading, time
 from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import APIRouter
@@ -165,9 +165,24 @@ def public_trades(refresh: int = 0, market: str = "all", hours: int = 48):
         if hours not in (12,24,48): hours=48
         if market not in ("all",)+MARKETS: market="all"
         cutoff=now-hours*3600
-        filtered=[x for x in _cache["trades"] if float(x.get("created_at") or 0)>=cutoff and (market=="all" or x.get("market")==market or (market=="forex" and x.get("market")=="gold"))]
+        # Admin switches affect both individual market pages and the all-markets feed.
+        enabled={m:True for m in MARKETS}
+        try:
+            from app import DB_PATH
+            con=sqlite3.connect(DB_PATH,timeout=2)
+            for key,value in con.execute("SELECT key,enabled FROM section_access").fetchall():
+                if key in enabled: enabled[key]=bool(value)
+            con.close()
+        except Exception:
+            pass
+        if market=="gold": market="forex"
+        def market_enabled(row):
+            key=str(row.get("market") or "")
+            if key=="gold": key="forex"
+            return enabled.get(key,True)
+        filtered=[x for x in _cache["trades"] if float(x.get("created_at") or 0)>=cutoff and market_enabled(x) and (market=="all" or x.get("market")==market or (market=="forex" and x.get("market")=="gold"))]
         result=dict(_cache); result["trades"]=filtered; result["refreshing"]=_refreshing
         result["selected_market"]=market; result["window_hours"]=hours
-        result["market_counts"]={m:sum(1 for x in _cache["trades"] if x.get("market")==m and float(x.get("created_at") or 0)>=cutoff) for m in MARKETS}
+        result["market_counts"]={m:sum(1 for x in _cache["trades"] if x.get("market")==m and market_enabled(x) and float(x.get("created_at") or 0)>=cutoff) for m in MARKETS}
         result["remaining_seconds"]=max(0,int(CACHE_TTL-(now-float(_cache.get("updated") or 0))))
         return result
