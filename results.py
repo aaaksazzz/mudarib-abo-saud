@@ -24,6 +24,15 @@ def db():
   except Exception:
    try: c.execute(ddl)
    except Exception: pass
+ c.execute("create table if not exists app_migrations(key text primary key,value text)")
+ # One-time clean reset: remove stale historical counters/cards and only count recommendations
+ # published after this reset point. The marker persists across restarts.
+ reset_key="results_reset_20261012"
+ marker=c.execute("select value from app_migrations where key=?",(reset_key,)).fetchone()
+ if not marker:
+  reset_at=time.time()
+  c.execute("delete from recommendation_results")
+  c.execute("insert into app_migrations(key,value) values(?,?)",(reset_key,str(reset_at)))
  c.commit(); return c
 def _num(v):
  try:return float(v)
@@ -117,6 +126,8 @@ def _results_locked(core):
    public_rows=sorted(public._cache.get("trades",[]),key=lambda x:float(x.get("created_at") or 0),reverse=True)[:700]
  except Exception:
   public_rows=[]
+ reset_row=c.execute("select value from app_migrations where key='results_reset_20261012'").fetchone()
+ reset_at=float(reset_row[0]) if reset_row else 0
  for x in public_rows:
   market=str(x.get("market") or "").lower()
   if market=="gold": market="forex"
@@ -126,7 +137,7 @@ def _results_locked(core):
   direction=str(x.get("direction") or "").strip().upper()
   entry=_num(x.get("entry")); created=_num(x.get("created_at")) or now
   if created>100000000000: created/=1000.0
-  if created>now+300 or now-created>RETENTION: continue
+  if created>now+300 or now-created>RETENTION or created<reset_at: continue
   if not symbol or direction not in ("BUY","SELL") or entry is None or entry<=0: continue
   tp1,tp2,tp3,sl=(_num(x.get(k)) for k in ("tp1","tp2","tp3","sl"))
   if not tp1 or not tp2 or not tp3 or not sl: continue
