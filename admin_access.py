@@ -4,7 +4,7 @@ import os,sys
 app=None
 
 MARKET_ACCESS={"spot":"سبوت","futures":"فيوتشر","alpha":"Binance Alpha","contracts":"العقود الأمريكية","us":"الأسهم الأمريكية","saudi":"السوق السعودي","forex":"الفوركس والذهب"}
-MARKET_PATHS={"spot":["/fast-spot","/market/spot","/static/spot.html"],"futures":["/fast-futures","/market/futures","/static/futures.html"],"alpha":["/static/alpha.html"],"contracts":["/fast-contracts","/market/contracts","/static/contracts.html"],"us":["/fast-us","/market/us","/static/us.html"],"saudi":["/fast-saudi","/market/saudi","/static/saudi.html"],"forex":["/fast-forex","/market/forex","/static/forex.html","/static/gold.html"]}
+MARKET_PATHS={"spot":["/fast-spot","/market/spot","/static/spot.html"],"futures":["/fast-futures","/market/futures","/static/futures.html"],"alpha":["/static/alpha.html"],"contracts":["/fast-contracts","/market/contracts","/static/contracts.html"],"us":["/fast-us","/market/us","/static/us.html"],"saudi":["/fast-saudi","/market/saudi","/static/saudi.html"],"forex":["/fast-forex","/market/forex","/static/forex.html"]}
 
 def ensure():
  c=app.db()
