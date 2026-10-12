@@ -28,7 +28,7 @@ function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"
 
 function displaySymbol(x){var s=String((x&&x.symbol)||"").trim().toUpperCase();var m=String((x&&x.market)||market||"").toLowerCase();if((m==="spot"||m==="futures")&&s&&!/USDT$/.test(s)&&/^[A-Z0-9]+$/.test(s)){s=s+"USDT";}return s;}function go(s){if(routes[s]){window.location.href=routes[s];}}
 function closeMenu(){var s=$("#sidebar"),o=$("#overlay");if(s)s.classList.remove("open");if(o)o.classList.remove("show");}
-function getJSON(url){var controller=typeof AbortController!=="undefined"?new AbortController():null;var timer=controller?setTimeout(function(){controller.abort();},8000):null;return fetch(url,{cache:"no-store",signal:controller?controller.signal:undefined}).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();}).finally(function(){if(timer)clearTimeout(timer);});}
+function getJSON(url,timeoutMs){var controller=typeof AbortController!=="undefined"?new AbortController():null;var timeout=Number(timeoutMs)||8000;var timer=controller?setTimeout(function(){controller.abort();},timeout):null;return fetch(url,{cache:"no-store",signal:controller?controller.signal:undefined}).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();}).finally(function(){if(timer)clearTimeout(timer);});}
 function fmtPrice(v){if(v===null||v===undefined||v==="")return "—";var n=Number(v);if(!Number.isFinite(n))return esc(v);if(n===0)return "0";var a=Math.abs(n),d=a>=1000?2:a>=100?3:a>=1?4:a>=0.01?6:a>=0.0001?8:10;return n.toFixed(d).replace(/\.?0+$/,"");}
 function signalScore(x){return Number(x.recommendation_score||x.ai_pct||x.ai||x.analysis_score||0);}
 function rankMark(i){return i===0?"👑":i===1?"🥈":i===2?"🥉":"#"+(i+1);}
@@ -212,7 +212,7 @@ function loadTechnical(m,tf){
  }
  var scanMarket=selectedTechnicalMarket==="gold"?"forex":apiMarket;
  var endpoint="/api/technical-methods?market="+encodeURIComponent(scanMarket)+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&method="+encodeURIComponent(selectedTechnicalMethod==="all"?"all":selectedTechnicalMethod)+"&x="+Date.now();
- getJSON(endpoint).then(function(j){
+ getJSON(endpoint,45000).then(function(j){
   var s=j.scan_stats||{},rows=j.opportunities||[];
   if(selectedTechnicalMarket==="gold")rows=rows.filter(function(r){var z=String(r.symbol||"").toUpperCase().replace(/=X$|=F$|\\//g,"");return z==="XAUUSD"||z==="GOLD"||z==="GC";});
   var methodRows=selectedTechnicalMethod==="all"?rows.filter(function(r){return r.technical_only===true&&r.research_only!==true;}):rows.filter(function(r){return r.technical_method_key===selectedTechnicalMethod&&r.technical_only===true;});
