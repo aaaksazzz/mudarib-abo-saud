@@ -854,6 +854,46 @@ def discover_method(market, timeframe, method_id):
     return rows[:100]
 
 SAUDI_UNIVERSE_CACHE={}
+US_UNIVERSE_CACHE={}
+
+def _rotating_batch(symbols, size, market):
+    """Cycle through the full eligible universe between refreshes instead of ignoring its tail."""
+    symbols=list(dict.fromkeys(str(s).strip() for s in (symbols or []) if str(s).strip()))
+    if not symbols:return []
+    size=max(1,int(size))
+    # Use the 15-minute refresh slot so one cache refresh scans a stable batch.
+    slot=int(time.time()//900)
+    offset=(slot*size)%len(symbols)
+    return (symbols[offset:offset+size] + symbols[:max(0,offset+size-len(symbols))])
+
+def _us_universe(min_volume=1_000_000):
+    """Discover US-listed equities and retain those with >1M shares traded in the latest session."""
+    key="all_us_equities_over_1m"; now=time.time(); cached=US_UNIVERSE_CACHE.get(key)
+    if cached and now-cached[0]<900:return list(cached[1])
+    symbols=[]; seen=set()
+    try:
+        for offset in range(0,5000,250):
+            body={"offset":offset,"size":250,"sortField":"dayvolume","sortType":"DESC","quoteType":"EQUITY","query":{"operator":"EQ","operands":["region","us"]}}
+            req=urllib.request.Request("https://query1.finance.yahoo.com/v1/finance/screener",data=json.dumps(body).encode(),headers={"User-Agent":UA,"Content-Type":"application/json"},method="POST")
+            raw=json.loads(urllib.request.urlopen(req,timeout=8).read().decode("utf-8","ignore"))
+            quotes=(((raw.get("finance") or {}).get("result") or [{}])[0]).get("quotes") or []
+            if not quotes:break
+            for q in quotes:
+                sym=str(q.get("symbol") or "").strip()
+                volume=q.get("regularMarketVolume",q.get("dayVolume",q.get("volume",0)))
+                try:volume=float(volume or 0)
+                except (TypeError,ValueError):volume=0
+                if sym and sym not in seen and volume>float(min_volume):
+                    seen.add(sym);symbols.append(sym)
+            if len(quotes)<250:break
+    except Exception as exc:
+        print("[UNIVERSE] US screener fallback",str(exc)[:100],flush=True)
+    # Keep the known baseline as a fallback, but do not pretend it is a full universe.
+    if not symbols:
+        symbols=list(BASE_UNIVERSE.get("us",[]))
+    US_UNIVERSE_CACHE[key]=(now,symbols)
+    print("[UNIVERSE] US eligible stocks >1M shares",len(symbols),flush=True)
+    return list(symbols)
 
 def _saudi_universe(min_volume=0):
     """Discover Saudi-listed equities without any daily-volume threshold."""
