@@ -129,17 +129,23 @@ def _scan_fallback(engine, market):
         return []
     try:
         if market in ("spot", "futures"):
-            # Scan the most liquid eligible USDT pairs first, not an arbitrary symbol list.
-            symbols = [s for s, _ in engine._crypto_universe(market)[:32]]
+            # Full Binance USDT universe filtered by >$1M quote volume; rotate batches
+            # so low-priced and less-liquid eligible coins are not permanently skipped.
+            eligible = [s for s, _ in engine._crypto_universe(market)]
+            symbols = engine._rotating_batch(eligible, 32, market)
+            print("[UNIVERSE]", market, "eligible quote-volume >1M:", len(eligible), "batch:", len(symbols), flush=True)
         elif market == "us":
-            symbols = []
-            for sym in engine.BASE_UNIVERSE.get("us", []):
-                if engine._passes_volume_filter(sym, "us"):
-                    symbols.append(sym)
-                if len(symbols) >= 18:
-                    break
+            # Discover US-listed stocks with >1M shares traded in the latest session.
+            eligible = engine._us_universe(1_000_000)
+            symbols = engine._rotating_batch(eligible, 24, market)
+            print("[UNIVERSE] us eligible stocks >1M shares:", len(eligible), "batch:", len(symbols), flush=True)
+        elif market == "saudi":
+            # All Saudi-listed TASI equities across sectors; never apply a daily-volume cutoff.
+            eligible = ["TASI"] + engine._saudi_universe(0)
+            symbols = engine._rotating_batch(eligible, 24, market)
+            print("[UNIVERSE] saudi TASI + all listed equities:", len(eligible), "batch:", len(symbols), flush=True)
         else:
-            symbols = list(engine.BASE_UNIVERSE.get(market, []))[:24 if market == "saudi" else 14]
+            symbols = list(engine.BASE_UNIVERSE.get(market, []))[:14]
         if not symbols:
             return []
 
