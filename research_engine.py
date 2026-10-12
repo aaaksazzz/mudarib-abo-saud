@@ -942,8 +942,6 @@ def _symbols_for_market(market,internet):
 def _public_scan(market,internet,timeframe="15m"):
     """Market-data scan: recommendations support ranking, never market coverage."""
     symbols=_symbols_for_market(market,internet)
-    if market in ("us","saudi"):
-        symbols=[s for s in symbols if _passes_volume_filter(s,market)]
     if market in ("spot","futures"):
         symbols=[s for s in symbols if str(s).upper().endswith("USDT")]
     # Scan a bounded batch per refresh, but rotate across the entire eligible
@@ -957,6 +955,9 @@ def _public_scan(market,internet,timeframe="15m"):
             q=dict(_crypto_universe(market))
             symbols=sorted(symbols,key=lambda s:q.get(s,0),reverse=True)
         symbols=_rotating_batch(symbols,cap,market)
+    # Apply US volume threshold only to this refresh batch; Saudi equities stay open.
+    if market=="us":
+        symbols=[s for s in symbols if _passes_volume_filter(s,market)]
     out=[]
     with ThreadPoolExecutor(max_workers=8) as pool:
         jobs={pool.submit(_analyze_symbol,s,market,timeframe):s for s in symbols}
@@ -1095,15 +1096,14 @@ def _external_trade_fields(text):
 
 
 def _passes_volume_filter(symbol, market):
-    """Apply the >1M daily-share threshold only to Saudi equities."""
+    """US stocks require more than 1M shares in daily volume; Saudi stocks have no volume cutoff."""
     try:
         if market=="us":
-            # US equities: include all discoverable stocks regardless of daily volume.
-            return True
-        if market=="saudi":
             q=_yahoo(symbol,market,"1d") or []
             if not q: return False
             return float(q[-1].get("volume") or 0) > 1000000
+        if market=="saudi":
+            return True
         if market=="spot":
             q=_binance24(False) or []
             row=next((x for x in q if str(x.get("symbol","")).upper()==str(symbol).upper()),None)
