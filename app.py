@@ -81,8 +81,19 @@ async def _enforce_market_switches(request:Request,call_next):
         except Exception:
             # Do not take the site down if the admin table is not initialized yet.
             pass
-    if path=="/static/gold.html":
-        return RedirectResponse("/static/forex.html",status_code=308)
+    # Legacy standalone market pages now redirect to the single, market-filtered feed.
+    legacy_market_redirects={
+        "/static/spot.html":"/static/public-trades.html?market=spot&hours=24",
+        "/static/futures.html":"/static/public-trades.html?market=futures&hours=24",
+        "/static/alpha.html":"/static/public-trades.html?market=alpha&hours=24",
+        "/static/contracts.html":"/static/public-trades.html?market=contracts&hours=24",
+        "/static/us.html":"/static/public-trades.html?market=us&hours=24",
+        "/static/saudi.html":"/static/public-trades.html?market=saudi&hours=24",
+        "/static/forex.html":"/static/public-trades.html?market=forex&hours=24",
+        "/static/gold.html":"/static/public-trades.html?market=forex&hours=24",
+    }
+    if path in legacy_market_redirects:
+        return RedirectResponse(legacy_market_redirects[path],status_code=308)
     return await call_next(request)
 
 
