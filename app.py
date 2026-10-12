@@ -2021,8 +2021,8 @@ def explosion_radar_api(market:str="spot",timeframe:str="15m",limit:int=25,strat
         atr_values=true_ranges[-14:]
         atr14=sum(atr_values)/max(len(atr_values),1)
         risk_unit=max(atr14*1.2,last["close"]*0.005)
-        if up_score>=down_score:
-            direction="صعود محتمل"; score=round(up_score); target_distance=distance_high
+        if (up_score>=down_score) != reverse:
+            direction="صعود محتمل"; score=round(max(up_score,down_score)); target_distance=distance_high
             near=f"يبعد {distance_high:.2f}% عن قمة آخر 20 شمعة"
             structure_score=up_structure; direction_pressure=pressure
             entry=hi20*1.001
@@ -2030,7 +2030,7 @@ def explosion_radar_api(market:str="spot",timeframe:str="15m",limit:int=25,strat
             targets=[entry+risk_unit*n for n in (1,2,3)]
             entry_rule="دخول مشروط بعد اختراق القمة الأخيرة"
         else:
-            direction="هبوط محتمل"; score=round(down_score); target_distance=distance_low
+            direction="هبوط محتمل"; score=round(max(up_score,down_score)); target_distance=distance_low
             near=f"يبعد {distance_low:.2f}% عن قاع آخر 20 شمعة"
             structure_score=down_structure; direction_pressure=100-pressure
             entry=lo20*0.999
