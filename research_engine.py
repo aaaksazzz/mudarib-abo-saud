@@ -870,9 +870,9 @@ def _rotating_batch(symbols, size, market):
     offset=(slot*size)%len(symbols)
     return (symbols[offset:offset+size] + symbols[:max(0,offset+size-len(symbols))])
 
-def _us_universe(min_volume=1_000_000):
-    """Discover US-listed equities and retain those with >1M shares traded in the latest session."""
-    key="all_us_equities_over_1m"; now=time.time(); cached=US_UNIVERSE_CACHE.get(key)
+def _us_universe(min_volume=0):
+    """Discover all available US-listed equities without a daily-volume cutoff."""
+    key="all_us_equities"; now=time.time(); cached=US_UNIVERSE_CACHE.get(key)
     if cached and now-cached[0]<900:return list(cached[1])
     symbols=[]; seen=set()
     try:
@@ -884,19 +884,15 @@ def _us_universe(min_volume=1_000_000):
             if not quotes:break
             for q in quotes:
                 sym=str(q.get("symbol") or "").strip()
-                volume=q.get("regularMarketVolume",q.get("dayVolume",q.get("volume",0)))
-                try:volume=float(volume or 0)
-                except (TypeError,ValueError):volume=0
-                if sym and sym not in seen and volume>float(min_volume):
+                if sym and sym not in seen:
                     seen.add(sym);symbols.append(sym)
             if len(quotes)<250:break
     except Exception as exc:
-        print("[UNIVERSE] US screener fallback",str(exc)[:100],flush=True)
-    # Keep the known baseline as a fallback, but do not pretend it is a full universe.
+        print("[UNIVERSE] US screener partial/fallback",str(exc)[:100],flush=True)
     if not symbols:
         symbols=list(BASE_UNIVERSE.get("us",[]))
     US_UNIVERSE_CACHE[key]=(now,symbols)
-    print("[UNIVERSE] US eligible stocks >1M shares",len(symbols),flush=True)
+    print("[UNIVERSE] US equities discovered (no volume cutoff)",len(symbols),flush=True)
     return list(symbols)
 
 def _saudi_universe(min_volume=0):
@@ -929,9 +925,11 @@ def _symbols_for_market(market,internet):
         s=[x[0] for x in _crypto_universe(market)]
         for r in internet:
             if r["symbol"].endswith("USDT") and r["symbol"] not in s:s.append(r["symbol"])
-        return s
-    if market=="saudi":
-        # Include TASI index analysis alongside Saudi-listed equities.
+        return list(dict.fromkeys(s))
+    if market=="us":
+        base=_us_universe(0)
+    elif market=="saudi":
+        # Apply the Saudi-only daily-volume rule after discovering all listed equities.
         base=["TASI"] + _saudi_universe(0)
     else:
         base=BASE_UNIVERSE.get(market,[])
@@ -1098,12 +1096,12 @@ def _external_trade_fields(text):
 
 
 def _passes_volume_filter(symbol, market):
-    """Keep liquid instruments above 1M daily traded volume where applicable."""
+    """Apply the >1M daily-share threshold only to Saudi equities."""
     try:
-        if market=="saudi":
-            # Saudi market: do not exclude valid setups by daily-volume threshold.
-            return True
         if market=="us":
+            # US equities: include all discoverable stocks regardless of daily volume.
+            return True
+        if market=="saudi":
             q=_yahoo(symbol,market,"1d") or []
             if not q: return False
             return float(q[-1].get("volume") or 0) > 1000000
