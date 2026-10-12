@@ -13,13 +13,15 @@ DATA_DIR = "/data" if os.path.isdir("/data") else os.path.dirname(__file__)
 CACHE_FILE = os.path.join(DATA_DIR, "public_trades_24h.json")
 _lock = threading.Lock()
 _refreshing = False
-_cache = {"ok": True, "trades": [], "updated": None, "refreshing": False, "markets": {}}
+_cache = {"ok": True, "trades": [], "updated": None, "refreshing": False, "markets": {}, "market_updated": {}}
 try:
     with open(CACHE_FILE, "r", encoding="utf-8") as f:
         saved = json.load(f)
     now = time.time()
     _cache["trades"] = [x for x in saved.get("trades", []) if float(x.get("expires_at") or 0) > now and now-float(x.get("created_at") or 0) <= RETENTION]
     _cache["updated"] = saved.get("updated")
+    _cache["markets"] = saved.get("markets", {})
+    _cache["market_updated"] = saved.get("market_updated", {})
 except Exception:
     pass
 
@@ -271,17 +273,26 @@ def _fetch_market(engine, market, ticker_maps):
         print("[PUBLIC-TRADES] source failed",market,str(exc)[:120],flush=True)
         return market,[]
 
-def _build():
+def _build(only_market=None):
     import research_engine as engine
+    if only_market in (None, "", "all"):
+        scan_markets=list(MARKETS)
+    elif only_market in ("forex", "gold"):
+        scan_markets=["forex", "gold"]
+    elif only_market in MARKETS:
+        scan_markets=[only_market]
+    else:
+        scan_markets=list(MARKETS)
     ticker_maps={}
     for market,futures in (("spot",False),("futures",True)):
+        if market not in scan_markets: continue
         try:
             ticker_maps[market]={str(x.get("symbol") or "").upper():float(x.get("lastPrice") or x.get("price") or 0) for x in engine._binance24(futures)}
         except Exception: ticker_maps[market]={}
     combined=[]; counts={}
     # Bound concurrent source scans to protect the small web service.
     with ThreadPoolExecutor(max_workers=3) as pool:
-        jobs=[pool.submit(_fetch_market,engine,m,ticker_maps) for m in MARKETS]
+        jobs=[pool.submit(_fetch_market,engine,m,ticker_maps) for m in scan_markets]
         for job in as_completed(jobs):
             market,rows=job.result(); counts[market]=len(rows); combined.extend(rows)
     merged={}
@@ -318,17 +329,31 @@ def _build():
         market_rows=sorted((x for x in best_by_asset.values() if x["market"]==market),key=lambda x:(0 if x.get("scan_generated") else 1,int(x.get("source_quality") or 0),x["source_count"],float(x.get("ai_pct") or 0),x["created_at"]),reverse=True)
         rows.extend(market_rows[:100])
     rows=sorted(rows,key=lambda x:(x["created_at"],x["source_count"]),reverse=True)[:700]
-    payload={"ok":True,"trades":rows,"updated":now,"refreshing":False,"markets":counts}
+    market_updated={}
+    market_counts={}
+    if only_market not in (None, "", "all"):
+        with _lock:
+            previous_trades=list(_cache.get("trades",[]))
+            market_updated=dict(_cache.get("market_updated",{}))
+            market_counts=dict(_cache.get("markets",{}))
+        scanned=set(scan_markets)
+        rows=[x for x in previous_trades if x.get("market") not in scanned and float(x.get("expires_at") or 0)>now]+rows
+    for m in scan_markets:
+        market_updated[m]=now
+        market_counts[m]=counts.get(m,0)
+    rows=[x for x in rows if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=RETENTION]
+    rows=sorted(rows,key=lambda x:(x["created_at"],x.get("source_count",0)),reverse=True)[:700]
+    payload={"ok":True,"trades":rows,"updated":now,"refreshing":False,"markets":market_counts,"market_updated":market_updated}
     try:
         with open(CACHE_FILE+".tmp","w",encoding="utf-8") as f: json.dump(payload,f,ensure_ascii=False,separators=(",",":"))
         os.replace(CACHE_FILE+".tmp",CACHE_FILE)
     except Exception as exc: print("[PUBLIC-TRADES] cache save failed",str(exc)[:120],flush=True)
     return payload
 
-def _worker():
+def _worker(market=None):
     global _refreshing,_cache
     try:
-        payload=_build()
+        payload=_build(market)
         with _lock: _cache=payload
     except Exception as exc: print("[PUBLIC-TRADES] refresh failed",str(exc)[:160],flush=True)
     finally:
@@ -340,10 +365,12 @@ def public_trades(refresh: int = 0, market: str = "all", hours: int = 48):
     now=time.time()
     with _lock:
         _cache["trades"]=[x for x in _cache.get("trades",[]) if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=RETENTION]
-        stale=not _cache.get("updated") or now-float(_cache.get("updated") or 0)>=CACHE_TTL
+        relevant=("forex","gold") if market in ("forex","gold") else list(MARKETS) if market=="all" else [market]
+        updated_map=_cache.get("market_updated",{})
+        stale=any(not updated_map.get(m) or now-float(updated_map.get(m) or 0)>=CACHE_TTL for m in relevant)
         if not _refreshing and (refresh==1 or stale):
             _refreshing=True
-            threading.Thread(target=_worker,daemon=True,name="public-trades-24h").start()
+            threading.Thread(target=_worker,args=(market,),daemon=True,name="public-trades-"+str(market)).start()
         try: hours=int(hours)
         except Exception: hours=48
         if hours not in (12,24,48): hours=48
