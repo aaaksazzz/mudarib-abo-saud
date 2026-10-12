@@ -266,7 +266,7 @@ def public_trades(refresh: int = 0, market: str = "all", hours: int = 24):
     with _lock:
         _cache["trades"]=[x for x in _cache.get("trades",[]) if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=hours*3600 and not x.get("scan_generated")]
         relevant=list(MARKETS) if market=="all" else [market]
-        updated_map=_cache.get("market_updated,{})
+        updated_map=_cache.get("market_updated",{})
         stale=any(not updated_map.get(m) or now-float(updated_map.get(m) or 0)>=CACHE_TTL for m in relevant)
         if not _refreshing and (refresh==1 or stale):
             _refreshing=True
