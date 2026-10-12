@@ -269,6 +269,8 @@ function bind(){
 
  if(side){
   /* Keep the same destinations on every shared app page. */
+  /* Remove the stale gold-signals menu item: there is no standalone gold-signals route. */
+  side.querySelectorAll('[data-s="gold"]').forEach(function(el){el.remove();});
   var navDefaults={
    home:["⌂","الرئيسية"],radar:["◈","الرادار"],spot:["₿","سبوت"],futures:["⚡","فيوتشر"],
    alpha:["α","Binance Alpha"],contracts:["◉","العقود الأمريكية"],us:["🇺🇸","الأسهم الأمريكية"],
