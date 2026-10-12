@@ -3495,6 +3495,9 @@ _OPP_CACHE={"at":0.0,"rows":{}}
 _OPP_TTL=30.0
 _RADAR_CACHE={"at":0.0,"rows":[]}
 _OPP_REFRESHING=set()
+# Single queued refresh worker: this service has only 0.2 vCPU / 512 MB.
+# Avoid launching six market scans concurrently when the radar opens.
+_OPP_REFRESH_POOL=ThreadPoolExecutor(max_workers=1,thread_name_prefix="market-refresh")
 
 def _market_scan_rows(market, timeframe="15m"):
     if market not in MARKETS:
@@ -3568,8 +3571,11 @@ def opportunities(market="spot", timeframe="15m"):
     # Never block a browser request while news providers or market APIs respond.
     if key not in _OPP_REFRESHING:
         _OPP_REFRESHING.add(key)
-        threading.Thread(target=_refresh_opportunities,args=(market,timeframe,key),
-                         daemon=True,name="opportunities-"+str(market)+"-"+str(timeframe)).start()
+        try:
+            _OPP_REFRESH_POOL.submit(_refresh_opportunities,market,timeframe,key)
+        except Exception as submit_exc:
+            _OPP_REFRESHING.discard(key)
+            print("[OPPORTUNITIES] queue failed",market,timeframe,str(submit_exc)[:120],flush=True)
     if cached is not None:
         return list(cached)
     # Serve a persisted snapshot immediately on a cold start while the refresh runs.
