@@ -103,7 +103,7 @@ function loadRadar(tf){
  if(head&&!sw){sw=document.createElement("div");sw.id="timeframeSwitch";sw.className="timeframe-switch";head.insertAdjacentElement("afterend",sw);}
  if(sw){sw.innerHTML=timeframes.map(function(t){return '<button type="button" class="timeframe-btn '+(t[0]===selectedTimeframe?"active":"")+'" data-timeframe="'+t[0]+'">'+t[1]+'</button>';}).join("");Array.prototype.forEach.call(sw.querySelectorAll("[data-timeframe]"),function(b){b.addEventListener("click",function(){loadRadar(b.getAttribute("data-timeframe"));});});}
  var markets=[["spot","₿","سبوت"],["futures","⚡","فيوتشر"],["contracts","◉","العقود الأمريكية"],["us","🇺🇸","الأسهم الأمريكية"],["saudi","🇸🇦","السوق السعودي"],["forex","💱","فوركس وذهب"]];
- box.innerHTML='<div class="empty">جاري جمع صفقات المناهج من جميع الأسواق على فريم '+esc(selectedTimeframe)+'…</div>';
+ box.innerHTML='<div class="empty">جاري جمع الإشارات الخارجية من جميع الأسواق على فريم '+esc(selectedTimeframe)+'…</div>';
  Promise.all(markets.map(function(m){return getJSON("/api/opportunities?market="+encodeURIComponent(m[0])+"&timeframe="+encodeURIComponent(selectedTimeframe)+"&x="+Date.now()).then(function(j){return {market:m,rows:(j.opportunities||[]),scan:j.scan_stats||{},error:false};}).catch(function(){return {market:m,rows:[],error:true};});})).then(function(groups){
   var all=[],failed=0,seen={};
   groups.forEach(function(g){if(g.error)failed++;g.rows.forEach(function(x){
@@ -116,7 +116,7 @@ function loadRadar(tf){
    var source=Number(x.source_count||x.alignment||0);
    var stamp=Number(x.detected_at||x.updated_at||0);if(stamp>1e12)stamp/=1000;
    var age=stamp?Math.max(0,(Date.now()/1000-stamp)/3600):null;
-   var method=x.technical_method_name||x.method_name||x.method_label||x.strategy_name||x.analysis_type||x.method||x.school||"منهج التحليل";
+   var method=x.source_name||x.provider_name||x.source||"مصدر خارجي";
    var momentumScore=mv===null?0:Math.min(35,Math.abs(mv)*7); var scorePart=Math.max(0,Math.min(100,score))*.25; var sourcePart=Math.min(10,Math.max(0,source))*1.5; var agePart=age===null?0:age<=1?10:age<=6?7:age<=24?3:-15; var directionPart=0; if(mv!==null){if((mv>0&&side==="BUY")||(mv<0&&side==="SELL"))directionPart=10;else if((mv<0&&side==="BUY")||(mv>0&&side==="SELL"))directionPart=-18;} var quality=Math.max(0,Math.min(100,momentumScore+scorePart+sourcePart+agePart+directionPart));
    var z={x:x,market:g.market,move:mv,score:quality,method:method};all.push(z);seen[key]=z;
   });});
@@ -131,7 +131,7 @@ function loadRadar(tf){
    var change=z.move===null?'<span>تغيّر الفريم غير متاح</span>':'<b dir="ltr" class="edge-pct '+(z.move>=0?"edge-up":"edge-down")+'">'+(z.move>0?"+":"")+z.move.toFixed(3)+'%</b>';
    return '<article class="card smart-edge-card"><div class="card-top"><div><span class="rank">'+(i===0?"👑 الأفضلية الأولى":i===1?"🥈 الأفضلية الثانية":i===2?"🥉 الأفضلية الثالثة":"#"+(i+1))+' · '+esc(z.market[2])+' · '+esc(selectedTimeframe)+'</span><div class="symbol">'+esc(displaySymbol(x)||"—")+'</div></div><span class="direction '+(sell?"sell":"buy")+'">'+(sell?"بيع":"شراء")+'</span></div><div class="card-foot">المنهج: <b>'+esc(z.method)+'</b></div><div class="edge-change"><small>التغيّر على نفس الفريم</small>'+change+'</div><div class="score"><b>درجة ترتيب الفرصة '+Math.round(z.score)+'/100</b><div class="score-bar"><i style="width:'+Math.round(z.score)+'%"></i></div><span class="rank">درجة فرز وليست احتمال ربح</span></div><div class="levels">'+lv+'</div><div class="card-foot">مصادر: '+Number(x.source_count||0)+' · لا تُعرض الصفقة دون بياناتها الفعلية</div></article>';
   }
-  box.innerHTML=all.length?'<div class="edge-summary"><div class="edge-stat"><span>الفريم</span><b>'+esc(selectedTimeframe)+'</b></div><div class="edge-stat"><span>الأسواق المستجيبة</span><b>'+(markets.length-failed)+'/6</b></div><div class="edge-stat"><span>الصفقات بعد إزالة التكرار</span><b>'+all.length+'</b></div></div><section class="edge-market-group"><div class="edge-market-title"><h3>🏆 الأفضلية بين جميع المناهج والأسواق</h3><span>ترتيب موحّد من الأقوى للأقل</span></div><div class="cards">'+all.slice(0,50).map(make).join("")+'</div></section>':'<div class="empty">ما وصلت صفقات حقيقية من المصادر الحالية على هذا الفريم. ما راح نختلق توصيات.</div>';
+  box.innerHTML=all.length?'<div class="edge-summary"><div class="edge-stat"><span>الفريم</span><b>'+esc(selectedTimeframe)+'</b></div><div class="edge-stat"><span>الأسواق المستجيبة</span><b>'+(markets.length-failed)+'/6</b></div><div class="edge-stat"><span>الصفقات بعد إزالة التكرار</span><b>'+all.length+'</b></div></div><section class="edge-market-group"><div class="edge-market-title"><h3>🏆 أقوى الإشارات الخارجية بين الأسواق</h3><span>ترتيب موحّد من الأقوى للأقل</span></div><div class="cards">'+all.slice(0,50).map(make).join("")+'</div></section>':'<div class="empty">ما وصلت صفقات حقيقية من المصادر الحالية على هذا الفريم. ما راح نختلق توصيات.</div>';
  }).catch(function(){box.innerHTML='<div class="empty">تعذر جمع صفقات المناهج حالياً؛ حاول التحديث لاحقاً.</div>';});
 }
 function loadGold(tf){
@@ -302,7 +302,7 @@ function bind(){
     side.appendChild(b);
    }
   });
-  /* Professional sidebar order: home, trading, technical methods, markets, content, account */
+  /* Professional sidebar order: home, trading, markets, content, account */
   var footer=side.querySelector(".side-footer");
   var byKey={};
   Array.from(side.querySelectorAll(":scope > .nav-item")).forEach(function(el){
