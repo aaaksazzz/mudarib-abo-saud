@@ -177,18 +177,22 @@ def _news(q):
     ]
     cutoff=time.time()-MAX_SOURCE_AGE
     merged=[]; seen=set(); now=time.time()
-    for u in urls:
-        try:hits=_parse_news_xml(_fetch(u))
-        except Exception:hits=[]
-        for h in hits:
-            published=h.get("published") or ""
-            try:ts=parsedate_to_datetime(published).timestamp()
-            except Exception:continue
-            if ts < cutoff or ts > now+300:continue
-            h=dict(h); h["published_ts"]=ts
-            key=(h.get("url") or "").strip().lower() or re.sub(r"\s+"," ",str(h.get("title") or "").strip().lower())
-            if not key or key in seen:continue
-            seen.add(key); merged.append(h)
+    # Query regional indexes concurrently to keep the loading state short while
+    # retaining multiple independent news/search sources.
+    def fetch_feed(url):
+        try:return _parse_news_xml(_fetch(url))
+        except Exception:return []
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        for hits in pool.map(fetch_feed,urls):
+            for h in hits:
+                published=h.get("published") or ""
+                try:ts=parsedate_to_datetime(published).timestamp()
+                except Exception:continue
+                if ts < cutoff or ts > now+300:continue
+                h=dict(h); h["published_ts"]=ts
+                key=(h.get("url") or "").strip().lower() or re.sub(r"\s+"," ",str(h.get("title") or "").strip().lower())
+                if not key or key in seen:continue
+                seen.add(key); merged.append(h)
     merged.sort(key=lambda x:float(x.get("published_ts") or 0),reverse=True)
     return merged[:60]
 
@@ -282,7 +286,7 @@ def _direction(text):
 
 def _internet(market):
     rows=[]
-    with ThreadPoolExecutor(max_workers=6) as p:
+    with ThreadPoolExecutor(max_workers=4) as p:
         fs=[p.submit(_news,q) for q in MARKET_QUERIES.get(market,[])]
         for f in as_completed(fs):
             try:hits=f.result()
