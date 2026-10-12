@@ -240,7 +240,7 @@ def _build(only_market=None, hours=24):
         market_counts[m]=counts.get(m,0)
     rows=[x for x in rows if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=retention and not x.get("scan_generated")]
     rows=sorted(rows,key=lambda x:(x["created_at"],x.get("source_count",0)),reverse=True)[:700]
-    payload={"ok":True,"trades":rows,"updated":now,"refreshing":False,"markets":market_counts,"market_updated":market_updated}
+    payload={"ok":True,"trades":rows,"updated":now,"refreshing":False,"markets":market_counts,"market_updated":market_updated,"window_hours":hours}
     try:
         with open(CACHE_FILE+".tmp","w",encoding="utf-8") as f: json.dump(payload,f,ensure_ascii=False,separators=(",",":"))
         os.replace(CACHE_FILE+".tmp",CACHE_FILE)
@@ -267,7 +267,7 @@ def public_trades(refresh: int = 0, market: str = "all", hours: int = 24):
         _cache["trades"]=[x for x in _cache.get("trades",[]) if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=hours*3600 and not x.get("scan_generated")]
         relevant=list(MARKETS) if market=="all" else [market]
         updated_map=_cache.get("market_updated",{})
-        stale=any(not updated_map.get(m) or now-float(updated_map.get(m) or 0)>=CACHE_TTL for m in relevant)
+        stale=(_cache.get("window_hours") != hours) or any(not updated_map.get(m) or now-float(updated_map.get(m) or 0)>=CACHE_TTL for m in relevant)
         if not _refreshing and (refresh==1 or stale):
             _refreshing=True
             threading.Thread(target=_worker,args=(market,hours),daemon=True,name="public-trades-"+str(market)).start()
