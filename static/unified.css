@@ -1,0 +1,16 @@
+/* SMART TRADING PRO — shared visual system. Keeps each market's functionality independent. */
+:root{--stp-bg:#06101d;--stp-surface:#0b1a2a;--stp-surface-2:#102238;--stp-line:#263e56;--stp-text:#edf5ff;--stp-muted:#91a8c2;--stp-cyan:#5ce0c8;--stp-blue:#4b8cff;--stp-radius:15px;--stp-shadow:0 12px 34px rgba(0,0,0,.18);color-scheme:dark}
+html{background:var(--stp-bg);scroll-behavior:smooth}body{background-color:var(--stp-bg);color:var(--stp-text);font-family:Tahoma,Arial,sans-serif}
+a{transition:color .16s,border-color .16s,background .16s}a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--stp-cyan)!important;outline-offset:3px}
+button,input,select,textarea{font-family:inherit}button{touch-action:manipulation}button:not(:disabled),[role=button]{cursor:pointer}
+input,select,textarea{background:#0a1928;color:var(--stp-text);border:1px solid var(--stp-line);border-radius:10px;min-height:42px;padding:9px 12px;max-width:100%}input::placeholder,textarea::placeholder{color:#7891aa}
+button,.primary,.secondary,.ghost-btn,.icon-btn,.action-link,.cta a{border-radius:10px;transition:transform .16s,border-color .16s,background .16s,filter .16s}button:hover:not(:disabled),.action-link:hover,.cta a:hover{filter:brightness(1.08)}button:disabled{cursor:not-allowed;opacity:.58}
+.site-head,.public-top,.head,.topbar,.site-header,.page-header{background:rgba(7,19,33,.97);border-color:var(--stp-line);backdrop-filter:blur(12px)}.site-head{isolation:isolate}
+.main-nav a,.market-link,.nav-item,.technical-nav-link{border-radius:10px}.main-nav a:hover,.main-nav a:focus,.market-link:hover,.market-link.active,.nav-item:hover,.technical-nav-link:hover{background:#142b41;border-color:#315575;color:#fff}.main-nav .login-link{background:#12594f;border-color:#26786f;color:#e6fff9}
+.public-sidebar,.sidebar{background:#081625;border-color:var(--stp-line)}.public-main,.content,.wrap,.home-main{min-width:0}
+.card,.result-card,.news-card,.blog-card,.auth-card,.panel,.analysis-card,.metric,.core-card,.public-tools,.public-status,.best-decision,.market-tile,.quick-card,.sector,.trade-tracking-card,.empty,.status-line{border-color:var(--stp-line);border-radius:var(--stp-radius)}
+.card,.result-card,.news-card,.blog-card,.auth-card,.panel,.analysis-card,.metric,.core-card,.public-tools,.public-status,.empty,.status-line{background:linear-gradient(145deg,#0e2033,#0a1827);box-shadow:var(--stp-shadow)}
+h1,h2,h3,h4{color:var(--stp-text);text-wrap:pretty}p{overflow-wrap:anywhere}small,.muted,.sub,.public-note,.section-heading p,.section-head p,.page-head p{color:var(--stp-muted)}
+table{width:100%;border-collapse:collapse}th{background:#102238;color:#dceafa}td,th{border-color:var(--stp-line);padding:10px}hr{border:0;border-top:1px solid var(--stp-line)}img,video,canvas,svg{max-width:100%}
+@media(max-width:760px){input,select,textarea{font-size:16px}button,.primary,.secondary,.ghost-btn,.action-link{min-height:42px}.public-main{padding:14px}.card,.result-card,.news-card,.blog-card,.auth-card,.panel,.analysis-card{padding:15px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;transition-duration:.01ms!important}}
