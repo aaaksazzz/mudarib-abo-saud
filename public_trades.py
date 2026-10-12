@@ -198,31 +198,10 @@ def _fetch_market(engine, market, ticker_maps, retention=86400):
 
 
 def _closed_performance(market):
-    """Use recorded closed trades only; never infer outcomes from open/public ideas."""
-    try:
-        from app import DB_PATH
-        con=sqlite3.connect(DB_PATH, timeout=2)
-        rows=con.execute(
-            "SELECT profit_pct,loss_pct FROM trades WHERE market=? AND lower(status) NOT IN ('open','active','pending') AND (profit_pct IS NOT NULL OR loss_pct IS NOT NULL)",
-            (market,)
-        ).fetchall()
-        con.close()
-        results=[]
-        for profit, loss in rows:
-            if profit is not None:
-                results.append(float(profit))
-            elif loss is not None:
-                results.append(-abs(float(loss)))
-        if len(results) < 8:
-            return {"sample":len(results),"score":None,"win_rate":None,"expectancy":None}
-        wins=sum(1 for x in results if x>0)
-        win_rate=100*wins/len(results)
-        expectancy=sum(results)/len(results)
-        # 50 is neutral; win rate and net expectancy both matter.
-        score=max(0,min(100,win_rate*0.7 + max(0,min(100,50+expectancy*10))*0.3))
-        return {"sample":len(results),"score":round(score,1),"win_rate":round(win_rate,1),"expectancy":round(expectancy,3)}
-    except Exception:
-        return {"sample":0,"score":None,"win_rate":None,"expectancy":None}
+    """Fail closed: the legacy trades table stores planned profit/loss fields, not verified realized outcomes."""
+    # Do not derive a win rate from trades.profit_pct/loss_pct: those columns are
+    # entered as planned trade parameters and are not an authoritative outcome ledger.
+    return {"sample":0,"score":None,"win_rate":None,"expectancy":None}
 
 
 def _top1_metrics(row, history):
