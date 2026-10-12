@@ -126,123 +126,6 @@ def _prepare(engine, market, raw, ticker_maps):
         "source_title":title,"source_url":url,"source_published":published,"created_at":published_at,"expires_at":published_at+RETENTION,
         "level_type":level_type,"is_estimated":level_type!="مستويات منشورة بالمصدر","status":"نشطة","source_count":1,"mention_count":1,"source_domains_count":1,"source_domains":[urlparse(url).netloc.lower().removeprefix("www.")],"source_urls":[url], "risk_pct":round(abs(float(entry)-float(sl))/float(entry)*100,2), "tp1_pct":round(((targets[0]-float(entry)) if direction=="BUY" else (float(entry)-targets[0]))/float(entry)*100,2), "tp2_pct":round(((targets[1]-float(entry)) if direction=="BUY" else (float(entry)-targets[1]))/float(entry)*100,2), "tp3_pct":round(((targets[2]-float(entry)) if direction=="BUY" else (float(entry)-targets[2]))/float(entry)*100,2)}
 
-def _scan_fallback(engine, market):
-    """Multi-timeframe confirmation scan; never promote a single-candle guess as high confidence."""
-    if market in ("gold", "alpha"):
-        return []
-    try:
-        if market in ("spot", "futures"):
-            # Full Binance USDT universe filtered by >$1M quote volume; rotate batches
-            # so low-priced and less-liquid eligible coins are not permanently skipped.
-            eligible = [s for s, _ in engine._crypto_universe(market)]
-            symbols = engine._rotating_batch(eligible, 48, market)
-            print("[UNIVERSE]", market, "eligible quote-volume >1M:", len(eligible), "batch:", len(symbols), flush=True)
-        elif market == "us":
-            # Discover US-listed stocks with >1M shares traded in the latest session.
-            eligible = engine._us_universe(1_000_000)
-            symbols = engine._rotating_batch(eligible, 40, market)
-            print("[UNIVERSE] us eligible stocks >1M shares:", len(eligible), "batch:", len(symbols), flush=True)
-        elif market == "saudi":
-            # All Saudi-listed TASI equities across sectors; never apply a daily-volume cutoff.
-            eligible = ["TASI"] + engine._saudi_universe(0)
-            symbols = engine._rotating_batch(eligible, 24, market)
-            print("[UNIVERSE] saudi TASI + all listed equities:", len(eligible), "batch:", len(symbols), flush=True)
-        else:
-            symbols = list(engine.BASE_UNIVERSE.get(market, []))[:14]
-        if not symbols:
-            return []
-
-        primary_tf = "1d" if market == "saudi" else "15m"
-        confirm_tf = "1w" if market == "saudi" else "1h"
-        out = []
-
-        def analyse(sym, tf):
-            try:
-                result = engine._analyze_symbol(sym, market, tf)
-                if isinstance(result, dict) and result.get("side") in ("BUY", "SELL"):
-                    return result
-                # Non-crypto markets can fail the strict composite gate despite valid candles.
-                # A classical structure pass is a separate real-data fallback.
-                if market not in ("spot", "futures", "alpha"):
-                    result = engine._analyze_symbol_method(sym, market, tf, "classical")
-                    if isinstance(result, dict) and result.get("side") in ("BUY", "SELL"):
-                        result["fallback_scan"] = True
-                        return result
-            except Exception:
-                pass
-            return None
-
-        # Keep concurrency bounded for the small production service.
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            primary_jobs = {pool.submit(analyse, sym, primary_tf): sym for sym in symbols}
-            for future in as_completed(primary_jobs):
-                sym = primary_jobs[future]
-                try:
-                    primary = future.result()
-                except Exception:
-                    primary = None
-                if not primary:
-                    continue
-
-                primary_score = float(primary.get("ai_pct") or primary.get("recommendation_score") or 0)
-                min_primary = 56 if market == "saudi" else 60
-                if primary_score < min_primary:
-                    continue
-                # Higher-timeframe agreement is still required, with a lower Saudi threshold.
-                try:
-                    confirm = analyse(sym, confirm_tf)
-                except Exception:
-                    confirm = None
-                if not confirm or confirm.get("side") != primary.get("side"):
-                    continue
-                confirm_score = float(confirm.get("ai_pct") or confirm.get("recommendation_score") or 0)
-                min_confirm = 48 if market == "saudi" else 52
-                if confirm_score < min_confirm:
-                    continue
-
-                side = str(primary.get("side") or "").upper()
-                entry = float(primary.get("entry") or primary.get("price") or 0)
-                sl = float(primary.get("sl") or 0)
-                raw_targets = primary.get("targets") or [primary.get("tp1"), primary.get("tp2"), primary.get("tp3")]
-                try:
-                    targets = [float(v) for v in raw_targets if v is not None]
-                except Exception:
-                    continue
-                if side not in ("BUY", "SELL") or entry <= 0 or sl <= 0 or len(targets) < 3:
-                    continue
-                risk = abs(entry - sl)
-                if risk <= 0 or risk / entry > 0.04:
-                    continue
-                if side == "BUY" and not (sl < entry < targets[0] <= targets[1] <= targets[2]):
-                    continue
-                if side == "SELL" and not (targets[2] <= targets[1] <= targets[0] < entry < sl):
-                    continue
-
-                # This is a confluence score, not a claimed win probability.
-                confidence = round(min(96.0, primary_score * 0.65 + confirm_score * 0.35), 1)
-                out.append({
-                    "market": market, "market_label": LABELS.get(market, market),
-                    "symbol": sym, "direction": side,
-                    "entry": round(entry, 8), "tp1": round(targets[0], 8),
-                    "tp2": round(targets[1], 8), "tp3": round(targets[2], 8),
-                    "sl": round(sl, 8), "source_title": "مسح فني متعدد الأطر",
-                    "source_url": "", "source_published": None,
-                    "created_at": time.time(), "expires_at": time.time() + RETENTION,
-                    "level_type": "مستويات محسوبة من بيانات السوق",
-                    "is_estimated": True, "status": "نشطة", "source_count": 0,
-                    "source_urls": [], "scan_generated": True, "ai_pct": confidence,
-                    "timeframe": primary_tf, "confirmation_timeframe": confirm_tf,
-                    "primary_score": round(primary_score, 1),
-                    "confirmation_score": round(confirm_score, 1),
-                    "reason": "توافق إطار " + primary_tf + " مع " + confirm_tf + "؛ الدرجة تقيس توافق الأدلة وليست نسبة ربح مضمونة"
-                })
-        # Highest multi-timeframe confluence first; tie-break by fresh generation time.
-        out.sort(key=lambda x: (float(x.get("ai_pct") or 0), float(x.get("primary_score") or 0), x["created_at"]), reverse=True)
-        return out[:12]
-    except Exception as exc:
-        print("[PUBLIC-TRADES] multi-timeframe scan failed", market, str(exc)[:120], flush=True)
-        return []
-
 def _fetch_market(engine, market, ticker_maps):
     try:
         if market == "alpha":
@@ -260,15 +143,7 @@ def _fetch_market(engine, market, ticker_maps):
         for raw in rows:
             item=_prepare(engine,market,raw,ticker_maps)
             if item: out.append(item)
-        # External recommendations stay first. If the source feed is sparse, add a
-        # small separately labeled technical scan so the market page is not empty.
-        if len(out)<3:
-            existing={(x["symbol"],x["direction"]) for x in out}
-            for x in _scan_fallback(engine,market):
-                key=(x["symbol"],x["direction"])
-                if key not in existing:
-                    out.append(x); existing.add(key)
-                if len(out)>=12: break
+        # External published recommendations only; never invent internal scan signals.
         return market,out
     except Exception as exc:
         print("[PUBLIC-TRADES] source failed",market,str(exc)[:120],flush=True)
@@ -372,7 +247,7 @@ def _worker(market=None):
         with _lock: _refreshing=False
 
 @router.get("/api/public-trades")
-def public_trades(refresh: int = 0, market: str = "all", hours: int = 48):
+def public_trades(refresh: int = 0, market: str = "all", hours: int = 24):
     global _refreshing,_cache
     now=time.time()
     with _lock:
@@ -385,7 +260,7 @@ def public_trades(refresh: int = 0, market: str = "all", hours: int = 48):
             threading.Thread(target=_worker,args=(market,),daemon=True,name="public-trades-"+str(market)).start()
         try: hours=int(hours)
         except Exception: hours=48
-        if hours not in (12,24,48): hours=48
+        if hours != 24: hours=24
         if market not in ("all",)+MARKETS: market="all"
         cutoff=now-hours*3600
         # Admin switches affect both individual market pages and the all-markets feed.
