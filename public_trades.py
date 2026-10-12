@@ -238,7 +238,7 @@ def _build(only_market=None, hours=24):
     for m in scan_markets:
         market_updated[m]=now
         market_counts[m]=counts.get(m,0)
-    rows=[x for x in rows if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=RETENTION and not x.get("scan_generated")]
+    rows=[x for x in rows if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=retention and not x.get("scan_generated")]
     rows=sorted(rows,key=lambda x:(x["created_at"],x.get("source_count",0)),reverse=True)[:700]
     payload={"ok":True,"trades":rows,"updated":now,"refreshing":False,"markets":market_counts,"market_updated":market_updated}
     try:
@@ -260,13 +260,13 @@ def _worker(market=None, hours=24):
 def public_trades(refresh: int = 0, market: str = "all", hours: int = 24):
     global _refreshing,_cache
     now=time.time()
+    try: hours=int(hours)
+    except Exception: hours=24
+    if hours not in (12, 24, 48): hours=24
     with _lock:
-        _cache["trades"]=[x for x in _cache.get("trades",[]) if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=RETENTION and not x.get("scan_generated")]
+        _cache["trades"]=[x for x in _cache.get("trades",[]) if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=hours*3600 and not x.get("scan_generated")]
         relevant=list(MARKETS) if market=="all" else [market]
-        updated_map=_cache.get("market_updated",{})
-        try: hours=int(hours)
-        except Exception: hours=24
-        if hours not in (12, 24, 48): hours=24
+        updated_map=_cache.get("market_updated,{})
         stale=any(not updated_map.get(m) or now-float(updated_map.get(m) or 0)>=CACHE_TTL for m in relevant)
         if not _refreshing and (refresh==1 or stale):
             _refreshing=True
