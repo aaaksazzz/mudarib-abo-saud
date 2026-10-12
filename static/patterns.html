@@ -31,11 +31,15 @@ function regression(arr){const n=arr.length;let sx=0,sy=0,sxx=0,sxy=0;arr.forEac
 function line(reg,x){return reg.m*x+reg.b}
 let tvChart=null,tvCandles=null,tvVolume=null,tvOverlays=[],tvPriceLines=[],tvEmbedKey='';let lastLoadRequest=0;
 async function fetchBinanceJson(path){
- const bases=path.startsWith('/fapi/')?['https://fapi.binance.com']:['https://data-api.binance.vision','https://api.binance.com','https://api-gcp.binance.com','https://api1.binance.com','https://api2.binance.com'];
+ const isFutures=path.startsWith('/fapi/');
+ const bases=isFutures?['https://fapi.binance.com']:['https://data-api.binance.vision','https://api.binance.com','https://api-gcp.binance.com'];
+ const deadline=Date.now()+9000;
  let lastError=null;
  for(const base of bases){
+  const remaining=deadline-Date.now();
+  if(remaining<=0)break;
   const controller=typeof AbortController!=='undefined'?new AbortController():null;
-  const timer=controller?setTimeout(()=>controller.abort(),4500):null;
+  const timer=controller?setTimeout(()=>controller.abort(),Math.min(3500,remaining)):null;
   try{
    const res=await fetch(base+path,{cache:'no-store',signal:controller?controller.signal:undefined});
    if(!res.ok)throw Error('HTTP '+res.status+' من '+base);
@@ -45,7 +49,7 @@ async function fetchBinanceJson(path){
   }catch(e){lastError=e;}
   finally{if(timer)clearTimeout(timer);}
  }
- throw lastError||Error('تعذر الاتصال بمصادر Binance العامة');
+ throw lastError||Error('انتهت مهلة الاتصال ببايننس (9 ثوانٍ). اضغط إعادة المحاولة.');
 }
 function detectTechnicalPatterns(data){
  const a=data.map((k,i)=>({i,h:+k[2],l:+k[3],o:+k[1],c:+k[4],v:+k[5]||0})),n=a.length,p=a.slice(-100),off=n-p.length;
@@ -369,8 +373,10 @@ if(['futures','contracts','us','saudi','forex'].includes(market)){
  async function scanMarket(m){
   try{
    $('scanResults').textContent='جاري فحص '+marketNames[m]+'…';
-   const r=await fetch('/api/fast-market?market='+encodeURIComponent(m)+'&timeframe='+encodeURIComponent(tf)+'&_='+Date.now(),{cache:'no-store'});
-   const j=await r.json();
+   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),10000);
+   let r,j;
+   try{r=await fetch('/api/fast-market?market='+encodeURIComponent(m)+'&timeframe='+encodeURIComponent(tf)+'&_='+Date.now(),{cache:'no-store',signal:controller.signal});j=await r.json();}
+   finally{clearTimeout(timer);}
    if(!r.ok||!j.ok)throw Error(j.message||('HTTP '+r.status));
    if(j.scanning)pending.push(marketNames[m]);
    return j||{trades:[]};
@@ -405,7 +411,7 @@ const stable=new Set(['USDCUSDT','FDUSDUSDT','TUSDUSDT','USDPUSDT','USDEUSDT','D
 const list=tickers.filter(t=>t.symbol.endsWith('USDT')&&!stable.has(t.symbol)&&Number(t.quoteVolume)>1000000).sort((a,b)=>Number(b.quoteVolume)-Number(a.quoteVolume));
 state.cursor=Math.min(Number(state.cursor)||0,list.length);if(state.cursor>=list.length){state.cursor=0;state.loopCount=(Number(state.loopCount)||0)+1;}const start=state.cursor,end=Math.min(start+60,list.length);const batch=list.slice(start,end);let cursor=0,found=state.found,batchFound=[];
 async function worker(){while(cursor<batch.length){const item=batch[cursor++];$('scanResults').textContent='جاري فحص '+item.symbol+' — '+(start+cursor)+' من '+list.length+' زوجًا على فريم '+tf+'…';try{const data=await fetchBinanceJson('/api/v3/klines?symbol='+encodeURIComponent(item.symbol)+'&interval='+encodeURIComponent(tf)+'&limit=100');if(!Array.isArray(data)||data.length<30)continue;const cup=detectCup(data),patterns=detectTechnicalPatterns(data),classic=detectClassic(data),pat=cup?{...cup,name:'كوب وعروة',dir:cup.breakout?'اختراق صاعد محتمل':'العروة تتكوّن'}:(patterns[0]||classic);if(pat){const names=[...(cup?[{name:'كوب وعروة',score:cup.score,dir:pat.dir,points:[]}]:[]),...patterns];const id=item.symbol+'|'+tf+'|'+names.map(x=>x.name).join(',');if(!state.symbols.includes(id)){const match={symbol:item.symbol,data,pat,patterns:names,volume:+item.quoteVolume,change:+item.priceChangePercent,tf};found.push(match);batchFound.push(match);state.symbols.push(id)}}}catch(e){}}}
-await Promise.all(Array.from({length:5},worker));state.cursor=end>=list.length?0:end;if(end>=list.length)state.loopCount=(Number(state.loopCount)||0)+1;state.found=found;try{sessionStorage.setItem(key,JSON.stringify(state))}catch(e){}
+await Promise.all(Array.from({length:4},worker));state.cursor=end>=list.length?0:end;if(end>=list.length)state.loopCount=(Number(state.loopCount)||0)+1;state.found=found;try{sessionStorage.setItem(key,JSON.stringify(state))}catch(e){}
 found.sort((a,b)=>(b.pat.breakout?1:0)-(a.pat.breakout?1:0)||(b.pat.score||0)-(a.pat.score||0)||b.volume-a.volume);
 if(batchFound.length){const rankedBatch=batchFound.slice().sort((a,b)=>(b.pat.breakout?1:0)-(a.pat.breakout?1:0)||(b.pat.score||0)-(a.pat.score||0)||b.volume-a.volume);const best=rankedBatch[0];
 autoScan=false;$('scan').textContent='🔎 ابحث عن نموذج';$('symbol').value=best.symbol;$('tf').value=best.tf;render(best.data,best.symbol,best.tf,best.pat.name==='كوب وعروة'?best.pat:null,best.patterns||[]);
