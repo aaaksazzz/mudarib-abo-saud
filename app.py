@@ -3655,18 +3655,9 @@ def _refresh_opportunities(market,timeframe,key):
         except Exception as feedback_exc:
             print("[STRATEGY-LEARNING] skipped",str(feedback_exc)[:120],flush=True)
         def _top1_history(symbol):
-            try:
-                con=sqlite3.connect(DB_PATH,timeout=2)
-                vals=con.execute("SELECT profit_pct,loss_pct FROM trades WHERE market=? AND upper(symbol)=? AND lower(status) NOT IN ('open','active','pending') AND (profit_pct IS NOT NULL OR loss_pct IS NOT NULL)",(market,str(symbol).upper())).fetchall()
-                con.close()
-                outcomes=[float(p) if p is not None else -abs(float(l)) for p,l in vals if p is not None or l is not None]
-                if len(outcomes)<8:return {"sample":len(outcomes),"score":None,"win_rate":None,"expectancy":None}
-                win=100*sum(1 for z in outcomes if z>0)/len(outcomes)
-                exp=sum(outcomes)/len(outcomes)
-                score=max(0,min(100,win*.7+max(0,min(100,50+exp*10))*.3))
-                return {"sample":len(outcomes),"score":round(score,1),"win_rate":round(win,1),"expectancy":round(exp,3)}
-            except Exception:
-                return {"sample":0,"score":None,"win_rate":None,"expectancy":None}
+            # Legacy trades.profit_pct/loss_pct are planned fields, not verified realized outcomes.
+            # Keep historical performance out of TOP 1 until a true closed-trade ledger is available.
+            return {"sample":0,"score":None,"win_rate":None,"expectancy":None}
         try:
             import research_engine as _top1_engine
         except Exception:
