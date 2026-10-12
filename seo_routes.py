@@ -32,9 +32,6 @@ def robots(request: Request):
         "Allow: /\n"
         "Disallow: /api/\n"
         "Disallow: /admin\n"
-        "Disallow: /static/admin.html\n"
-        "Disallow: /static/login.html\n"
-        "Disallow: /static/signup.html\n"
         f"Sitemap: {base}/sitemap.xml\n",
         media_type="text/plain",
     )
