@@ -132,9 +132,21 @@ def _results_locked(core):
  # Track the exact public trade cards too, not only the internal technical scanner.
  try:
   import public_trades as public
+  # Results must not depend on whether someone opened the public-trades page first.
+  # Rebuild stale/missing source data in this background worker, never in the HTTP request.
   with public._lock:
-   public_rows=sorted(public._cache.get("trades",[]),key=lambda x:float(x.get("created_at") or 0),reverse=True)[:700]
- except Exception:
+   cache_updated=float(public._cache.get("updated") or 0)
+   cache_rows=list(public._cache.get("trades",[]))
+  if not cache_rows or now-cache_updated >= float(getattr(public,"CACHE_TTL",300)):
+   fresh=public._build(only_market="all",hours=24)
+   if isinstance(fresh,dict) and fresh.get("ok"):
+    with public._lock:
+     public._cache=fresh
+   with public._lock:
+    cache_rows=list(public._cache.get("trades",[]))
+  public_rows=sorted(cache_rows,key=lambda x:float(x.get("created_at") or 0),reverse=True)[:700]
+ except Exception as exc:
+  print("[RESULTS] public trade feed unavailable:",str(exc)[:160],flush=True)
   public_rows=[]
  reset_row=c.execute("select value from app_migrations where key='results_reset_20261012'").fetchone()
  reset_at=float(reset_row[0]) if reset_row else 0
