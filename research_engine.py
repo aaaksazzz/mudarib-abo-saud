@@ -922,10 +922,15 @@ def _saudi_universe(min_volume=0):
 
 def _symbols_for_market(market,internet):
     if market in ("spot","futures"):
-        s=[x[0] for x in _crypto_universe(market)]
+        # Only allow Binance-listed USDT pairs with >= 1M USDT quote volume over 24h.
+        # External recommendations may rank eligible pairs but cannot bypass the liquidity gate.
+        eligible=[x[0] for x in _crypto_universe(market)]
+        eligible_set=set(eligible)
         for r in internet:
-            if r["symbol"].endswith("USDT") and r["symbol"] not in s:s.append(r["symbol"])
-        return list(dict.fromkeys(s))
+            symbol=str(r.get("symbol") or "").upper()
+            if symbol.endswith("USDT") and symbol in eligible_set and symbol not in eligible:
+                eligible.append(symbol)
+        return list(dict.fromkeys(eligible))
     if market=="us":
         base=_us_universe(0)
     elif market=="saudi":
