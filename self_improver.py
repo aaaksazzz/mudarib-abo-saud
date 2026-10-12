@@ -217,9 +217,9 @@ def run_once():
                 for method,vote in votes.items():
                     try: vote=float(vote)
                     except Exception: continue
+                    if vote == 0 or side not in ("BUY","SELL"): continue
                     aligned=(side=="BUY" and vote>0) or (side=="SELL" and vote<0)
-                    if not aligned: continue
-                    stats.setdefault((market,timeframe,str(method)),[]).append(net_r)
+                    stats.setdefault((market,timeframe,str(method)),[]).append(net_r if aligned else -net_r)
             except Exception:
                 continue
         for row in azo_rows:
@@ -233,9 +233,9 @@ def run_once():
                 for method,vote in votes.items():
                     try: vote=float(vote)
                     except Exception: continue
+                    if vote == 0 or side not in ("BUY","SELL"): continue
                     aligned=(side=="BUY" and vote>0) or (side=="SELL" and vote<0)
-                    if aligned:
-                        stats.setdefault((market,timeframe,str(method)),[]).append(net_r)
+                    stats.setdefault((market,timeframe,str(method)),[]).append(net_r if aligned else -net_r)
             except Exception:
                 continue
         changed=0
