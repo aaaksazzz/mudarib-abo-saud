@@ -196,6 +196,80 @@ def _fetch_market(engine, market, ticker_maps, retention=86400):
         print("[PUBLIC-TRADES] source failed",market,str(exc)[:120],flush=True)
         return market,[]
 
+
+def _closed_performance(market):
+    """Use recorded closed trades only; never infer outcomes from open/public ideas."""
+    try:
+        from app import DB_PATH
+        con=sqlite3.connect(DB_PATH, timeout=2)
+        rows=con.execute(
+            "SELECT profit_pct,loss_pct FROM trades WHERE market=? AND lower(status) NOT IN ('open','active','pending') AND (profit_pct IS NOT NULL OR loss_pct IS NOT NULL)",
+            (market,)
+        ).fetchall()
+        con.close()
+        results=[]
+        for profit, loss in rows:
+            if profit is not None:
+                results.append(float(profit))
+            elif loss is not None:
+                results.append(-abs(float(loss)))
+        if len(results) < 8:
+            return {"sample":len(results),"score":None,"win_rate":None,"expectancy":None}
+        wins=sum(1 for x in results if x>0)
+        win_rate=100*wins/len(results)
+        expectancy=sum(results)/len(results)
+        # 50 is neutral; win rate and net expectancy both matter.
+        score=max(0,min(100,win_rate*0.7 + max(0,min(100,50+expectancy*10))*0.3))
+        return {"sample":len(results),"score":round(score,1),"win_rate":round(win_rate,1),"expectancy":round(expectancy,3)}
+    except Exception:
+        return {"sample":0,"score":None,"win_rate":None,"expectancy":None}
+
+
+def _top1_metrics(row, history):
+    """Score only measured components; unavailable evidence is excluded, not fabricated."""
+    side=str(row.get("direction") or "").upper()
+    components={}
+    move=row.get("change_pct")
+    if move is not None:
+        try:
+            aligned=float(move) * (1 if side=="BUY" else -1)
+            components["movement"]=max(0,min(100,50+aligned*10))
+        except (TypeError,ValueError):
+            pass
+    if history.get("score") is not None:
+        components["history"]=float(history["score"])
+    try:
+        entry=float(row.get("entry") or 0); stop=float(row.get("sl") or 0); target=float(row.get("tp1") or 0)
+        if entry>0 and stop>0 and target>0:
+            risk=abs(entry-stop); reward=(target-entry) if side=="BUY" else (entry-target)
+            if risk>0 and reward>0:
+                rr=reward/risk
+                rr_score=max(0,min(100,rr*40))
+                drift_score=50.0
+                live=float(row.get("live_price") or 0)
+                if live>0:
+                    drift=abs(live-entry)/entry*100
+                    drift_score=max(0,min(100,100-drift*20))
+                components["entry_quality"]=rr_score*0.7+drift_score*0.3
+    except (TypeError,ValueError):
+        pass
+    try:
+        volume=float(row.get("quote_volume") or 0)
+        if volume>0:
+            # Actual 24h quote volume, with a useful ramp above the 1M baseline.
+            import math
+            components["liquidity"]=max(0,min(100,(math.log10(max(1,volume))-4)*16.667))
+    except (TypeError,ValueError):
+        pass
+    weights={"movement":25,"history":25,"entry_quality":25,"liquidity":25}
+    available=[(name,score,weights[name]) for name,score in components.items()]
+    total_weight=sum(w for _,_,w in available)
+    score=round(sum(value*weight for _,value,weight in available)/total_weight,1) if total_weight else None
+    return {"score":score,"components":{k:round(v,1) for k,v in components.items()},
+            "available_components":list(components),"history":history,
+            "top1_eligible":len(components)>=2 and score is not None}
+
+
 def _build(only_market=None, hours=24):
     retention=max(1,int(hours))*3600
     import research_engine as engine
@@ -208,17 +282,38 @@ def _build(only_market=None, hours=24):
     else:
         scan_markets=list(MARKETS)
     ticker_maps={}
+    ticker_metrics={}
     for market,futures in (("spot",False),("futures",True)):
         if market not in scan_markets and not (market=="spot" and "alpha" in scan_markets): continue
         try:
-            ticker_maps[market]={str(x.get("symbol") or "").upper():float(x.get("lastPrice") or x.get("price") or 0) for x in engine._binance24(futures)}
-        except Exception: ticker_maps[market]={}
+            tickers=engine._binance24(futures)
+            ticker_maps[market]={str(x.get("symbol") or "").upper():float(x.get("lastPrice") or x.get("price") or 0) for x in tickers}
+            for x in tickers:
+                symbol=str(x.get("symbol") or "").upper()
+                if symbol:
+                    ticker_metrics[(market,symbol)]={"change_pct":float(x.get("priceChangePercent") or 0),
+                        "quote_volume":float(x.get("quoteVolume") or 0)}
+        except Exception:
+            ticker_maps[market]={}
     combined=[]; counts={}
     # Bound concurrent source scans to protect the small web service.
     with ThreadPoolExecutor(max_workers=3) as pool:
         jobs=[pool.submit(_fetch_market,engine,m,ticker_maps,retention) for m in scan_markets]
         for job in as_completed(jobs):
             market,rows=job.result(); counts[market]=len(rows); combined.extend(rows)
+    # Attach verified Binance 24h movement and quote-volume metrics where available.
+    for row in combined:
+        metrics=ticker_metrics.get((row.get("market"),str(row.get("symbol") or "").upper()))
+        if metrics:
+            row.update(metrics)
+    history_by_market={m:_closed_performance(m) for m in set(x.get("market") for x in combined)}
+    for row in combined:
+        metrics=_top1_metrics(row,history_by_market.get(row.get("market"),{"sample":0,"score":None}))
+        row["top1_score"]=metrics["score"]
+        row["top1_components"]=metrics["components"]
+        row["top1_available_components"]=metrics["available_components"]
+        row["top1_history"]=metrics["history"]
+        row["top1_eligible"]=metrics["top1_eligible"]
     merged={}
     for row in sorted(combined,key=lambda x:x["created_at"],reverse=True):
         key=(row["market"],row["symbol"],row["direction"],bool(row.get("scan_generated")))
@@ -243,7 +338,9 @@ def _build(only_market=None, hours=24):
         key=(row["market"],row["symbol"])
         row["mention_count"]=max(int(row.get("mention_count") or 0),int(row.get("source_count") or 0))
         row["source_domains_count"]=max(int(row.get("source_domains_count") or 0),len(row.get("source_domains") or []))
-        row["rank_score"]=round(min(100,(float(row.get("source_quality") or row.get("ai_pct") or 45)*0.55)+min(10,int(row["mention_count"]))*3.0+min(8,int(row["source_domains_count"]))*2.5),1)
+        # TOP 1 ranking is based on measurable movement, closed-trade history,
+        # entry quality and verified liquidity. Keep source quality as separate metadata.
+        row["rank_score"]=row.get("top1_score")
         quality=(0 if row.get("scan_generated") else 1,
                  int(row.get("mention_count") or 0),
                  int(row.get("source_domains_count") or 0),
@@ -278,7 +375,12 @@ def _build(only_market=None, hours=24):
         market_counts[m]=counts.get(m,0)
     rows=[x for x in rows if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=retention and (not x.get("scan_generated") or x.get("market")=="alpha")]
     rows=sorted(rows,key=lambda x:(x["created_at"],x.get("source_count",0)),reverse=True)[:700]
-    payload={"ok":True,"trades":rows,"updated":now,"refreshing":False,"markets":market_counts,"market_updated":market_updated,"window_hours":hours}
+    top1_by_market={}
+    for m in MARKETS:
+        eligible=[x for x in rows if x.get("market")==m and x.get("top1_eligible") and x.get("top1_score") is not None]
+        if eligible:
+            top1_by_market[m]=max(eligible,key=lambda x:(float(x.get("top1_score") or 0),float(x.get("created_at") or 0)))
+    payload={"ok":True,"trades":rows,"updated":now,"refreshing":False,"markets":market_counts,"market_updated":market_updated,"window_hours":hours,"top1_by_market":top1_by_market,"top1_method":{"movement":25,"closed_trade_history":25,"entry_quality":25,"liquidity":25,"minimum_history_sample":8}}
     try:
         with open(CACHE_FILE+".tmp","w",encoding="utf-8") as f: json.dump(payload,f,ensure_ascii=False,separators=(",",":"))
         os.replace(CACHE_FILE+".tmp",CACHE_FILE)
