@@ -34,22 +34,26 @@ function signalScore(x){return Number(x.recommendation_score||x.ai_pct||x.ai||x.
 function rankMark(i){return i===0?"👑":i===1?"🥈":i===2?"🥉":"#"+(i+1);}
 function card(x,i){
  var sell=String(x.direction||x.side||"").toUpperCase()==="SELL";
- var score=signalScore(x),w=Math.max(0,Math.min(100,score)),mark=rankMark(i),tier=i===0?"rank-crown":i===1?"rank-silver":i===2?"rank-bronze":"rank-normal";
- var stamp=Number(x.detected_at||x.updated_at||0),age=stamp?Math.max(0,Math.floor((Date.now()/1000-stamp)/60)):null;
- var current=Number(x.current_price||x.live_price||x.price||x.entry||0);
- var targets=Array.isArray(x.targets)?x.targets.filter(function(v){return v!==null&&v!==undefined&&v!=="";}):[];
+ var mark=rankMark(i),tier=i===0?"rank-crown":i===1?"rank-silver":i===2?"rank-bronze":"rank-normal";
+ var targets=Array.isArray(x.targets)?x.targets.filter(function(v){return v!==null&&v!==undefined&&v!=="";}).slice(0,3):[];
  if(!targets.length){[x.tp1,x.tp2,x.tp3].forEach(function(v){if(v!==null&&v!==undefined&&v!=="")targets.push(v);});}
- var lv='';
- lv+='<div class="level"><small>الدخول</small><b>'+fmtPrice(x.entry)+'</b></div>';
- targets.forEach(function(v,n){lv+='<div class="level trade-target"><small>TP'+(n+1)+'</small><b>'+fmtPrice(v)+'</b></div>';});
- lv+='<div class="level"><small>الوقف</small><b>'+fmtPrice(x.sl)+'</b></div>';
- var entry=Number(x.entry||0),sl=Number(x.sl||0),tps=targets.map(Number).filter(function(v){return Number.isFinite(v)&&v>0;}),pnl=(current>0&&entry>0)?((current-entry)/entry*100*(sell?-1:1)):null;
- var hit="OPEN",hitText="🟡 متابعة الصفقة",hitClass="track-open";
- if(current>0&&sl>0&&((sell&&current>=sl)||(!sell&&current<=sl))){hit="SL";hitText="🔴 وصل وقف الخسارة";hitClass="track-loss";}
- else if(current>0&&tps.length){for(var ti=tps.length-1;ti>=0;ti--){if((sell&&current<=tps[ti])||(!sell&&current>=tps[ti])){hit="TP"+(ti+1);hitText="🟢 وصل الهدف "+(ti+1);hitClass="track-win";break;}}}
- var pnlText=pnl===null?"الربح/الخسارة بانتظار السعر":((pnl>=0?"+":"")+pnl.toFixed(2)+"% "+(pnl>=0?"ربح":"خسارة"));
- var ageText=age===null?"التحديث غير متاح":age<1?"محدث الآن":"محدث قبل "+age+" د";
- return '<article class="card trade-tracking-card '+tier+'"><div class="card-top"><div><span class="rank trade-rank">'+mark+' '+(i+1)+' · '+esc(x.signal_label||(sell?"بيع":"شراء"))+'</span><div class="symbol">'+esc(displaySymbol(x)||"")+'</div></div><span class="direction '+(sell?"sell":"buy")+'">'+(sell?"بيع":"شراء")+'</span></div><div class="trade-track '+hitClass+'" aria-live="polite"><span class="track-dot"></span><b>'+hitText+'</b><strong>'+pnlText+'</strong></div><div class="score">'+(x.technical_method_key?'<b>اتجاه المنهج: '+(sell?'بيع':'شراء')+'</b><span class="rank">إشارة من قراءة المنهج للشموع؛ ليست نسبة نجاح أو احتمال ربح</span>':'<b>الثقة '+Math.round(score)+'%</b><div class="score-bar"><i style="width:'+w+'%"></i></div><span class="rank">'+(hit==="OPEN"?"الصفقة قيد المتابعة":hitText)+'</span>')+'</div><div class="levels">'+lv+'</div><div class="card-foot">📡 متابعة السعر · 🎯 تنبيه عند الهدف أو الوقف · '+ageText+'</div></article>';
+ var entry=Number(x.entry),sl=Number(x.sl);
+ function pctLabel(price,isStop){
+  price=Number(price);
+  if(!Number.isFinite(entry)||entry<=0||!Number.isFinite(price)||price<=0)return "";
+  var pct=(sell?(entry-price):(price-entry))/entry*100;
+  if(isStop)pct=-Math.abs(pct);
+  else if(pct<=0)return "";
+  if(!Number.isFinite(pct))return "";
+  return '<small class="level-percent">'+(pct>0?"+":"")+pct.toFixed(2)+'%</small>';
+ }
+ var lv='<div class="level"><small>الدخول</small><b>'+fmtPrice(x.entry)+'</b></div>';
+ targets.forEach(function(v,n){
+  lv+='<div class="level trade-target"><small>TP'+(n+1)+'</small><b>'+fmtPrice(v)+'</b>'+pctLabel(v,false)+'</div>';
+ });
+ lv+='<div class="level trade-stop"><small>وقف الخسارة</small><b>'+fmtPrice(x.sl)+'</b>'+pctLabel(sl,true)+'</div>';
+ var direction=sell?"بيع":"شراء";
+ return '<article class="card trade-tracking-card '+tier+'"><div class="card-top"><div><span class="rank trade-rank">'+mark+' '+(i+1)+' · '+esc(x.signal_label||direction)+'</span><div class="symbol">'+esc(displaySymbol(x)||"")+'</div></div><span class="direction '+(sell?"sell":"buy")+'">'+direction+'</span></div><div class="levels">'+lv+'</div></article>';
 }
 function render(el,rows){if(!el)return;var a=(rows||[]).slice().sort(function(x,y){var d=signalScore(y)-signalScore(x);if(d)return d;var sc=Number(y.source_count||y.alignment||0)-Number(x.source_count||x.alignment||0);if(sc)return sc;return Number(y.detected_at||y.updated_at||0)-Number(x.detected_at||x.updated_at||0);});el.innerHTML=a.length?a.map(card).join(""):'<div class="empty">لا توجد توصيات منشورة خلال آخر 24 ساعة حالياً — جاري إعادة الفحص.</div>';}
 function loadMarket(m,tf){
