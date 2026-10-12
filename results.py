@@ -94,29 +94,14 @@ def _snapshot():
 
 def _results_locked(core):
  c=db(); now=time.time(); cutoff=now-RETENTION; c.execute("delete from recommendation_results where created<?",(cutoff,))
- for market in MARKETS:
-  try: rows=core.opportunities(market)
-  except Exception: rows=[]
-  for x in rows or []:
-   created=_num(x.get("detected_at")) or now
-   # Some providers return Unix milliseconds; normalize to seconds before 24h retention.
-   if created>100000000000: created=created/1000.0
-   if created>now+300: created=now
-   symbol=str(x.get("symbol") or "").strip().upper()
-   direction=str(x.get("direction") or "").strip().upper()
-   entry=_num(x.get("entry"))
-   timeframe=str(x.get("timeframe") or "15m")
-   if not symbol or direction not in ("BUY","SELL") or entry is None or entry<=0: continue
-   # Avoid near-identical refreshed signals flooding the results page when entry wiggles.
-   tolerance=max(abs(entry)*0.0025,1e-8)
-   duplicate=c.execute("select id from recommendation_results where market=? and symbol=? and direction=? and timeframe=? and created>=? and entry between ? and ? limit 1",(market,symbol,direction,timeframe,now-900,entry-tolerance,entry+tolerance)).fetchone()
-   if duplicate: continue
-   c.execute("insert into recommendation_results(market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,timeframe,strategy_key,method_votes,base_score) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(market,symbol,direction,entry,_num(x.get("tp1")),_num(x.get("tp2")),_num(x.get("tp3")),_num(x.get("sl")),created,now,timeframe,str(x.get("technical_method_key") or "technical-confluence"),__import__("json").dumps(x.get("methods") or {},ensure_ascii=False,separators=(",",":")),_num(x.get("recommendation_score") or x.get("ai_pct")) or 0))
+ # Public results must come only from published external recommendations.
+ # Remove legacy internally-generated technical signals so they cannot inflate stats.
+ c.execute("delete from recommendation_results where strategy_key IS NULL OR strategy_key!='public-trade'")
  # Track the exact public trade cards too, not only the internal technical scanner.
  try:
   import public_trades as public
   with public._lock:
-   public_rows=sorted(public._cache.get("trades",[]),key=lambda x:float(x.get("created_at") or 0),reverse=True)[:100]
+   public_rows=sorted(public._cache.get("trades",[]),key=lambda x:float(x.get("created_at") or 0),reverse=True)[:700]
  except Exception:
   public_rows=[]
  for x in public_rows:
@@ -133,9 +118,9 @@ def _results_locked(core):
   if not tp1 or not tp2 or not tp3 or not sl: continue
   timeframe=str(x.get("timeframe") or "15m")
   tolerance=max(abs(entry)*0.0025,1e-8)
-  duplicate=c.execute("select id from recommendation_results where market=? and symbol=? and direction=? and timeframe=? and created>=? and entry between ? and ? limit 1",(market,symbol,direction,timeframe,cutoff,entry-tolerance,entry+tolerance)).fetchone()
+  duplicate=c.execute("select id from recommendation_results where market=? and symbol=? and direction=? and created>=? and entry between ? and ? and strategy_key='public-trade' limit 1",(market,symbol,direction,cutoff,entry-tolerance,entry+tolerance)).fetchone()
   if duplicate: continue
-  votes={"origin":"public-trade","estimated":bool(x.get("is_estimated")),"source_count":int(x.get("source_count") or 0)}
+  votes={"origin":"public-trade","estimated":bool(x.get("is_estimated")),"source_count":int(x.get("source_count") or 0),"source_url":str(x.get("source_url") or "")}
   c.execute("insert into recommendation_results(market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,timeframe,strategy_key,method_votes,base_score) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(market,symbol,direction,entry,tp1,tp2,tp3,sl,created,now,timeframe,"public-trade",__import__("json").dumps(votes,separators=(",",":")),_num(x.get("ai_pct") or x.get("source_quality")) or 0))
  c.commit()
  rows=c.execute("select id,market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,status,hit_target,result_price,result_at,timeframe,strategy_key,method_votes,base_score from recommendation_results where created>=? order by created desc",(cutoff,)).fetchall()
