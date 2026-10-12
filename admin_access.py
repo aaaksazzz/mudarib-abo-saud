@@ -83,7 +83,7 @@ def install():
  async def access(req):
   if not adm(req):return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
   ensure();c=app.db();rs=c.execute("SELECT key,enabled FROM section_access").fetchall();c.close()
-  return {"sections":[{"key":r["key"],"name":MARKET_ACCESS[r["key"]],"enabled":bool(r["enabled"])} for r in rs]}
+  return {"sections":[{"key":r["key"],"name":MARKET_ACCESS[r["key"]],"enabled":bool(r["enabled"])} for r in rs if r["key"] in MARKET_ACCESS]}
  async def access_set(req):
   if not adm(req):return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
   d=await req.json();key=d.get("key");enabled=1 if d.get("enabled") else 0
