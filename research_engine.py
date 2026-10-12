@@ -630,15 +630,81 @@ def _analyze_symbol(symbol,market,timeframe="15m"):
 # Independent technical-method scanner. It intentionally bypasses the shared
 # confluence gate and external-recommendation ranking used by _analyze_symbol.
 TECHNICAL_METHOD_KEYS = {
+    "all": ("__all__",),
     "price-action": ("price_action",), "smc": ("smc",), "ict": ("ict_liquidity",),
     "classical": ("dow", "support_resistance", "breakout", "retest"),
     "candles": ("candlestick",), "patterns": ("chart_pattern",),
-    "fibonacci": ("fibonacci",), "elliott": ("elliott",), "wyckoff": ("wyckoff",),
-    "volume": ("raw_volume",), "ichimoku": ("ichimoku",), "dow-mtf": ("dow",),
-    "volume-profile": ("volume_profile",), "market-regime": ("market_regime",),
-    "bos-choch": ("smc",), "liquidity": ("ict_liquidity",),
-    "retest": ("retest",), "fvg": ("fvg",), "channels": ("chart_pattern",),
+    "indicators": ("indicators",), "fibonacci": ("fibonacci",), "harmonic": ("harmonic",),
+    "elliott": ("elliott",), "wyckoff": ("wyckoff",), "volume": ("raw_volume",),
+    "order-flow": ("order_flow",), "ichimoku": ("ichimoku",), "dow-mtf": ("dow",),
+    "quant": ("quant",), "gann": ("gann",), "bos-choch": ("bos_choch",),
+    "fvg": ("fvg",), "liquidity": ("liquidity",), "retest": ("retest",),
+    "divergence": ("divergence",), "momentum": ("momentum",), "vwap": ("vwap",),
+    "channels": ("channels",), "volume-profile": ("volume_profile",),
+    "market-regime": ("market_regime",)
 }
+def _expanded_method_votes(candles, base_methods):
+    """Compute explicit per-method votes from OHLCV; approximations are labeled as such."""
+    import math
+    c=candles; closes=[float(x["close"]) for x in c]
+    highs=[float(x["high"]) for x in c]; lows=[float(x["low"]) for x in c]
+    opens=[float(x["open"]) for x in c]; vols=[max(0.0,float(x["volume"])) for x in c]
+    price=closes[-1]
+    def sign(x): return 1 if x>0 else -1 if x<0 else 0
+    def sma(n): return sum(closes[-n:])/n if len(closes)>=n else None
+    votes=dict(base_methods or {})
+    # Indicator family: SMA20/50 and RSI/MACD-like momentum proxies from closes.
+    s20=sma(20); s50=sma(50); s200=sma(200)
+    indicator_votes=[]
+    if s20 is not None and s50 is not None:
+        indicator_votes.append(sign(s20-s50))
+    if s20 is not None: indicator_votes.append(sign(price-s20))
+    changes=[closes[i]-closes[i-1] for i in range(max(1,len(closes)-15),len(closes))]
+    gains=sum(x for x in changes if x>0); losses=-sum(x for x in changes if x<0)
+    if gains+losses>0:
+        rsi=100*gains/(gains+losses)
+        indicator_votes.append(1 if rsi>=55 else -1 if rsi<=45 else 0)
+    fast=sum(closes[-12:])/12 if len(closes)>=12 else price
+    slow=sum(closes[-26:])/26 if len(closes)>=26 else price
+    prior_fast=sum(closes[-15:-3])/12 if len(closes)>=15 else fast
+    prior_slow=sum(closes[-29:-3])/26 if len(closes)>=29 else slow
+    macd_proxy=(fast-slow)-(prior_fast-prior_slow)
+    indicator_votes.append(sign(macd_proxy))
+    votes["indicators"]=sign(sum(indicator_votes)) if indicator_votes else 0
+    # Harmonic ratio hint: explicitly a coarse retracement proxy, not named-pattern confirmation.
+    hi=max(highs[-30:]); lo=min(lows[-30:]); span=max(hi-lo,abs(price)*1e-9)
+    retr=(price-lo)/span
+    votes["harmonic"]=1 if .58<=retr<=.66 and price>closes[-3] else -1 if .34<=retr<=.42 and price<closes[-3] else 0
+    # Candle-volume pressure approximation, not real bid/ask order flow.
+    cur=c[-1]; rng=max(highs[-1]-lows[-1],1e-12)
+    pressure=((price-lows[-1])-(highs[-1]-price))/rng
+    avgvol=sum(vols[-21:-1])/max(1,len(vols[-21:-1]))
+    votes["order_flow"]=sign(pressure) if vols[-1]>=avgvol else 0
+    # Efficiency-ratio quantitative direction; not a historical backtest.
+    path=sum(abs(closes[i]-closes[i-1]) for i in range(max(1,len(closes)-10),len(closes)))
+    net=price-closes[max(0,len(closes)-11)]
+    votes["quant"]=sign(net) if path>0 and abs(net)/path>=.25 else 0
+    # Gann-labelled price-cycle proxy only; not true Gann angles/time-cycle forecasting.
+    votes["gann"]=sign(price-closes[max(0,len(closes)-21)])
+    # Divergence approximation using swing extremes and closing-price confirmation.
+    old=c[-10:-5]; new=c[-5:]
+    if old and new:
+        old_lo=min(x["low"] for x in old); new_lo=min(x["low"] for x in new)
+        old_hi=max(x["high"] for x in old); new_hi=max(x["high"] for x in new)
+        old_close=float(old[-1]["close"]); new_close=float(new[-1]["close"])
+        votes["divergence"]=1 if new_lo<old_lo and new_close>old_close else -1 if new_hi>old_hi and new_close<old_close else 0
+    else: votes["divergence"]=0
+    votes["momentum"]=sign(price-closes[max(0,len(closes)-6)])
+    recent=c[-30:]; vtot=sum(max(0.0,float(x["volume"])) for x in recent)
+    vw=sum(((float(x["high"])+float(x["low"])+float(x["close"]))/3)*max(0.0,float(x["volume"])) for x in recent)/max(vtot,1e-12)
+    votes["vwap"]=sign(price-vw)
+    ch_hi=max(highs[-21:-1]); ch_lo=min(lows[-21:-1])
+    votes["channels"]=1 if price>ch_hi else -1 if price<ch_lo else sign((price-ch_lo)-(ch_hi-price))
+    votes["fvg"]=1 if lows[-1]>highs[-3] else -1 if highs[-1]<lows[-3] else 0
+    votes["bos_choch"]=int(votes.get("smc") or votes.get("dow") or 0)
+    votes["liquidity"]=int(votes.get("ict_liquidity") or 0)
+    return votes
+
 def _analyze_symbol_method(symbol, market, timeframe, method_id):
     keys=TECHNICAL_METHOD_KEYS.get(method_id)
     if not keys:return None
@@ -647,13 +713,31 @@ def _analyze_symbol_method(symbol, market, timeframe, method_id):
     candles=[{k:float(row[k]) for k in ("open","high","low","close","volume")} for row in candles]
     analysis=_method_analysis(candles)
     if not analysis:return None
-    votes=analysis.get("methods") or {}
-    vals=[float(votes.get(k) or 0) for k in keys]
-    # For a grouped classical-method card, require a directional majority;
-    # never borrow the shared engine's direction or its confirmation gate.
-    total=sum(1 if v>0 else -1 if v<0 else 0 for v in vals)
-    if not total:return None
-    side="BUY" if total>0 else "SELL"
+    votes=_expanded_method_votes(candles,analysis.get("methods") or {})
+    if method_id=="all":
+        # One independent combined-method signal; it does not use the legacy SMA200 gate.
+        weights={"smc":1.5,"ict_liquidity":1.5,"price_action":1.2,"dow":1.2,
+                 "breakout":1.2,"retest":1.0,"support_resistance":1.0,"candlestick":.8,
+                 "chart_pattern":.8,"fibonacci":.7,"elliott":.6,"wyckoff":1.0,
+                 "raw_volume":.8,"ichimoku":.8,"market_regime":1.0,"indicators":.8,
+                 "harmonic":.5,"order_flow":.5,"quant":.7,"gann":.4,"divergence":.7,
+                 "momentum":.7,"vwap":.6,"channels":.6,"volume_profile":.7,"fvg":.8}
+        score=sum(weights.get(k,.5)*float(v or 0) for k,v in votes.items())
+        side="BUY" if score>0 else "SELL" if score<0 else "WAIT"
+        aligned=sum(1 for v in votes.values() if (float(v or 0)>0 if side=="BUY" else float(v or 0)<0)) if side!="WAIT" else 0
+        opposing=sum(1 for v in votes.values() if (float(v or 0)<0 if side=="BUY" else float(v or 0)>0)) if side!="WAIT" else 0
+        if side=="WAIT" or aligned<4 or aligned<=opposing:return None
+        used_votes=len([v for v in votes.values() if float(v or 0)!=0])
+        confidence=round(min(95,50+abs(score)/max(sum(weights.values()),1)*45),1)
+    else:
+        vals=[float(votes.get(k) or 0) for k in keys]
+        total=sum(1 if v>0 else -1 if v<0 else 0 for v in vals)
+        if not total:return None
+        side="BUY" if total>0 else "SELL"
+        aligned=sum(1 for v in vals if (v>0 if side=="BUY" else v<0))
+        opposing=sum(1 for v in vals if (v<0 if side=="BUY" else v>0))
+        if aligned<=opposing:return None
+        confidence=round(abs(total)/max(1,len(vals))*100,1)
     entry=float(candles[-1]["close"])
     support=float(analysis.get("support") or min(x["low"] for x in candles[-30:]))
     resistance=float(analysis.get("resistance") or max(x["high"] for x in candles[-30:]))
@@ -662,13 +746,13 @@ def _analyze_symbol_method(symbol, market, timeframe, method_id):
     else:sl=entry+risk;tps=sorted([max(entry-risk,entry*.01),max(entry-2*risk,entry*.005),max(entry-3*risk,entry*.001)],reverse=True)
     return {"symbol":symbol,"market":market,"direction":side,"side":side,"timeframe":timeframe,
             "technical_only":True,"research_only":False,"technical_method_key":method_id,
-            "technical_method_vote":total,"methods":votes,"entry":entry,"price":entry,"current_price":entry,
+            "technical_method_vote":confidence,"methods":votes,"entry":entry,"price":entry,"current_price":entry,
             "sl":sl,"tp1":tps[0],"tp2":tps[1],"tp3":tps[2],"targets":tps,
-            "ai_pct":None,"recommendation_score":abs(total)/max(1,len(vals))*100,
-            "site_score":abs(total)/max(1,len(vals))*100,
+            "ai_pct":confidence,"recommendation_score":confidence,
+            "site_score":confidence,
             "signal_label":("شراء" if side=="BUY" else "بيع")+" · "+method_id,
             "support":support,"resistance":resistance,"price_source":"public market data",
-            "reason":"إشارة من قواعد المنهج المحدد فقط؛ بدون بوابة توافق المناهج الأخرى."}
+            "reason":"إشارة من المنهج المحدد وقواعد OHLCV؛ بعض القياسات تقريبية ولا تمثل احتمال ربح."}
 
 def discover_method(market, timeframe, method_id):
     if method_id not in TECHNICAL_METHOD_KEYS:
