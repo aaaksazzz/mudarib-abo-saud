@@ -219,7 +219,7 @@ def _top1_metrics(row, history):
     score=round(sum(value*weight for _,value,weight in available)/total_weight,1) if total_weight else None
     return {"score":score,"components":{k:round(v,1) for k,v in components.items()},
             "available_components":list(components),"history":history,
-            "top1_eligible":len(components)>=2 and score is not None}
+            "top1_eligible":len(components)>=2 and score is not None and not row.get("is_estimated")}
 
 
 def _build(only_market=None, hours=24):
