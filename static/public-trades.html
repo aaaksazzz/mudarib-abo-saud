@@ -82,12 +82,13 @@
    return Number(b.top1_score??-1)-Number(a.top1_score??-1)||Number(b.source_quality||0)-Number(a.source_quality||0)||Number(b.created_at||0)-Number(a.created_at||0);
   });
   const perMarketRank={};ranked.forEach(x=>{const m=String(x.market||selectedMarket);perMarketRank[m]=(perMarketRank[m]||0)+1;x._marketRank=perMarketRank[m];});
-  const top1Rows=marketOrder.map(m=>ranked.find(x=>String(x.market||selectedMarket)===m&&x.top1_eligible&&Number.isFinite(Number(x.top1_score)))).filter(Boolean);
+  let top1Rows=marketOrder.map(m=>ranked.find(x=>String(x.market||selectedMarket)===m&&x.top1_eligible&&Number.isFinite(Number(x.top1_score)))).filter(Boolean);
   const normSymbol=x=>String(x.symbol||"").trim().toUpperCase().replace(/[-_]/g,"");
   const strength=x=>{const base=Number(x.rank_score||x.source_quality||x.ai_pct||0);const mentions=Number(x.mention_count||x.source_count||1);const age=Math.max(0,Date.now()/1000-Number(x.created_at||0));const fresh=Number(x.created_at)?Math.max(0,6-age/3600):0;return base+Math.min(5,mentions)*4+fresh;};
   const groups={};ranked.forEach(x=>{const key=String(x.market||selectedMarket)+"|"+normSymbol(x);(groups[key]||(groups[key]=[])).push(x);});
   const blocked={};Object.keys(groups).forEach(k=>{const g=groups[k],buys=g.filter(x=>String(x.direction||"").toUpperCase()==="BUY"),sells=g.filter(x=>String(x.direction||"").toUpperCase()==="SELL");if(!buys.length||!sells.length)return;const b=buys[0],s=sells[0],diff=strength(b)-strength(s);if(Math.abs(diff)<10){blocked[k]="conflict";}else{blocked[k]=diff>0?"BUY":"SELL";}});
   const clearRows=ranked.filter(x=>{const k=String(x.market||selectedMarket)+"|"+normSymbol(x),b=blocked[k];return !b||(b!=="conflict"&&String(x.direction||"").toUpperCase()===b);});
+  top1Rows=top1Rows.filter(x=>clearRows.includes(x));
   const best=selectedMarket==="all"?null:top1Rows.find(x=>String(x.market)===selectedMarket);
   const conflictedTop=ranked.find(x=>blocked[String(x.market||selectedMarket)+"|"+normSymbol(x)]==="conflict");
   if(selectedMarket==="all"&&top1Rows.length){
