@@ -876,7 +876,7 @@ def _us_universe(min_volume=0):
     if cached and now-cached[0]<900:return list(cached[1])
     symbols=[]; seen=set()
     try:
-        for offset in range(0,5000,250):
+        for offset in range(0,10000,250):
             body={"offset":offset,"size":250,"sortField":"dayvolume","sortType":"DESC","quoteType":"EQUITY","query":{"operator":"EQ","operands":["region","us"]}}
             req=urllib.request.Request("https://query1.finance.yahoo.com/v1/finance/screener",data=json.dumps(body).encode(),headers={"User-Agent":UA,"Content-Type":"application/json"},method="POST")
             raw=json.loads(urllib.request.urlopen(req,timeout=8).read().decode("utf-8","ignore"))
@@ -901,7 +901,7 @@ def _saudi_universe(min_volume=0):
     if cached and now-cached[0]<900:return list(cached[1])
     symbols=[]; seen=set()
     try:
-        for offset in range(0,5000,250):
+        for offset in range(0,10000,250):
             # Deliberately filter by Saudi region only; zero/missing volume must not exclude a listing.
             body={"offset":offset,"size":250,"sortField":"dayvolume","sortType":"DESC","quoteType":"EQUITY","query":{"operator":"EQ","operands":["region","sa"]}}
             req=urllib.request.Request("https://query1.finance.yahoo.com/v1/finance/screener",data=json.dumps(body).encode(),headers={"User-Agent":UA,"Content-Type":"application/json"},method="POST")
