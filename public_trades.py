@@ -272,11 +272,11 @@ def _build(only_market=None, hours=24):
             market_updated=dict(_cache.get("market_updated",{}))
             market_counts=dict(_cache.get("markets",{}))
         scanned=set(scan_markets)
-        rows=[x for x in previous_trades if x.get("market") not in scanned and float(x.get("expires_at") or 0)>now and not x.get("scan_generated")]+rows
+        rows=[x for x in previous_trades if x.get("market") not in scanned and float(x.get("expires_at") or 0)>now and (not x.get("scan_generated") or x.get("market")=="alpha")]+rows
     for m in scan_markets:
         market_updated[m]=now
         market_counts[m]=counts.get(m,0)
-    rows=[x for x in rows if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=retention and not x.get("scan_generated")]
+    rows=[x for x in rows if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=retention and (not x.get("scan_generated") or x.get("market")=="alpha")]
     rows=sorted(rows,key=lambda x:(x["created_at"],x.get("source_count",0)),reverse=True)[:700]
     payload={"ok":True,"trades":rows,"updated":now,"refreshing":False,"markets":market_counts,"market_updated":market_updated,"window_hours":hours}
     try:
@@ -302,7 +302,7 @@ def public_trades(refresh: int = 0, market: str = "all", hours: int = 24):
     except Exception: hours=24
     if hours not in (12, 24, 48): hours=24
     with _lock:
-        _cache["trades"]=[x for x in _cache.get("trades",[]) if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=hours*3600 and not x.get("scan_generated")]
+        _cache["trades"]=[x for x in _cache.get("trades",[]) if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=hours*3600 and (not x.get("scan_generated") or x.get("market")=="alpha")]
         relevant=list(MARKETS) if market=="all" else [market]
         updated_map=_cache.get("market_updated",{})
         stale=(_cache.get("window_hours") != hours) or any(not updated_map.get(m) or now-float(updated_map.get(m) or 0)>=CACHE_TTL for m in relevant)
