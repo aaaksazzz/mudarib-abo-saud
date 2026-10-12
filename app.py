@@ -3177,6 +3177,14 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
             rows=[{k:x.get(k) for k in public_fields if k in x} for x in rows]
 
         rows=sorted(rows,key=lambda x:(float(x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:20]
+        # Record visible recommendations into the shared outcome learner for each independent market.
+        try:
+            import self_improver
+            recorded=self_improver.record_signals(market,timeframe,rows)
+            if recorded:
+                print("[SELF-IMPROVER] recorded",recorded,"signals for",market,timeframe,flush=True)
+        except Exception as learn_exc:
+            print("[SELF-IMPROVER] signal recording skipped",market,str(learn_exc)[:120],flush=True)
         if rows:
             from datetime import datetime,timezone
             now_iso=datetime.now(timezone.utc).isoformat()
