@@ -84,6 +84,57 @@ def _prepare(engine, market, raw, ticker_maps):
         "source_title":title,"source_url":url,"source_published":published,"created_at":published_at,"expires_at":published_at+RETENTION,
         "level_type":level_type,"is_estimated":level_type!="مستويات منشورة بالمصدر","status":"نشطة","source_count":1,"source_urls":[url]}
 
+def _scan_fallback(engine, market):
+    """Small liquid technical-scan fallback for markets with too few external recommendations."""
+    if market in ("gold","alpha"):
+        return []
+    try:
+        if market in ("spot","futures"):
+            symbols=[s for s,v in engine._crypto_universe(market)[:18]]
+        elif market=="us":
+            symbols=[]
+            for s in engine.BASE_UNIVERSE.get("us",[]):
+                if engine._passes_volume_filter(s,"us"):
+                    symbols.append(s)
+                if len(symbols)>=12: break
+        else:
+            symbols=list(engine.BASE_UNIVERSE.get(market,[]))[:12]
+        if not symbols:
+            return []
+        out=[]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            jobs={pool.submit(engine._analyze_symbol,s,market,"15m"):s for s in symbols}
+            for fut in as_completed(jobs):
+                try: a=fut.result()
+                except Exception: a=None
+                sym=jobs[fut]
+                if not a and market not in ("spot",):
+                    try: a=engine._analyze_symbol_method(sym,market,"15m","classical")
+                    except Exception: a=None
+                if not isinstance(a,dict): continue
+                side=str(a.get("side") or a.get("direction") or "").upper()
+                entry=float(a.get("entry") or a.get("price") or 0)
+                sl=float(a.get("sl") or 0)
+                targets=a.get("targets") or [a.get("tp1"),a.get("tp2"),a.get("tp3")]
+                try: targets=[float(v) for v in targets if v is not None]
+                except Exception: targets=[]
+                if side not in ("BUY","SELL") or entry<=0 or sl<=0 or len(targets)<3: continue
+                if side=="BUY" and not (sl<entry<targets[0]<=targets[1]<=targets[2]): continue
+                if side=="SELL" and not (targets[2]<=targets[1]<=targets[0]<entry<sl): continue
+                out.append({"market":market,"market_label":LABELS.get(market,market),"symbol":sym,"direction":side,
+                    "entry":round(entry,8),"tp1":round(targets[0],8),"tp2":round(targets[1],8),"tp3":round(targets[2],8),"sl":round(sl,8),
+                    "source_title":"تحليل فني متعدد المناهج","source_url":"","source_published":None,"created_at":time.time(),
+                    "expires_at":time.time()+RETENTION,"level_type":"تحليل فني متعدد المناهج","is_estimated":False,
+                    "status":"نشطة","source_count":0,"source_urls":[],"scan_generated":True,
+                    "ai_pct":round(float(a.get("ai_pct") or a.get("recommendation_score") or 0),1),
+                    "timeframe":"15m","reason":str(a.get("reason") or "")[:240]})
+        out.sort(key=lambda x:(-float(x.get("ai_pct") or 0),x["symbol"]))
+        return out[:12]
+    except Exception as exc:
+        print("[PUBLIC-TRADES] technical fallback failed",market,str(exc)[:120],flush=True)
+        return []
+
+
 def _fetch_market(engine, market, ticker_maps):
     try:
         if market == "alpha":
@@ -101,6 +152,15 @@ def _fetch_market(engine, market, ticker_maps):
         for raw in rows:
             item=_prepare(engine,market,raw,ticker_maps)
             if item: out.append(item)
+        # External recommendations stay first. If the source feed is sparse, add a
+        # small separately labeled technical scan so the market page is not empty.
+        if len(out)<3:
+            existing={(x["symbol"],x["direction"]) for x in out}
+            for x in _scan_fallback(engine,market):
+                key=(x["symbol"],x["direction"])
+                if key not in existing:
+                    out.append(x); existing.add(key)
+                if len(out)>=12: break
         return market,out
     except Exception as exc:
         print("[PUBLIC-TRADES] source failed",market,str(exc)[:120],flush=True)
