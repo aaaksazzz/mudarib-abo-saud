@@ -7,8 +7,8 @@ from fastapi import APIRouter
 router = APIRouter()
 RETENTION = 172800
 CACHE_TTL = 900
-MARKETS = ("spot", "futures", "contracts", "us", "saudi", "forex", "alpha")
-LABELS = {"spot":"سبوت","futures":"فيوتشر","contracts":"العقود الأمريكية","us":"الأسهم الأمريكية","saudi":"السوق السعودي","forex":"الفوركس والذهب","alpha":"Binance Alpha"}
+MARKETS = ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex", "gold")
+LABELS = {"spot":"سبوت","futures":"فيوتشر","contracts":"العقود الأمريكية","us":"الأسهم الأمريكية","saudi":"السوق السعودي","forex":"الفوركس","gold":"الذهب","alpha":"Binance Alpha"}
 DATA_DIR = "/data" if os.path.isdir("/data") else os.path.dirname(__file__)
 CACHE_FILE = os.path.join(DATA_DIR, "public_trades_24h.json")
 _lock = threading.Lock()
