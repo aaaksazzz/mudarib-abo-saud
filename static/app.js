@@ -1,7 +1,7 @@
 (function(){
 "use strict";
 var $=function(s){return document.querySelector(s);};
-var routes={home:"/static/public-trades.html?market=all&hours=24",technical:"/static/public-trades.html?market=all&hours=24",radar:"/static/radar.html?v=20261012-methods-compact-v2",gold:"/static/gold.html?v=20261012-gold-separated",results:"/static/results.html?v=20261012-results-refreshfix",news:"/static/news.html?v=20261012-methods-compact-v2",blog:"/static/blog.html?v=20261012-methods-compact-v2",spot:"/static/spot.html?v=20261012-methods-compact-v2",futures:"/static/futures.html?v=20261012-methods-compact-v2",alpha:"/static/alpha.html?v=20261012-methods-compact-v2",contracts:"/static/contracts.html?v=20261012-methods-compact-v2",us:"/static/us.html?v=20261012-methods-compact-v2",saudi:"/static/saudi.html?v=20261012-methods-compact-v2",forex:"/static/forex.html?v=20261012-methods-compact-v2",signup:"/static/signup.html?v=20261012-methods-compact-v2",login:"/static/login.html?v=20261012-methods-compact-v2",admin:"/admin",explosion:"/static/explosion.html?v=20261012-direction-fix",flareScanner:"/static/flare-scanner.html?v=20261012-flare-scanner-chart1"};
+var routes={home:"/static/public-trades.html?market=all&hours=24",technical:"/static/public-trades.html?market=all&hours=24",radar:"/static/radar.html?v=20261012-methods-compact-v2",gold:"/static/forex.html?v=20261014-forex-gold-merged",results:"/static/results.html?v=20261012-results-refreshfix",news:"/static/news.html?v=20261012-methods-compact-v2",blog:"/static/blog.html?v=20261012-methods-compact-v2",spot:"/static/spot.html?v=20261012-methods-compact-v2",futures:"/static/futures.html?v=20261012-methods-compact-v2",alpha:"/static/alpha.html?v=20261012-methods-compact-v2",contracts:"/static/contracts.html?v=20261012-methods-compact-v2",us:"/static/us.html?v=20261012-methods-compact-v2",saudi:"/static/saudi.html?v=20261012-methods-compact-v2",forex:"/static/forex.html?v=20261012-methods-compact-v2",signup:"/static/signup.html?v=20261012-methods-compact-v2",login:"/static/login.html?v=20261012-methods-compact-v2",admin:"/admin",explosion:"/static/explosion.html?v=20261012-direction-fix",flareScanner:"/static/flare-scanner.html?v=20261012-flare-scanner-chart1"};
 var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false,trackingTimer=null;
 /* رابط الصفقات العامة بجوار الرادار في القائمة على كل الصفحات */
 try {
@@ -15,6 +15,21 @@ try {
   var radarLink=publicSide.querySelector('[data-s="radar"],a[href*="radar.html"]');
   if(radarLink&&radarLink.parentNode)radarLink.parentNode.insertBefore(publicLink,radarLink.nextSibling);
   else {var footer=publicSide.querySelector(".side-footer");if(footer)publicSide.insertBefore(publicLink,footer);else publicSide.appendChild(publicLink);}
+ }
+} catch(e) {}
+/* Keep market shortcuts at the top of every shared sidebar, with services below. */
+try {
+ var marketSidebar=document.getElementById("sidebar");
+ if(marketSidebar){
+  var marketKeys=["spot","futures","alpha","contracts","us","saudi","forex"];
+  var marketNodes=marketKeys.map(function(k){return marketSidebar.querySelector('[data-s="'+k+'"]');}).filter(Boolean);
+  if(marketNodes.length){
+   var marketHeading=document.createElement("div");marketHeading.className="nav-label";marketHeading.textContent="الأسواق";
+   var marketGroup=document.createDocumentFragment();marketGroup.appendChild(marketHeading);
+   marketNodes.forEach(function(node){marketGroup.appendChild(node);});
+   marketSidebar.insertBefore(marketGroup,marketSidebar.firstChild);
+   Array.from(marketSidebar.querySelectorAll(".nav-label")).forEach(function(n){if(n!==marketHeading&&n.textContent.trim()==="الأسواق")n.remove();});
+  }
  }
 } catch(e) {}
 /* إضافة رابط شرارات السوق إلى القائمة في جميع الصفحات */
