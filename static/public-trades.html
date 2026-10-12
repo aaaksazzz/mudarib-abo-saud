@@ -14,14 +14,7 @@
 <header class="public-top"><div class="public-brand"><button id="menuToggle" class="menu-toggle" type="button" aria-label="فتح القائمة" aria-expanded="false">☰</button><div class="brand-mark">S</div><div><b>التداول الذكي <em>PRO</em></b><small>صفقات منشورة من الأسواق العامة</small></div></div><span class="live"><i></i> مباشر</span></header>
 <div class="public-layout">
 <aside id="marketSidebar" class="public-sidebar" aria-label="قائمة الأسواق">
-<div class="side-title">القائمة الرئيسية</div>
-<a class="market-link" href="/static/index.html">⌂ <span>الرئيسية</span></a>
-<a class="market-link" href="/static/login.html">🔐 <span>تسجيل الدخول</span></a>
-<a class="market-link" href="/static/signup.html">✚ <span>إنشاء حساب</span></a>
-<a class="market-link" href="/static/results.html">📊 <span>نتائج الصفقات</span></a>
-<a class="market-link" href="/static/news.html">📰 <span>الأخبار</span></a>
-<a class="market-link" href="/static/blog.html">📝 <span>المدونة</span></a>
-<div class="side-title">الأسواق</div>
+<div class="side-title">الأسواق أولاً</div>
 <a class="market-link" data-market="all" href="/static/public-trades.html?market=all&amp;hours=24">🌐 <span>كل الأسواق</span></a>
 <a class="market-link" data-market="spot" href="/static/public-trades.html?market=spot&amp;hours=24">₿ <span>سبوت</span></a>
 <a class="market-link" data-market="futures" href="/static/public-trades.html?market=futures&amp;hours=24">⚡ <span>فيوتشر</span></a>
@@ -30,6 +23,13 @@
 <a class="market-link" data-market="us" href="/static/public-trades.html?market=us&amp;hours=24">🇺🇸 <span>الأسهم الأمريكية</span></a>
 <a class="market-link" data-market="saudi" href="/static/public-trades.html?market=saudi&amp;hours=24">🇸🇦 <span>السوق السعودي</span></a>
 <a class="market-link" data-market="forex" href="/static/public-trades.html?market=forex&amp;hours=24">💱 <span>الفوركس والذهب</span></a>
+<div class="side-title">الخدمات</div>
+<a class="market-link" href="/static/index.html">⌂ <span>الرئيسية</span></a>
+<a class="market-link" href="/static/results.html">📊 <span>نتائج الصفقات</span></a>
+<a class="market-link" href="/static/news.html">📰 <span>الأخبار</span></a>
+<a class="market-link" href="/static/blog.html">📝 <span>المدونة</span></a>
+<a class="market-link" href="/static/login.html">🔐 <span>تسجيل الدخول</span></a>
+<a class="market-link" href="/static/signup.html">✚ <span>إنشاء حساب</span></a>
 </aside><div id="sidebarShade" class="sidebar-shade"></div>
 <main class="public-main public-wrap">
 <div class="public-heading"><div><span class="eyebrow">رصد الأسواق</span><h1 id="pageTitle">الصفقات العامة</h1><p>كل سوق له صفقاته الخاصة. اختر مدة البحث: 12 ساعة أو 24 ساعة أو آخر يومين.</p></div><button id="refresh" class="primary" type="button">↻ تحديث البحث</button></div>
@@ -53,9 +53,9 @@
  function render(data){
   const rows=Array.isArray(data.trades)?data.trades:[];
   $("#counts").innerHTML="<span>الصفقات: "+rows.length+"</span><span>"+(selectedHours==="12"?"آخر 12 ساعة":selectedHours==="24"?"آخر 24 ساعة":"آخر 48 ساعة")+"</span><span>"+esc(marketNames[selectedMarket])+"</span>";
-  $("#status").textContent=data.refreshing?"يجري البحث في المصادر العامة…":(data.updated?"آخر تحديث: "+new Date(data.updated*1000).toLocaleString("ar-SA"):"بانتظار نتائج البحث");
+  $("#status").textContent=data.refreshing?"جاري البحث في المصادر العامة وتحليل السوق…":(data.updated?"آخر تحديث: "+new Date(data.updated*1000).toLocaleString("ar-SA"):"بانتظار نتائج البحث");
   if(!rows.length){$("#cards").innerHTML='<div class="public-empty">ما ظهرت صفقات مطابقة في <b>'+esc(marketNames[selectedMarket])+'</b> خلال المدة المحددة.<br>جرّب تمديد المدة أو اضغط «تحديث البحث» لإعادة البحث في هذا السوق فقط.</div>';return;}
-  const ranked=rows.slice().sort((a,b)=>Number(b.source_count||0)-Number(a.source_count||0)||Number(b.created_at||0)-Number(a.created_at||0));
+  const ranked=rows.slice().sort((a,b)=>Number(b.ai_pct||b.recommendation_score||0)-Number(a.ai_pct||a.recommendation_score||0)||Number(b.source_count||0)-Number(a.source_count||0)||Number(b.created_at||0)-Number(a.created_at||0));
   const ranks=new Map(ranked.map((x,i)=>[x.market+"|"+x.symbol+"|"+x.direction,i+1]));
   $("#cards").innerHTML=rows.map(x=>{
    const buy=String(x.direction||"").toUpperCase()==="BUY";
