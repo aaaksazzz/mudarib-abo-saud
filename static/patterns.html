@@ -106,6 +106,7 @@ function detectTechnicalPatterns(data){
  return out.sort((x,y)=>y.score-x.score);
 }
 function inferPatternSide(pattern){
+ const explicit=String(pattern&&pattern.side||'').toUpperCase();if(['BUY','LONG','شراء'].includes(explicit))return 'BUY';if(['SELL','SHORT','بيع'].includes(explicit))return 'SELL';
  const name=String(pattern&&pattern.name||''),dir=String(pattern&&pattern.dir||''),t=name+' '+dir;
  if(/قمة مزدوجة|قمة ثلاثية|رأس وكتفين(?! مقلوب)|وتد صاعد|مثلث هابط|نجمة ساقطة|ابتلاع بيعي|نجمة المساء|غربان سود|ملقاط القمة|غطاء سحابي|قناة هابطة|علم هابط|راية هابطة|كسر دعم|هبوط|بيعي|بيع محتمل/i.test(t))return 'SELL';
  if(/قاع مزدوج|قاع ثلاثي|رأس وكتفين مقلوب|وتد هابط|مطرقة صاعدة|ابتلاع شرائي|نجمة الصباح|جنود بيض|ملقاط القاع|اختراق صاعد|قناة صاعدة|علم صاعد|راية صاعدة|صعود|شرائي|شراء محتمل/i.test(t))return 'BUY';
@@ -409,12 +410,12 @@ if(['futures','contracts','us','saudi','forex'].includes(market)){
    $('scanResults').innerHTML='<b style="color:#65e7d3">نتائج من '+new Set(all.map(x=>x.marketKey)).size+' سوق · '+all.length+' إشارة</b><br>'+all.slice(0,30).map((t,i)=>'<div style="padding:9px 0;border-bottom:1px solid #20364d"><b>'+(i+1)+'. '+String(t.symbol||'—')+'</b> · '+t.marketName+' · '+String(t.side||'—')+' · '+String(t.timeframe||tf)+'<br><small>تغير: '+(Number(t.change_pct)||0).toFixed(2)+'% · تقييم AI: '+(Number(t.ai_pct)||0)+'% · دخول: '+fmt(Number(t.entry)||0)+' · SL: '+fmt(Number(t.sl)||0)+' · TP1: '+fmt(Number(t.tp1)||0)+'</small></div>').join('')+(pending.length?'<small>الفحص يعمل بالخلفية: '+pending.join('، ')+'. ستتم إعادة المحاولة تلقائيًا بعد قليل.</small>':'')+(errors.length?'<small>تعذر فحص: '+errors.join('، ')+'</small>':'')+'<br><small>كل سوق يُفحص من مصدره الخاص؛ يتوقف البحث عند أول نتيجة مناسبة.</small>';
    const first=all[0];$('symbol').value=first.symbol||$('symbol').value;
    $('patternName').textContent=first.marketName+' · '+(first.side||'إشارة');
-   $('signalState').textContent='أفضل نتيجة حسب تقييم الماسح';$('lastClose').textContent=fmt(Number(first.entry)||0);
+   $('signalState').textContent=(String(first.side||'').toUpperCase()==='SELL'?'بيع SELL':String(first.side||'').toUpperCase()==='BUY'?'شراء BUY':'إشارة')+' · '+String(first.trend||'نتيجة الماسح');$('lastClose').textContent=fmt(Number(first.entry)||0);
    $('entry').textContent=fmt(Number(first.entry)||0);$('sl').textContent=fmt(Number(first.sl)||0);$('tp1').textContent=fmt(Number(first.tp1)||0);$('tp2').textContent=fmt(Number(first.tp2)||0);$('tp3').textContent=fmt(Number(first.tp3)||0);
-   const e=Number(first.entry)||0, pct=p=>e>0?Math.abs((Number(p)-e)/e)*100:0;
-   $('slPct').textContent='−'+pct(first.sl).toFixed(2)+'% من الدخول';$('tp1Pct').textContent='+'+pct(first.tp1).toFixed(2)+'% من الدخول';$('tp2Pct').textContent='+'+pct(first.tp2).toFixed(2)+'% من الدخول';$('tp3Pct').textContent='+'+pct(first.tp3).toFixed(2)+'% من الدخول';
+   const e=Number(first.entry)||0,short=['SELL','SHORT','بيع'].includes(String(first.side||'').toUpperCase()),pct=p=>e>0?((Number(p)-e)/e)*100*(short?-1:1):0;
+   $('slPct').textContent=pct(first.sl).toFixed(2)+'% من الدخول';$('tp1Pct').textContent=pct(first.tp1).toFixed(2)+'% من الدخول';$('tp2Pct').textContent=pct(first.tp2).toFixed(2)+'% من الدخول';$('tp3Pct').textContent=pct(first.tp3).toFixed(2)+'% من الدخول';
    $('chartTitle').textContent=String(first.symbol||'')+' · '+first.marketName+' · '+tf;
-   $('explain').textContent='تم جلب الإشارات من ماسح مستقل للسوق المختار. استخدم رمزًا متوافقًا مع مزود بيانات السوق لعرض الشارت.';
+   $('explain').textContent='تم جلب الإشارة من ماسح السوق المختار. جاري تحميل شارت الأصل نفسه؛ راجع جهة الوقف والأهداف قبل أي تنفيذ.';setTimeout(()=>{if(typeof load==='function')load()},0);
   }else{
    let msg=pending.length?'الفحص ما زال يعمل بالخلفية للأسواق: '+pending.join('، ')+'. الفحص المستمر سيعيد المحاولة تلقائيًا.':(autoScan?'ما ظهرت إشارات مطابقة في هذه الدورة؛ الفحص المستمر شغال وبيكمل تلقائيًا.':'انتهى الفحص ولم تظهر إشارات مطابقة حاليًا.');
    $('scanResults').textContent=msg+(errors.length?' تعذر فحص: '+errors.join('، '):'');
@@ -432,7 +433,7 @@ async function worker(){while(cursor<batch.length){const item=batch[cursor++];$(
 await Promise.all(Array.from({length:4},worker));state.cursor=end>=list.length?0:end;if(end>=list.length)state.loopCount=(Number(state.loopCount)||0)+1;state.found=found;try{sessionStorage.setItem(key,JSON.stringify(state))}catch(e){}
 found.sort((a,b)=>(b.pat.breakout?1:0)-(a.pat.breakout?1:0)||(b.pat.score||0)-(a.pat.score||0)||b.volume-a.volume);
 if(batchFound.length){const rankedBatch=batchFound.slice().sort((a,b)=>(b.pat.breakout?1:0)-(a.pat.breakout?1:0)||(b.pat.score||0)-(a.pat.score||0)||b.volume-a.volume);const best=rankedBatch[0];
-autoScan=false;$('scan').textContent='🔎 ابحث عن نموذج';$('symbol').value=best.symbol;$('tf').value=best.tf;render(best.data,best.symbol,best.tf,best.pat.name==='كوب وعروة'?best.pat:null,[...(best.patterns||[]),{...best.pat,side:best.side||best.pat.side}].filter((p,i,a)=>p&&a.findIndex(x=>x&&x.name===p.name)===i));
+autoScan=false;$('scan').textContent='🔎 ابحث عن نموذج';$('symbol').value=best.symbol;$('tf').value=best.tf;render(best.data,best.symbol,best.tf,best.pat.name==='كوب وعروة'?best.pat:null,[...(best.patterns||[]),{...best.pat,score:1000,side:best.side||best.pat.side}].filter((p,i,a)=>p&&a.findIndex(x=>x&&x.name===p.name)===i));
 $('scanResults').innerHTML='<b style="color:#65e7d3">نتائج متراكمة: '+found.length+' نموذج</b><br>آخر نموذج جديد: <b>'+best.symbol.replace('USDT','/USDT')+'</b> · '+best.pat.name+' · '+(best.pat.dir||'مراقبة')+'<br>تغير 24 ساعة: '+best.change.toFixed(2)+'% · حجم 24 ساعة: '+(best.volume/1e6).toFixed(2)+' مليون USDT<br><small>تم فحص الدفعة '+start+'–'+end+' من '+list.length+' زوجًا مؤهلًا بحجم تداول يومي يتجاوز مليون USDT. دورة الفحص: '+Math.max(1,Number(state.loopCount)||0)+'؛ النتائج السابقة محفوظة، وسيتوقف البحث عند العثور على نموذج جديد.</small>';
 }else{$('scanResults').innerHTML='<b>ما ظهر نموذج مطابق في الدفعة الحالية.</b><br>تم فحص '+start+'–'+end+' من '+list.length+' زوجًا على '+tf+'. دورة الفحص: '+Math.max(1,Number(state.loopCount)||0)+'؛ سيكمل البحث تلقائيًا حتى يعثر على نموذج، ثم يتوقف.';}
 
