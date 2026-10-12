@@ -1,8 +1,8 @@
 (function(){
 "use strict";
 var $=function(s){return document.querySelector(s);};
-var routes={home:"/static/index.html",radar:"/static/radar.html?v=20261014-menu-fix",results:"/static/results.html?v=20261014-results-links",news:"/static/news.html?v=20261012-clean-results-v3",blog:"/static/blog.html?v=20261012-clean-results-v3",spot:"/static/public-trades.html?market=spot&hours=24",futures:"/static/public-trades.html?market=futures&hours=24",alpha:"/static/public-trades.html?market=alpha&hours=24",contracts:"/static/public-trades.html?market=contracts&hours=24",us:"/static/public-trades.html?market=us&hours=24",saudi:"/static/public-trades.html?market=saudi&hours=24",forex:"/static/public-trades.html?market=forex&hours=24",signup:"/static/signup.html?v=20261012-clean-results-v3",login:"/static/login.html?v=20261012-clean-results-v3",admin:"/admin",explosion:"/static/explosion.html?v=20261012-direction-fix",flareScanner:"/static/flare-scanner.html?v=20261012-flare-scanner-chart1",sectors:"/static/sectors.html"};
-var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false,trackingTimer=null,marketKeys=["spot","futures","alpha","contracts","us","saudi","forex"];
+var routes={home:"/static/index.html",radar:"/static/radar.html?v=20261014-menu-fix",results:"/static/results.html?v=20261014-results-links",news:"/static/news.html?v=20261012-clean-results-v3",blog:"/static/blog.html?v=20261012-clean-results-v3",spot:"/static/public-trades.html?market=spot&hours=24",futures:"/static/public-trades.html?market=futures&hours=24",alpha:"/static/public-trades.html?market=alpha&hours=24",contracts:"/static/public-trades.html?market=contracts&hours=24",us:"/static/public-trades.html?market=us&hours=24",saudi:"/static/public-trades.html?market=saudi&hours=24",forex:"/static/public-trades.html?market=forex&hours=24",gold:"/static/public-trades.html?market=gold&hours=24",signup:"/static/signup.html?v=20261012-clean-results-v3",login:"/static/login.html?v=20261012-clean-results-v3",admin:"/admin",explosion:"/static/explosion.html?v=20261012-direction-fix",flareScanner:"/static/flare-scanner.html?v=20261012-flare-scanner-chart1",sectors:"/static/sectors.html"};
+var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false,trackingTimer=null,marketKeys=["spot","futures","alpha","contracts","us","saudi","forex","gold"];
 /* No duplicate public-trades shortcut; strongest opportunities opens the same feed. */
 /* Keep market shortcuts at the top of every shared sidebar, with services below. */
 try {
@@ -213,7 +213,7 @@ function loadResults(){
   getJSON("/api/results?x="+Date.now()).then(function(j){
    var s=j.stats||{};
    if(summary)summary.innerHTML='<div class="metric"><span>إجمالي التوصيات</span><b>'+s.total+'</b><small>آخر 24 ساعة</small></div><div class="metric"><span>رابحة</span><b>'+s.wins+'</b><small>وصلت للهدف</small></div><div class="metric"><span>خاسرة</span><b>'+s.losses+'</b><small>وصلت للوقف</small></div><div class="metric"><span>نسبة النجاح</span><b>'+s.win_rate+'%</b><small>من الصفقات المغلقة</small></div>';
-   if(markets)markets.innerHTML=Object.keys(j.by_market||{}).map(function(k){var m=j.by_market[k]||{},n={spot:"سبوت",futures:"فيوتشر",contracts:"العقود الأمريكية",us:"الأمريكي",saudi:"السعودي",forex:"فوركس وذهب",alpha:"Binance Alpha"}[k]||k;return '<div class="metric"><span>'+n+'</span><b>'+m.win_rate+'%</b><small>'+m.wins+' رابحة · '+m.losses+' خاسرة · '+m.open+' مفتوحة</small></div>';}).join("");
+   if(markets)markets.innerHTML=Object.keys(j.by_market||{}).map(function(k){var m=j.by_market[k]||{},n={spot:"سبوت",futures:"فيوتشر",contracts:"العقود الأمريكية",us:"الأمريكي",saudi:"السعودي",forex:"الفوركس",gold:"الذهب",alpha:"Binance Alpha"}[k]||k;return '<div class="metric"><span>'+n+'</span><b>'+m.win_rate+'%</b><small>'+m.wins+' رابحة · '+m.losses+' خاسرة · '+m.open+' مفتوحة</small></div>';}).join("");
    var rows=j.results||[];
    box.innerHTML=rows.length?rows.map(function(x){var st=x.status==="WIN"?"✅ رابحة":x.status==="LOSS"?"❌ خاسرة":x.status==="EXPIRED"?"⚪ منتهية":"⏳ مفتوحة",cls=x.status==="WIN"?"buy":x.status==="LOSS"?"sell":"";return '<article class="card"><div class="card-top"><div><span class="rank">'+st+'</span><div class="symbol">'+esc(displaySymbol(x))+'</div></div><span class="direction '+cls+'">'+(x.direction==="SELL"?"بيع":"شراء")+'</span></div><div class="levels"><div class="level"><small>الدخول</small><b>'+esc(x.entry==null?"—":formatResultPrice(x.entry))+'</b></div><div class="level"><small>TP1</small><b>'+esc(x.tp1==null?"—":formatResultPrice(x.tp1))+'</b></div><div class="level"><small>TP2</small><b>'+esc(x.tp2==null?"—":formatResultPrice(x.tp2))+'</b></div><div class="level"><small>TP3</small><b>'+esc(x.tp3==null?"—":formatResultPrice(x.tp3))+'</b></div><div class="level"><small>SL</small><b>'+esc(x.sl==null?"—":formatResultPrice(x.sl))+'</b></div><div class="level"><small>النتيجة</small><b>'+st+'</b></div></div><div class="card-foot">'+esc({spot:"سبوت",futures:"فيوتشر",contracts:"العقود",us:"الأمريكي",saudi:"السعودي",forex:"الفوركس",gold:"الذهب",alpha:"Binance Alpha"}[x.market]||x.market)+' · '+new Date(x.created*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})+'</div></article>';}).join(""):(j.refreshing?'<div class="empty">⏳ جاري جمع التوصيات وتحديث أسعارها… بتظهر النتائج تلقائيًا عند اكتمال التحديث.</div>':'<div class="empty">ما فيه نتائج مسجلة خلال آخر 24 ساعة حتى الآن.</div>');
    if(j.refreshing)setTimeout(loadResults,8000);
@@ -274,7 +274,7 @@ function bind(){
   var navDefaults={
    home:["⌂","الرئيسية"],radar:["◈","الرادار"],spot:["₿","سبوت"],futures:["⚡","فيوتشر"],
    alpha:["α","Binance Alpha"],contracts:["◉","العقود الأمريكية"],us:["🇺🇸","الأسهم الأمريكية"],
-   saudi:["🇸🇦","السوق السعودي"],forex:["💱","الفوركس والذهب"],
+   saudi:["🇸🇦","السوق السعودي"],forex:["💱","الفوركس"],gold:["🥇","الذهب"],
    results:["📊","النتائج"],news:["📰","الأخبار"],blog:["✍️","المدونة"],sectors:["🏭","القطاعات العالمية"],
    signup:["＋","إنشاء حساب"],login:["↪","تسجيل الدخول"],admin:["⚙","الإدارة"]
   };
@@ -303,7 +303,7 @@ function bind(){
    if(section.querySelector(".nav-item"))side.insertBefore(section,footer||null);
   };
   /* Markets first, then the rest of the platform menu. */
-  makeSection("الأسواق",["spot","futures","alpha","contracts","us","saudi","forex"],"menu-markets");
+  makeSection("الأسواق",["spot","futures","alpha","contracts","us","saudi","forex","gold"],"menu-markets");
   makeSection("الرئيسية",["home"],"menu-home");
   makeSection("التداول الذكي",["radar"],"menu-trading");
   makeSection("النتائج والمحتوى",["results","news","blog","sectors"],"menu-content");
