@@ -68,6 +68,12 @@ def _prepare(engine, market, raw, ticker_maps):
     symbol = str(raw.get("symbol") or "").upper().strip()
     direction = str(raw.get("direction") or "").upper().strip()
     if not symbol or direction not in ("BUY", "SELL"): return None
+    # Crypto recommendations must match the actual exchange universe for that market.
+    # This blocks stocks/ETFs/commodities mislabeled as synthetic *USDT futures pairs.
+    if market in ("spot", "futures"):
+        available = ticker_maps.get(market, {})
+        if not available or symbol not in available:
+            return None
     entry, targets, sl = engine._external_trade_fields(title + " " + body)
     # Do not treat generic market commentary as a precise actionable signal.
     title_direction = engine._direction(title)
