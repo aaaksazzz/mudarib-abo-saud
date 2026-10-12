@@ -1711,6 +1711,10 @@ def api_results():
     """Real, last-24-hour tracked signal outcomes for the results page.
     Never infer wins/losses from planned TP/SL levels or target percentages.
     """
+    try:
+        _update_spot_signal_outcomes()
+    except Exception as exc:
+        print(f"[PUBLIC-RESULTS] outcome refresh skipped: {type(exc).__name__}: {exc}", flush=True)
     from datetime import datetime, timezone
     market_names = {
         "spot": "سبوت", "futures": "فيوتشر", "contracts": "العقود",
@@ -1786,84 +1790,6 @@ def api_results():
         "by_market": by_market, "results": results, "refreshing": False,
         "note": "الإحصاءات مبنية على سجل الإشارات ونتائج الإغلاق المسجلة فقط؛ لا تُحتسب الأهداف المخططة كأرباح."
     }
-
-
-@app.get("/api/results")
-def public_results():
-    """Return the last 24 hours of recorded, price-tracked outcomes for the Results page."""
-    try:
-        # Update live outcome tracking before reporting; this records observed hits/stops,
-        # not planned target percentages as realized performance.
-        _update_spot_signal_outcomes()
-        c = db()
-        rows = c.execute("""
-            SELECT id, market, symbol, side, timeframe, entry, tp1, tp2, tp3, sl,
-                   status, outcome, realized_pct,
-                   CAST(strftime('%s', created_at) AS INTEGER) AS created
-            FROM spot_signal_events
-            WHERE datetime(created_at) >= datetime('now', '-24 hours')
-            ORDER BY id DESC
-            LIMIT 250
-        """).fetchall()
-        c.close()
-        results = []
-        by_market = {}
-        wins = losses = opened = 0
-        for record in rows:
-            x = dict(record)
-            outcome = str(x.get("outcome") or "").strip().lower()
-            raw_status = str(x.get("status") or "").strip().lower()
-            if outcome == "win":
-                status = "WIN"
-                wins += 1
-            elif outcome == "loss":
-                status = "LOSS"
-                losses += 1
-            elif raw_status in ("expired", "cancelled", "canceled"):
-                status = "EXPIRED"
-            else:
-                status = "OPEN"
-                opened += 1
-            market = str(x.get("market") or "spot").lower()
-            item = {
-                "id": x.get("id"), "market": market, "symbol": x.get("symbol"),
-                "direction": str(x.get("side") or "BUY").upper(),
-                "timeframe": x.get("timeframe"), "entry": x.get("entry"),
-                "tp1": x.get("tp1"), "tp2": x.get("tp2"), "tp3": x.get("tp3"),
-                "sl": x.get("sl"), "status": status,
-                "realized_pct": x.get("realized_pct"), "created": x.get("created")
-            }
-            results.append(item)
-            m = by_market.setdefault(market, {"wins": 0, "losses": 0, "open": 0, "total": 0})
-            m["total"] += 1
-            if status == "WIN":
-                m["wins"] += 1
-            elif status == "LOSS":
-                m["losses"] += 1
-            elif status == "OPEN":
-                m["open"] += 1
-        closed = wins + losses
-        for m in by_market.values():
-            done = m["wins"] + m["losses"]
-            m["win_rate"] = round(m["wins"] / done * 100, 2) if done else 0
-        return {
-            "ok": True,
-            "window_hours": 24,
-            "stats": {
-                "total": len(results), "wins": wins, "losses": losses,
-                "open": opened, "win_rate": round(wins / closed * 100, 2) if closed else 0
-            },
-            "by_market": by_market,
-            "results": results,
-            "refreshing": False,
-            "note": "تُحسب النتائج من حالات الصفقات المرصودة فعلياً؛ لا تُعد الأهداف المخططة أرباحاً محققة."
-        }
-    except Exception as exc:
-        print(f"[PUBLIC-RESULTS] unavailable: {type(exc).__name__}: {exc}", flush=True)
-        return JSONResponse({
-            "ok": False,
-            "message": "تعذر قراءة سجل النتائج الفعلية حالياً."
-        }, status_code=503)
 
 
 @app.get("/api/strategy/performance")
