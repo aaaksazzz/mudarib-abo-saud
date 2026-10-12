@@ -95,8 +95,8 @@ def record_signals(market, timeframe, rows):
                         key_created=datetime.fromisoformat(candle.replace("Z","+00:00")).timestamp()
                     except Exception: pass
                 exists=c.execute("""select id from recommendation_results
-                    where market=? and symbol=? and direction=? and timeframe=? and abs(entry-?)<0.00000001 and created>=? limit 1""",
-                    (str(market),symbol,side,tf,entry,key_created)).fetchone()
+                    where market=? and symbol=? and direction=? and timeframe=? and created>=? limit 1""",
+                    (str(market),symbol,side,tf,key_created)).fetchone()
                 if exists: continue
                 c.execute("""insert into recommendation_results
                     (market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,status,hit_target,timeframe,strategy_key,method_votes,base_score)
