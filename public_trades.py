@@ -286,6 +286,7 @@ def _build():
             continue
         key=(row["market"],row["symbol"])
         quality=(0 if row.get("scan_generated") else 1,
+                 int(row.get("source_quality") or 0),
                  int(row.get("source_count") or 0),
                  float(row.get("ai_pct") or 0),
                  float(row.get("created_at") or 0))
