@@ -3,6 +3,20 @@
 var $=function(s){return document.querySelector(s);};
 var routes={home:"/",technical:"/static/technical.html?v=20261012-all-methods-scanfix",radar:"/static/radar.html?v=20261012-methods-compact-v2",gold:"/static/gold.html?v=20261012-gold-separated",results:"/static/results.html?v=20261012-results-refreshfix",news:"/static/news.html?v=20261012-methods-compact-v2",blog:"/static/blog.html?v=20261012-methods-compact-v2",spot:"/static/spot.html?v=20261012-methods-compact-v2",futures:"/static/futures.html?v=20261012-methods-compact-v2",alpha:"/static/alpha.html?v=20261012-methods-compact-v2",contracts:"/static/contracts.html?v=20261012-methods-compact-v2",us:"/static/us.html?v=20261012-methods-compact-v2",saudi:"/static/saudi.html?v=20261012-methods-compact-v2",forex:"/static/forex.html?v=20261012-methods-compact-v2",signup:"/static/signup.html?v=20261012-methods-compact-v2",login:"/static/login.html?v=20261012-methods-compact-v2",admin:"/admin",explosion:"/static/explosion.html?v=20261012-direction-fix",flareScanner:"/static/flare-scanner.html?v=20261012-flare-scanner-chart1"};
 var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false,trackingTimer=null;
+/* رابط الصفقات العامة بجوار الرادار في القائمة على كل الصفحات */
+try {
+ var publicSide=document.getElementById("sidebar");
+ if(publicSide&&!publicSide.querySelector('a[href*="public-trades.html"]')) {
+  var publicLink=document.createElement("a");
+  publicLink.href="/static/public-trades.html?v=20261013-public-trades";
+  publicLink.className="nav-item";
+  publicLink.style.textDecoration="none"; publicLink.style.display="block";
+  publicLink.textContent="🌐 الصفقات العامة";
+  var radarLink=publicSide.querySelector('[data-s="radar"],a[href*="radar.html"]');
+  if(radarLink&&radarLink.parentNode)radarLink.parentNode.insertBefore(publicLink,radarLink.nextSibling);
+  else {var footer=publicSide.querySelector(".side-footer");if(footer)publicSide.insertBefore(publicLink,footer);else publicSide.appendChild(publicLink);}
+ }
+} catch(e) {}
 /* إضافة رابط شرارات السوق إلى القائمة في جميع الصفحات */
 try{var flareSide=document.getElementById("sidebar");if(flareSide&&!flareSide.querySelector('[data-flare-nav="1"],a[href*="flare-scanner.html"]')){var flareLink=document.createElement("a");flareLink.href="/static/flare-scanner.html?v=20261012-flare-scanner-chart1";flareLink.className="nav-item";flareLink.setAttribute("data-flare-nav","1");flareLink.style.textDecoration="none";flareLink.style.display="block";flareLink.textContent="⚡ شرارات السوق";var flareFooter=flareSide.querySelector(".side-footer");if(flareFooter)flareSide.insertBefore(flareLink,flareFooter);else flareSide.appendChild(flareLink);}}catch(e){}
 var timeframes=[["15m","15 دقيقة"],["30m","30 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
