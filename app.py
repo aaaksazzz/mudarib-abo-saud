@@ -3947,6 +3947,11 @@ try:
     app.include_router(_azo_module.router)
 except Exception as _azo_exc:
     print('[AZO] router install failed:',str(_azo_exc)[:160],flush=True)
+try:
+    import public_trades as _public_trades
+    app.include_router(_public_trades.router)
+except Exception as _public_trades_exc:
+    print('[PUBLIC-TRADES] router install failed:',str(_public_trades_exc)[:160],flush=True)
 
 # Admin/auth controls are installed explicitly during normal app import.
 try:
