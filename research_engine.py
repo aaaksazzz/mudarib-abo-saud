@@ -744,11 +744,27 @@ def _analyze_symbol_method(symbol, market, timeframe, method_id):
     risk=min(entry*.03,max(entry*.005,abs(entry-(support if side=="BUY" else resistance))*.35))
     if side=="BUY":sl=entry-risk;tps=[entry+risk,entry+2*risk,entry+3*risk]
     else:sl=entry+risk;tps=sorted([max(entry-risk,entry*.01),max(entry-2*risk,entry*.005),max(entry-3*risk,entry*.001)],reverse=True)
+    # Final fail-closed gate: never publish malformed prices or targets on the wrong side.
+    levels=[entry,sl,*tps]
+    if not all(math.isfinite(float(v)) and float(v)>0 for v in levels):
+        return None
+    if len(tps)!=3:
+        return None
+    if side=="BUY":
+        if not (sl < entry < tps[0] < tps[1] < tps[2]):
+            return None
+    elif side=="SELL":
+        if not (tps[2] < tps[1] < tps[0] < entry < sl):
+            return None
+    else:
+        return None
+    if not math.isfinite(float(confidence)) or confidence<=0 or confidence>100:
+        return None
     return {"symbol":symbol,"market":market,"direction":side,"side":side,"timeframe":timeframe,
             "technical_only":True,"research_only":False,"technical_method_key":method_id,
             "technical_method_vote":confidence,"methods":votes,"entry":entry,"price":entry,"current_price":entry,
             "sl":sl,"tp1":tps[0],"tp2":tps[1],"tp3":tps[2],"targets":tps,
-            "ai_pct":confidence,"recommendation_score":confidence,
+            "ai_pct":confidence,"confidence_type":"method_agreement_score_not_win_probability","recommendation_score":confidence,
             "site_score":confidence,
             "signal_label":("شراء" if side=="BUY" else "بيع")+" · "+method_id,
             "support":support,"resistance":resistance,"price_source":"public market data",
