@@ -2,11 +2,12 @@
 "use strict";
 var $=function(s){return document.querySelector(s);};
 function msg(t){var e=$("#authMsg");if(e)e.textContent=t;}
+function safeNext(v){try{if(!v)return "/";var u=new URL(v,location.origin);return u.origin===location.origin?u.pathname+u.search+u.hash:"/";}catch(e){return "/";}}
 function post(url,data){return fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify(data)}).then(async function(r){var j=await r.json().catch(function(){return {}});if(!r.ok)throw new Error(j.error||"تعذر تنفيذ الطلب");return j;});}
 function bindAuth(){
  var sf=$("#signupForm"),lf=$("#loginForm");
  if(sf)sf.addEventListener("submit",function(e){e.preventDefault();var f=new FormData(sf);msg("جاري إنشاء الحساب…");post("/api/auth/signup",{username:f.get("username"),password:f.get("password")}).then(function(){msg("تم إنشاء الحساب وتسجيل الدخول بنجاح.");setTimeout(function(){location.href="/"},500);}).catch(function(e){msg(e.message);});});
- if(lf)lf.addEventListener("submit",function(e){e.preventDefault();var f=new FormData(lf);msg("جاري تسجيل الدخول…");post("/api/auth/login",{username:f.get("username"),password:f.get("password")}).then(function(j){msg("تم الدخول بنجاح.");setTimeout(function(){var q=new URLSearchParams(location.search);var next=q.get("next");location.href=j.role==="admin"?"/admin":(next&&next.charAt(0)==="/"&&next.charAt(1)!=="/"?next:"/")},500);}).catch(function(e){msg(e.message);});});
+ if(lf)lf.addEventListener("submit",function(e){e.preventDefault();var f=new FormData(lf);msg("جاري تسجيل الدخول…");post("/api/auth/login",{username:f.get("username"),password:f.get("password")}).then(function(j){msg("تم الدخول بنجاح.");setTimeout(function(){var q=new URLSearchParams(location.search);var next=q.get("next");location.href=j.role==="admin"?"/admin":safeNext(next)},500);}).catch(function(e){msg(e.message);});});
  var ab=$("#adminPanel"),am=$("#adminMsg");
  if(ab||am)fetch("/api/admin/status",{cache:"no-store",credentials:"same-origin"}).then(function(r){if(!r.ok)throw new Error();return r.json();}).then(function(){if(am)am.textContent="تم التحقق: أنت مدير النظام.";if(ab)ab.style.display="block";}).catch(function(){if(am)am.textContent="غير مصرح. سجّل دخولك بحساب المدير أولاً.";});
  var lo=$("#logoutBtn");if(lo)lo.addEventListener("click",function(){fetch("/api/auth/logout",{method:"POST",credentials:"same-origin"}).then(function(){location.href="/login";});});
