@@ -243,13 +243,41 @@ def azo_scan(request: Request, market: str = "spot", timeframe: str = "15m"):
             _refresh_outcomes(c, core, cutoff)
         except Exception as exc:
             print("[AZO] outcome refresh:",str(exc)[:120],flush=True)
-        try:
-            rows = core.opportunities(market, timeframe)
-        except TypeError:
-            try: rows = core.opportunities(market)
-            except Exception: rows = []
-        except Exception:
-            rows = []
+        # Futures must use the live Binance USD-M futures scanner, not the generic research feed.
+        if market == "futures":
+            try:
+                rows = core._scan_binance_futures(timeframe)
+            except Exception as exc:
+                print("[AZO] futures scanner failed:", str(exc)[:160], flush=True)
+                rows = []
+            for future_row in rows or []:
+                if not isinstance(future_row, dict):
+                    continue
+                future_side = str(future_row.get("direction") or future_row.get("side") or "").upper()
+                if future_side not in ("BUY", "SELL"):
+                    continue
+                try:
+                    price = float(future_row.get("entry") or 0)
+                    ema = float(future_row.get("ema200") or 0)
+                    rsi = float(future_row.get("rsi") or 50)
+                    change = float(future_row.get("change_pct") or 0)
+                except (TypeError, ValueError):
+                    continue
+                # These are separate, explicit components from the futures candle scan.
+                future_row["direction"] = future_side
+                future_row["methods"] = {
+                    "ema200_trend": (1 if price > ema else -1 if price < ema else 0),
+                    "rsi50": (1 if rsi > 50 else -1 if rsi < 50 else 0),
+                    "same_timeframe_momentum": (1 if change > 0 else -1 if change < 0 else 0)
+                }
+        else:
+            try:
+                rows = core.opportunities(market, timeframe)
+            except TypeError:
+                try: rows = core.opportunities(market)
+                except Exception: rows = []
+            except Exception:
+                rows = []
         results = []
         for row in rows or []:
             if not isinstance(row, dict): continue
@@ -259,8 +287,14 @@ def azo_scan(request: Request, market: str = "spot", timeframe: str = "15m"):
             tps = [row.get("tp1"),row.get("tp2"),row.get("tp3")]
             try:
                 entry, sl = float(entry), float(sl)
-                if side not in ("BUY","SELL") or entry <= 0 or sl <= 0 or abs(entry-sl) <= 0: continue
-            except Exception: continue
+                targets = [float(v) for v in tps]
+                import math
+                if side not in ("BUY","SELL") or not all(math.isfinite(v) and v > 0 for v in [entry, sl, *targets]): continue
+                if entry == sl: continue
+                if side == "BUY" and not (sl < entry < targets[0] < targets[1] < targets[2]): continue
+                if side == "SELL" and not (targets[2] < targets[1] < targets[0] < entry < sl): continue
+                tps = targets
+            except (TypeError, ValueError): continue
             score, aligned, opposed, votes = _score(row, learned_weights)
             if aligned < 2 or opposed > aligned or score < 50: continue
             symbol = str(row.get("symbol") or "").strip()
