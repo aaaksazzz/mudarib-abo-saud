@@ -286,9 +286,12 @@ def _build(only_market=None, hours=24):
         market=str(row.get("market") or "")
         symbol=str(row.get("symbol") or "").upper()
         metrics=ticker_metrics.get((market,symbol))
-        if not metrics and market in ("us","saudi","contracts","forex","gold"):
+        if not metrics and market in ("us","saudi","contracts","forex","gold","alpha"):
             try:
-                candles=engine._yahoo(symbol,market,"1d",3) or []
+                if market=="alpha":
+                    candles=engine._alpha_klines(symbol,"1d",3) or []
+                else:
+                    candles=engine._yahoo(symbol,market,"1d",3) or []
                 metrics={}
                 if len(candles)>=2:
                     previous=float(candles[-2].get("close") or 0)
