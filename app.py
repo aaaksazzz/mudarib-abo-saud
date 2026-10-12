@@ -81,6 +81,8 @@ async def _enforce_market_switches(request:Request,call_next):
         except Exception:
             # Do not take the site down if the admin table is not initialized yet.
             pass
+    if path=="/static/gold.html":
+        return RedirectResponse("/static/forex.html",status_code=308)
     return await call_next(request)
 
 
