@@ -58,13 +58,13 @@ async def _enforce_market_switches(request:Request,call_next):
         "/static/us.html":"us","/market/us":"us","/fast-us":"us",
         "/static/saudi.html":"saudi","/market/saudi":"saudi","/fast-saudi":"saudi",
         "/static/forex.html":"forex","/market/forex":"forex","/fast-forex":"forex",
-        "/static/alpha.html":"alpha","/static/gold.html":"forex",
+        "/static/alpha.html":"alpha","/static/gold.html":"gold",
     }
     key=page_map.get(path)
     if path=="/static/public-trades.html" or path=="/api/public-trades":
         m=str(q.get("market") or "all").lower()
         if m in ("spot","futures","alpha","contracts","us","saudi","forex","gold"):
-            key="forex" if m=="gold" else m
+            key=m
     if path=="/api/opportunities":
         m=str(q.get("market") or "").lower()
         if m in ("spot","futures","alpha","contracts","us","saudi","forex"):
@@ -102,7 +102,7 @@ async def _enforce_market_switches(request:Request,call_next):
         "/static/forex.html":"/static/public-trades.html?market=forex&hours=24",
         "/market/forex":"/static/public-trades.html?market=forex&hours=24",
         "/fast-forex":"/static/public-trades.html?market=forex&hours=24",
-        "/static/gold.html":"/static/public-trades.html?market=forex&hours=24",
+        "/static/gold.html":"/static/public-trades.html?market=gold&hours=24",
     }
     if path in legacy_market_redirects:
         return RedirectResponse(legacy_market_redirects[path],status_code=308)
