@@ -25,11 +25,14 @@
 </section>
 <section class="section">
 <div class="section-head"><div><h2>🇸🇦 قطاعات السوق السعودي — تاسي</h2><p class="sub">تحليل القطاع يكون من تغير مؤشر القطاع واتساع الحركة داخله، وليس من توصيات الأسهم الفردية.</p></div></div>
-<div class="notice">بيانات الأداء الحي التفصيلية لمؤشرات قطاعات تاسي غير مربوطة بالمنصة حتى الآن. لذلك لن أعرض نسب تغير تقديرية أو أوجّهك إلى ماسح الأسهم العام على أنها تحليل قطاع. استخدم المصدر الرسمي أدناه لمراجعة أداء مؤشرات القطاعات.</div>
+<div class="summary" id="tasiSummary"><div class="metric"><small>مؤشر تاسي</small><b>جاري تحميل البيانات…</b></div><div class="metric"><small>الاتجاه العام</small><b>—</b></div><div class="metric"><small>قوة الحركة RSI</small><b>—</b></div></div>
+<div class="cards" id="tasiCards"><article class="sector-card"><div class="status">جاري تحليل حركة مؤشر تاسي…</div></article></div>
+<div class="status" id="tasiStatus" role="status" aria-live="polite">جاري الاتصال بمصدر بيانات المؤشر…</div>
+<h3 style="font-size:15px;margin:18px 0 10px">مؤشرات القطاعات المدرجة في تاسي</h3>
 <div class="saudi-grid" id="saudiSectorCards"></div>
 <a class="sector-link" href="https://www.saudiexchange.sa/wps/portal/saudiexchange/ourmarkets/main-market-watch/marketsummary?locale=en" target="_blank" rel="noopener noreferrer">فتح ملخص السوق الرسمي ومؤشرات القطاعات في تداول السعودية ↗</a>
 </section>
-<p class="notice">ملاحظة منهجية: الصندوق القطاعي الأمريكي مؤشر بديل لحركة القطاع وليس مؤشرًا رسميًا لجميع الشركات. بيانات تاسي القطاعية تحتاج ربط مصدر مباشر قبل عرض ترتيب يومي/أسبوعي/شهري موثوق.</p>
+<p class="notice">ملاحظة منهجية: تحليل تاسي يستخدم بيانات المؤشر المتاحة من المصدر الخارجي، وقد تكون متأخرة. روابط القطاعات السعودية تفتح صفحة مؤشرات القطاعات الرسمية؛ لا تُعرض نسب قطاعية إلا إذا وصلت بيانات موثوقة.</p>
 </main>
 <script>
 (function(){
@@ -50,6 +53,14 @@
  const saudi=["البنوك","الطاقة","المواد الأساسية","السلع الرأسمالية","الخدمات التجارية والمهنية","النقل","السلع طويلة الأجل","الخدمات الاستهلاكية","الإعلام والترفيه","تجزئة السلع الكمالية","إنتاج الأغذية","تجزئة السلع الأساسية","المنتجات المنزلية والشخصية","الرعاية الصحية","الأدوية","الاتصالات","المرافق العامة","الصناديق العقارية المتداولة","الخدمات المالية المتنوعة","التأمين","إدارة وتطوير العقارات","تطبيقات وخدمات التقنية"];
  const official="https://www.saudiexchange.sa/wps/portal/saudiexchange/ourmarkets/main-market-watch/marketsummary?locale=en";
  $("#saudiSectorCards").innerHTML=saudi.map(n=>'<a class="saudi-sector" href="'+official+'" target="_blank" rel="noopener noreferrer">'+n+'<span>بيانات المؤشر الرسمية ↗</span></a>').join("");
+ fetch("/api/sectors/overview?market=saudi",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+  if(!d.ok)throw Error(d.message||"unavailable");
+  const f=v=>v==null?"—":(v>0?"+":"")+Number(v).toFixed(2)+"%";
+  const c=v=>v>0?"positive":v<0?"negative":"neutral";
+  $("#tasiSummary").innerHTML='<div class="metric"><small>مستوى تاسي</small><b>'+Number(d.price).toLocaleString("ar-SA")+'</b></div><div class="metric"><small>الاتجاه العام</small><b>'+d.trend+'</b></div><div class="metric"><small>RSI · 14</small><b>'+d.rsi14+'</b></div>';
+  $("#tasiCards").innerHTML='<article class="sector-card"><div class="sector-top"><div><h3>أداء مؤشر تاسي</h3><div class="ticker">المؤشر العام للسوق الرئيسية</div></div><div class="change '+c(d.change_1d)+'">'+f(d.change_1d)+'</div></div><div class="mini"><div><small>اليوم</small><b class="'+c(d.change_1d)+'">'+f(d.change_1d)+'</b></div><div><small>أسبوع</small><b class="'+c(d.change_1w)+'">'+f(d.change_1w)+'</b></div><div><small>شهر</small><b class="'+c(d.change_1m)+'">'+f(d.change_1m)+'</b></div></div><div class="notice">المتوسط 20 جلسة: '+Number(d.sma20).toLocaleString("ar-SA")+' · المتوسط 50 جلسة: '+Number(d.sma50).toLocaleString("ar-SA")+'</div></article>';
+  $("#tasiStatus").textContent="تم تحميل تحليل تاسي من "+d.source+"؛ قد تكون البيانات متأخرة.";
+ }).catch(()=>{$("#tasiStatus").textContent="تعذر تحميل بيانات تاسي حاليًا؛ لم نعرض أرقامًا تقديرية.";$("#tasiCards").innerHTML='<article class="sector-card"><h3>بيانات تاسي غير متاحة مؤقتًا</h3><p class="sub">حاول لاحقًا أو راجع مؤشرات تداول السعودية من الرابط أدناه.</p></article>';});
  fetch("/api/sectors/overview?market=us",{cache:"no-store"}).then(r=>{if(!r.ok)throw Error("HTTP "+r.status);return r.json()}).then(d=>{rows=Array.isArray(d.items)?d.items:[];render();}).catch(()=>{$("#usStatus").textContent="تعذر تحميل بيانات أداء القطاعات الآن. أعد المحاولة لاحقًا.";});
 })();
 </script>
