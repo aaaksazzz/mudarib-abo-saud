@@ -97,6 +97,19 @@ def _results_locked(core):
  # Public results must come only from published external recommendations.
  # Remove legacy internally-generated technical signals so they cannot inflate stats.
  c.execute("delete from recommendation_results where strategy_key IS NULL OR strategy_key!='public-trade'")
+ # Clean previously cached crypto rows whose symbols are not real contracts on the matching exchange.
+ allowed_symbols={}
+ for mk in ("spot","futures"):
+  try:
+   tickers=core._binance24(mk=="futures")
+   allowed_symbols[mk]={str(t.get("symbol") or "").upper() for t in tickers if str(t.get("symbol") or "").upper().endswith("USDT")}
+  except Exception:
+   allowed_symbols[mk]=set()
+  if allowed_symbols[mk]:
+   existing=c.execute("select id,symbol from recommendation_results where market=? and created>=? and strategy_key='public-trade'",(mk,cutoff)).fetchall()
+   bad_ids=[int(rid) for rid,symbol in existing if str(symbol or "").upper() not in allowed_symbols[mk]]
+   if bad_ids:
+    c.executemany("delete from recommendation_results where id=?",[(rid,) for rid in bad_ids])
  # Track the exact public trade cards too, not only the internal technical scanner.
  try:
   import public_trades as public
@@ -109,6 +122,7 @@ def _results_locked(core):
   if market=="gold": market="forex"
   if market not in MARKETS: continue
   symbol=str(x.get("symbol") or "").strip().upper()
+  if market in ("spot","futures") and allowed_symbols.get(market) and symbol not in allowed_symbols[market]: continue
   direction=str(x.get("direction") or "").strip().upper()
   entry=_num(x.get("entry")); created=_num(x.get("created_at")) or now
   if created>100000000000: created/=1000.0
