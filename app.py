@@ -565,7 +565,7 @@ def sitemap():
 
 
 @app.get("/",response_class=HTMLResponse)
-def home(request:Request): return RedirectResponse("/static/public-trades.html?market=all&hours=24",status_code=302)
+def home(request:Request): return FileResponse(BASE/"static"/"index.html",headers={"Cache-Control":"no-store"})
 
 @app.get("/analysis",response_class=HTMLResponse)
 def analysis_page(request:Request): return RedirectResponse("/static/public-trades.html?market=all&hours=24",status_code=302)
