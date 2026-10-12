@@ -9,8 +9,8 @@ from multilingual_articles import router as multilingual_router, DATA as MULTILI
 router = APIRouter()
 BASE = Path(__file__).resolve().parent
 STATIC = BASE / "static"
-DEFAULT_SITE_URL = "https://raspy-hill-9a85.aaaksazzz1.workers.dev"
-EXCLUDED = {"admin.html", "login.html", "signup.html", "register.html"}
+DEFAULT_SITE_URL = "https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run"
+EXCLUDED = {"admin.html", "login.html", "signup.html", "register.html", "index.html", "technical.html"}
 
 def _site_url(request: Request) -> str:
     # Set SEO_SITE_URL in Northflank when a permanent custom domain is configured.
