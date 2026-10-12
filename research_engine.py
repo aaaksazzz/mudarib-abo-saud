@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor,as_completed
 UA="SMART-TRADING-PRO/6.0 pure-method-hybrid"
 DISCOVER_TTL=45.0
 FETCH_TIMEOUT=5.0
-MAX_SOURCE_AGE=24*60*60
+MAX_SOURCE_AGE=48*60*60
 MIN_CRYPTO_QUOTE_VOLUME=1_000_000.0
 CACHE={}
 ACTIVE_SIGNALS={}
@@ -117,9 +117,9 @@ def _news(q):
     # the first non-empty feed, so recommendation coverage is broad.
     # Search two indexes and a second regional Google News feed; merge/dedupe below.
     urls=[
-        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:1d","hl":"en-US","gl":"US","ceid":"US:en"}),
-        "https://www.bing.com/news/search?"+urllib.parse.urlencode({"q":q,"format":"rss","freshness":"Day"}),
-        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:1d","hl":"en-GB","gl":"GB","ceid":"GB:en"})
+        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:2d","hl":"en-US","gl":"US","ceid":"US:en"}),
+        "https://www.bing.com/news/search?"+urllib.parse.urlencode({"q":q,"format":"rss","freshness":"Week"}),
+        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:2d","hl":"en-GB","gl":"GB","ceid":"GB:en"})
     ]
     cutoff=time.time()-MAX_SOURCE_AGE
     merged=[]; seen=set(); now=time.time()
@@ -241,7 +241,10 @@ def _internet(market):
                 full=base
                 if any(w in base.lower() for w in signal_words):
                     full=base+" "+_article(h["url"])
-                sym=_symbol(full,market); d=_direction(full)
+                sym=_symbol(full,market) or _symbol(base,market)
+                # Headlines are usually more directional than article text, which may
+                # discuss both outcomes. Fall back to the summary, then full article.
+                d=_direction(h.get("title","")) or _direction(h.get("text","")) or _direction(full)
                 if sym and d:rows.append({"symbol":sym,"direction":d,"source_title":h["title"],"source_published":h["published"],"source_url":h["url"],"source_text":full})
     seen=set(); out=[]
     for r in rows:
