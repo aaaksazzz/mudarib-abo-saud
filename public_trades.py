@@ -90,26 +90,30 @@ def _scan_fallback(engine, market):
         return []
     try:
         if market in ("spot","futures"):
-            symbols=[s for s,v in engine._crypto_universe(market)[:18]]
+            symbols=[s for s,v in engine._crypto_universe(market)[:40]]
         elif market=="us":
             symbols=[]
             for s in engine.BASE_UNIVERSE.get("us",[]):
                 if engine._passes_volume_filter(s,"us"):
                     symbols.append(s)
-                if len(symbols)>=12: break
+                if len(symbols)>=24: break
         else:
-            symbols=list(engine.BASE_UNIVERSE.get(market,[]))[:12]
+            symbols=list(engine.BASE_UNIVERSE.get(market,[]))[:28 if market=="saudi" else 16]
         if not symbols:
             return []
         out=[]
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            jobs={pool.submit(engine._analyze_symbol,s,market,"15m"):s for s in symbols}
+        frame="1d" if market=="saudi" else "15m"
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            jobs={pool.submit(engine._analyze_symbol,s,market,frame):s for s in symbols}
             for fut in as_completed(jobs):
                 try: a=fut.result()
                 except Exception: a=None
                 sym=jobs[fut]
                 if not a and market not in ("spot",):
-                    try: a=engine._analyze_symbol_method(sym,market,"15m","classical")
+                    try: a=engine._analyze_symbol_method(sym,market,frame,"classical")
+                    except Exception: a=None
+                if not a and market=="saudi":
+                    try: a=engine._analyze_symbol(sym,market,"15m")
                     except Exception: a=None
                 if not isinstance(a,dict): continue
                 side=str(a.get("side") or a.get("direction") or "").upper()
@@ -127,7 +131,7 @@ def _scan_fallback(engine, market):
                     "expires_at":time.time()+RETENTION,"level_type":"تحليل فني متعدد المناهج","is_estimated":False,
                     "status":"نشطة","source_count":0,"source_urls":[],"scan_generated":True,
                     "ai_pct":round(float(a.get("ai_pct") or a.get("recommendation_score") or 0),1),
-                    "timeframe":"15m","reason":str(a.get("reason") or "")[:240]})
+                    "timeframe":frame,"reason":str(a.get("reason") or "")[:240]})
         out.sort(key=lambda x:(-float(x.get("ai_pct") or 0),x["symbol"]))
         return out[:12]
     except Exception as exc:
