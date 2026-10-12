@@ -48,34 +48,58 @@ async function fetchBinanceJson(path){
  throw lastError||Error('تعذر الاتصال بمصادر Binance العامة');
 }
 function detectTechnicalPatterns(data){
- const a=data.map(k=>({h:+k[2],l:+k[3],o:+k[1],c:+k[4],v:+k[5]})),n=a.length,p=a.slice(-72),off=n-p.length;
+ const a=data.map((k,i)=>({i,h:+k[2],l:+k[3],o:+k[1],c:+k[4],v:+k[5]||0})),n=a.length,p=a.slice(-100),off=n-p.length;
+ if(n<10)return [];
+ const out=[],seen=new Set(),near=(x,y,t=.025)=>Math.abs(x-y)/Math.max(Math.abs(x),Math.abs(y),1e-12)<t;
+ const add=(name,score,dir,points=[],kind='chart')=>{if(!seen.has(name)){seen.add(name);out.push({name,score,dir,points,kind})}};
  const highs=[],lows=[];
  for(let i=2;i<p.length-2;i++){
   if(p[i].h>=p[i-1].h&&p[i].h>=p[i-2].h&&p[i].h>=p[i+1].h&&p[i].h>=p[i+2].h)highs.push({i:i+off,v:p[i].h});
   if(p[i].l<=p[i-1].l&&p[i].l<=p[i-2].l&&p[i].l<=p[i+1].l&&p[i].l<=p[i+2].l)lows.push({i:i+off,v:p[i].l});
  }
- const out=[],near=(x,y,t=.025)=>Math.abs(x-y)/Math.max(Math.abs(x),Math.abs(y),1e-12)<t;
- const ph=highs.slice(-3),pl=lows.slice(-3);
- if(ph.length>=2&&near(ph.at(-2).v,ph.at(-1).v,.02))out.push({name:'قمة مزدوجة',score:78,dir:'هبوط محتمل',points:[ph.at(-2),ph.at(-1)]});
- 
- if(ph.length>=3&&ph[1].v>ph[0].v&&ph[1].v>ph[2].v&&near(ph[0].v,ph[2].v,.045))out.push({name:'رأس وكتفين',score:76,dir:'انعكاس هابط محتمل',points:ph});
- if(pl.length>=3&&pl[1].v<pl[0].v&&pl[1].v<pl[2].v&&near(pl[0].v,pl[2].v,.045))out.push({name:'رأس وكتفين مقلوب',score:76,dir:'انعكاس صاعد محتمل',points:pl});
- if(ph.length>=2&&pl.length>=2){
-  const h1=ph.at(-2),h2=ph.at(-1),l1=pl.at(-2),l2=pl.at(-1);
-  if(h2.v<h1.v&&l2.v>l1.v)out.push({name:'مثلث متماثل',score:72,dir:'انتظار الاختراق',points:[h1,h2,l1,l2]});
-  if(near(h1.v,h2.v,.035)&&l2.v>l1.v)out.push({name:'مثلث صاعد',score:73,dir:'اختراق صاعد محتمل',points:[h1,h2,l1,l2]});
-  if(h2.v<h1.v&&near(l1.v,l2.v,.035))out.push({name:'مثلث هابط',score:73,dir:'كسر هابط محتمل',points:[h1,h2,l1,l2]});
-  if(h2.v<h1.v&&l2.v<l1.v)out.push({name:'وتد هابط',score:68,dir:'انعكاس صاعد محتمل',points:[h1,h2,l1,l2]});
-  if(h2.v>h1.v&&l2.v>l1.v)out.push({name:'وتد صاعد',score:68,dir:'انعكاس هابط محتمل',points:[h1,h2,l1,l2]});
+ const ph=highs.slice(-5),pl=lows.slice(-5),h1=ph.at(-2),h2=ph.at(-1),l1=pl.at(-2),l2=pl.at(-1);
+ if(ph.length>=2&&near(ph.at(-2).v,ph.at(-1).v,.025))add('قمة مزدوجة',80,'انعكاس هابط محتمل',[ph.at(-2),ph.at(-1)]);
+ if(pl.length>=2&&near(pl.at(-2).v,pl.at(-1).v,.025))add('قاع مزدوج',80,'انعكاس صاعد محتمل',[pl.at(-2),pl.at(-1)]);
+ if(ph.length>=3&&near(ph.at(-3).v,ph.at(-2).v,.04)&&near(ph.at(-2).v,ph.at(-1).v,.04))add('قمة ثلاثية',82,'انعكاس هابط محتمل',ph.slice(-3));
+ if(pl.length>=3&&near(pl.at(-3).v,pl.at(-2).v,.04)&&near(pl.at(-2).v,pl.at(-1).v,.04))add('قاع ثلاثي',82,'انعكاس صاعد محتمل',pl.slice(-3));
+ if(ph.length>=3&&ph.at(-2).v>ph.at(-3).v&&ph.at(-2).v>ph.at(-1).v&&near(ph.at(-3).v,ph.at(-1).v,.05))add('رأس وكتفين',80,'انعكاس هابط محتمل',ph.slice(-3));
+ if(pl.length>=3&&pl.at(-2).v<pl.at(-3).v&&pl.at(-2).v<pl.at(-1).v&&near(pl.at(-3).v,pl.at(-1).v,.05))add('رأس وكتفين مقلوب',80,'انعكاس صاعد محتمل',pl.slice(-3));
+ if(h1&&h2&&l1&&l2){
+  if(h2.v<h1.v&&l2.v>l1.v)add('مثلث متماثل',75,'بانتظار الاختراق',[h1,h2,l1,l2]);
+  if(near(h1.v,h2.v,.035)&&l2.v>l1.v)add('مثلث صاعد',77,'اختراق صاعد محتمل',[h1,h2,l1,l2]);
+  if(h2.v<h1.v&&near(l1.v,l2.v,.035))add('مثلث هابط',77,'كسر هابط محتمل',[h1,h2,l1,l2]);
+  if(h2.v<h1.v&&l2.v<l1.v)add('وتد هابط',72,'انعكاس صاعد محتمل',[h1,h2,l1,l2]);
+  if(h2.v>h1.v&&l2.v>l1.v)add('وتد صاعد',72,'انعكاس هابط محتمل',[h1,h2,l1,l2]);
+  if(h2.v>h1.v&&l2.v<l1.v)add('نموذج متسع صاعد',68,'تذبذب واتساع المخاطر',[h1,h2,l1,l2]);
+  if(h2.v<h1.v&&l2.v>l1.v&&near(h1.v,h2.v,.08))add('وتد هابط متقارب',69,'احتمال انعكاس صاعد',[h1,h2,l1,l2]);
  }
- const last=a.at(-1),prev=a.at(-2);
- if(last.c>last.o&&prev.c<prev.o&&last.c>=prev.o&&last.o<=prev.c)out.push({name:'ابتلاع شرائي',score:66,dir:'صعود محتمل',points:[]});
- if(last.c<last.o&&prev.c>prev.o&&last.c<=prev.o&&last.o>=prev.c)out.push({name:'ابتلاع بيعي',score:66,dir:'هبوط محتمل',points:[]});
- if(p.length>=20){
-  const first=p.slice(0,10),tail=p.slice(-10),mean=x=>x.reduce((s,z)=>s+z.c,0)/x.length,drift=(mean(tail)-mean(first))/Math.max(mean(first),1e-12);
-  if(Math.abs(drift)>.025){const recent=p.slice(-12),r=(Math.max(...recent.map(x=>x.h))-Math.min(...recent.map(x=>x.l)))/Math.max(mean(recent),1e-12);if(r<.06)out.push({name:drift>0?'علم صاعد محتمل':'علم هابط محتمل',score:63,dir:'يحتاج تأكيد',points:[]});}
- }
- return out;
+ const recent=p.slice(-24),rangeHi=Math.max(...recent.map(x=>x.h)),rangeLo=Math.min(...recent.map(x=>x.l)),meanClose=recent.reduce((z,x)=>z+x.c,0)/recent.length;
+ const first=recent.slice(0,Math.floor(recent.length/2)),lastHalf=recent.slice(Math.floor(recent.length/2));
+ const avg=x=>x.reduce((z,c)=>z+c.c,0)/Math.max(1,x.length),drift=(avg(lastHalf)-avg(first))/Math.max(avg(first),1e-12);
+ const rangePct=(rangeHi-rangeLo)/Math.max(meanClose,1e-12);
+ if(Math.abs(drift)>.025&&rangePct<.12)add(drift>0?'علم صاعد محتمل':'علم هابط محتمل',67,'يحتاج تأكيد',[]);
+ if(Math.abs(drift)>.025&&rangePct<.07)add(drift>0?'راية صاعدة محتملة':'راية هابطة محتملة',65,'انتظار الاختراق',[]);
+ if(rangePct<.07&&Math.abs(drift)<.025)add('مستطيل سعري / نطاق عرضي',62,'انتظار كسر النطاق',[{i:Math.max(0,n-24),v:rangeLo},{i:n-1,v:rangeHi}]);
+ if(h1&&h2&&l1&&l2&&h2.v>h1.v&&l2.v>l1.v&&drift>0)add('قناة صاعدة محتملة',65,'اتجاه صاعد',[h1,h2,l1,l2]);
+ if(h1&&h2&&l1&&l2&&h2.v<h1.v&&l2.v<l1.v&&drift<0)add('قناة هابطة محتملة',65,'اتجاه هابط',[h1,h2,l1,l2]);
+ const c=a.at(-1),q=a.at(-2),r=a.at(-3),body=x=>Math.abs(x.c-x.o),span=x=>Math.max(x.h-x.l,1e-12),upper=x=>x.h-Math.max(x.o,x.c),lower=x=>Math.min(x.o,x.c)-x.l;
+ if(c.c>c.o&&q.c<q.o&&c.c>=q.o&&c.o<=q.c)add('ابتلاع شرائي',70,'صعود محتمل',[],'candle');
+ if(c.c< c.o&&q.c>q.o&&c.c<=q.o&&c.o>=q.c)add('ابتلاع بيعي',70,'هبوط محتمل',[],'candle');
+ if(lower(c)>=body(c)*2&&upper(c)<=body(c)*.7&&c.c>c.o)add('مطرقة صاعدة',66,'ارتداد صاعد محتمل',[],'candle');
+ if(upper(c)>=body(c)*2&&lower(c)<=body(c)*.7&&c.c<c.o)add('نجمة ساقطة',66,'ضغط بيعي محتمل',[],'candle');
+ if(body(c)/span(c)<.1)add('دوجي (شمعة حيرة)',58,'انتظار تأكيد الاتجاه',[],'candle');
+ if(c.c>c.o&&q.c<q.o&&r.c<r.o&&c.c>(q.o+q.c)/2&&q.c<r.c)add('نجمة الصباح المحتملة',68,'انعكاس صاعد محتمل',[],'candle');
+ if(c.c< c.o&&q.c>q.o&&r.c>r.o&&c.c<(q.o+q.c)/2&&q.c>r.c)add('نجمة المساء المحتملة',68,'انعكاس هابط محتمل',[],'candle');
+ if(c.c>c.o&&q.c<q.o&&c.o<q.c&&c.c>(q.o+q.c)/2)add('خط الاختراق الصاعد (Piercing)',64,'ارتداد صاعد محتمل',[],'candle');
+ if(c.c< c.o&&q.c>q.o&&c.o>q.c&&c.c<(q.o+q.c)/2)add('الغطاء السحابي الداكن',64,'انعكاس هابط محتمل',[],'candle');
+ if(c.c>c.o&&q.c>q.o&&r.c>r.o&&c.c>q.c&&q.c>r.c)add('ثلاثة جنود بيض',65,'زخم صاعد محتمل',[],'candle');
+ if(c.c< c.o&&q.c<q.o&&r.c<r.o&&c.c<q.c&&q.c<r.c)add('ثلاثة غربان سود',65,'زخم هابط محتمل',[],'candle');
+ if(c.h<q.h&&c.l>q.l)add('شمعة داخلية (Inside Bar)',60,'ترقب كسر النطاق',[],'candle');
+ if(near(c.l,q.l,.003)&&c.c>c.o&&q.c<q.o)add('ملقاط القاع',62,'ارتداد صاعد محتمل',[],'candle');
+ if(near(c.h,q.h,.003)&&c.c< c.o&&q.c>q.o)add('ملقاط القمة',62,'انعكاس هابط محتمل',[],'candle');
+ if(c.c>rangeHi*.999&&c.c>c.o)add('اختراق مقاومة محتمل',61,'تأكيد الاختراق بالحجم',[],'breakout');
+ if(c.c<rangeLo*1.001&&c.c<c.o)add('كسر دعم محتمل',61,'تأكيد الكسر بالحجم',[],'breakout');
+ return out.sort((x,y)=>y.score-x.score);
 }
 function tvResolution(tf){return ({'1m':'1','3m':'3','5m':'5','15m':'15','30m':'30','1h':'60','2h':'120','4h':'240','6h':'360','8h':'480','12h':'720','1d':'D','3d':'3D','1w':'W','1M':'M'})[tf]||'60'}
 function tvMarketSymbol(symbol){
