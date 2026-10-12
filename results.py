@@ -116,7 +116,7 @@ def _results_locked(core):
  try:
   import public_trades as public
   with public._lock:
-   public_rows=list(public._cache.get("trades",[]))
+   public_rows=sorted(public._cache.get("trades",[]),key=lambda x:float(x.get("created_at") or 0),reverse=True)[:100]
  except Exception:
   public_rows=[]
  for x in public_rows:
