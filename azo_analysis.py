@@ -116,6 +116,10 @@ def _score(row, learned_weights=None):
     except Exception: base = 0.0
     total_weight = sum(w for _, w in aligned + opposed)
     agreement = (sum(w for _, w in aligned) / max(1e-12, total_weight)) * 100.0 if vals else 0.0
+    # Sources without per-method votes still carry their own published/research score.
+    # Do not multiply that score by 0.35 and silently discard every such recommendation.
+    if not vals:
+        return round(base, 1), 0, 0, votes if isinstance(votes, dict) else {}
     score = min(100.0, max(0.0, base * 0.35 + agreement * 0.50 + min(len(aligned), 5) * 3.0 - min(len(opposed), 5) * 4.0))
     return round(score, 1), len(aligned), len(opposed), votes if isinstance(votes, dict) else {}
 
@@ -341,7 +345,11 @@ def azo_scan(request: Request, market: str = "spot", timeframe: str = "15m"):
                 tps = targets
             except (TypeError, ValueError): continue
             score, aligned, opposed, votes = _score(row, learned_weights)
-            if aligned < 2 or opposed > aligned or score < 50: continue
+            # Method-vote gate applies when the source actually provides votes.
+            # Otherwise retain only independently scored source recommendations.
+            has_method_votes = bool(votes)
+            if (has_method_votes and (aligned < 2 or opposed > aligned)) or (not has_method_votes and score < 65) or score < 50:
+                continue
             symbol = str(row.get("symbol") or "").strip()
             if not symbol: continue
             try:
