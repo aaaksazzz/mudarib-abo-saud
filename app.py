@@ -1706,6 +1706,88 @@ def strategy_scan(kind:str, timeframe:str="15m", market:str="spot"):
             "universe":int(breadth.get("universe") or total) }
 
 
+@app.get("/api/results")
+def api_results():
+    """Real, last-24-hour tracked signal outcomes for the results page.
+    Never infer wins/losses from planned TP/SL levels or target percentages.
+    """
+    from datetime import datetime, timezone
+    market_names = {
+        "spot": "سبوت", "futures": "فيوتشر", "contracts": "العقود",
+        "us": "الأسهم الأمريكية", "saudi": "السوق السعودي",
+        "forex": "فوركس وذهب", "gold": "الذهب", "alpha": "Alpha",
+    }
+    now = datetime.now(timezone.utc)
+    cutoff = now.replace(tzinfo=None).strftime("%Y-%m-%d %H:%M:%S")
+    c = db()
+    rows = c.execute("""
+        SELECT market, symbol, side, timeframe, entry, tp1, tp2, tp3, sl,
+               status, outcome, realized_pct, created_at, closed_at
+        FROM spot_signal_events
+        WHERE datetime(created_at) >= datetime('now', '-24 hours')
+        ORDER BY id DESC
+        LIMIT 200
+    """).fetchall()
+    c.close()
+
+    results = []
+    by_market = {k: {"wins": 0, "losses": 0, "open": 0, "closed": 0, "win_rate": 0}
+                 for k in market_names}
+    wins = losses = opened = closed = 0
+    for row in rows:
+        x = dict(row)
+        market = str(x.get("market") or "spot").lower()
+        if market not in by_market:
+            by_market[market] = {"wins": 0, "losses": 0, "open": 0, "closed": 0, "win_rate": 0}
+        outcome = str(x.get("outcome") or "").lower()
+        raw_status = str(x.get("status") or "open").lower()
+        if outcome == "win":
+            status = "WIN"
+            wins += 1
+            by_market[market]["wins"] += 1
+            closed += 1
+            by_market[market]["closed"] += 1
+        elif outcome == "loss":
+            status = "LOSS"
+            losses += 1
+            by_market[market]["losses"] += 1
+            closed += 1
+            by_market[market]["closed"] += 1
+        elif raw_status in ("expired", "cancelled", "canceled"):
+            status = "EXPIRED"
+        else:
+            status = "OPEN"
+            opened += 1
+            by_market[market]["open"] += 1
+        created = 0
+        try:
+            created = int(datetime.fromisoformat(str(x.get("created_at") or "").replace("Z", "+00:00")).replace(tzinfo=timezone.utc).timestamp())
+        except (TypeError, ValueError, OverflowError):
+            pass
+        results.append({
+            "market": market,
+            "symbol": x.get("symbol"),
+            "direction": str(x.get("side") or "BUY").upper(),
+            "timeframe": x.get("timeframe"),
+            "entry": x.get("entry"),
+            "tp1": x.get("tp1"), "tp2": x.get("tp2"), "tp3": x.get("tp3"),
+            "sl": x.get("sl"), "status": status, "outcome": outcome or None,
+            "realized_pct": x.get("realized_pct"), "created": created,
+        })
+    for stats in by_market.values():
+        denom = int(stats["closed"])
+        stats["win_rate"] = round(stats["wins"] / denom * 100, 2) if denom else 0
+    denom = wins + losses
+    return {
+        "ok": True, "window_hours": 24, "source": "spot_signal_events",
+        "stats": {"total": len(results), "wins": wins, "losses": losses,
+                  "open": opened, "closed": closed,
+                  "win_rate": round(wins / denom * 100, 2) if denom else 0},
+        "by_market": by_market, "results": results, "refreshing": False,
+        "note": "الإحصاءات مبنية على سجل الإشارات ونتائج الإغلاق المسجلة فقط؛ لا تُحتسب الأهداف المخططة كأرباح."
+    }
+
+
 @app.get("/api/strategy/performance")
 def strategy_performance():
     _update_spot_signal_outcomes()
