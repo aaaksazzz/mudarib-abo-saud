@@ -53,13 +53,15 @@ class SmokeTests(unittest.TestCase):
         engine_frames = set(re.findall(r'"([^"]+)"', engine_line.group(1)))
         self.assertTrue(set(backend_frames).issubset(engine_frames))
 
-    def test_market_navigation_only_keeps_method_pages_on_technical_page(self):
+    def test_market_navigation_uses_unified_independent_market_feeds(self):
         js = source("static/app.js")
-        self.assertIn('page==="technical"&&marketKeys.indexOf(s)>=0', js)
-        self.assertIn('loadTechnical(s,selectedTimeframe);return;', js)
+        self.assertIn('home:"/static/index.html"', js)
+        self.assertIn('var marketKeys=["spot","futures","alpha","contracts","us","saudi","forex"]', js)
         self.assertIn('if(routes[s]){window.location.href=routes[s];}', js)
+        for market in ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex"):
+            self.assertIn(f'{market}:"/static/public-trades.html?market={market}&hours=24"', js)
         for route in ("/static/spot.html", "/static/futures.html", "/static/alpha.html", "/static/contracts.html", "/static/us.html", "/static/saudi.html", "/static/forex.html"):
-            self.assertTrue((ROOT / route.lstrip("/")).exists(), f"Missing independent market page: {route}")
+            self.assertTrue((ROOT / route.lstrip("/")).exists(), f"Missing legacy redirect: {route}")
 
     def test_all_futures_entry_and_preflight_routes_require_login(self):
         tree = ast.parse(source("app.py"))
