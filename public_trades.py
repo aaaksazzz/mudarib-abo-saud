@@ -56,14 +56,14 @@ def _last_price(engine, market, symbol, ticker_maps):
     except Exception:
         return 0.0
 
-def _prepare(engine, market, raw, ticker_maps):
+def _prepare(engine, market, raw, ticker_maps, retention=86400):
     title = str(raw.get("source_title") or "").strip()
     body = str(raw.get("source_text") or title).strip()
     url = str(raw.get("source_url") or "").strip()
     published = str(raw.get("source_published") or "")
     published_at = _stamp(published)
     now = time.time()
-    if not title or not url or not published_at or published_at > now + 300 or now - published_at > RETENTION:
+    if not title or not url or not published_at or published_at > now + 300 or now - published_at > retention:
         return None
     symbol = str(raw.get("symbol") or "").upper().strip()
     direction = str(raw.get("direction") or "").upper().strip()
@@ -132,10 +132,10 @@ def _prepare(engine, market, raw, ticker_maps):
     source_quality = min(100, direct_level_score + title_signal_score + actionable_score + 20)
     return {"market":market,"market_label":LABELS[market],"symbol":symbol,"direction":direction,"source_quality":source_quality,"live_price":round(float(price),8) if price else None,
         "entry":round(float(entry),8),"tp1":round(targets[0],8),"tp2":round(targets[1],8),"tp3":round(targets[2],8),"sl":round(float(sl),8),
-        "source_title":title,"source_url":url,"source_published":published,"created_at":published_at,"expires_at":published_at+RETENTION,
+        "source_title":title,"source_url":url,"source_published":published,"created_at":published_at,"expires_at":published_at+retention,
         "level_type":level_type,"is_estimated":level_type!="مستويات منشورة بالمصدر","status":"نشطة","source_count":1,"mention_count":1,"source_domains_count":1,"source_domains":[urlparse(url).netloc.lower().removeprefix("www.")],"source_urls":[url], "risk_pct":round(abs(float(entry)-float(sl))/float(entry)*100,2), "tp1_pct":round(((targets[0]-float(entry)) if direction=="BUY" else (float(entry)-targets[0]))/float(entry)*100,2), "tp2_pct":round(((targets[1]-float(entry)) if direction=="BUY" else (float(entry)-targets[1]))/float(entry)*100,2), "tp3_pct":round(((targets[2]-float(entry)) if direction=="BUY" else (float(entry)-targets[2]))/float(entry)*100,2)}
 
-def _fetch_market(engine, market, ticker_maps):
+def _fetch_market(engine, market, ticker_maps, retention=86400):
     try:
         if market == "alpha":
             rows = []
@@ -150,7 +150,7 @@ def _fetch_market(engine, market, ticker_maps):
             rows = engine._internet(market)
         out=[]
         for raw in rows:
-            item=_prepare(engine,market,raw,ticker_maps)
+            item=_prepare(engine,market,raw,ticker_maps,retention)
             if item: out.append(item)
         # External published recommendations only; never invent internal scan signals.
         return market,out
@@ -158,7 +158,8 @@ def _fetch_market(engine, market, ticker_maps):
         print("[PUBLIC-TRADES] source failed",market,str(exc)[:120],flush=True)
         return market,[]
 
-def _build(only_market=None):
+def _build(only_market=None, hours=24):
+    retention=max(1,int(hours))*3600
     import research_engine as engine
     if only_market in (None, "", "all"):
         scan_markets=list(MARKETS)
@@ -177,7 +178,7 @@ def _build(only_market=None):
     combined=[]; counts={}
     # Bound concurrent source scans to protect the small web service.
     with ThreadPoolExecutor(max_workers=3) as pool:
-        jobs=[pool.submit(_fetch_market,engine,m,ticker_maps) for m in scan_markets]
+        jobs=[pool.submit(_fetch_market,engine,m,ticker_maps,retention) for m in scan_markets]
         for job in as_completed(jobs):
             market,rows=job.result(); counts[market]=len(rows); combined.extend(rows)
     merged={}
@@ -246,10 +247,10 @@ def _build(only_market=None):
     except Exception as exc: print("[PUBLIC-TRADES] cache save failed",str(exc)[:120],flush=True)
     return payload
 
-def _worker(market=None):
+def _worker(market=None, hours=24):
     global _refreshing,_cache
     try:
-        payload=_build(market)
+        payload=_build(market,hours)
         with _lock: _cache=payload
     except Exception as exc: print("[PUBLIC-TRADES] refresh failed",str(exc)[:160],flush=True)
     finally:
@@ -263,13 +264,13 @@ def public_trades(refresh: int = 0, market: str = "all", hours: int = 24):
         _cache["trades"]=[x for x in _cache.get("trades",[]) if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=RETENTION and not x.get("scan_generated")]
         relevant=list(MARKETS) if market=="all" else [market]
         updated_map=_cache.get("market_updated",{})
-        stale=any(not updated_map.get(m) or now-float(updated_map.get(m) or 0)>=CACHE_TTL for m in relevant)
-        if not _refreshing and (refresh==1 or stale):
-            _refreshing=True
-            threading.Thread(target=_worker,args=(market,),daemon=True,name="public-trades-"+str(market)).start()
         try: hours=int(hours)
         except Exception: hours=24
         if hours not in (12, 24, 48): hours=24
+        stale=any(not updated_map.get(m) or now-float(updated_map.get(m) or 0)>=CACHE_TTL for m in relevant)
+        if not _refreshing and (refresh==1 or stale):
+            _refreshing=True
+            threading.Thread(target=_worker,args=(market,hours),daemon=True,name="public-trades-"+str(market)).start()
         if market not in ("all",)+MARKETS: market="all"
         cutoff=now-hours*3600
         # Admin switches affect both individual market pages and the all-markets feed.
