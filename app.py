@@ -3081,6 +3081,44 @@ def _market_universe(market):
     if market=='contracts': return US_CONTRACT_SYMBOLS
     return []
 
+SECTOR_ETFS_US=[
+ {"symbol":"XLK","name":"التقنية"},{"symbol":"XLF","name":"الخدمات المالية"},
+ {"symbol":"XLV","name":"الرعاية الصحية"},{"symbol":"XLY","name":"السلع الكمالية"},
+ {"symbol":"XLP","name":"السلع الأساسية"},{"symbol":"XLI","name":"الصناعة"},
+ {"symbol":"XLE","name":"الطاقة"},{"symbol":"XLU","name":"المرافق"},
+ {"symbol":"XLB","name":"المواد الأساسية"},{"symbol":"XLRE","name":"العقارات"},
+ {"symbol":"XLC","name":"الاتصالات"}
+]
+
+@app.get("/api/sectors/overview")
+def sector_overview(market:str="us"):
+    """Sector-level performance using sector ETFs, not individual-stock recommendations."""
+    if market!="us":
+        return JSONResponse({"ok":False,"market":market,"message":"المصدر المباشر لأداء مؤشرات القطاعات السعودية غير مربوط بعد.","items":[]},status_code=200)
+    def one(item):
+        symbol=item["symbol"]
+        try:
+            url="https://query1.finance.yahoo.com/v8/finance/chart/"+urllib.parse.quote(symbol,safe="")+"?range=1mo&interval=1d"
+            req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0 SMART-TRADING-PRO"})
+            with urllib.request.urlopen(req,timeout=5) as response:
+                payload=json.loads(response.read().decode("utf-8","ignore"))
+            result=(payload.get("chart",{}).get("result") or [None])[0]
+            if not result: raise ValueError("missing chart")
+            closes=[float(x) for x in (result.get("indicators",{}).get("quote") or [{}])[0].get("close",[]) if x is not None and float(x)>0]
+            if len(closes)<2: raise ValueError("insufficient closes")
+            latest,previous=closes[-1],closes[-2]
+            def change(ago):
+                base=closes[-min(len(closes),ago+1)]
+                return round((latest/base-1)*100,2) if base else None
+            return {**item,"price":round(latest,2),"change_1d":round((latest/previous-1)*100,2),"change_1w":change(5),"change_1m":change(20),"updated":int(time.time()),"ok":True}
+        except Exception:
+            return {**item,"price":None,"change_1d":None,"change_1w":None,"change_1m":None,"ok":False}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        items=list(pool.map(one,SECTOR_ETFS_US))
+    valid=[x for x in items if x["ok"]]
+    valid.sort(key=lambda x:x["change_1d"],reverse=True)
+    return {"ok":bool(valid),"market":"us","source":"Yahoo Finance sector ETF proxies","updated":int(time.time()),"items":items,"leaders":[x["symbol"] for x in valid[:3]],"laggards":[x["symbol"] for x in valid[-3:]]}
+
 @app.get("/api/market-breadth")
 def market_breadth(market:str="spot",timeframe:str="15m"):
     try:
