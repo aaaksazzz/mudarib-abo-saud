@@ -19,7 +19,7 @@ try:
     with open(CACHE_FILE, "r", encoding="utf-8") as f:
         saved = json.load(f)
     now = time.time()
-    _cache["trades"] = [x for x in saved.get("trades", []) if float(x.get("expires_at") or 0) > now and now-float(x.get("created_at") or 0) <= RETENTION]
+    _cache["trades"] = [x for x in saved.get("trades", []) if float(x.get("expires_at") or 0) > now and now-float(x.get("created_at") or 0) <= RETENTION and not x.get("scan_generated")]
     _cache["updated"] = saved.get("updated")
     _cache["markets"] = saved.get("markets", {})
     _cache["market_updated"] = saved.get("market_updated", {})
@@ -224,11 +224,11 @@ def _build(only_market=None):
             market_updated=dict(_cache.get("market_updated",{}))
             market_counts=dict(_cache.get("markets",{}))
         scanned=set(scan_markets)
-        rows=[x for x in previous_trades if x.get("market") not in scanned and float(x.get("expires_at") or 0)>now]+rows
+        rows=[x for x in previous_trades if x.get("market") not in scanned and float(x.get("expires_at") or 0)>now and not x.get("scan_generated")]+rows
     for m in scan_markets:
         market_updated[m]=now
         market_counts[m]=counts.get(m,0)
-    rows=[x for x in rows if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=RETENTION]
+    rows=[x for x in rows if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=RETENTION and not x.get("scan_generated")]
     rows=sorted(rows,key=lambda x:(x["created_at"],x.get("source_count",0)),reverse=True)[:700]
     payload={"ok":True,"trades":rows,"updated":now,"refreshing":False,"markets":market_counts,"market_updated":market_updated}
     try:
@@ -251,7 +251,7 @@ def public_trades(refresh: int = 0, market: str = "all", hours: int = 24):
     global _refreshing,_cache
     now=time.time()
     with _lock:
-        _cache["trades"]=[x for x in _cache.get("trades",[]) if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=RETENTION]
+        _cache["trades"]=[x for x in _cache.get("trades",[]) if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=RETENTION and not x.get("scan_generated")]
         relevant=list(MARKETS) if market=="all" else [market]
         updated_map=_cache.get("market_updated",{})
         stale=any(not updated_map.get(m) or now-float(updated_map.get(m) or 0)>=CACHE_TTL for m in relevant)
