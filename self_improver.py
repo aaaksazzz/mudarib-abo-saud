@@ -73,6 +73,15 @@ def run_once():
             raise RuntimeError("نتائج الصفقات لا تحتوي كل حقول التعلم المطلوبة")
         rows=c.execute("""select market,timeframe,direction,entry,sl,tp1,tp2,tp3,status,hit_target,method_votes
           from recommendation_results where created>=? and status in ('WIN','LOSS')""",(cutoff,)).fetchall()
+        # AZO keeps its independently tracked outcomes in the same trading.db.
+        # Feed those real closed results into the same market/timeframe learner;
+        # otherwise the hourly learner can run forever while its input table stays empty.
+        azo_rows=[]
+        try:
+            azo_rows=c.execute("""select market,timeframe,direction,entry,sl,tp1,tp2,tp3,status,hit_target,method_votes,result_r
+              from azo_signals where created>=? and status in ('WIN','LOSS')""",(cutoff,)).fetchall()
+        except sqlite3.OperationalError:
+            pass
         for row in rows:
             try:
                 market=str(row["market"]); timeframe=str(row["timeframe"] or "15m")
@@ -87,7 +96,6 @@ def run_once():
                     target=row[["tp1","tp2","tp3"][hit-1]]
                     if target is None: continue
                     gross_r=abs(float(target)-entry)/risk
-                    # Conservative round-trip friction assumption; configurable by deployment.
                     friction=max(0.0,float(os.getenv("SELF_IMPROVER_ROUNDTRIP_COST_PCT","0.002")))
                     net_r=gross_r-(entry*friction/risk)
                 votes=json.loads(row["method_votes"] or "{}")
@@ -97,8 +105,23 @@ def run_once():
                     except Exception: continue
                     aligned=(side=="BUY" and vote>0) or (side=="SELL" and vote<0)
                     if not aligned: continue
-                    key=(market,timeframe,str(method))
-                    stats.setdefault(key,[]).append(net_r)
+                    stats.setdefault((market,timeframe,str(method)),[]).append(net_r)
+            except Exception:
+                continue
+        for row in azo_rows:
+            try:
+                market=str(row["market"]); timeframe=str(row["timeframe"] or "15m")
+                side=str(row["direction"] or "").upper()
+                net_r=float(row["result_r"])
+                votes=json.loads(row["method_votes"] or "{}")
+                if side not in ("BUY","SELL") or not votes: continue
+                checked.add((market,timeframe))
+                for method,vote in votes.items():
+                    try: vote=float(vote)
+                    except Exception: continue
+                    aligned=(side=="BUY" and vote>0) or (side=="SELL" and vote<0)
+                    if aligned:
+                        stats.setdefault((market,timeframe,str(method)),[]).append(net_r)
             except Exception:
                 continue
         changed=0
