@@ -86,6 +86,7 @@ MARKET_QUERIES={
  "saudi":["توصية تداول تاسي شراء بيع اليوم","السوق السعودي توصيات أسهم اليوم","توصيات تداول السوق السعودي اليوم","توصيات أسهم سعودية شراء بيع اليوم","توصيات تاسي دخول هدف وقف اليوم","أفضل توصيات الأسهم السعودية اليوم","site:tradingview.com/ideas السعودية تاسي سهم شراء بيع","site:argaam.com توصيات أسهم السعودية اليوم","site:sa.investing.com توصيات الأسهم السعودية شراء بيع"],
  "contracts":["ES=F","NQ=F","YM=F","RTY=F","CL=F","NG=F","ZB=F","ZN=F","S&P 500 futures LONG SHORT signal today","Nasdaq futures trading signal entry target stop loss","gold crude oil futures BUY SELL signal today","site:tradingview.com/ideas ES1! NQ1! futures today","site:reddit.com futures trading signal ES NQ today"],
  "forex":["forex recommendation BUY SELL today","forex trading signal entry target stop loss today","EURUSD GBPUSD USDJPY recommendation today","EURUSD signal today","GBPUSD signal today","USDJPY signal today","XAUUSD gold signal BUY SELL today","site:tradingview.com/ideas forex signal today","site:fxstreet.com forex forecast buy sell today","site:investing.com/analysis forex buy sell today","site:reddit.com/r/Forex trading signal EURUSD today"],
+ "gold":["XAUUSD gold trading signal today buy sell","gold price forecast entry target stop loss today","gold futures GC=F LONG SHORT signal today","XAUUSD buy sell signal entry target stop loss","site:tradingview.com/ideas XAUUSD gold signal today","site:investing.com/analysis gold price forecast today","site:fxstreet.com gold price forecast XAUUSD today","site:reddit.com gold trading signal XAUUSD today"],
  "alpha":["Binance Alpha token buy sell signal today","Binance Alpha token recommendation entry target stop loss","Binance Alpha new token analysis today","site:binance.com/en/alpha token listing today"]
 }
 
@@ -213,8 +214,8 @@ def _symbol(text,market):
             if re.search(re.escape(name),t,re.I):return sym
         return None
 
-    if market=="forex":
-        aliases={"اليورو دولار":"EURUSD","يورو دولار":"EURUSD","الباوند دولار":"GBPUSD","جنيه دولار":"GBPUSD","دولار ين":"USDJPY"}
+    if market in ("forex","gold"):
+        aliases={"الذهب":"XAUUSD","ذهب":"XAUUSD","GOLD":"XAUUSD","XAUUSD":"XAUUSD","اليورو دولار":"EURUSD","يورو دولار":"EURUSD","الباوند دولار":"GBPUSD","جنيه دولار":"GBPUSD","دولار ين":"USDJPY"}
         for name,sym in aliases.items():
             if name in t:return sym
         m=re.search(r"\b([A-Z]{3}\s*/?\s*[A-Z]{3})\b",t)
@@ -298,7 +299,8 @@ def _yahoo(symbol,market,interval="15m",limit=260):
         "us":symbol,
         "saudi":("^TASI" if str(symbol).upper() in {"TASI","^TASI"} else (symbol[:-3] if str(symbol).upper().endswith(".SR") else str(symbol))+".SR"),
         "contracts":{"ES":"ES=F","NQ":"NQ=F","YM":"YM=F","RTY":"RTY=F","WTI":"CL=F","NG":"NG=F","GC":"GC=F","SI":"SI=F","HG":"HG=F","ZB":"ZB=F","ZN":"ZN=F","ZF":"ZF=F","ZC":"ZC=F","ZS":"ZS=F","ZW":"ZW=F","6E":"6E=F","6B":"6B=F","6J":"6J=F","6A":"6A=F","6C":"6C=F"}.get(symbol,symbol),
-        "forex":symbol[:3]+symbol[3:]+"=X"
+        "forex":symbol[:3]+symbol[3:]+"=X",
+        "gold":"GC=F" if str(symbol).upper() in {"XAUUSD","GOLD","GC"} else symbol[:3]+symbol[3:]+"=X"
     }.get(market,symbol)
     hosts=("https://query1.finance.yahoo.com","https://query2.finance.yahoo.com")
     ranges=("10y","5y","2y") if interval=="1M" else ("5y","2y","1y") if interval=="1w" else ("7d","5d","1d") if interval=="1m" else ("60d","30d","10d")
