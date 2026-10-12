@@ -74,7 +74,7 @@ function loadCoreMarkets(){
   toolsBox.innerHTML=toolsItems.map(function(x){return '<article class="core-card tool-card" role="link" tabindex="0" data-s="'+x[2]+'"><div class="core-title"><span>'+x[0]+'</span><b>'+x[1]+'</b></div><div class="core-analysis">'+x[3]+'</div><div class="card-foot">استكشف القسم ←</div></article>';}).join("");
  }
  if(marketsBox){
-  var markets=[["₿","سبوت","spot","Binance Spot"],["⚡","فيوتشر","futures","Binance Futures"],["α","Binance Alpha","alpha","فرص Alpha في صفحة مستقلة"],["◉","العقود الأمريكية","contracts","العقود والمؤشرات الأمريكية"],["🇺🇸","الأسهم الأمريكية","us","تحليل الأسهم الأمريكية"],["🇸🇦","السوق السعودي / تاسي","saudi","تحليل السوق السعودي"],["💱","الفوركس","forex","أزواج العملات"],["🥇","الذهب","gold","تحليل الذهب في قسم مستقل"]];
+  var markets=[["₿","سبوت","spot","Binance Spot"],["⚡","فيوتشر","futures","Binance Futures"],["α","Binance Alpha","alpha","فرص Alpha في صفحة مستقلة"],["◉","العقود الأمريكية","contracts","العقود والمؤشرات الأمريكية"],["🇺🇸","الأسهم الأمريكية","us","تحليل الأسهم الأمريكية"],["🇸🇦","السوق السعودي / تاسي","saudi","تحليل السوق السعودي"],["💱","الفوركس","forex","أزواج العملات"]];
   marketsBox.innerHTML=markets.map(function(x){return '<article class="core-card market-link" role="link" tabindex="0" data-core-market="'+x[2]+'"><div class="core-title"><span>'+x[0]+'</span><b>'+x[1]+'</b></div><div class="core-analysis">'+x[3]+'</div><div class="card-foot">فتح السوق ←</div></article>';}).join("");
   
 
@@ -330,7 +330,7 @@ function bind(){
  });
  if(overlay)overlay.addEventListener("click",closeMenu);
 }
-function start(){bind();if(page==="home")loadHome();else if(page==="radar"){loadRadar();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadRadar(selectedTimeframe);},900000);}}else if(page==="results"){loadResults();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(loadResults,60000);}else if(page==="whales"){loadWhales();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(loadWhales,900000);}else if(page==="news"){loadNews();}else if(page==="blog"){loadBlog();}else if(market){loadMarket(market);if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadMarket(market,selectedTimeframe);},900000);}}
+function start(){bind();if(page==="home")loadHome();else if(page==="radar"){loadRadar();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadRadar(selectedTimeframe);},900000);}else if(page==="results"){loadResults();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(loadResults,60000);}else if(page==="whales"){loadWhales();if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(loadWhales,900000);}else if(page==="news"){loadNews();}else if(page==="blog"){loadBlog();}else if(market){loadMarket(market);if(trackingTimer)clearInterval(trackingTimer);trackingTimer=setInterval(function(){loadMarket(market,selectedTimeframe);},900000);}}
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start);else start();
 })();
 /* Global language picker: available on all app-shell pages. */
