@@ -80,12 +80,13 @@ def _save_persisted(market,rows):
 
 
 MARKET_QUERIES={
- "spot":["crypto trading signal entry take profit stop loss","crypto buy signal entry tp sl","crypto signal BUY SELL LONG SHORT today","BTC ETH SOL XRP trading signal entry target stop loss","BTCUSDT ETHUSDT altcoin signal entry take profit stop loss","Binance crypto signal today","altcoin buy sell signal today"],
- "futures":["crypto futures recommendation LONG SHORT today","Binance futures recommendation today","BTC ETH futures long short signal","crypto futures signal entry take profit stop loss","Binance futures LONG SHORT signal today","altcoin futures signal today"],
- "us":["US stock recommendation BUY SELL today","US stock picks today buy sell","NASDAQ stock recommendation today","NYSE stock recommendation today","US stocks trading signal entry target stop loss","AAPL NVDA TSLA AMD stock signal today"],
- "saudi":["توصية تداول تاسي شراء بيع اليوم","السوق السعودي توصيات أسهم اليوم","توصيات تداول السوق السعودي اليوم","توصيات أسهم سعودية شراء بيع اليوم","توصيات تاسي دخول هدف وقف اليوم","أفضل توصيات الأسهم السعودية اليوم"],
- "contracts":["ES=F","NQ=F","YM=F","RTY=F","CL=F","NG=F","ZB=F","ZN=F"],
- "forex":["forex recommendation BUY SELL today","forex trading signal entry target stop loss today","EURUSD GBPUSD USDJPY recommendation today","EURUSD signal today","GBPUSD signal today","USDJPY signal today"]
+ "spot":["crypto trading signal entry take profit stop loss","crypto buy signal entry tp sl","crypto signal BUY SELL LONG SHORT today","BTC ETH SOL XRP trading signal entry target stop loss","BTCUSDT ETHUSDT altcoin signal entry take profit stop loss","Binance crypto signal today","altcoin buy sell signal today","site:tradingview.com/ideas crypto buy sell signal today","site:reddit.com crypto trading signal entry target stop loss today","site:stocktwits.com crypto bullish bearish signal today","site:cointelegraph.com crypto price prediction buy sell today","site:investing.com/analysis cryptocurrency buy sell today"],
+ "futures":["crypto futures recommendation LONG SHORT today","Binance futures recommendation today","BTC ETH futures long short signal","crypto futures signal entry take profit stop loss","Binance futures LONG SHORT signal today","altcoin futures signal today","site:tradingview.com/ideas BTCUSDT LONG SHORT futures today","site:reddit.com/r/binancefutures futures signal LONG SHORT today","site:coinglass.com crypto futures long short signal today"],
+ "us":["US stock recommendation BUY SELL today","US stock picks today buy sell","NASDAQ stock recommendation today","NYSE stock recommendation today","US stocks trading signal entry target stop loss","AAPL NVDA TSLA AMD stock signal today","site:tradingview.com/ideas stocks buy sell today","site:reddit.com/r/stocks stock pick BUY SELL today","site:stocktwits.com market bullish bearish stock today","site:investing.com/analysis stocks buy sell today","site:seekingalpha.com stock buy sell rating today"],
+ "saudi":["توصية تداول تاسي شراء بيع اليوم","السوق السعودي توصيات أسهم اليوم","توصيات تداول السوق السعودي اليوم","توصيات أسهم سعودية شراء بيع اليوم","توصيات تاسي دخول هدف وقف اليوم","أفضل توصيات الأسهم السعودية اليوم","site:tradingview.com/ideas السعودية تاسي سهم شراء بيع","site:argaam.com توصيات أسهم السعودية اليوم","site:sa.investing.com توصيات الأسهم السعودية شراء بيع"],
+ "contracts":["ES=F","NQ=F","YM=F","RTY=F","CL=F","NG=F","ZB=F","ZN=F","S&P 500 futures LONG SHORT signal today","Nasdaq futures trading signal entry target stop loss","gold crude oil futures BUY SELL signal today","site:tradingview.com/ideas ES1! NQ1! futures today","site:reddit.com futures trading signal ES NQ today"],
+ "forex":["forex recommendation BUY SELL today","forex trading signal entry target stop loss today","EURUSD GBPUSD USDJPY recommendation today","EURUSD signal today","GBPUSD signal today","USDJPY signal today","XAUUSD gold signal BUY SELL today","site:tradingview.com/ideas forex signal today","site:fxstreet.com forex forecast buy sell today","site:investing.com/analysis forex buy sell today","site:reddit.com/r/Forex trading signal EURUSD today"],
+ "alpha":["Binance Alpha token buy sell signal today","Binance Alpha token recommendation entry target stop loss","Binance Alpha new token analysis today","site:binance.com/en/alpha token listing today"]
 }
 
 # Syntax-checked baseline universes: external recommendations confirm the setup, but do not decide
@@ -114,9 +115,11 @@ def _parse_news_xml(raw):
 def _news(q):
     # Strict 24-hour search window. Merge all providers instead of returning
     # the first non-empty feed, so recommendation coverage is broad.
+    # Search two indexes and a second regional Google News feed; merge/dedupe below.
     urls=[
         "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:1d","hl":"en-US","gl":"US","ceid":"US:en"}),
-        "https://www.bing.com/news/search?"+urllib.parse.urlencode({"q":q,"format":"rss","freshness":"Day"})
+        "https://www.bing.com/news/search?"+urllib.parse.urlencode({"q":q,"format":"rss","freshness":"Day"}),
+        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:1d","hl":"en-GB","gl":"GB","ceid":"GB:en"})
     ]
     cutoff=time.time()-MAX_SOURCE_AGE
     merged=[]; seen=set(); now=time.time()
