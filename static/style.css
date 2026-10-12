@@ -162,3 +162,13 @@ form button[type=submit],form .primary{margin-top:8px}
 .method-rate-track>i{display:block;height:100%;background:#54d6a0;border-radius:10px}
 @media(max-width:760px){.method-performance-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.method-performance>summary{padding:12px}.method-performance>summary>small{max-width:55%;font-size:10px}.method-performance-card{padding:9px}.method-performance-card-head>b{font-size:11px}.method-rate>b{font-size:16px}}
 @media(max-width:360px){.method-performance-grid{grid-template-columns:1fr}.method-performance>summary{align-items:flex-start;flex-wrap:wrap}.method-performance>summary>small{max-width:none;text-align:right}}
+
+
+/* Ranking card accents: #1 gold, #2 silver, #3 white */
+.trade-tracking-card.rank-crown{border:1.5px solid #e9c66b!important;box-shadow:0 0 0 1px #e9c66b44,0 8px 24px #e9c66b1c!important}
+.trade-tracking-card.rank-silver{border:1.5px solid #c7cdd6!important;box-shadow:0 0 0 1px #c7cdd622,0 8px 22px #c7cdd610!important}
+.trade-tracking-card.rank-bronze{border:1.5px solid #f4f7fb!important;box-shadow:0 0 0 1px #f4f7fb22,0 8px 22px #f4f7fb0a!important}
+.trade-tracking-card.rank-silver .trade-rank{color:#d4dae3!important}
+.trade-tracking-card.rank-bronze .trade-rank{color:#f4f7fb!important}
+.trade-tracking-card.rank-silver:before{content:"المركز الثاني";position:absolute;top:0;left:0;padding:5px 10px;border-radius:0 0 12px 0;background:linear-gradient(135deg,#e1e5eb,#8c96a5);color:#151a22;font-size:11px;font-weight:900}
+.trade-tracking-card.rank-bronze:before{content:"المركز الثالث";position:absolute;top:0;left:0;padding:5px 10px;border-radius:0 0 12px 0;background:linear-gradient(135deg,#fff,#d9e0e8);color:#151a22;font-size:11px;font-weight:900}
