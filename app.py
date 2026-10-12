@@ -3176,7 +3176,19 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
                            "leverage","target_pct","stop_pct"}
             rows=[{k:x.get(k) for k in public_fields if k in x} for x in rows]
 
-        rows=sorted(rows,key=lambda x:(float(x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:20]
+        # Give each market's own strategy a stable vote key, then adjust ranking only from its
+        # own closed outcomes on the same market and timeframe (minimum sample enforced in feedback).
+        for x in rows:
+            side=str(x.get("direction") or x.get("side") or "").upper()
+            if not isinstance(x.get("methods"),dict) or not x.get("methods"):
+                method=str(x.get("strategy_mode") or x.get("strategy_label") or x.get("tag") or "market-signal")
+                x["methods"]={method:1 if side=="BUY" else -1 if side=="SELL" else 0}
+        try:
+            from strategy_feedback import apply_feedback
+            rows=apply_feedback(market,timeframe,rows)
+        except Exception as learn_exc:
+            print("[STRATEGY-LEARNING] ranking skipped",market,str(learn_exc)[:120],flush=True)
+        rows=sorted(rows,key=lambda x:(float(x.get("recommendation_score") or x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:20]
         # Record visible recommendations into the shared outcome learner for each independent market.
         try:
             import self_improver
