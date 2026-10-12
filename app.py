@@ -572,7 +572,9 @@ def analysis_page(request:Request): return RedirectResponse("/static/public-trad
 
 @app.get("/market/{market}",response_class=HTMLResponse)
 def market_page(request:Request,market:str):
-    if market not in {"spot","futures","alpha","contracts","us","saudi","forex","gold"}:
+    if market == "gold":
+        return RedirectResponse("/static/public-trades.html?market=forex&hours=24",status_code=302)
+    if market not in {"spot","futures","alpha","contracts","us","saudi","forex"}:
         return RedirectResponse("/static/public-trades.html?market=all&hours=24",status_code=302)
     return RedirectResponse("/static/public-trades.html?market="+urllib.parse.quote(market)+"&hours=24",status_code=302)
 
