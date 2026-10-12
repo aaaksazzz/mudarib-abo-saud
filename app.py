@@ -565,17 +565,16 @@ def sitemap():
 
 
 @app.get("/",response_class=HTMLResponse)
-def home(request:Request): return page(request,"الرئيسية")
+def home(request:Request): return RedirectResponse("/static/public-trades.html?market=all&hours=24",status_code=302)
 
 @app.get("/analysis",response_class=HTMLResponse)
-def analysis_page(request:Request): return FileResponse(BASE/"static"/"technical.html",headers={"Cache-Control":"no-store"})
+def analysis_page(request:Request): return RedirectResponse("/static/public-trades.html?market=all&hours=24",status_code=302)
 
 @app.get("/market/{market}",response_class=HTMLResponse)
 def market_page(request:Request,market:str):
-    files={"spot":"spot.html","futures":"futures.html","contracts":"contracts.html","us":"us.html","saudi":"saudi.html","forex":"forex.html"}
-    if market not in files:
-        return RedirectResponse("/",status_code=303)
-    return FileResponse(BASE/"static"/files[market],headers={"Cache-Control":"no-store"})
+    if market not in {"spot","futures","alpha","contracts","us","saudi","forex","gold"}:
+        return RedirectResponse("/static/public-trades.html?market=all&hours=24",status_code=302)
+    return RedirectResponse("/static/public-trades.html?market="+urllib.parse.quote(market)+"&hours=24",status_code=302)
 
 @app.get("/blog",response_class=HTMLResponse)
 def blog_page(request:Request): return FileResponse(BASE/"static"/"blog.html",headers={"Cache-Control":"no-store"})
