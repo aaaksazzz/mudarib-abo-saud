@@ -2,7 +2,7 @@
 "use strict";
 var $=function(s){return document.querySelector(s);};
 var routes={home:"/static/public-trades.html?market=all&hours=24",technical:"/static/public-trades.html?market=all&hours=24",radar:"/static/radar.html?v=20261012-methods-compact-v2",gold:"/static/forex.html?v=20261014-forex-gold-merged",results:"/static/results.html?v=20261012-results-refreshfix",news:"/static/news.html?v=20261012-methods-compact-v2",blog:"/static/blog.html?v=20261012-methods-compact-v2",spot:"/static/spot.html?v=20261012-methods-compact-v2",futures:"/static/futures.html?v=20261012-methods-compact-v2",alpha:"/static/alpha.html?v=20261012-methods-compact-v2",contracts:"/static/contracts.html?v=20261012-methods-compact-v2",us:"/static/us.html?v=20261012-methods-compact-v2",saudi:"/static/saudi.html?v=20261012-methods-compact-v2",forex:"/static/forex.html?v=20261012-methods-compact-v2",signup:"/static/signup.html?v=20261012-methods-compact-v2",login:"/static/login.html?v=20261012-methods-compact-v2",admin:"/admin",explosion:"/static/explosion.html?v=20261012-direction-fix",flareScanner:"/static/flare-scanner.html?v=20261012-flare-scanner-chart1"};
-var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false,trackingTimer=null;
+var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false,trackingTimer=null,marketKeys=["spot","futures","alpha","contracts","us","saudi","forex"];
 /* رابط الصفقات العامة بجوار الرادار في القائمة على كل الصفحات */
 try {
  var publicSide=document.getElementById("sidebar");
@@ -21,7 +21,6 @@ try {
 try {
  var marketSidebar=document.getElementById("sidebar");
  if(marketSidebar){
-  var marketKeys=["spot","futures","alpha","contracts","us","saudi","forex"];
   var marketNodes=marketKeys.map(function(k){return marketSidebar.querySelector('[data-s="'+k+'"]');}).filter(Boolean);
   if(marketNodes.length){
    var marketHeading=document.createElement("div");marketHeading.className="nav-label";marketHeading.textContent="الأسواق";
@@ -55,7 +54,7 @@ var technicalMarkets=[["spot","₿","سبوت"],["futures","⚡","فيوتشر"]
 try{var initialTechnicalMarket=new URLSearchParams(window.location.search).get("market");if(technicalMarkets.some(function(x){return x[0]===initialTechnicalMarket;}))selectedTechnicalMarket=initialTechnicalMarket;}catch(e){}
 function esc(v){return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
 
-function displaySymbol(x){var s=String((x&&x.symbol)||"").trim().toUpperCase();var m=String((x&&x.market)||market||"").toLowerCase();if((m==="spot"||m==="futures")&&s&&!/USDT$/.test(s)&&/^[A-Z0-9]+$/.test(s)){s=s+"USDT";}return s;}function go(s){if(routes[s]){window.location.href=routes[s];}}
+function displaySymbol(x){var s=String((x&&x.symbol)||"").trim().toUpperCase();var m=String((x&&x.market)||market||"").toLowerCase();if((m==="spot"||m==="futures")&&s&&!/USDT$/.test(s)&&/^[A-Z0-9]+$/.test(s)){s=s+"USDT";}return s;}function go(s){if(page==="technical"&&marketKeys.indexOf(s)>=0){loadTechnical(s,selectedTimeframe);return;}if(routes[s]){window.location.href=routes[s];}}
 function closeMenu(){var s=$("#sidebar"),o=$("#overlay");if(s)s.classList.remove("open");if(o)o.classList.remove("show");}
 function getJSON(url,timeoutMs){var controller=typeof AbortController!=="undefined"?new AbortController():null;var timeout=Number(timeoutMs)||8000;var timer=controller?setTimeout(function(){controller.abort();},timeout):null;return fetch(url,{cache:"no-store",signal:controller?controller.signal:undefined}).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();}).finally(function(){if(timer)clearTimeout(timer);});}
 function fmtPrice(v){if(v===null||v===undefined||v==="")return "—";var n=Number(v);if(!Number.isFinite(n))return esc(v);if(n===0)return "0";var a=Math.abs(n),d=a>=1000?2:a>=100?3:a>=1?4:a>=0.01?6:a>=0.0001?8:10;return n.toFixed(d).replace(/\.?0+$/,"");}
