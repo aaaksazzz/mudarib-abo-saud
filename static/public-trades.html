@@ -1,54 +1,75 @@
 <!doctype html>
-<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#07111f"><meta http-equiv="Cache-Control" content="no-store"><title>الصفقات العامة | التداول الذكي PRO</title><link rel="stylesheet" href="/static/style.css?v=20261014-markets-only">
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#07111f"><meta http-equiv="Cache-Control" content="no-store">
+<title>الصفقات العامة | التداول الذكي PRO</title>
+<link rel="stylesheet" href="/static/style.css?v=20261014-menu-markets-fix">
 <style>
-.public-wrap{max-width:1400px;margin:auto}.public-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}.public-tools select,.public-tools button{min-height:42px;border-radius:10px;border:1px solid #26394f;background:#0d1a2a;color:#eef5ff;padding:9px 14px}.public-note{color:#9eafc3;font-size:12px;line-height:1.8;margin:8px 0 18px}.public-status{padding:12px;border:1px solid #24364b;border-radius:12px;color:#b8c9dc;margin:12px 0}.public-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:14px}.public-card{border:1px solid #25384d;border-radius:16px;padding:16px;background:linear-gradient(150deg,#101f31,#0a1421);min-width:0}.public-card-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.public-card h3{margin:0;font-size:19px}.public-pill{font-size:11px;border-radius:999px;padding:5px 9px;background:#203247;color:#cfe0f3;white-space:nowrap}.public-buy{color:#51ddb5}.public-sell{color:#ff8585}.public-levels{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0}.public-level{background:#07111d;border:1px solid #1b2d40;border-radius:9px;padding:9px;min-width:0}.public-level small{display:block;color:#8fa4bc;font-size:11px;margin-bottom:4px}.public-level b{font-size:13px;overflow-wrap:anywhere}.public-source{font-size:12px;line-height:1.7;color:#b4c5d8;margin-top:12px}.public-source a{color:#6ed8d0;text-decoration:none}.public-empty{padding:24px;border:1px dashed #31465c;border-radius:14px;color:#a9bad0;text-align:center}.public-counts{display:flex;gap:8px;flex-wrap:wrap}.public-counts span{padding:6px 10px;background:#112236;border-radius:9px;font-size:12px;color:#c7d7e8}
-</style></head><body data-page="public-trades"><div class="app-shell">
-<header class="topbar"><div class="brand"><a href="/" class="icon-btn" aria-label="الرئيسية" style="text-decoration:none">⌂</a><div class="brand-mark">S</div><div class="brand-copy"><b>التداول الذكي <em>PRO</em></b><small>صفقات من الأسواق العامة</small></div></div><div class="top-actions"><span class="live"><i></i> مباشر</span></div></header>
-<div class="layout"><aside id="sidebar" class="sidebar"><div class="side-title">الأسواق</div>
-<a class="nav-item" href="/static/public-trades.html?market=all&amp;hours=24">🌐 كل الأسواق</a>
-<a class="nav-item" href="/static/public-trades.html?market=spot&amp;hours=24">₿ سبوت</a>
-<a class="nav-item" href="/static/public-trades.html?market=futures&amp;hours=24">⚡ فيوتشر</a>
-<a class="nav-item" href="/static/public-trades.html?market=alpha&amp;hours=24">α Binance Alpha</a>
-<a class="nav-item" href="/static/public-trades.html?market=contracts&amp;hours=24">◉ العقود الأمريكية</a>
-<a class="nav-item" href="/static/public-trades.html?market=us&amp;hours=24">🇺🇸 الأسهم الأمريكية</a>
-<a class="nav-item" href="/static/public-trades.html?market=saudi&amp;hours=24">🇸🇦 السوق السعودي</a>
-<a class="nav-item" href="/static/public-trades.html?market=forex&amp;hours=24">💱 الفوركس</a><a class="nav-item" href="/static/public-trades.html?market=gold&amp;hours=24">🥇 الذهب</a></aside>
-<main class="content public-wrap" style="width:100%"><div class="page-head"><div><span class="eyebrow">رصد الأسواق</span><h1>الصفقات العامة</h1><p>صفقات منشورة من مصادر الأسواق خلال آخر 12 أو 24 أو 48 ساعة. كل سوق مستقل، بدون مناهج تحليل فني داخلية.</p></div><button id="refresh" class="primary" type="button">↻ تحديث البحث</button></div>
-<div class="public-tools"><label for="marketFilter">السوق</label><select id="marketFilter"><option value="all">كل الأسواق</option><option value="spot">سبوت</option><option value="futures">فيوتشر</option><option value="alpha">Binance Alpha</option><option value="contracts">العقود الأمريكية</option><option value="us">الأسهم الأمريكية</option><option value="saudi">السوق السعودي</option><option value="forex">الفوركس</option><option value="gold">الذهب</option></select><label for="hoursFilter">مدة البحث</label><select id="hoursFilter"><option value="12">آخر 12 ساعة</option><option value="24">آخر 24 ساعة</option><option value="48">آخر يومين</option></select><div class="public-counts" id="counts"></div></div>
-<div class="public-note">نحتفظ بالصفقات لمدة تصل إلى يومين. قد تكون مستويات الدخول والأهداف والوقف تقديرية إذا لم يذكرها المنشور الأصلي؛ النتائج غير مضمونة.</div><div id="status" class="public-status">جاري تجهيز نتائج البحث…</div><div id="cards" class="public-grid"></div></main></div></div>
+:root{color-scheme:dark}.public-wrap{max-width:1500px;margin:auto;width:100%;min-width:0}.public-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid #24364b;background:#081321;position:sticky;top:0;z-index:30}.public-brand{display:flex;align-items:center;gap:10px;min-width:0}.public-brand b{font-size:16px}.public-brand small{display:block;color:#92a8c1;font-size:11px;margin-top:3px}.menu-toggle{display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;border:1px solid #2a4058;background:#102035;color:#fff;border-radius:10px;font-size:22px;cursor:pointer}.public-layout{display:flex;min-height:calc(100vh - 68px)}.public-sidebar{width:245px;flex:0 0 245px;background:#091522;border-left:1px solid #26394e;padding:16px 12px;display:flex;flex-direction:column;gap:7px}.side-title{color:#90a7c1;font-size:12px;padding:5px 10px 9px}.market-link{display:flex;align-items:center;gap:10px;text-decoration:none;color:#d7e5f4;background:transparent;border:1px solid transparent;border-radius:10px;padding:12px;font-size:14px}.market-link:hover,.market-link.active{background:#14283d;border-color:#29435d;color:#fff}.public-main{flex:1;min-width:0;padding:20px;overflow:hidden}.public-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.public-heading h1{font-size:24px;margin:4px 0 8px}.public-heading p{color:#9eb1c8;font-size:13px;line-height:1.8;margin:0}.eyebrow{color:#65d6c0;font-size:11px}.public-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:18px 0 12px;padding:13px;border:1px solid #24384e;background:#0b1827;border-radius:13px}.public-tools label{font-size:12px;color:#a9bdd3}.public-tools select,.public-tools button{min-height:42px;border-radius:10px;border:1px solid #2b4057;background:#102035;color:#eef5ff;padding:9px 12px;font:inherit}.public-tools select{min-width:135px}.public-tools button{cursor:pointer}.public-tools button:disabled{opacity:.6}.public-note{color:#91a6bd;font-size:12px;line-height:1.8;margin:10px 2px 16px}.public-status{padding:12px 14px;border:1px solid #24384e;border-radius:12px;color:#b8c9dc;margin:12px 0;background:#0b1827;font-size:13px}.public-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:13px}.public-card{border:1px solid #263b51;border-radius:15px;padding:15px;background:linear-gradient(150deg,#112238,#0a1421);min-width:0}.public-card-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.public-card h3{margin:0;font-size:19px;overflow-wrap:anywhere}.public-pill{font-size:11px;border-radius:999px;padding:6px 9px;background:#203247;color:#cfe0f3;white-space:nowrap}.public-buy{color:#51ddb5}.public-sell{color:#ff8585}.public-meta{font-size:11px;line-height:1.8;color:#9eb2c9;margin-top:5px}.public-levels{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0}.public-level{background:#07111d;border:1px solid #1c3045;border-radius:9px;padding:9px;min-width:0}.public-level small{display:block;color:#91a6bd;font-size:11px;margin-bottom:4px}.public-level b{font-size:13px;overflow-wrap:anywhere}.public-source{font-size:12px;line-height:1.7;color:#b4c5d8;margin-top:8px}.public-empty{padding:26px 18px;border:1px dashed #31465c;border-radius:14px;color:#a9bad0;text-align:center;line-height:1.9;grid-column:1/-1}.public-counts{display:flex;gap:7px;flex-wrap:wrap}.public-counts span{padding:6px 9px;background:#14283d;border:1px solid #263b51;border-radius:8px;font-size:11px;color:#c7d7e8}.sidebar-shade{display:none}
+@media(max-width:800px){.public-layout{display:block}.public-sidebar{display:none;position:fixed;z-index:50;top:68px;bottom:0;right:0;width:min(84vw,300px);overflow-y:auto;box-shadow:-12px 0 30px #0008}.public-sidebar.open{display:flex}.sidebar-shade.open{display:block;position:fixed;inset:68px 0 0;background:#0009;z-index:40}.public-main{padding:15px 12px}.public-heading h1{font-size:21px}.public-tools{gap:8px}.public-tools label{width:auto}.public-tools select{flex:1;min-width:120px}.public-grid{grid-template-columns:1fr}.public-top{padding:10px 12px}}
+</style>
+</head>
+<body>
+<header class="public-top"><div class="public-brand"><button id="menuToggle" class="menu-toggle" type="button" aria-label="فتح القائمة" aria-expanded="false">☰</button><div class="brand-mark">S</div><div><b>التداول الذكي <em>PRO</em></b><small>صفقات منشورة من الأسواق العامة</small></div></div><span class="live"><i></i> مباشر</span></header>
+<div class="public-layout">
+<aside id="marketSidebar" class="public-sidebar" aria-label="قائمة الأسواق">
+<div class="side-title">قائمة الأسواق</div>
+<a class="market-link" data-market="all" href="/static/public-trades.html?market=all&amp;hours=24">🌐 <span>كل الأسواق</span></a>
+<a class="market-link" data-market="spot" href="/static/public-trades.html?market=spot&amp;hours=24">₿ <span>سبوت</span></a>
+<a class="market-link" data-market="futures" href="/static/public-trades.html?market=futures&amp;hours=24">⚡ <span>فيوتشر</span></a>
+<a class="market-link" data-market="alpha" href="/static/public-trades.html?market=alpha&amp;hours=24">α <span>Binance Alpha</span></a>
+<a class="market-link" data-market="contracts" href="/static/public-trades.html?market=contracts&amp;hours=24">◉ <span>العقود الأمريكية</span></a>
+<a class="market-link" data-market="us" href="/static/public-trades.html?market=us&amp;hours=24">🇺🇸 <span>الأسهم الأمريكية</span></a>
+<a class="market-link" data-market="saudi" href="/static/public-trades.html?market=saudi&amp;hours=24">🇸🇦 <span>السوق السعودي</span></a>
+<a class="market-link" data-market="forex" href="/static/public-trades.html?market=forex&amp;hours=24">💱 <span>الفوركس</span></a>
+<a class="market-link" data-market="gold" href="/static/public-trades.html?market=gold&amp;hours=24">🥇 <span>الذهب</span></a>
+</aside><div id="sidebarShade" class="sidebar-shade"></div>
+<main class="public-main public-wrap">
+<div class="public-heading"><div><span class="eyebrow">رصد الأسواق</span><h1 id="pageTitle">الصفقات العامة</h1><p>كل سوق له صفقاته الخاصة. اختر مدة البحث: 12 ساعة أو 24 ساعة أو آخر يومين.</p></div><button id="refresh" class="primary" type="button">↻ تحديث البحث</button></div>
+<div class="public-tools"><label for="hoursFilter">مدة البحث</label><select id="hoursFilter"><option value="12">آخر 12 ساعة</option><option value="24">آخر 24 ساعة</option><option value="48">آخر يومين (48 ساعة)</option></select><div id="counts" class="public-counts"></div></div>
+<div class="public-note">الصفقات المعروضة منشورة من مصادر عامة. إذا لم يذكر المنشور مستويات الدخول والهدف والوقف فقد تكون المستويات تقديرية، ولا توجد ضمانات للربح.</div>
+<div id="status" class="public-status" role="status">جاري تحميل الصفقات…</div><div id="cards" class="public-grid"></div>
+</main></div>
 <script>
 (function(){
- const $=s=>document.querySelector(s); let busy=false;
+ const $=s=>document.querySelector(s);let busy=false,rerun=false;
+ const validMarkets=["all","spot","futures","alpha","contracts","us","saudi","forex","gold"];
+ const marketNames={all:"كل الأسواق",spot:"سبوت",futures:"فيوتشر",alpha:"Binance Alpha",contracts:"العقود الأمريكية",us:"الأسهم الأمريكية",saudi:"السوق السعودي",forex:"الفوركس",gold:"الذهب"};
  const params=new URLSearchParams(location.search);
- const markets=["all","spot","futures","alpha","contracts","us","saudi","forex"];
- let selectedMarket=markets.includes(params.get("market"))?params.get("market"):"all";
+ let selectedMarket=validMarkets.includes(params.get("market"))?params.get("market"):"all";
  let selectedHours=["12","24","48"].includes(params.get("hours"))?params.get("hours"):"24";
- $("#marketFilter").value=selectedMarket; $("#hoursFilter").value=selectedHours;
- const fmt=v=>{if(v===null||v===undefined||!Number.isFinite(Number(v)))return "—";return Number(v).toLocaleString("en-US",{maximumFractionDigits:8});};
+ $("#hoursFilter").value=selectedHours;$("#pageTitle").textContent=selectedMarket==="all"?"الصفقات العامة — كل الأسواق":"صفقات "+marketNames[selectedMarket];
+ document.querySelectorAll(".market-link").forEach(a=>{if(a.dataset.market===selectedMarket)a.classList.add("active");});
+ const fmt=v=>{if(v===null||v===undefined||v===""||!Number.isFinite(Number(v)))return "—";return Number(v).toLocaleString("en-US",{maximumFractionDigits:8});};
  const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
  function updateUrl(){const p=new URLSearchParams();p.set("market",selectedMarket);p.set("hours",selectedHours);history.replaceState(null,"",location.pathname+"?"+p.toString());}
  function render(data){
-  const rows=data.trades||[];
-  const label=selectedHours==="12"?"آخر 12 ساعة":selectedHours==="24"?"آخر 24 ساعة":"آخر يومين";
-  $("#counts").innerHTML="<span>الصفقات: "+rows.length+"</span><span>"+label+"</span><span>السوق: "+($("#marketFilter option:checked").textContent)+"</span>";
-  $("#status").textContent=data.refreshing?"يجري البحث في الأسواق…":(data.updated?"آخر تحديث: "+new Date(data.updated*1000).toLocaleString("ar-SA"):"بانتظار نتائج البحث");
-  if(!rows.length){$("#cards").innerHTML='<div class="public-empty">ما ظهرت صفقات مطابقة في هذه المدة. جرّب مدة أطول أو سوقًا آخر، أو حدّث البحث.</div>';return;}
+  const rows=Array.isArray(data.trades)?data.trades:[];
+  $("#counts").innerHTML="<span>الصفقات: "+rows.length+"</span><span>"+(selectedHours==="12"?"آخر 12 ساعة":selectedHours==="24"?"آخر 24 ساعة":"آخر 48 ساعة")+"</span><span>"+esc(marketNames[selectedMarket])+"</span>";
+  $("#status").textContent=data.refreshing?"يجري البحث في المصادر العامة…":(data.updated?"آخر تحديث: "+new Date(data.updated*1000).toLocaleString("ar-SA"):"بانتظار نتائج البحث");
+  if(!rows.length){$("#cards").innerHTML='<div class="public-empty">ما ظهرت صفقات مطابقة في <b>'+esc(marketNames[selectedMarket])+'</b> خلال المدة المحددة.<br>جرّب تمديد المدة أو اضغط «تحديث البحث» لإعادة البحث في هذا السوق فقط.</div>';return;}
   $("#cards").innerHTML=rows.map(x=>{
-   const buy=x.direction==="BUY",time=x.source_published?new Date(Date.parse(x.source_published)).toLocaleString("ar-SA"):"وقت النشر غير متاح";
-   return '<article class="public-card"><div class="public-card-head"><div><h3>'+esc(x.symbol)+'</h3><div class="public-source">'+esc(x.market_label)+' · '+esc(time)+'</div></div><span class="public-pill '+(buy?'public-buy':'public-sell')+'">'+(buy?'شراء / BUY':'بيع / SELL')+'</span></div><div class="public-levels"><div class="public-level"><small>الدخول</small><b>'+fmt(x.entry)+'</b></div><div class="public-level"><small>وقف الخسارة</small><b>'+fmt(x.sl)+'</b></div><div class="public-level"><small>الهدف 1</small><b>'+fmt(x.tp1)+'</b></div><div class="public-level"><small>الهدف 2</small><b>'+fmt(x.tp2)+'</b></div><div class="public-level"><small>الهدف 3</small><b>'+fmt(x.tp3)+'</b></div></div><div class="public-source"><b>'+esc(x.is_estimated?"مستويات تقديرية":"مستويات محددة")+'</b></div></article>';
+   const buy=String(x.direction||"").toUpperCase()==="BUY";
+   let date="وقت النشر غير متاح";if(x.source_published){const d=new Date(x.source_published);if(!Number.isNaN(d.getTime()))date=d.toLocaleString("ar-SA");}
+   return '<article class="public-card"><div class="public-card-head"><div><h3>'+esc(x.symbol||"أصل غير محدد")+'</h3><div class="public-meta">'+esc(marketNames[x.market]||x.market_label||marketNames[selectedMarket])+' · '+esc(date)+'</div></div><span class="public-pill '+(buy?"public-buy":"public-sell")+'">'+(buy?"شراء / BUY":"بيع / SELL")+'</span></div><div class="public-levels"><div class="public-level"><small>الدخول</small><b>'+fmt(x.entry)+'</b></div><div class="public-level"><small>وقف الخسارة</small><b>'+fmt(x.sl)+'</b></div><div class="public-level"><small>الهدف 1</small><b>'+fmt(x.tp1)+'</b></div><div class="public-level"><small>الهدف 2</small><b>'+fmt(x.tp2)+'</b></div><div class="public-level"><small>الهدف 3</small><b>'+fmt(x.tp3)+'</b></div></div><div class="public-source"><b>'+esc(x.is_estimated?"مستويات تقديرية":"مستويات محددة")+'</b></div></article>';
   }).join("");
  }
  async function load(force){
-  if(busy)return;busy=true;$("#refresh").disabled=true;
+  if(busy){rerun=true;return;}busy=true;$("#refresh").disabled=true;
   try{
    const q=new URLSearchParams({market:selectedMarket,hours:selectedHours});if(force)q.set("refresh","1");
-   const r=await fetch("/api/public-trades?"+q.toString(),{cache:"no-store"}),d=await r.json();render(d);
+   const r=await fetch("/api/public-trades?"+q.toString(),{cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);
+   const d=await r.json();render(d);
    if(d.refreshing)setTimeout(()=>load(false),12000);
-  }catch(e){$("#status").textContent="تعذر جلب الصفقات الآن؛ حاول التحديث بعد قليل.";}
-  finally{busy=false;$("#refresh").disabled=false;}
+  }catch(e){$("#status").textContent="تعذر جلب الصفقات الآن؛ تأكد من تشغيل الخدمة ثم أعد المحاولة.";}
+  finally{busy=false;$("#refresh").disabled=false;if(rerun){rerun=false;load(false);}}
  }
+ function closeMenu(){$("#marketSidebar").classList.remove("open");$("#sidebarShade").classList.remove("open");$("#menuToggle").setAttribute("aria-expanded","false");}
+ $("#menuToggle").addEventListener("click",()=>{const open=$("#marketSidebar").classList.toggle("open");$("#sidebarShade").classList.toggle("open",open);$("#menuToggle").setAttribute("aria-expanded",String(open));});
+ $("#sidebarShade").addEventListener("click",closeMenu);
+ document.querySelectorAll(".market-link").forEach(a=>a.addEventListener("click",()=>closeMenu()));
  $("#refresh").addEventListener("click",()=>load(true));
- $("#marketFilter").addEventListener("change",()=>{selectedMarket=$("#marketFilter").value;updateUrl();load(false);});
  $("#hoursFilter").addEventListener("change",()=>{selectedHours=$("#hoursFilter").value;updateUrl();load(false);});
  updateUrl();load(false);setInterval(()=>load(false),60000);
 })();
