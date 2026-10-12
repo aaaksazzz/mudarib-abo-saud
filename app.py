@@ -2173,8 +2173,8 @@ MARKET_RULES={
     "spot":{"sides":["BUY"],"source":"spot"},
     "futures":{"sides":["BUY","SELL"],"source":"futures"},
     "contracts":{"sides":["BUY","SELL"],"source":"yahoo"},
-    "us":{"sides":["BUY"],"source":"yahoo"},
-    "saudi":{"sides":["BUY"],"source":"yahoo"},
+    "us":{"sides":["BUY","SELL"],"source":"yahoo"},
+    "saudi":{"sides":["BUY","SELL"],"source":"yahoo"},
     "forex":{"sides":["BUY","SELL"],"source":"yahoo"},}
 FOREX_SYMBOLS=["EURUSD=X","GBPUSD=X","USDJPY=X","USDCHF=X","USDCAD=X","AUDUSD=X","NZDUSD=X","EURGBP=X","EURJPY=X","EURCHF=X","EURAUD=X","EURCAD=X","EURNZD=X","GBPJPY=X","GBPCHF=X","GBPAUD=X","GBPCAD=X","GBPNZD=X","AUDJPY=X","AUDNZD=X","AUDCAD=X","AUDCHF=X","CADJPY=X","CADCHF=X","CHFJPY=X","NZDJPY=X","NZDCAD=X","NOKUSD=X","SEKUSD=X","SGDUSD=X","HKDUSD=X","CNYUSD=X","MXNUSD=X","ZARUSD=X","TRYUSD=X","INRUSD=X","BRLUSD=X"]
 US_CONTRACT_SYMBOLS=["ES=F","NQ=F","YM=F","RTY=F","CL=F","NG=F","ZB=F","ZN=F"]
@@ -2562,11 +2562,11 @@ def _scan_spot_strategy(timeframe="15m", limit_symbols=None):
                 # إذا ما اكتمل نموذج الاختراق/POC، نستخدم نفس بوابة الاستراتيجية
                 # الأساسية (EMA200 + RSI + حركة 15m) لإخراج فرصة صالحة بدل "0" دائم.
                 basic_candles=[(float(k[4]),float(k[3]),float(k[2]),float(k[1])) for k in ks[-220:]]
-                fallback=_strategy_rows(symbol,timeframe,["BUY"],basic_candles)
+                fallback=_strategy_rows(symbol,timeframe,["BUY","SELL"],basic_candles)
                 if fallback:
                     x=fallback[0]
                     x["quote_volume"]=qv
-                    x["strategy_label"]="شراء: EMA200 + RSI50 + حركة 15m"
+                    x["strategy_label"]=("شراء" if x.get("side")=="BUY" else "بيع")+": EMA200 + RSI50 + حركة السعر على نفس الفريم"
                     x["strategy_mode"]="EMA200_RSI50_FALLBACK"
                     x["tag"]="إشارة أساسية بعد فشل نموذج POC"
                     return x
@@ -3125,7 +3125,7 @@ def futures_bot_page(request:Request):
     return page(request,"استراتيجية الفيوتشر")
 
 def _spot_fast_payload(timeframe):
-    rows,scanning=_cached_scan("spot",timeframe,lambda:_scan_spot_strategy(timeframe,20))
+    rows,scanning=_cached_scan("spot",timeframe,lambda:_scan_spot_strategy(timeframe,80))
     trades=[dict(x,rank=i+1,medal="🥇" if i==0 else "🥈" if i==1 else "🥉" if i==2 else "") for i,x in enumerate(rows)]
     breadth=_market_breadth("spot",timeframe)
     return {"ok":True,"market":"spot","market_name":MARKETS["spot"],"timeframe":timeframe,
@@ -3149,8 +3149,6 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
                 futures_20x_count=None
         else:
             rows,scanning=_cached_scan(market,timeframe,lambda:_scan_yahoo_market(market,timeframe))
-            if market in {"us","saudi"}:
-                rows=[x for x in rows if str(x.get("side","")).upper()=="BUY"]
 
         if market=="futures":
             for x in rows:
