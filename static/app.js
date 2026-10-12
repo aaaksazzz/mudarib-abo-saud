@@ -400,8 +400,8 @@ function bind(){
   }
   side.querySelectorAll('[data-s="alpha"]').forEach(function(b){b.classList.toggle("active",page==="alpha"||new URLSearchParams(window.location.search).get("market")==="alpha");});
 
-  var labels={whales:"متابعة الحيتان",results:"النتائج",news:"الأخبار",blog:"المدونة",azo:"تحليل AZO",explosion:"راصد الانفجار السعري",patterns:"نماذج الشارت"};
-  var icons={whales:"🐋",results:"📊",news:"📰",blog:"✍️",azo:"🧪",explosion:"💥",patterns:"📈"};
+  var labels={whales:"متابعة الحيتان",results:"النتائج",news:"الأخبار",blog:"المدونة",azo:"تحليل AZO",patterns:"نماذج الشارت"};
+  var icons={whales:"🐋",results:"📊",news:"📰",blog:"✍️",azo:"🧪",patterns:"📈"};
   Object.keys(labels).forEach(function(k){
    if(!side.querySelector('[data-s="'+k+'"]')){
     var b=document.createElement("button");
