@@ -3090,27 +3090,70 @@ SECTOR_ETFS_US=[
  {"symbol":"XLC","name":"الاتصالات"}
 ]
 
+SAUDI_SECTORS=[
+ {"name":"الطاقة","index":"Energy"},{"name":"المواد الأساسية","index":"Materials"},
+ {"name":"السلع الرأسمالية","index":"Capital Goods"},{"name":"الخدمات التجارية والمهنية","index":"Commercial & Professional Services"},
+ {"name":"النقل","index":"Transportation"},{"name":"السلع طويلة الأجل","index":"Consumer Durables & Apparel"},
+ {"name":"الخدمات الاستهلاكية","index":"Consumer Services"},{"name":"الإعلام والترفيه","index":"Media and Entertainment"},
+ {"name":"تجزئة السلع الكمالية","index":"Consumer Discretionary Distribution & Retail"},
+ {"name":"تجزئة السلع الأساسية","index":"Consumer Staples Distribution & Retail"},{"name":"الأغذية والمشروبات","index":"Food & Beverages"},
+ {"name":"المنتجات المنزلية والشخصية","index":"Household & Personal Products"},{"name":"الرعاية الصحية","index":"Health Care Equipment & Services"},
+ {"name":"الأدوية","index":"Pharma, Biotech & Life Science"},{"name":"البنوك","index":"Banks"},
+ {"name":"الخدمات المالية","index":"Financial Services"},{"name":"التأمين","index":"Insurance"},
+ {"name":"البرمجيات والخدمات","index":"Software & Services"},{"name":"الاتصالات","index":"Telecommunication Services"},
+ {"name":"المرافق العامة","index":"Utilities"},{"name":"الصناديق العقارية المتداولة","index":"REITs"},
+ {"name":"إدارة وتطوير العقارات","index":"Real Estate Management & Development"}
+]
+
 @app.get("/api/sectors/overview")
 def sector_overview(market:str="us"):
-    """Sector-level performance using sector ETFs, not individual-stock recommendations."""
+    """Market-level index analysis; sector ETFs are proxies for the US, TASI is the Saudi benchmark."""
+    def chart(symbol, range_="1mo"):
+        url="https://query1.finance.yahoo.com/v8/finance/chart/"+urllib.parse.quote(symbol,safe="")+"?range="+range_+"&interval=1d"
+        req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0 SMART-TRADING-PRO"})
+        with urllib.request.urlopen(req,timeout=6) as response:
+            payload=json.loads(response.read().decode("utf-8","ignore"))
+        result=(payload.get("chart",{}).get("result") or [None])[0]
+        if not result: raise ValueError("missing chart")
+        q=(result.get("indicators",{}).get("quote") or [{}])[0]
+        closes=[float(x) for x in q.get("close",[]) if x is not None and float(x)>0]
+        stamps=result.get("timestamp") or []
+        if len(closes)<2: raise ValueError("insufficient closes")
+        return closes, stamps
+
+    def changes(closes):
+        latest=closes[-1]
+        def change(ago):
+            base=closes[-min(len(closes),ago+1)]
+            return round((latest/base-1)*100,2) if base else None
+        return {"price":round(latest,2),"change_1d":change(1),"change_1w":change(5),"change_1m":change(20)}
+
+    if market=="saudi":
+        errors=[]
+        for symbol in ("^TASI.SR","TASI.SR","^TASI"):
+            try:
+                closes,stamps=chart(symbol,"3mo")
+                latest=closes[-1]
+                sma20=sum(closes[-20:])/min(20,len(closes))
+                sma50=sum(closes[-50:])/min(50,len(closes))
+                deltas=[closes[i]-closes[i-1] for i in range(1,len(closes))]
+                gains=[max(x,0) for x in deltas[-14:]]
+                losses=[abs(min(x,0)) for x in deltas[-14:]]
+                avg_gain=sum(gains)/max(1,len(gains)); avg_loss=sum(losses)/max(1,len(losses))
+                rsi=100 if avg_loss==0 and avg_gain>0 else 0 if avg_gain==0 else round(100-(100/(1+avg_gain/avg_loss)),1)
+                trend="صاعد" if latest>sma20 and sma20>sma50 else "هابط" if latest<sma20 and sma20<sma50 else "متذبذب"
+                ch=changes(closes)
+                return {"ok":True,"market":"saudi","symbol":symbol,"name":"مؤشر تاسي","source":"Yahoo Finance (قد تكون البيانات متأخرة)","updated":int(time.time()),**ch,"sma20":round(sma20,2),"sma50":round(sma50,2),"rsi14":rsi,"trend":trend,"closes_count":len(closes),"items":[dict(x,ok=False,source_url="https://www.saudiexchange.sa/wps/portal/saudiexchange/ourmarkets/main-market-watch/indices-performance") for x in SAUDI_SECTORS]}
+            except Exception as exc:
+                errors.append(str(exc)[:100])
+        return {"ok":False,"market":"saudi","message":"تعذر جلب بيانات مؤشر تاسي من المصدر الخارجي حاليًا؛ لم يتم إنشاء أرقام تقديرية.","items":[dict(x,ok=False,source_url="https://www.saudiexchange.sa/wps/portal/saudiexchange/ourmarkets/main-market-watch/indices-performance") for x in SAUDI_SECTORS]}
+
     if market!="us":
-        return JSONResponse({"ok":False,"market":market,"message":"المصدر المباشر لأداء مؤشرات القطاعات السعودية غير مربوط بعد.","items":[]},status_code=200)
+        return JSONResponse({"ok":False,"market":market,"message":"السوق غير مدعوم في تحليل القطاعات.","items":[]},status_code=200)
     def one(item):
-        symbol=item["symbol"]
         try:
-            url="https://query1.finance.yahoo.com/v8/finance/chart/"+urllib.parse.quote(symbol,safe="")+"?range=1mo&interval=1d"
-            req=urllib.request.Request(url,headers={"User-Agent":"Mozilla/5.0 SMART-TRADING-PRO"})
-            with urllib.request.urlopen(req,timeout=5) as response:
-                payload=json.loads(response.read().decode("utf-8","ignore"))
-            result=(payload.get("chart",{}).get("result") or [None])[0]
-            if not result: raise ValueError("missing chart")
-            closes=[float(x) for x in (result.get("indicators",{}).get("quote") or [{}])[0].get("close",[]) if x is not None and float(x)>0]
-            if len(closes)<2: raise ValueError("insufficient closes")
-            latest,previous=closes[-1],closes[-2]
-            def change(ago):
-                base=closes[-min(len(closes),ago+1)]
-                return round((latest/base-1)*100,2) if base else None
-            return {**item,"price":round(latest,2),"change_1d":round((latest/previous-1)*100,2),"change_1w":change(5),"change_1m":change(20),"updated":int(time.time()),"ok":True}
+            closes,_=chart(item["symbol"],"1mo")
+            return {**item,**changes(closes),"updated":int(time.time()),"ok":True}
         except Exception:
             return {**item,"price":None,"change_1d":None,"change_1w":None,"change_1m":None,"ok":False}
     with ThreadPoolExecutor(max_workers=8) as pool:
