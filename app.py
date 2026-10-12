@@ -46,6 +46,45 @@ async def _cache_control_middleware(request:Request,call_next):
     return response
 
 @app.middleware("http")
+async def _enforce_market_switches(request:Request,call_next):
+    """Enforce admin market switches on direct pages and market-specific APIs."""
+    path=request.url.path
+    q=request.query_params
+    key=None
+    page_map={
+        "/static/spot.html":"spot","/market/spot":"spot","/fast-spot":"spot",
+        "/static/futures.html":"futures","/market/futures":"futures","/fast-futures":"futures",
+        "/static/contracts.html":"contracts","/market/contracts":"contracts","/fast-contracts":"contracts",
+        "/static/us.html":"us","/market/us":"us","/fast-us":"us",
+        "/static/saudi.html":"saudi","/market/saudi":"saudi","/fast-saudi":"saudi",
+        "/static/forex.html":"forex","/market/forex":"forex","/fast-forex":"forex",
+        "/static/alpha.html":"alpha",
+    }
+    key=page_map.get(path)
+    if path=="/static/public-trades.html" or path=="/api/public-trades":
+        m=str(q.get("market") or "all").lower()
+        if m in ("spot","futures","alpha","contracts","us","saudi","forex","gold"):
+            key="forex" if m=="gold" else m
+    if path=="/api/opportunities" or path=="/api/technical-methods":
+        m=str(q.get("market") or "").lower()
+        if m in ("spot","futures","alpha","contracts","us","saudi","forex"):
+            key=m
+    if key:
+        try:
+            con=sqlite3.connect(DB_PATH,timeout=2)
+            row=con.execute("SELECT enabled FROM section_access WHERE key=?",(key,)).fetchone()
+            con.close()
+            if row and not bool(row[0]):
+                if path.startswith("/api/"):
+                    return JSONResponse({"ok":False,"disabled":True,"market":key,"message":"هذا السوق مغلق مؤقتًا من الإدارة."},status_code=423)
+                return RedirectResponse("/static/index.html?market_disabled="+key,status_code=303)
+        except Exception:
+            # Do not take the site down if the admin table is not initialized yet.
+            pass
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def _block_legacy_technical_apis(request:Request,call_next):
     blocked={
         "/api/strategy/performance","/api/strategy/signals","/api/strategy/engine",
