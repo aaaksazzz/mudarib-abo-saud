@@ -522,12 +522,7 @@ def startup():
                 except Exception:
                     pass
             threading.Thread(target=run,daemon=True,name=name).start()
-        # Hourly self-improvement evaluates closed outcomes and bounded method weights.
-        try:
-            import self_improver
-            self_improver.start_worker()
-        except Exception as _learn_exc:
-            print("[SELF-IMPROVER] startup unavailable:",str(_learn_exc)[:160],flush=True)
+        # Technical-method learning is intentionally disabled; external recommendations only.
         # AZO research is available on demand, but its continuous multi-market worker
         # is paused on the 0.2 vCPU / 512 MB instance to prevent site-wide stalls.
         # Re-enable only after increasing service resources and validating load.
@@ -3242,27 +3237,8 @@ def fast_market_api(market:str="spot",timeframe:str="15m"):
                            "leverage","target_pct","stop_pct"}
             rows=[{k:x.get(k) for k in public_fields if k in x} for x in rows]
 
-        # Give each market's own strategy a stable vote key, then adjust ranking only from its
-        # own closed outcomes on the same market and timeframe (minimum sample enforced in feedback).
-        for x in rows:
-            side=str(x.get("direction") or x.get("side") or "").upper()
-            if not isinstance(x.get("methods"),dict) or not x.get("methods"):
-                method=str(x.get("strategy_mode") or x.get("strategy_label") or x.get("tag") or "market-signal")
-                x["methods"]={method:1 if side=="BUY" else -1 if side=="SELL" else 0}
-        try:
-            from strategy_feedback import apply_feedback
-            rows=apply_feedback(market,timeframe,rows)
-        except Exception as learn_exc:
-            print("[STRATEGY-LEARNING] ranking skipped",market,str(learn_exc)[:120],flush=True)
+        # Rank external recommendations by published confidence and market move only.
         rows=sorted(rows,key=lambda x:(float(x.get("recommendation_score") or x.get("ai_pct") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:20]
-        # Record visible recommendations into the shared outcome learner for each independent market.
-        try:
-            import self_improver
-            recorded=self_improver.record_signals(market,timeframe,rows)
-            if recorded:
-                print("[SELF-IMPROVER] recorded",recorded,"signals for",market,timeframe,flush=True)
-        except Exception as learn_exc:
-            print("[SELF-IMPROVER] signal recording skipped",market,str(learn_exc)[:120],flush=True)
         if rows:
             from datetime import datetime,timezone
             now_iso=datetime.now(timezone.utc).isoformat()
@@ -4012,10 +3988,3 @@ except Exception as _admin_exc:
 
 
 
-@app.get("/api/self-improver/status")
-def self_improver_status():
-    try:
-        import self_improver
-        return self_improver.status()
-    except Exception as exc:
-        return {"ok":False,"enabled":False,"state":"unavailable","message":str(exc)[:160]}
