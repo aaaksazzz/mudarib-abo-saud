@@ -140,6 +140,6 @@
  document.querySelectorAll(".market-link").forEach(a=>a.addEventListener("click",()=>closeMenu()));
  $("#refresh").addEventListener("click",()=>load(true));
  $("#hoursFilter").addEventListener("change",()=>{selectedHours=$("#hoursFilter").value;updateUrl();load(false);});
- updateUrl();load(false);setInterval(()=>load(false),60000);
+ updateUrl();load(false);setInterval(()=>load(false),900000);
 })();
 </script></body></html>
