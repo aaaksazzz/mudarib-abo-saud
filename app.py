@@ -58,7 +58,7 @@ async def _enforce_market_switches(request:Request,call_next):
         "/static/us.html":"us","/market/us":"us","/fast-us":"us",
         "/static/saudi.html":"saudi","/market/saudi":"saudi","/fast-saudi":"saudi",
         "/static/forex.html":"forex","/market/forex":"forex","/fast-forex":"forex",
-        "/static/alpha.html":"alpha",
+        "/static/alpha.html":"alpha","/static/gold.html":"forex",
     }
     key=page_map.get(path)
     if path=="/static/public-trades.html" or path=="/api/public-trades":
