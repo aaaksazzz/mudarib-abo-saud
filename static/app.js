@@ -572,6 +572,8 @@ function bind(){
    keys.forEach(function(k){if(byKey[k])section.appendChild(byKey[k]);});
    if(section.querySelector(".nav-item"))side.insertBefore(section,footer||null);
   };
+  /* Markets first, then the rest of the platform menu. */
+  makeSection("الأسواق",["spot","futures","alpha","contracts","us","saudi","forex"],"menu-markets");
   makeSection("الرئيسية",["home"],"menu-home");
   makeSection("التداول الذكي",["radar","gold","whales"],"menu-trading");
   makeSection("النماذج والتحليل",["patterns","azo"],"menu-azo");
