@@ -76,6 +76,10 @@ def install():
    support_n=count_table("support")
   c.close()
   return {"ok":True,"users":users_n,"trades":trades_n,"new_support":support_n}
+ async def public_access(req):
+  ensure();c=app.db();rs=c.execute("SELECT key,enabled FROM section_access").fetchall();c.close()
+  return {"ok":True,"sections":[{"key":r["key"],"enabled":bool(r["enabled"])} for r in rs if r["key"] in MARKET_ACCESS]}
+
  async def access(req):
   if not adm(req):return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
   ensure();c=app.db();rs=c.execute("SELECT key,enabled FROM section_access").fetchall();c.close()
@@ -93,5 +97,5 @@ def install():
   f=await req.form();uid=int(f["user_id"]);days=int(f["days"])
   if days not in (7,15,30):return JSONResponse({"ok":False,"message":"اختر 7 أو 15 أو 30 يوم"},status_code=400)
   now=datetime.now(timezone.utc);exp=now+timedelta(days=days);ensure();c=app.db();c.execute("INSERT INTO subscriptions(user_id,plan,starts_at,expires_at,status) VALUES(?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET plan=excluded.plan,starts_at=excluded.starts_at,expires_at=excluded.expires_at,status='active'",(uid,str(days)+"d",now.isoformat(),exp.isoformat(),"active"));c.commit();c.close();return {"ok":True}
- fastapi_app.add_api_route("/api/auth/signup",signup,methods=["POST"]);fastapi_app.add_api_route("/api/auth/login",login,methods=["POST"]);fastapi_app.add_api_route("/api/auth/logout",logout,methods=["POST"]);fastapi_app.add_api_route("/api/logout",logout,methods=["POST"]);fastapi_app.add_api_route("/api/admin/status",status,methods=["GET"]);fastapi_app.add_api_route("/api/admin/summary",summary,methods=["GET"]);fastapi_app.add_api_route("/api/admin/access",access,methods=["GET"]);fastapi_app.add_api_route("/api/admin/access",access_set,methods=["POST"]);fastapi_app.add_api_route("/api/admin/users",users,methods=["GET"]);fastapi_app.add_api_route("/api/admin/subscription",grant,methods=["POST"])
+ fastapi_app.add_api_route("/api/auth/signup",signup,methods=["POST"]);fastapi_app.add_api_route("/api/auth/login",login,methods=["POST"]);fastapi_app.add_api_route("/api/auth/logout",logout,methods=["POST"]);fastapi_app.add_api_route("/api/logout",logout,methods=["POST"]);fastapi_app.add_api_route("/api/market-access",public_access,methods=["GET"]);fastapi_app.add_api_route("/api/admin/status",status,methods=["GET"]);fastapi_app.add_api_route("/api/admin/summary",summary,methods=["GET"]);fastapi_app.add_api_route("/api/admin/access",access,methods=["GET"]);fastapi_app.add_api_route("/api/admin/access",access_set,methods=["POST"]);fastapi_app.add_api_route("/api/admin/users",users,methods=["GET"]);fastapi_app.add_api_route("/api/admin/subscription",grant,methods=["POST"])
  return True
