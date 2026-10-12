@@ -341,24 +341,27 @@ def _build(only_market=None, hours=24):
         # TOP 1 ranking is based on measurable movement, closed-trade history,
         # entry quality and verified liquidity. Keep source quality as separate metadata.
         row["rank_score"]=row.get("top1_score")
-        quality=(0 if row.get("scan_generated") else 1,
+        quality=(1 if row.get("top1_eligible") else 0,
+                 float(row.get("top1_score") if row.get("top1_score") is not None else -1),
+                 0 if row.get("scan_generated") else 1,
                  int(row.get("mention_count") or 0),
                  int(row.get("source_domains_count") or 0),
                  int(row.get("source_quality") or 0),
-                 float(row.get("ai_pct") or 0),
                  float(row.get("created_at") or 0))
         previous=best_by_asset.get(key)
-        if previous is None or quality>(0 if previous.get("scan_generated") else 1,
-                                         int(previous.get("mention_count") or previous.get("source_count") or 0),
-                                         int(previous.get("source_domains_count") or 0),
-                                         int(previous.get("source_quality") or 0),
-                                         float(previous.get("ai_pct") or 0),
-                                         float(previous.get("created_at") or 0)):
+        previous_quality=(1 if previous.get("top1_eligible") else 0,
+                          float(previous.get("top1_score") if previous.get("top1_score") is not None else -1),
+                          0 if previous.get("scan_generated") else 1,
+                          int(previous.get("mention_count") or previous.get("source_count") or 0),
+                          int(previous.get("source_domains_count") or 0),
+                          int(previous.get("source_quality") or 0),
+                          float(previous.get("created_at") or 0)) if previous else None
+        if previous is None or quality>previous_quality:
             best_by_asset[key]=row
     # Balance the feed so busy markets cannot crowd out quieter markets.
     rows=[]
     for market in MARKETS:
-        market_rows=sorted((x for x in best_by_asset.values() if x["market"]==market),key=lambda x:(0 if x.get("scan_generated") else 1,int(x.get("mention_count") or x.get("source_count") or 0),int(x.get("source_domains_count") or 0),float(x.get("rank_score") or x.get("source_quality") or 0),x["created_at"]),reverse=True)
+        market_rows=sorted((x for x in best_by_asset.values() if x["market"]==market),key=lambda x:(1 if x.get("top1_eligible") else 0,float(x.get("top1_score") if x.get("top1_score") is not None else -1),0 if x.get("scan_generated") else 1,int(x.get("mention_count") or x.get("source_count") or 0),int(x.get("source_domains_count") or 0),x["created_at"]),reverse=True)
         rows.extend(market_rows[:100])
     rows=sorted(rows,key=lambda x:(x["created_at"],x["source_count"]),reverse=True)[:700]
     market_updated={}
