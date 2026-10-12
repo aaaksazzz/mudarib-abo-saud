@@ -3655,8 +3655,8 @@ def _refresh_opportunities(market,timeframe,key):
         except Exception as feedback_exc:
             print("[STRATEGY-LEARNING] skipped",str(feedback_exc)[:120],flush=True)
         def _top1_history(symbol):
-            # Legacy trades.profit_pct/loss_pct are planned fields, not verified realized outcomes.
-            # Keep historical performance out of TOP 1 until a true closed-trade ledger is available.
+            # Real closed-outcome history is only used by strategy_feedback when its
+            # recommendation_results ledger contains verified WIN/LOSS outcomes.
             return {"sample":0,"score":None,"win_rate":None,"expectancy":None}
         try:
             import research_engine as _top1_engine
@@ -3666,23 +3666,37 @@ def _refresh_opportunities(market,timeframe,key):
             parts={}
             side=str(row.get("direction") or row.get("side") or "").upper()
             symbol=str(row.get("symbol") or "").upper()
-            if _top1_engine and market in ("us","saudi"):
+            candles=[]
+            if _top1_engine:
                 try:
-                    candles=_top1_engine._yahoo(symbol,market,"1d",3) or []
-                    if len(candles)>=2:
-                        prev=float(candles[-2].get("close") or 0); last=float(candles[-1].get("close") or 0)
-                        if prev>0 and last>0:
-                            move=(last-prev)/prev*100
-                            row["top1_change_24h_pct"]=round(move,4)
-                            parts["movement"]=max(0,min(100,50+(move if side=="BUY" else -move)*10))
-                    if candles:
-                        volume=float(candles[-1].get("volume") or 0)
-                        if volume>0:
-                            import math
-                            row["top1_volume"]=volume
-                            parts["liquidity"]=max(0,min(100,(math.log10(max(1,volume))-3)*20))
+                    if market=="alpha":
+                        raw=_top1_engine._alpha_klines(symbol,timeframe)
+                        candles=_top1_engine._candles(raw)
+                    elif market in ("spot","futures"):
+                        raw=_top1_engine._crypto_klines(symbol,market,timeframe)
+                        candles=_top1_engine._candles(raw)
+                    else:
+                        candles=_top1_engine._yahoo(symbol,market,timeframe) or []
                 except Exception:
-                    pass
+                    candles=[]
+            # Movement and liquidity use the SAME selected timeframe across all markets.
+            try:
+                if len(candles)>=2:
+                    prev=float(candles[-2].get("close") or 0)
+                    last=float(candles[-1].get("close") or 0)
+                    if prev>0 and last>0:
+                        move=(last-prev)/prev*100
+                        row["top1_change_pct"]=round(move,5)
+                        aligned_move=move if side=="BUY" else -move
+                        parts["movement"]=max(0,min(100,50+aligned_move*10))
+                if candles:
+                    volume=float(candles[-1].get("volume") or 0)
+                    if volume>0:
+                        row["top1_volume"]=volume
+                        import math
+                        parts["liquidity"]=max(0,min(100,(math.log10(max(1,volume))-3)*20))
+            except (TypeError,ValueError,OverflowError):
+                pass
             history=_top1_history(symbol)
             if history["score"] is not None:
                 parts["history"]=history["score"]
@@ -3690,14 +3704,15 @@ def _refresh_opportunities(market,timeframe,key):
                 entry=float(row.get("entry") or row.get("price") or 0)
                 stop=float(row.get("sl") or 0)
                 target=float(row.get("tp1") or 0)
-                live=float(row.get("current_price") or row.get("live_price") or entry)
+                live=float(row.get("current_price") or row.get("live_price") or (candles[-1].get("close") if candles else entry) or entry)
                 if entry>0 and stop>0 and target>0:
-                    risk=abs(entry-stop); reward=target-entry if side=="BUY" else entry-target
+                    risk=abs(entry-stop)
+                    reward=target-entry if side=="BUY" else entry-target
                     if risk>0 and reward>0:
                         rr=max(0,min(100,(reward/risk)*40))
                         drift=max(0,min(100,100-abs(live-entry)/entry*2000)) if live>0 else 50
                         parts["entry_quality"]=rr*.7+drift*.3
-            except (TypeError,ValueError):
+            except (TypeError,ValueError,OverflowError):
                 pass
             weights={"movement":25,"history":25,"entry_quality":25,"liquidity":25}
             active=[(k,float(v),weights[k]) for k,v in parts.items() if k in weights]
