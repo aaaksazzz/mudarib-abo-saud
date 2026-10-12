@@ -39,10 +39,10 @@ function card(x,i){
  var current=Number(x.current_price||x.live_price||x.price||x.entry||0);
  var targets=Array.isArray(x.targets)?x.targets.filter(function(v){return v!==null&&v!==undefined&&v!=="";}):[];
  if(!targets.length){[x.tp1,x.tp2,x.tp3].forEach(function(v){if(v!==null&&v!==undefined&&v!=="")targets.push(v);});}
- var lv='<div class="level"><small>السعر الحالي</small><b>'+esc(current||"—")+'</b></div>';
- lv+='<div class="level"><small>الدخول</small><b>'+esc(x.entry||"—")+'</b></div>';
- targets.forEach(function(v,n){lv+='<div class="level trade-target"><small>TP'+(n+1)+'</small><b>'+esc(v)+'</b></div>';});
- lv+='<div class="level"><small>SL</small><b>'+esc(x.sl||"—")+'</b></div>';
+ var lv='';
+ lv+='<div class="level"><small>الدخول</small><b>'+fmtPrice(x.entry)+'</b></div>';
+ targets.forEach(function(v,n){lv+='<div class="level trade-target"><small>TP'+(n+1)+'</small><b>'+fmtPrice(v)+'</b></div>';});
+ lv+='<div class="level"><small>الوقف</small><b>'+fmtPrice(x.sl)+'</b></div>';
  var entry=Number(x.entry||0),sl=Number(x.sl||0),tps=targets.map(Number).filter(function(v){return Number.isFinite(v)&&v>0;}),pnl=(current>0&&entry>0)?((current-entry)/entry*100*(sell?-1:1)):null;
  var hit="OPEN",hitText="🟡 متابعة الصفقة",hitClass="track-open";
  if(current>0&&sl>0&&((sell&&current>=sl)||(!sell&&current<=sl))){hit="SL";hitText="🔴 وصل وقف الخسارة";hitClass="track-loss";}
@@ -292,7 +292,7 @@ function loadRadar(tf){
    var z={x:x,market:g.market,move:mv,score:quality,method:method};all.push(z);seen[key]=z;
   });});
   all.sort(function(a,b){return b.score-a.score;});
-  function v(n){return n===null||n===undefined||n===""?"—":esc(n);}
+  function v(n){return fmtPrice(n);}
   function make(z,i){
    var x=z.x,sell=String(x.direction||x.side||"").toUpperCase()==="SELL";
    var targets=Array.isArray(x.targets)?x.targets:[x.tp1,x.tp2,x.tp3];
