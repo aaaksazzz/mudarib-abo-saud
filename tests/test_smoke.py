@@ -60,8 +60,10 @@ class SmokeTests(unittest.TestCase):
         self.assertIn('if(routes[s]){window.location.href=routes[s];}', js)
         for market in ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex"):
             self.assertIn(f'{market}:"/static/public-trades.html?market={market}&hours=24"', js)
+        app = source("app.py")
         for route in ("/static/spot.html", "/static/futures.html", "/static/alpha.html", "/static/contracts.html", "/static/us.html", "/static/saudi.html", "/static/forex.html"):
-            self.assertTrue((ROOT / route.lstrip("/")).exists(), f"Missing legacy redirect: {route}")
+            self.assertIn(route, app, f"Missing legacy redirect: {route}")
+        self.assertIn("legacy_market_redirects", app)
 
     def test_all_futures_entry_and_preflight_routes_require_login(self):
         tree = ast.parse(source("app.py"))
