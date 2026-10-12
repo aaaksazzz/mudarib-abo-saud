@@ -1,4 +1,5 @@
 from datetime import datetime,timedelta,timezone
+from fastapi import Request
 from fastapi.responses import JSONResponse,RedirectResponse,FileResponse
 import os,sys
 app=None
@@ -40,12 +41,12 @@ def install():
   return old(req,title)
  app.page=page
 
- async def login(req):
+ async def login(req: Request):
   d=await req.json();email=str(d.get("email") or d.get("username") or "").strip().lower();pw=str(d.get("password") or "")
   c=app.db();r=c.execute("SELECT * FROM users WHERE email=?",(email,)).fetchone();c.close()
   if not r or not app.password_ok(pw,r["password_hash"]):return JSONResponse({"ok":False,"message":"بيانات الدخول غير صحيحة"},status_code=401)
   req.session["user_id"]=r["id"];return {"ok":True,"role":"admin" if r["is_admin"] else "user"}
- async def signup(req):
+ async def signup(req: Request):
   d=await req.json();name=str(d.get("username") or "").strip();pw=str(d.get("password") or "")
   if len(name)<3 or len(pw)<8:return JSONResponse({"ok":False,"message":"اسم المستخدم 3 أحرف وكلمة المرور 8 أحرف على الأقل"},status_code=400)
   email=name.lower() if "@" in name else name.lower()+"@local"
@@ -55,10 +56,10 @@ def install():
   except Exception:
    c.close();return JSONResponse({"ok":False,"message":"اسم المستخدم مستخدم مسبقاً"},status_code=409)
   c.close();req.session["user_id"]=uid;return {"ok":True,"role":"user"}
- async def logout(req):req.session.clear();return {"ok":True}
- async def status(req):
+ async def logout(req: Request):req.session.clear();return {"ok":True}
+ async def status(req: Request):
   u=adm(req);return {"ok":True,"user":u} if u else JSONResponse({"ok":False},status_code=403)
- async def summary(req):
+ async def summary(req: Request):
   if not adm(req):return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
   ensure();c=app.db()
   def count_table(name):
@@ -75,23 +76,23 @@ def install():
    support_n=count_table("support")
   c.close()
   return {"ok":True,"users":users_n,"trades":trades_n,"new_support":support_n}
- async def public_access(req):
+ async def public_access(req: Request):
   ensure();c=app.db();rs=c.execute("SELECT key,enabled FROM section_access").fetchall();c.close()
   return {"ok":True,"sections":[{"key":r["key"],"enabled":bool(r["enabled"])} for r in rs if r["key"] in MARKET_ACCESS]}
 
- async def access(req):
+ async def access(req: Request):
   if not adm(req):return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
   ensure();c=app.db();rs=c.execute("SELECT key,enabled FROM section_access").fetchall();c.close()
   return {"sections":[{"key":r["key"],"name":MARKET_ACCESS[r["key"]],"enabled":bool(r["enabled"])} for r in rs if r["key"] in MARKET_ACCESS]}
- async def access_set(req):
+ async def access_set(req: Request):
   if not adm(req):return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
   d=await req.json();key=d.get("key");enabled=1 if d.get("enabled") else 0
   if key not in MARKET_ACCESS:return JSONResponse({"ok":False,"message":"قسم غير صالح"},status_code=400)
   ensure();c=app.db();c.execute("UPDATE section_access SET enabled=? WHERE key=?",(enabled,key));c.commit();c.close();return {"ok":True}
- async def users(req):
+ async def users(req: Request):
   if not adm(req):return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
   ensure();c=app.db();rs=c.execute("SELECT u.id,u.name,u.email,s.plan,s.expires_at,s.status FROM users u LEFT JOIN subscriptions s ON s.user_id=u.id ORDER BY u.id DESC").fetchall();c.close();return {"users":[dict(x) for x in rs]}
- async def grant(req):
+ async def grant(req: Request):
   if not adm(req):return JSONResponse({"ok":False,"message":"غير مصرح"},status_code=403)
   f=await req.form();uid=int(f["user_id"]);days=int(f["days"])
   if days not in (7,15,30):return JSONResponse({"ok":False,"message":"اختر 7 أو 15 أو 30 يوم"},status_code=400)
