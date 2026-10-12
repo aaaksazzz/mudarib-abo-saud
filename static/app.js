@@ -3,20 +3,7 @@
 var $=function(s){return document.querySelector(s);};
 var routes={home:"/static/index.html",radar:"/static/radar.html?v=20261014-menu-fix",gold:"/static/public-trades.html?market=forex&hours=24",results:"/static/results.html?v=20261014-results-links",news:"/static/news.html?v=20261012-clean-results-v3",blog:"/static/blog.html?v=20261012-clean-results-v3",spot:"/static/public-trades.html?market=spot&hours=24",futures:"/static/public-trades.html?market=futures&hours=24",alpha:"/static/public-trades.html?market=alpha&hours=24",contracts:"/static/public-trades.html?market=contracts&hours=24",us:"/static/public-trades.html?market=us&hours=24",saudi:"/static/public-trades.html?market=saudi&hours=24",forex:"/static/public-trades.html?market=forex&hours=24",signup:"/static/signup.html?v=20261012-clean-results-v3",login:"/static/login.html?v=20261012-clean-results-v3",admin:"/admin",explosion:"/static/explosion.html?v=20261012-direction-fix",flareScanner:"/static/flare-scanner.html?v=20261012-flare-scanner-chart1"};
 var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false,trackingTimer=null,marketKeys=["spot","futures","alpha","contracts","us","saudi","forex"];
-/* رابط الصفقات العامة بجوار الرادار في القائمة على كل الصفحات */
-try {
- var publicSide=document.getElementById("sidebar");
- if(publicSide&&!publicSide.querySelector('a[href*="public-trades.html"]')) {
-  var publicLink=document.createElement("a");
-  publicLink.href="/static/public-trades.html?v=20261013-public-trades";
-  publicLink.className="nav-item";
-  publicLink.style.textDecoration="none"; publicLink.style.display="block";
-  publicLink.textContent="🌐 الصفقات العامة";
-  var radarLink=publicSide.querySelector('[data-s="radar"],a[href*="radar.html"]');
-  if(radarLink&&radarLink.parentNode)radarLink.parentNode.insertBefore(publicLink,radarLink.nextSibling);
-  else {var footer=publicSide.querySelector(".side-footer");if(footer)publicSide.insertBefore(publicLink,footer);else publicSide.appendChild(publicLink);}
- }
-} catch(e) {}
+/* No duplicate public-trades shortcut; strongest opportunities opens the same feed. */
 /* Keep market shortcuts at the top of every shared sidebar, with services below. */
 try {
  var marketSidebar=document.getElementById("sidebar");
@@ -279,30 +266,23 @@ function bind(){
  if(side){var goldNavItem=side.querySelector('[data-s="gold"]');if(goldNavItem)goldNavItem.classList.toggle("active",page==="gold");}
 
  if(side){
-  /* Alpha قسم مستقل ظاهر دائمًا في القائمة */
-  if(!side.querySelector('[data-s="alpha"]')){
-   var alphaLink=document.createElement("button");
-   alphaLink.className="nav-item";
-   alphaLink.type="button";
-   alphaLink.setAttribute("data-s","alpha");
-   alphaLink.innerHTML="<span>α</span> تحليل Binance Alpha";
-   var spotEntry=side.querySelector('[data-s="spot"]');
-   if(spotEntry&&spotEntry.parentNode)spotEntry.insertAdjacentElement("afterend",alphaLink);
-   else side.appendChild(alphaLink);
-  }
-  side.querySelectorAll('[data-s="alpha"]').forEach(function(b){b.classList.toggle("active",page==="alpha"||new URLSearchParams(window.location.search).get("market")==="alpha");});
-
-  var labels={results:"النتائج",news:"الأخبار",blog:"المدونة"};
-  var icons={results:"📊",news:"📰",blog:"✍️"};
-  Object.keys(labels).forEach(function(k){
+  /* Keep the same destinations on every shared app page. */
+  var navDefaults={
+   home:["⌂","الرئيسية"],radar:["◈","الرادار"],spot:["₿","سبوت"],futures:["⚡","فيوتشر"],
+   alpha:["α","Binance Alpha"],contracts:["◉","العقود الأمريكية"],us:["🇺🇸","الأسهم الأمريكية"],
+   saudi:["🇸🇦","السوق السعودي"],forex:["💱","الفوركس والذهب"],gold:["💎","الصفقات الذهبية"],
+   results:["📊","النتائج"],news:["📰","الأخبار"],blog:["✍️","المدونة"],
+   signup:["＋","إنشاء حساب"],login:["↪","تسجيل الدخول"],admin:["⚙","الإدارة"]
+  };
+  Object.keys(navDefaults).forEach(function(k){
    if(!side.querySelector('[data-s="'+k+'"]')){
-    var b=document.createElement("button");
-    b.className="nav-item";b.type="button";b.setAttribute("data-s",k);
-    b.innerHTML="<span>"+icons[k]+"</span> "+labels[k];
+    var b=document.createElement("button");b.className="nav-item";b.type="button";
+    b.setAttribute("data-s",k);b.innerHTML="<span>"+navDefaults[k][0]+"</span> "+navDefaults[k][1];
     side.appendChild(b);
    }
   });
-  /* Professional sidebar order: home, trading, markets, content, account */
+  side.querySelectorAll('[data-s="alpha"]').forEach(function(b){b.classList.toggle("active",page==="alpha"||new URLSearchParams(window.location.search).get("market")==="alpha");});
+  /* Consistent sidebar order across app pages. */
   var footer=side.querySelector(".side-footer");
   var byKey={};
   Array.from(side.querySelectorAll(":scope > .nav-item")).forEach(function(el){
@@ -321,7 +301,7 @@ function bind(){
   /* Markets first, then the rest of the platform menu. */
   makeSection("الأسواق",["spot","futures","alpha","contracts","us","saudi","forex"],"menu-markets");
   makeSection("الرئيسية",["home"],"menu-home");
-  makeSection("التداول الذكي",["radar","gold","whales"],"menu-trading");
+  makeSection("التداول الذكي",["radar","gold"],"menu-trading");
   makeSection("النتائج والمحتوى",["results","news","blog"],"menu-content");
   makeSection("الحساب والإدارة",["signup","login","admin"],"menu-account");
  }
