@@ -1891,10 +1891,12 @@ def market_chart(market:str="us",symbol:str="AAPL",timeframe:str="15m",limit:int
 
 
 @app.get("/api/explosion-radar")
-def explosion_radar_api(market:str="spot",timeframe:str="15m",limit:int=25):
+def explosion_radar_api(market:str="spot",timeframe:str="15m",limit:int=25,strategy:str="normal"):
     """Rank early pre-breakout candidates; experimental ranking, not a probability forecast."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
     market=(market or "spot").lower().strip()
+    reverse=(strategy or "normal").lower().strip() in {"reverse","reversed","عكس"}
+    strategy="reverse" if reverse else "normal"
     allowed_tf={"15m","30m","1h","4h","1d"}
     if market not in {"spot","futures","us","saudi","contracts","forex"}:
         return JSONResponse({"ok":False,"message":"السوق غير مدعوم"},status_code=400)
@@ -2003,12 +2005,12 @@ def explosion_radar_api(market:str="spot",timeframe:str="15m",limit:int=25):
         down_close_score=max(0,min(100,(65-close_strength)*1.55))
         down_score=max(0,min(99,compression_score*.25+vol_score*.12+down_pressure_score*.18+down_close_score*.10+downside_near*.20+down_structure*.15-extension_penalty))
         # Direction is selected by the actual directional setup score, not by whichever boundary is closest.
-        if up_score>=down_score:
-            direction="صعود محتمل"; score=round(up_score); target_distance=distance_high
+        if (up_score>=down_score) != reverse:
+            direction="صعود محتمل"; score=round(max(up_score,down_score)); target_distance=distance_high
             near=f"يبعد {distance_high:.2f}% عن قمة آخر 20 شمعة"
             structure_score=up_structure; direction_pressure=pressure
         else:
-            direction="هبوط محتمل"; score=round(down_score); target_distance=distance_low
+            direction="هبوط محتمل"; score=round(max(up_score,down_score)); target_distance=distance_low
             near=f"يبعد {distance_low:.2f}% عن قاع آخر 20 شمعة"
             structure_score=down_structure; direction_pressure=100-pressure
         # Conditional entry trigger plus ATR-based risk levels; not an automatic order.
@@ -2065,7 +2067,7 @@ def explosion_radar_api(market:str="spot",timeframe:str="15m",limit:int=25):
                 "entry":round(entry,10),"entry_rule":entry_rule,"stop_loss":round(stop,10),
                 "tp1":round(targets[0],10),"tp2":round(targets[1],10),"tp3":round(targets[2],10),
                 "risk_per_unit":round(risk_unit,10),
-                "reasons":reasons,"timeframe":timeframe,"early_candidate":stage in {"تجميع مبكر","قرب الانطلاق — ينتظر الاختراق"}}
+                "reasons":reasons,"timeframe":timeframe,"strategy":strategy,"early_candidate":stage in {"تجميع مبكر","قرب الانطلاق — ينتظر الاختراق"}}
     rows=[]; failures=0
     with ThreadPoolExecutor(max_workers=8) as pool:
         jobs=[pool.submit(candles_for,x) for x in candidates]
@@ -2076,7 +2078,7 @@ def explosion_radar_api(market:str="spot",timeframe:str="15m",limit:int=25):
             except Exception:
                 failures+=1
     rows.sort(key=lambda x:(x["early_candidate"],x["score"],x.get("quote_volume") or 0),reverse=True)
-    return {"ok":True,"market":market,"timeframe":timeframe,"candidates_checked":len(candidates),
+    return {"ok":True,"market":market,"timeframe":timeframe,"strategy":strategy,"candidates_checked":len(candidates),
             "results_count":len(rows),"early_candidates":sum(1 for x in rows if x["early_candidate"]),
             "failures":failures,"candidates":rows[:limit],"updated_at":time.time(),
             "message":"درجة ترتيب تجريبية تجمع الانكماش وضغط الحجم وبنية السعر والزخم؛ ليست احتمال ربح أو توقعًا مضمونًا."}
