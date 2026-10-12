@@ -195,10 +195,15 @@ def azo_status(request: Request):
         stats = _closed_stats(c)
         board = _leaderboard(c)
         latest = c.execute("SELECT MAX(updated) FROM azo_signals").fetchone()[0]
+        trained_methods = 0
+        try:
+            trained_methods = int(c.execute("SELECT COUNT(DISTINCT market || '|' || timeframe || '|' || method) FROM self_improver_weights WHERE sample>=8").fetchone()[0] or 0)
+        except sqlite3.OperationalError:
+            pass
         return {"ok":True,"name":"AZO","public":stats["unlocked"],"lab_unlocked":_is_lab(request),
                 "state":"public" if stats["unlocked"] else "learning",
                 "message":"تحليل AZO اجتاز شروط النشر التجريبية" if stats["unlocked"] else "قسم AZO مقفل للجمهور حتى يثبت نتائج كافية بعد الأهداف والوقف",
-                "stats":stats,"leaderboard":board,"updated":latest}
+                "stats":stats,"trained_methods":trained_methods,"leaderboard":board,"updated":latest}
     finally:
         c.close()
 
