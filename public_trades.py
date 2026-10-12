@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import APIRouter
 
 router = APIRouter()
-RETENTION = 172800
+RETENTION = 86400
 CACHE_TTL = 900
 MARKETS = ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex", "gold")
 LABELS = {"spot":"سبوت","futures":"فيوتشر","contracts":"العقود الأمريكية","us":"الأسهم الأمريكية","saudi":"السوق السعودي","forex":"الفوركس","gold":"الذهب","alpha":"Binance Alpha"}
@@ -24,8 +24,24 @@ except Exception:
     pass
 
 def _stamp(value):
-    try: return parsedate_to_datetime(str(value)).timestamp()
-    except Exception: return 0.0
+    """Accept RFC 822 news dates and ISO-8601 timestamps from public feeds."""
+    text = str(value or "").strip()
+    if not text:
+        return 0.0
+    try:
+        return parsedate_to_datetime(text).timestamp()
+    except Exception:
+        pass
+    try:
+        from datetime import datetime
+        normalized = text.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalized)
+        if dt.tzinfo is None:
+            from datetime import timezone
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except Exception:
+        return 0.0
 
 def _last_price(engine, market, symbol, ticker_maps):
     try:
@@ -192,10 +208,27 @@ def _build():
             if row["source_url"] not in old["source_urls"]:
                 old["source_urls"].append(row["source_url"]); old["source_count"]=len(old["source_urls"])
     now=time.time()
+    # Keep one unambiguous direction per asset and market. Prefer a real external
+    # recommendation over a generated scan, then source agreement, confidence, and freshness.
+    best_by_asset={}
+    for row in merged.values():
+        if float(row.get("expires_at") or 0) <= now:
+            continue
+        key=(row["market"],row["symbol"])
+        quality=(0 if row.get("scan_generated") else 1,
+                 int(row.get("source_count") or 0),
+                 float(row.get("ai_pct") or 0),
+                 float(row.get("created_at") or 0))
+        previous=best_by_asset.get(key)
+        if previous is None or quality>(0 if previous.get("scan_generated") else 1,
+                                         int(previous.get("source_count") or 0),
+                                         float(previous.get("ai_pct") or 0),
+                                         float(previous.get("created_at") or 0)):
+            best_by_asset[key]=row
     # Balance the feed so busy markets cannot crowd out quieter markets.
     rows=[]
     for market in MARKETS:
-        market_rows=sorted((x for x in merged.values() if x["market"]==market and x["expires_at"]>now),key=lambda x:(x["source_count"],x["created_at"]),reverse=True)
+        market_rows=sorted((x for x in best_by_asset.values() if x["market"]==market),key=lambda x:(0 if x.get("scan_generated") else 1,x["source_count"],float(x.get("ai_pct") or 0),x["created_at"]),reverse=True)
         rows.extend(market_rows[:100])
     rows=sorted(rows,key=lambda x:(x["created_at"],x["source_count"]),reverse=True)[:700]
     payload={"ok":True,"trades":rows,"updated":now,"refreshing":False,"markets":counts}
