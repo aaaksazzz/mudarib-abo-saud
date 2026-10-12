@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import APIRouter
 
 router = APIRouter()
-RETENTION = 86400
+RETENTION = 172800
 CACHE_TTL = 900
 MARKETS = ("spot", "futures", "contracts", "us", "saudi", "forex", "alpha")
 LABELS = {"spot":"سبوت","futures":"فيوتشر","contracts":"العقود الأمريكية","us":"الأسهم الأمريكية","saudi":"السوق السعودي","forex":"الفوركس والذهب","alpha":"Binance Alpha"}
@@ -128,7 +128,12 @@ def _build():
             if row["source_url"] not in old["source_urls"]:
                 old["source_urls"].append(row["source_url"]); old["source_count"]=len(old["source_urls"])
     now=time.time()
-    rows=sorted((x for x in merged.values() if x["expires_at"]>now),key=lambda x:(x["source_count"],x["created_at"]),reverse=True)[:180]
+    # Balance the feed so busy markets cannot crowd out quieter markets.
+    rows=[]
+    for market in MARKETS:
+        market_rows=sorted((x for x in merged.values() if x["market"]==market and x["expires_at"]>now),key=lambda x:(x["source_count"],x["created_at"]),reverse=True)
+        rows.extend(market_rows[:100])
+    rows=sorted(rows,key=lambda x:(x["created_at"],x["source_count"]),reverse=True)[:700]
     payload={"ok":True,"trades":rows,"updated":now,"refreshing":False,"markets":counts}
     try:
         with open(CACHE_FILE+".tmp","w",encoding="utf-8") as f: json.dump(payload,f,ensure_ascii=False,separators=(",",":"))
@@ -146,7 +151,7 @@ def _worker():
         with _lock: _refreshing=False
 
 @router.get("/api/public-trades")
-def public_trades(refresh: int = 0):
+def public_trades(refresh: int = 0, market: str = "all", hours: int = 48):
     global _refreshing,_cache
     now=time.time()
     with _lock:
@@ -155,6 +160,14 @@ def public_trades(refresh: int = 0):
         if not _refreshing and (refresh==1 or stale):
             _refreshing=True
             threading.Thread(target=_worker,daemon=True,name="public-trades-24h").start()
-        result=dict(_cache); result["trades"]=list(_cache["trades"]); result["refreshing"]=_refreshing
+        try: hours=int(hours)
+        except Exception: hours=48
+        if hours not in (12,24,48): hours=48
+        if market not in ("all",)+MARKETS: market="all"
+        cutoff=now-hours*3600
+        filtered=[x for x in _cache["trades"] if float(x.get("created_at") or 0)>=cutoff and (market=="all" or x.get("market")==market)]
+        result=dict(_cache); result["trades"]=filtered; result["refreshing"]=_refreshing
+        result["selected_market"]=market; result["window_hours"]=hours
+        result["market_counts"]={m:sum(1 for x in _cache["trades"] if x.get("market")==m and float(x.get("created_at") or 0)>=cutoff) for m in MARKETS}
         result["remaining_seconds"]=max(0,int(CACHE_TTL-(now-float(_cache.get("updated") or 0))))
         return result
