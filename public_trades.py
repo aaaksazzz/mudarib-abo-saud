@@ -20,7 +20,7 @@ try:
     with open(CACHE_FILE, "r", encoding="utf-8") as f:
         saved = json.load(f)
     now = time.time()
-    _cache["trades"] = [x for x in saved.get("trades", []) if float(x.get("expires_at") or 0) > now and now-float(x.get("created_at") or 0) <= RETENTION and (not x.get("scan_generated") or x.get("market")=="alpha")]
+    _cache["trades"] = [x for x in saved.get("trades", []) if float(x.get("expires_at") or 0) > now and now-float(x.get("created_at") or 0) <= RETENTION]
     _cache["updated"] = saved.get("updated")
     _cache["markets"] = saved.get("markets", {})
     _cache["market_updated"] = saved.get("market_updated", {})
@@ -192,6 +192,48 @@ def _fetch_market(engine, market, ticker_maps, retention=86400):
                     })
             except Exception as exc:
                 print("[PUBLIC-TRADES] Alpha candle scan failed",str(exc)[:140],flush=True)
+        # Supplement sparse publisher recommendations with clearly labelled scans
+        # from real market candles; never claim these were published by an analyst.
+        if market != "alpha" and len(out) < 40:
+            try:
+                scanned = engine._public_scan(market, [], "15m")
+                scanned = sorted(scanned or [], key=lambda r: float(r.get("recommendation_score") or r.get("ai_pct") or 0), reverse=True)
+                now = time.time()
+                source_url = "https://fapi.binance.com" if market == "futures" else "https://www.binance.com/en/markets" if market == "spot" else "https://finance.yahoo.com"
+                for raw in scanned[:40]:
+                    symbol = str(raw.get("symbol") or "").upper().strip()
+                    side = str(raw.get("direction") or raw.get("side") or "").upper()
+                    try:
+                        entry = float(raw.get("entry") or 0)
+                        sl = float(raw.get("sl") or 0)
+                        targets = [float(raw.get(k) or 0) for k in ("tp1", "tp2", "tp3")]
+                        live = _last_price(engine, market, symbol, ticker_maps)
+                    except Exception:
+                        continue
+                    if not symbol or side not in ("BUY", "SELL") or entry <= 0 or sl <= 0 or live <= 0 or any(v <= 0 for v in targets):
+                        continue
+                    if side == "BUY" and not (sl < entry < targets[0] < targets[1] < targets[2]): continue
+                    if side == "SELL" and not (targets[2] < targets[1] < targets[0] < entry < sl): continue
+                    out.append({
+                        "market": market, "market_label": LABELS[market], "symbol": symbol, "direction": side,
+                        "live_price": round(float(live), 8), "entry": round(entry, 8),
+                        "tp1": round(targets[0], 8), "tp2": round(targets[1], 8), "tp3": round(targets[2], 8),
+                        "sl": round(sl, 8), "source_title": "مسح فني مباشر من بيانات السوق — ليست توصية منشورة من محلل",
+                        "source_url": source_url, "source_published": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+                        "created_at": now, "expires_at": now + retention,
+                        "level_type": "مستويات محسوبة من الشموع الحقيقية", "is_estimated": True,
+                        "status": "نشطة", "source_count": 0, "mention_count": 0,
+                        "source_domains_count": 0, "source_domains": [], "source_urls": [],
+                        "risk_pct": round(abs(entry-sl)/entry*100, 2),
+                        "tp1_pct": round(((targets[0]-entry) if side=="BUY" else (entry-targets[0]))/entry*100, 2),
+                        "tp2_pct": round(((targets[1]-entry) if side=="BUY" else (entry-targets[1]))/entry*100, 2),
+                        "tp3_pct": round(((targets[2]-entry) if side=="BUY" else (entry-targets[2]))/entry*100, 2),
+                        "recommendation_score": float(raw.get("recommendation_score") or raw.get("ai_pct") or 0),
+                        "ai_pct": float(raw.get("ai_pct") or raw.get("recommendation_score") or 0),
+                        "timeframe": str(raw.get("timeframe") or "15m"), "scan_generated": True
+                    })
+            except Exception as exc:
+                print("[PUBLIC-TRADES] market candle scan failed", market, str(exc)[:140], flush=True)
         return market,out
     except Exception as exc:
         print("[PUBLIC-TRADES] source failed",market,str(exc)[:120],flush=True)
@@ -373,11 +415,11 @@ def _build(only_market=None, hours=24):
             market_updated=dict(_cache.get("market_updated",{}))
             market_counts=dict(_cache.get("markets",{}))
         scanned=set(scan_markets)
-        rows=[x for x in previous_trades if x.get("market") not in scanned and float(x.get("expires_at") or 0)>now and (not x.get("scan_generated") or x.get("market")=="alpha")]+rows
+        rows=[x for x in previous_trades if x.get("market") not in scanned and float(x.get("expires_at") or 0)>now]+rows
     for m in scan_markets:
         market_updated[m]=now
         market_counts[m]=counts.get(m,0)
-    rows=[x for x in rows if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=retention and (not x.get("scan_generated") or x.get("market")=="alpha")]
+    rows=[x for x in rows if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=retention]
     rows=sorted(rows,key=lambda x:(x["created_at"],x.get("source_count",0)),reverse=True)[:700]
     top1_by_market={}
     for m in MARKETS:
@@ -408,7 +450,7 @@ def public_trades(refresh: int = 0, market: str = "all", hours: int = 24):
     except Exception: hours=24
     if hours not in (12, 24, 48): hours=24
     with _lock:
-        _cache["trades"]=[x for x in _cache.get("trades",[]) if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=hours*3600 and (not x.get("scan_generated") or x.get("market")=="alpha")]
+        _cache["trades"]=[x for x in _cache.get("trades",[]) if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=hours*3600]
         relevant=list(MARKETS) if market=="all" else [market]
         updated_map=_cache.get("market_updated",{})
         stale=(_cache.get("window_hours") != hours) or any(not updated_map.get(m) or now-float(updated_map.get(m) or 0)>=CACHE_TTL for m in relevant)
