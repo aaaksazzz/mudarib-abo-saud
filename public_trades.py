@@ -286,7 +286,7 @@ def _build(only_market=None, hours=24):
         market=str(row.get("market") or "")
         symbol=str(row.get("symbol") or "").upper()
         metrics=ticker_metrics.get((market,symbol))
-        if not metrics and market in ("us","saudi"):
+        if not metrics and market in ("us","saudi","contracts","forex","gold"):
             try:
                 candles=engine._yahoo(symbol,market,"1d",3) or []
                 metrics={}
