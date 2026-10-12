@@ -132,12 +132,12 @@ def _scan_fallback(engine, market):
             # Full Binance USDT universe filtered by >$1M quote volume; rotate batches
             # so low-priced and less-liquid eligible coins are not permanently skipped.
             eligible = [s for s, _ in engine._crypto_universe(market)]
-            symbols = engine._rotating_batch(eligible, 32, market)
+            symbols = engine._rotating_batch(eligible, 48, market)
             print("[UNIVERSE]", market, "eligible quote-volume >1M:", len(eligible), "batch:", len(symbols), flush=True)
         elif market == "us":
             # Discover US-listed stocks with >1M shares traded in the latest session.
             eligible = engine._us_universe(1_000_000)
-            symbols = engine._rotating_batch(eligible, 24, market)
+            symbols = engine._rotating_batch(eligible, 40, market)
             print("[UNIVERSE] us eligible stocks >1M shares:", len(eligible), "batch:", len(symbols), flush=True)
         elif market == "saudi":
             # All Saudi-listed TASI equities across sectors; never apply a daily-volume cutoff.
@@ -158,6 +158,13 @@ def _scan_fallback(engine, market):
                 result = engine._analyze_symbol(sym, market, tf)
                 if isinstance(result, dict) and result.get("side") in ("BUY", "SELL"):
                     return result
+                # Non-crypto markets can fail the strict composite gate despite valid candles.
+                # A classical structure pass is a separate real-data fallback.
+                if market not in ("spot", "futures", "alpha"):
+                    result = engine._analyze_symbol_method(sym, market, tf, "classical")
+                    if isinstance(result, dict) and result.get("side") in ("BUY", "SELL"):
+                        result["fallback_scan"] = True
+                        return result
             except Exception:
                 pass
             return None
@@ -175,9 +182,10 @@ def _scan_fallback(engine, market):
                     continue
 
                 primary_score = float(primary.get("ai_pct") or primary.get("recommendation_score") or 0)
-                if primary_score < 65:
+                min_primary = 56 if market == "saudi" else 60
+                if primary_score < min_primary:
                     continue
-                # Higher-timeframe agreement is mandatory for these candidates.
+                # Higher-timeframe agreement is still required, with a lower Saudi threshold.
                 try:
                     confirm = analyse(sym, confirm_tf)
                 except Exception:
@@ -185,7 +193,8 @@ def _scan_fallback(engine, market):
                 if not confirm or confirm.get("side") != primary.get("side"):
                     continue
                 confirm_score = float(confirm.get("ai_pct") or confirm.get("recommendation_score") or 0)
-                if confirm_score < 58:
+                min_confirm = 48 if market == "saudi" else 52
+                if confirm_score < min_confirm:
                     continue
 
                 side = str(primary.get("side") or "").upper()
