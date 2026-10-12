@@ -332,6 +332,56 @@ def _crypto_klines(symbol,market,interval="15m",limit=260):
     try:return _json(base+path+"?"+urllib.parse.urlencode({"symbol":symbol,"interval":interval,"limit":limit}),6)
     except Exception:return []
 
+_ALPHA_UNIVERSE_CACHE={"at":0.0,"symbols":[]}
+_ALPHA_UNIVERSE_LOCK=__import__("threading").Lock()
+def _alpha_universe():
+    """Fetch currently tradable Binance Alpha USDT pairs from Binance's public Alpha API."""
+    now=time.time()
+    with _ALPHA_UNIVERSE_LOCK:
+        if _ALPHA_UNIVERSE_CACHE["symbols"] and now-_ALPHA_UNIVERSE_CACHE["at"]<300:
+            return list(_ALPHA_UNIVERSE_CACHE["symbols"])
+    symbols=[]
+    try:
+        data=_json("https://www.binance.com/bapi/defi/v1/public/alpha-trade/get-exchange-info",8)
+        payload=(data or {}).get("data") or {}
+        for item in payload.get("symbols") or []:
+            sym=str(item.get("symbol") or "").upper().strip()
+            if sym and item.get("status")=="TRADING" and item.get("quoteAsset")=="USDT":
+                symbols.append(sym)
+    except Exception as exc:
+        print("[ALPHA] exchange-info failed",str(exc)[:120],flush=True)
+    symbols=list(dict.fromkeys(symbols))
+    if symbols:
+        with _ALPHA_UNIVERSE_LOCK:
+            _ALPHA_UNIVERSE_CACHE.update({"at":now,"symbols":symbols})
+    return symbols
+
+def _alpha_klines(symbol,interval="15m",limit=260):
+    """Read real Alpha candles; symbols must be Alpha pair IDs such as ALPHA_175USDT."""
+    interval_map={"1m":"INTERVAL_1m","3m":"INTERVAL_1m","5m":"INTERVAL_5m","15m":"INTERVAL_15m",
+                  "30m":"INTERVAL_30m","1h":"INTERVAL_1h","4h":"INTERVAL_4h","1d":"INTERVAL_1d",
+                  "1w":"INTERVAL_1w","1M":"INTERVAL_1M"}
+    api_interval=interval_map.get(interval,"INTERVAL_15m")
+    try:
+        url="https://www.binance.com/bapi/defi/v1/public/alpha-trade/klines?"+urllib.parse.urlencode(
+            {"symbol":symbol,"interval":api_interval,"limit":min(1000,max(52,int(limit)))})
+        raw=_json(url,8)
+        rows=(raw or {}).get("data") or []
+        candles=_candles(rows)
+        if interval=="3m" and candles:
+            out=[]
+            for i in range(0,len(candles)-2,3):
+                group=candles[i:i+3]
+                if len(group)==3:
+                    out.append({"open":group[0]["open"],"high":max(x["high"] for x in group),
+                                "low":min(x["low"] for x in group),"close":group[-1]["close"],
+                                "volume":sum(x["volume"] for x in group)})
+            candles=out
+        return candles[-limit:]
+    except Exception as exc:
+        print("[ALPHA] klines failed",symbol,str(exc)[:100],flush=True)
+        return []
+
 def _yahoo(symbol,market,interval="15m",limit=260):
     # Map weekly/monthly native intervals and synthesize intraday frames where needed.
     if interval=="3m":
@@ -580,7 +630,7 @@ def _ict_sma20_gate(c):
 
 def _analyze_symbol(symbol,market,timeframe="15m"):
     def get(interval):
-        return _candles(_crypto_klines(symbol,market,interval)) if market in ("spot","futures") else _yahoo(symbol,market,interval)
+        return _alpha_klines(symbol,interval) if market=="alpha" else _candles(_crypto_klines(symbol,market,interval)) if market in ("spot","futures") else _yahoo(symbol,market,interval)
     candles=get(timeframe)
     if not _valid_ohlcv(candles, min_count=52):return None
     candles=[{k:float(row[k]) for k in ("open","high","low","close","volume")} for row in candles]
@@ -773,7 +823,7 @@ def _expanded_method_votes(candles, base_methods):
 def _analyze_symbol_method(symbol, market, timeframe, method_id):
     keys=TECHNICAL_METHOD_KEYS.get(method_id)
     if not keys:return None
-    candles=_candles(_crypto_klines(symbol,market,timeframe)) if market in ("spot","futures") else _yahoo(symbol,market,timeframe)
+    candles=_alpha_klines(symbol,timeframe) if market=="alpha" else _candles(_crypto_klines(symbol,market,timeframe)) if market in ("spot","futures") else _yahoo(symbol,market,timeframe)
     if not _valid_ohlcv(candles,min_count=52):return None
     candles=[{k:float(row[k]) for k in ("open","high","low","close","volume")} for row in candles]
     analysis=_method_analysis(candles)
@@ -842,7 +892,7 @@ def discover_method(market, timeframe, method_id):
         return []
     symbols=_symbols_for_market(market,[])
     if market in ("spot","futures"):symbols=[s for s in symbols if str(s).upper().endswith("USDT")]
-    caps={"spot":120,"futures":120,"us":80,"saudi":160,"contracts":20,"forex":34}
+    caps={"spot":120,"futures":120,"alpha":48,"us":80,"saudi":160,"contracts":20,"forex":34}
     symbols=symbols[:caps.get(market,40)]
     from concurrent.futures import ThreadPoolExecutor, as_completed
     rows=[]
@@ -921,6 +971,9 @@ def _saudi_universe(min_volume=0):
     return list(symbols)
 
 def _symbols_for_market(market,internet):
+    if market=="alpha":
+        # Alpha is a separate exchange universe: never fill it with ordinary spot tokens.
+        return _alpha_universe()
     if market in ("spot","futures"):
         # Only allow Binance-listed USDT pairs with >= 1M USDT quote volume over 24h.
         # External recommendations may rank eligible pairs but cannot bypass the liquidity gate.
@@ -953,7 +1006,7 @@ def _public_scan(market,internet,timeframe="15m"):
     # universe so symbols beyond the first page are not permanently ignored.
     # Keep the small Northflank service responsive while progressively covering
     # discovered US/Saudi equities, crypto pairs, contracts and FX instruments.
-    caps={"spot":240,"futures":180,"us":60,"saudi":28,"contracts":16,"forex":36}
+    caps={"spot":240,"futures":180,"alpha":48,"us":60,"saudi":28,"contracts":16,"forex":36}
     cap=caps.get(market,24)
     if len(symbols)>cap:
         if market in ("spot","futures"):
