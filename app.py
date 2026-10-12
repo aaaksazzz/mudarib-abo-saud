@@ -640,7 +640,7 @@ def blog_article_page(request:Request,slug:str):
     if not item:
         return HTMLResponse("<!doctype html><html lang='ar' dir='rtl'><meta charset='utf-8'><meta name='robots' content='noindex,follow'><title>المقال غير موجود</title><main><h1>المقال غير موجود</h1><a href='/static/blog.html'>العودة إلى المدونة</a></main></html>",status_code=404)
     title=_html.escape(str(item.get("title") or "دليل تداول")); description=_html.escape(str(item.get("text") or "مقال تعليمي عن التداول وإدارة المخاطر."))
-    canonical="https://raspy-hill-9a85.aaaksazzz1.workers.dev/blog/"+urllib.parse.quote(target,safe="-._~")
+    canonical=(os.getenv("SEO_SITE_URL") or os.getenv("PUBLIC_BASE_URL") or "https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run").rstrip("/")+"/blog/"+urllib.parse.quote(target,safe="-._~")
     related=[]
     for x in BLOG:
         s=str(x.get("slug",""))
