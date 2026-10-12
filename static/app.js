@@ -421,7 +421,7 @@ function loadWhales(tf,marketChoice,thresholdChoice){
   for(var liquidityWorker=0;liquidityWorker<Math.min(4,liquidityCards.length);liquidityWorker++)loadNextLiquidity();
  }).catch(function(){if(box)box.innerHTML='<div class="empty">تعذر الاتصال ببيانات الصفقات الكبيرة؛ أعد المحاولة بعد قليل.</div>';});
 }
-function bind(){
+function bind(){Array.prototype.forEach.call(document.querySelectorAll('.nav-item[data-s="gold"]'),function(item){item.remove();});
  var side=$("#sidebar");
  if(side){
   if(!side.querySelector('[data-s="technical"]')){
