@@ -49,27 +49,28 @@ def _closed_stats(c):
 def _is_lab(request):
     return bool(request.session.get("azo_lab_unlocked"))
 
-def _score(row):
+def _score(row, learned_weights=None):
     votes = row.get("methods") or row.get("method_votes") or {}
     if isinstance(votes, str):
         try: votes = json.loads(votes)
         except Exception: votes = {}
+    learned_weights = learned_weights or {}
     vals = []
-    positive = negative = 0
-    for value in (votes.values() if isinstance(votes, dict) else []):
+    for method, value in (votes.items() if isinstance(votes, dict) else []):
         try: v = max(-1.0, min(1.0, float(value)))
         except Exception: continue
         if abs(v) < 0.15: continue
-        vals.append(v)
-        if v > 0: positive += 1
-        else: negative += 1
+        try: weight = max(0.75, min(1.25, float(learned_weights.get(str(method), 1.0))))
+        except Exception: weight = 1.0
+        vals.append((v, weight))
     direction = str(row.get("direction") or row.get("side") or "").upper()
-    aligned = [v for v in vals if (direction == "BUY" and v > 0) or (direction == "SELL" and v < 0)]
-    opposed = [v for v in vals if (direction == "BUY" and v < 0) or (direction == "SELL" and v > 0)]
+    aligned = [(v, w) for v, w in vals if (direction == "BUY" and v > 0) or (direction == "SELL" and v < 0)]
+    opposed = [(v, w) for v, w in vals if (direction == "BUY" and v < 0) or (direction == "SELL" and v > 0)]
     base = row.get("recommendation_score", row.get("ai_pct", row.get("base_score", 0))) or 0
     try: base = max(0.0, min(100.0, float(base)))
     except Exception: base = 0.0
-    agreement = (len(aligned) / max(1, len(aligned) + len(opposed))) * 100.0 if vals else 0.0
+    total_weight = sum(w for _, w in aligned + opposed)
+    agreement = (sum(w for _, w in aligned) / max(1e-12, total_weight)) * 100.0 if vals else 0.0
     score = min(100.0, max(0.0, base * 0.35 + agreement * 0.50 + min(len(aligned), 5) * 3.0 - min(len(opposed), 5) * 4.0))
     return round(score, 1), len(aligned), len(opposed), votes if isinstance(votes, dict) else {}
 
@@ -222,6 +223,15 @@ def azo_scan(request: Request, market: str = "spot", timeframe: str = "15m"):
     try:
         stats = _closed_stats(c)
         lab = _is_lab(request)
+        # Apply outcome-trained method weights when enough closed samples exist.
+        learned_weights = {}
+        try:
+            learned_weights = {str(r["method"]): float(r["weight"])
+                for r in c.execute("SELECT method,weight FROM self_improver_weights WHERE market=? AND timeframe=? AND sample>=8",
+                                   (market, timeframe)).fetchall()}
+        except sqlite3.OperationalError:
+            # The self-improver creates this table; first-run/no-table uses neutral weights.
+            learned_weights = {}
         import app as core
         cutoff = time.time() - RETENTION
         try:
@@ -246,7 +256,7 @@ def azo_scan(request: Request, market: str = "spot", timeframe: str = "15m"):
                 entry, sl = float(entry), float(sl)
                 if side not in ("BUY","SELL") or entry <= 0 or sl <= 0 or abs(entry-sl) <= 0: continue
             except Exception: continue
-            score, aligned, opposed, votes = _score(row)
+            score, aligned, opposed, votes = _score(row, learned_weights)
             if aligned < 2 or opposed > aligned or score < 50: continue
             symbol = str(row.get("symbol") or "").strip()
             if not symbol: continue
@@ -272,7 +282,8 @@ def azo_scan(request: Request, market: str = "spot", timeframe: str = "15m"):
             results = []
         results.sort(key=lambda x:(x["azo_score"],x["aligned_methods"],-x["opposed_methods"]),reverse=True)
         return {"ok":True,"locked":not published and not lab,"public":published,"state":"public" if published else "learning",
-                "stats":stats,"opportunities":results[:60],"message":"فرص AZO التجريبية؛ لا تُعد نتائجها مثبتة قبل اجتياز شروط النشر."}
+                "stats":stats,"learned_methods":len(learned_weights),"learning_mode":"outcome_weighted" if learned_weights else "baseline_no_trained_weights",
+                "opportunities":results[:60],"message":"فرص AZO التجريبية؛ الأوزان المتعلمة تطبق فقط بعد توفر 8 نتائج مغلقة على الأقل لكل منهج، ولا تُعد النتائج ضمانًا للربح."}
     finally:
         c.close()
 
