@@ -23,7 +23,7 @@
 <a class="market-link" data-market="us" href="/static/public-trades.html?market=us&amp;hours=24">🇺🇸 <span>الأسهم الأمريكية</span></a>
 <a class="market-link" data-market="saudi" href="/static/public-trades.html?market=saudi&amp;hours=24">🇸🇦 <span>السوق السعودي</span></a>
 <a class="market-link" data-market="forex" href="/static/public-trades.html?market=forex&amp;hours=24">💱 <span>الفوركس</span></a>
-<a class="market-link" data-market="gold" href="/static/public-trades.html?market=gold&amp;hours=24">🪙 <span>الذهب</span></a>
+
 <div class="side-title">الخدمات</div>
 <a class="market-link" href="/static/index.html">⌂ <span>الرئيسية</span></a>
 <a class="market-link" href="/static/results.html">📊 <span>نتائج الصفقات</span></a>
@@ -41,10 +41,10 @@
 <script>
 (function(){
  const $=s=>document.querySelector(s);let busy=false,rerun=false;
- const validMarkets=["all","spot","futures","alpha","contracts","us","saudi","forex","gold"];
- const marketNames={all:"كل الأسواق",spot:"سبوت",futures:"فيوتشر",alpha:"Binance Alpha",contracts:"العقود الأمريكية",us:"الأسهم الأمريكية",saudi:"السوق السعودي",forex:"الفوركس",gold:"الذهب"};
+ const validMarkets=["all","spot","futures","alpha","contracts","us","saudi","forex"];
+ const marketNames={all:"كل الأسواق",spot:"سبوت",futures:"فيوتشر",alpha:"Binance Alpha",contracts:"العقود الأمريكية",us:"الأسهم الأمريكية",saudi:"السوق السعودي",forex:"الفوركس والذهب"};
  const params=new URLSearchParams(location.search);
- let selectedMarket=validMarkets.includes(params.get("market"))?params.get("market"):"all";
+ let selectedMarket=params.get("market")==="gold"?"forex":(validMarkets.includes(params.get("market"))?params.get("market"):"all");
  let selectedHours=["12","24"].includes(params.get("hours"))?params.get("hours"):"24";
  $("#hoursFilter").value=selectedHours;$("#pageTitle").textContent=selectedMarket==="all"?"الصفقات العامة — كل الأسواق":"صفقات "+marketNames[selectedMarket];
  document.querySelectorAll(".market-link").forEach(a=>{if(a.dataset.market===selectedMarket)a.classList.add("active");});
@@ -69,7 +69,7 @@
    const pctText=v=>v===null||!Number.isFinite(v)?"—":(v>0?"+":"")+v.toFixed(2)+"%";
    const mentions=Number(x.mention_count||x.source_count||0);
    const signalType=x.scan_generated?"تحليل فني متعدد الأطر":x.is_estimated?"مستويات محسوبة آليًا":"مستويات محددة";
-   return '<article class="public-card '+medal.cls+'"><div class="trade-rank '+(rank>3?'regular':'')+'"><span class="rank-num">'+(rank<=3?medal.icon:"#"+rank)+'</span><span>'+(rank<=3?medal.label:"الترتيب #"+rank)+'</span></div><div class="public-card-head"><div><h3>'+esc(x.symbol||"أصل غير محدد")+'</h3><div class="public-meta">'+esc((x.market==="gold"?"الذهب":null)||marketNames[x.market]||x.market_label||marketNames[selectedMarket])+' · '+esc(date)+'</div></div><span class="public-pill '+(buy?"public-buy":"public-sell")+'">'+(buy?"شراء / BUY":"بيع / SELL")+'</span></div><div class="public-levels"><div class="public-level"><small>الدخول</small><b>'+fmt(x.entry)+'</b></div><div class="public-level"><small>وقف الخسارة</small><b>'+fmt(x.sl)+'</b></div><div class="public-level"><small>الهدف 1</small><b>'+fmt(x.tp1)+'</b></div><div class="public-level"><small>الهدف 2</small><b>'+fmt(x.tp2)+'</b></div><div class="public-level"><small>الهدف 3</small><b>'+fmt(x.tp3)+'</b></div></div><div class="public-levels"><div class="public-level"><small>الربح المحتمل · هدف 1</small><b style="color:#51ddb5">'+pctText(potential(x.tp1))+'</b></div><div class="public-level"><small>الخسارة عند الوقف</small><b style="color:#ff8585">'+pctText(riskPct===null?null:-riskPct)+'</b></div><div class="public-level"><small>الربح المحتمل · هدف 2</small><b style="color:#51ddb5">'+pctText(potential(x.tp2))+'</b></div><div class="public-level"><small>الربح المحتمل · هدف 3</small><b style="color:#51ddb5">'+pctText(potential(x.tp3))+'</b></div></div><div class="public-source">'+(mentions?"تكرار التوصية: "+mentions+" مصدر · ":"")+esc(signalType)+(x.timeframe?' · فريم '+esc(x.timeframe):'')+(score?' · ترتيب المصادر '+fmt(score)+'/100':'')+(x.source_url?' · <a href="'+esc(x.source_url)+'" target="_blank" rel="noopener noreferrer" style="color:#65d6c0;text-decoration:underline">المصدر الأصلي ↗</a>':'')+'</div></article>';
+   return '<article class="public-card '+medal.cls+'"><div class="trade-rank '+(rank>3?'regular':'')+'"><span class="rank-num">'+(rank<=3?medal.icon:"#"+rank)+'</span><span>'+(rank<=3?medal.label:"الترتيب #"+rank)+'</span></div><div class="public-card-head"><div><h3>'+esc(x.symbol||"أصل غير محدد")+'</h3><div class="public-meta">'+esc((x.market==="gold"?"الفوركس والذهب":null)||marketNames[x.market]||x.market_label||marketNames[selectedMarket])+' · '+esc(date)+'</div></div><span class="public-pill '+(buy?"public-buy":"public-sell")+'">'+(buy?"شراء / BUY":"بيع / SELL")+'</span></div><div class="public-levels"><div class="public-level"><small>الدخول</small><b>'+fmt(x.entry)+'</b></div><div class="public-level"><small>وقف الخسارة</small><b>'+fmt(x.sl)+'</b></div><div class="public-level"><small>الهدف 1</small><b>'+fmt(x.tp1)+'</b></div><div class="public-level"><small>الهدف 2</small><b>'+fmt(x.tp2)+'</b></div><div class="public-level"><small>الهدف 3</small><b>'+fmt(x.tp3)+'</b></div></div><div class="public-levels"><div class="public-level"><small>الربح المحتمل · هدف 1</small><b style="color:#51ddb5">'+pctText(potential(x.tp1))+'</b></div><div class="public-level"><small>الخسارة عند الوقف</small><b style="color:#ff8585">'+pctText(riskPct===null?null:-riskPct)+'</b></div><div class="public-level"><small>الربح المحتمل · هدف 2</small><b style="color:#51ddb5">'+pctText(potential(x.tp2))+'</b></div><div class="public-level"><small>الربح المحتمل · هدف 3</small><b style="color:#51ddb5">'+pctText(potential(x.tp3))+'</b></div></div><div class="public-source">'+(mentions?"تكرار التوصية: "+mentions+" مصدر · ":"")+esc(signalType)+(x.timeframe?' · فريم '+esc(x.timeframe):'')+(score?' · ترتيب المصادر '+fmt(score)+'/100':'')+(x.source_url?' · <a href="'+esc(x.source_url)+'" target="_blank" rel="noopener noreferrer" style="color:#65d6c0;text-decoration:underline">المصدر الأصلي ↗</a>':'')+'</div></article>';
   }).join("");
  }
  async function load(force){
