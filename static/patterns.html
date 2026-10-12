@@ -105,6 +105,14 @@ function detectTechnicalPatterns(data){
  if(c.c<rangeLo*1.001&&c.c<c.o)add('كسر دعم محتمل',61,'تأكيد الكسر بالحجم',[],'breakout');
  return out.sort((x,y)=>y.score-x.score);
 }
+function inferPatternSide(pattern){
+ const name=String(pattern&&pattern.name||''),dir=String(pattern&&pattern.dir||''),t=name+' '+dir;
+ if(/قمة مزدوجة|قمة ثلاثية|رأس وكتفين(?! مقلوب)|وتد صاعد|مثلث هابط|نجمة ساقطة|ابتلاع بيعي|نجمة المساء|غربان سود|ملقاط القمة|غطاء سحابي|قناة هابطة|علم هابط|راية هابطة|كسر دعم|هبوط|بيعي|بيع محتمل/i.test(t))return 'SELL';
+ if(/قاع مزدوج|قاع ثلاثي|رأس وكتفين مقلوب|وتد هابط|مطرقة صاعدة|ابتلاع شرائي|نجمة الصباح|جنود بيض|ملقاط القاع|اختراق صاعد|قناة صاعدة|علم صاعد|راية صاعدة|صعود|شرائي|شراء محتمل/i.test(t))return 'BUY';
+ if(/هبوط|هابط|بيعي|بيع/i.test(dir))return 'SELL';
+ if(/صعود|صاعد|شرائي|شراء/i.test(dir))return 'BUY';
+ return '';
+}
 function tvResolution(tf){return ({'1m':'1','3m':'3','5m':'5','15m':'15','30m':'30','1h':'60','2h':'120','4h':'240','6h':'360','8h':'480','12h':'720','1d':'D','3d':'3D','1w':'W','1M':'M'})[tf]||'60'}
 function tvMarketSymbol(symbol){
  const market=$('market').value;
@@ -188,10 +196,13 @@ function render(data,symbol,tf,cup=null,patterns=[],analysis=null){
  const lo=recent.map(c=>c.low),hi=recent.map(c=>c.high),lr=regression(lo),hr=regression(hi);
  const xEnd=n-1,lowerEnd=line(lr,xEnd),upperEnd=line(hr,xEnd),close=last.close;
  const breakout=close>upperEnd?'up':close<lowerEnd?'down':'watch';
- const analysisSide=String(analysis&&analysis.side||'').toUpperCase();
- const patternText=[...(cup?['كوب وعروة']:[]),...patterns.map(p=>String(p.name||'')+' '+String(p.dir||''))].join(' ');
- const patternSide=/هابط|هبوط|بيعي|بيع محتمل|كسر هابط|قمة مزدوجة|قمة ثلاثية|رأس وكتفين(?! مقلوب)|نجمة المساء|غربان سود|وتد صاعد|مثلث هابط/i.test(patternText)?'SELL':/صاعد|صعود|شرائي|شراء محتمل|اختراق صاعد|قاع مزدوج|قاع ثلاثي|رأس وكتفين مقلوب|نجمة الصباح|جنود بيض|وتد هابط|مثلث صاعد/i.test(patternText)?'BUY':'';
- const side=['BUY','SELL'].includes(analysisSide)?analysisSide:(cup&&close>=cup.rim?'BUY':breakout==='up'?'BUY':breakout==='down'?'SELL':patternSide);
+ const rawSide=String(analysis&&analysis.side||'').toUpperCase();
+ const analysisSide=['BUY','LONG','شراء'].includes(rawSide)?'BUY':['SELL','SHORT','بيع'].includes(rawSide)?'SELL':'';
+ const prior=candles.slice(-21,-1),priorHigh=prior.length?Math.max(...prior.map(c=>c.high)):0,priorLow=prior.length?Math.min(...prior.map(c=>c.low)):0;
+ const confirmedBuy=close>priorHigh&&last.close>last.open,confirmedSell=close<priorLow&&last.close<last.open;
+ const bestDirectional=[...patterns].sort((a,b)=>(Number(b.score)||0)-(Number(a.score)||0)).find(p=>inferPatternSide(p));
+ const patternSide=bestDirectional?inferPatternSide(bestDirectional):'';
+ const side=analysisSide||(cup&&cup.breakout?'BUY':confirmedBuy?'BUY':confirmedSell?'SELL':breakout==='up'?'BUY':breakout==='down'?'SELL':patternSide);
  const long=side==='BUY',short=side==='SELL',hasSignal=long||short;
  let entry=close,sl=long?Math.min(...recent.slice(-8).map(c=>c.low)):short?Math.max(...recent.slice(-8).map(c=>c.high)):0;
  if(cup&&long){entry=cup.rim;sl=cup.handleLow}
@@ -208,7 +219,7 @@ function render(data,symbol,tf,cup=null,patterns=[],analysis=null){
  drawOwnChart(data,symbol,tf,cup,patterns,{entry:entry,sl:sl,tps:tps});
  const patternNames=[...(cup?[{name:'كوب وعروة',score:cup.score}]:[]),...patterns,...((analysis&&Array.isArray(analysis.patterns))?analysis.patterns:[])].map(x=>x.name).filter((x,i,a)=>x&&a.indexOf(x)===i);
  $('patternName').textContent=patternNames.length?patternNames.join(' · '):'قناة سعرية تقديرية';
- $('signalState').textContent=analysisSide==='BUY'?'شراء BUY · '+String(analysis.trend||'اتجاه صاعد'):analysisSide==='SELL'?'بيع SELL · '+String(analysis.trend||'اتجاه هابط'):long?(breakout==='up'?'شراء BUY · اختراق مؤكد':'مرشح شراء · بانتظار التأكيد'):short?(breakout==='down'?'بيع SELL · كسر مؤكد':'مرشح بيع · بانتظار التأكيد'):(cup?'كوب وعروة · بانتظار اختراق المقاومة':'لا توجد صفقة مؤكدة · انتظر اختراقًا أو كسرًا');
+ $('signalState').textContent=analysisSide==='BUY'?'شراء BUY · '+String(analysis.trend||'إشارة الخادم'):analysisSide==='SELL'?'بيع SELL · '+String(analysis.trend||'إشارة الخادم'):long?(confirmedBuy|| (cup&&cup.breakout)||breakout==='up'?'شراء BUY · اختراق مؤكد':'مرشح شراء · بانتظار التأكيد'):short?(confirmedSell||breakout==='down'?'بيع SELL · كسر مؤكد':'مرشح بيع · بانتظار التأكيد'):(cup?'كوب وعروة · بانتظار اختراق المقاومة':'لا توجد صفقة باتجاه واضح · انتظر تأكيد النموذج');
  $('signalState').className=long?'p-up':short?'p-down':'';
  $('lastClose').textContent=fmt(close);$('chartTitle').textContent=(marketNames[$('market').value]||'السوق')+' · '+(symbol.endsWith('USDT')?symbol.replace(/USDT$/,'')+'/USDT':symbol)+' · '+tf;
  $('chartUpdated').textContent='آخر شمعة: '+new Date(last.time*1000).toLocaleString('ar-SA');
@@ -417,11 +428,11 @@ const tickers=await fetchBinanceJson('/api/v3/ticker/24hr');if(!Array.isArray(ti
 const stable=new Set(['USDCUSDT','FDUSDUSDT','TUSDUSDT','USDPUSDT','USDEUSDT','DAIUSDT','USDSUSDT','BUSDUSDT','EURUSDT','AEURUSDT']);
 const list=tickers.filter(t=>t.symbol.endsWith('USDT')&&!stable.has(t.symbol)&&Number(t.quoteVolume)>1000000).sort((a,b)=>Number(b.quoteVolume)-Number(a.quoteVolume));
 state.cursor=Math.min(Number(state.cursor)||0,list.length);if(state.cursor>=list.length){state.cursor=0;state.loopCount=(Number(state.loopCount)||0)+1;}const start=state.cursor,end=Math.min(start+12,list.length);const batch=list.slice(start,end);let cursor=0,found=state.found,batchFound=[];
-async function worker(){while(cursor<batch.length){const item=batch[cursor++];$('scanResults').textContent='جاري فحص '+item.symbol+' — '+(start+cursor)+' من '+list.length+' زوجًا على فريم '+tf+'…';try{const data=await fetchBinanceJson('/api/v3/klines?symbol='+encodeURIComponent(item.symbol)+'&interval='+encodeURIComponent(tf)+'&limit=100');if(!Array.isArray(data)||data.length<30)continue;const cup=detectCup(data),patterns=detectTechnicalPatterns(data),classic=detectClassic(data),pat=cup?{...cup,name:'كوب وعروة',dir:cup.breakout?'اختراق صاعد محتمل':'العروة تتكوّن'}:(patterns[0]||classic);if(pat){const names=[...(cup?[{name:'كوب وعروة',score:cup.score,dir:pat.dir,points:[]}]:[]),...patterns];const id=item.symbol+'|'+tf+'|'+names.map(x=>x.name).join(',');if(!state.symbols.includes(id)){const match={symbol:item.symbol,data,pat,patterns:names,volume:+item.quoteVolume,change:+item.priceChangePercent,tf};found.push(match);batchFound.push(match);state.symbols.push(id)}}}catch(e){}}}
+async function worker(){while(cursor<batch.length){const item=batch[cursor++];$('scanResults').textContent='جاري فحص '+item.symbol+' — '+(start+cursor)+' من '+list.length+' زوجًا على فريم '+tf+'…';try{const data=await fetchBinanceJson('/api/v3/klines?symbol='+encodeURIComponent(item.symbol)+'&interval='+encodeURIComponent(tf)+'&limit=100');if(!Array.isArray(data)||data.length<30)continue;const cup=detectCup(data),patterns=detectTechnicalPatterns(data),classic=detectClassic(data);const names=[...(cup?[{...cup,name:'كوب وعروة',dir:cup.breakout?'اختراق صاعد مؤكد':'بانتظار اختراق',side:cup.breakout?'BUY':'',points:[]}]:[]),...patterns,...(classic?[classic]:[])];const candidates=names.map(p=>({...p,side:p.side||inferPatternSide(p)})).filter(p=>p.side==='BUY'||p.side==='SELL');if(candidates.length){const pat=candidates.sort((a,b)=>(Number(b.score)||0)-(Number(a.score)||0))[0];const id=item.symbol+'|'+tf+'|'+pat.name+'|'+pat.side;if(!state.symbols.includes(id)){const match={symbol:item.symbol,data,pat,patterns:names,side:pat.side,volume:+item.quoteVolume,change:+item.priceChangePercent,tf};found.push(match);batchFound.push(match);state.symbols.push(id)}}}catch(e){}}}
 await Promise.all(Array.from({length:4},worker));state.cursor=end>=list.length?0:end;if(end>=list.length)state.loopCount=(Number(state.loopCount)||0)+1;state.found=found;try{sessionStorage.setItem(key,JSON.stringify(state))}catch(e){}
 found.sort((a,b)=>(b.pat.breakout?1:0)-(a.pat.breakout?1:0)||(b.pat.score||0)-(a.pat.score||0)||b.volume-a.volume);
 if(batchFound.length){const rankedBatch=batchFound.slice().sort((a,b)=>(b.pat.breakout?1:0)-(a.pat.breakout?1:0)||(b.pat.score||0)-(a.pat.score||0)||b.volume-a.volume);const best=rankedBatch[0];
-autoScan=false;$('scan').textContent='🔎 ابحث عن نموذج';$('symbol').value=best.symbol;$('tf').value=best.tf;render(best.data,best.symbol,best.tf,best.pat.name==='كوب وعروة'?best.pat:null,[...(best.patterns||[]),best.pat].filter((p,i,a)=>p&&a.findIndex(x=>x&&x.name===p.name)===i));
+autoScan=false;$('scan').textContent='🔎 ابحث عن نموذج';$('symbol').value=best.symbol;$('tf').value=best.tf;render(best.data,best.symbol,best.tf,best.pat.name==='كوب وعروة'?best.pat:null,[...(best.patterns||[]),{...best.pat,side:best.side||best.pat.side}].filter((p,i,a)=>p&&a.findIndex(x=>x&&x.name===p.name)===i));
 $('scanResults').innerHTML='<b style="color:#65e7d3">نتائج متراكمة: '+found.length+' نموذج</b><br>آخر نموذج جديد: <b>'+best.symbol.replace('USDT','/USDT')+'</b> · '+best.pat.name+' · '+(best.pat.dir||'مراقبة')+'<br>تغير 24 ساعة: '+best.change.toFixed(2)+'% · حجم 24 ساعة: '+(best.volume/1e6).toFixed(2)+' مليون USDT<br><small>تم فحص الدفعة '+start+'–'+end+' من '+list.length+' زوجًا مؤهلًا بحجم تداول يومي يتجاوز مليون USDT. دورة الفحص: '+Math.max(1,Number(state.loopCount)||0)+'؛ النتائج السابقة محفوظة، وسيتوقف البحث عند العثور على نموذج جديد.</small>';
 }else{$('scanResults').innerHTML='<b>ما ظهر نموذج مطابق في الدفعة الحالية.</b><br>تم فحص '+start+'–'+end+' من '+list.length+' زوجًا على '+tf+'. دورة الفحص: '+Math.max(1,Number(state.loopCount)||0)+'؛ سيكمل البحث تلقائيًا حتى يعثر على نموذج، ثم يتوقف.';}
 
