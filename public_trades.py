@@ -18,7 +18,7 @@ try:
     with open(CACHE_FILE, "r", encoding="utf-8") as f:
         saved = json.load(f)
     now = time.time()
-    _cache["trades"] = [x for x in saved.get("trades", []) if float(x.get("expires_at") or 0) > now]
+    _cache["trades"] = [x for x in saved.get("trades", []) if float(x.get("expires_at") or 0) > now and now-float(x.get("created_at") or 0) <= RETENTION]
     _cache["updated"] = saved.get("updated")
 except Exception:
     pass
@@ -201,11 +201,11 @@ def _build():
             market,rows=job.result(); counts[market]=len(rows); combined.extend(rows)
     merged={}
     for row in sorted(combined,key=lambda x:x["created_at"],reverse=True):
-        key=(row["market"],row["symbol"],row["direction"])
+        key=(row["market"],row["symbol"],row["direction"],bool(row.get("scan_generated")))
         if key not in merged: merged[key]=row
         else:
             old=merged[key]
-            if row["source_url"] not in old["source_urls"]:
+            if row["source_url"] and row["source_url"] not in old["source_urls"]:
                 old["source_urls"].append(row["source_url"]); old["source_count"]=len(old["source_urls"])
     now=time.time()
     # Keep one unambiguous direction per asset and market. Prefer a real external
@@ -252,7 +252,7 @@ def public_trades(refresh: int = 0, market: str = "all", hours: int = 48):
     global _refreshing,_cache
     now=time.time()
     with _lock:
-        _cache["trades"]=[x for x in _cache.get("trades",[]) if float(x.get("expires_at") or 0)>now]
+        _cache["trades"]=[x for x in _cache.get("trades",[]) if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=RETENTION]
         stale=not _cache.get("updated") or now-float(_cache.get("updated") or 0)>=CACHE_TTL
         if not _refreshing and (refresh==1 or stale):
             _refreshing=True
