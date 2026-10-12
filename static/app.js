@@ -241,8 +241,33 @@ function loadCoreMarkets(){
 }
 function loadHome(){loadCoreMarkets();}
 function fortuneCard(x,i){var d=x.direction==="SELL",score=Number(x.recommendation_score||x.ai_pct||x.ai||x.analysis_score||0),w=Math.max(0,Math.min(100,score)),ts=[x.tp1,x.tp2,x.tp3,x.tp4,x.tp5,x.tp6].filter(function(v){return v!==null&&v!==undefined&&v!=="";});var lv='<div class="level"><small>الدخول</small><b>'+esc(x.entry||"—")+'</b></div>';ts.forEach(function(v,n){lv+='<div class="level"><small>TP'+(n+1)+'</small><b>'+esc(v)+'</b></div>';});lv+='<div class="level"><small>SL</small><b>'+esc(x.sl||"—")+'</b></div>';return '<article class="card fortune-card"><div class="card-top"><div><span class="rank">#'+(i+1)+' · صفقة</span><div class="symbol">'+esc(displaySymbol(x)||"—")+'</div></div><span class="direction '+(d?"sell":"buy")+'">'+(d?"بيع":"شراء")+'</span></div><div class="score"><b>توافق '+Math.round(score)+'%</b><div class="score-bar"><i style="width:'+w+'%"></i></div><span class="rank">'+esc(x.verdict||"صفقة خارجية")+'</span></div><div class="levels">'+lv+'</div><div class="card-foot">🧠 تحليل مباشر للصفقة · '+esc(x.alignment||0)+'% مصادر مستقلة · 🕒 '+esc(x.published||"—")+'</div></article>';}
+function renderRadarMethodStats(){
+ var panel=$("#radarMethodStats");if(!panel)return;
+ panel.innerHTML='<div class="empty">جاري حساب نسب الربح والخسارة الفعلية لكل منهج…</div>';
+ getJSON("/api/results?x="+Date.now()).then(function(j){
+  var rows=j.results||[],methods={};
+  rows.forEach(function(x){
+   if(x.status!=="WIN"&&x.status!=="LOSS")return;
+   var votes={};try{votes=JSON.parse(x.method_votes||"{}");}catch(e){}
+   Object.keys(votes).forEach(function(k){
+    var v=Number(votes[k]||0),side=String(x.direction||"").toUpperCase();
+    if(!((side==="BUY"&&v>0)||(side==="SELL"&&v<0)))return;
+    methods[k]=methods[k]||{wins:0,losses:0};
+    if(x.status==="WIN")methods[k].wins++;else methods[k].losses++;
+   });
+  });
+  var ranked=Object.keys(methods).map(function(k){
+   var m=methods[k],n=m.wins+m.losses;
+   return {name:k,wins:m.wins,losses:m.losses,n:n,win:n?m.wins/n*100:0,loss:n?m.losses/n*100:0};
+  }).sort(function(a,b){return b.win-a.win||b.n-a.n;});
+  panel.innerHTML='<div class="page-head"><div><span class="eyebrow">METHOD PERFORMANCE</span><h2>📊 نسبة الربح والخسارة لكل منهج</h2><p>محسوبة من الصفقات المغلقة المسجلة فقط؛ المفتوحة لا تدخل بالحساب.</p></div></div>'+
+   (ranked.length?'<div class="metrics">'+ranked.map(function(m){return '<div class="metric"><span>'+esc(m.name)+'</span><b style="color:#54d6a0">ربح '+m.win.toFixed(1)+'%</b><small style="color:#ff8585">خسارة '+m.loss.toFixed(1)+'%</small><small>'+m.wins+' رابحة · '+m.losses+' خاسرة · '+m.n+' مغلقة'+(m.n<8?' · عينة قليلة':'')+'</small></div>';}).join('')+'</div>':'<div class="empty">ما فيه صفقات مغلقة مرتبطة بالمناهج حتى الآن؛ ما راح نخترع نسبًا.</div>')+
+   '<p class="card-foot">النسبة التاريخية لا تضمن النتائج القادمة، والعينة الأقل من 8 صفقات تعتبر أولية.</p>';
+ }).catch(function(){panel.innerHTML='<div class="empty">تعذر تحميل نتائج المناهج حاليًا.</div>';});
+}
 function loadRadar(tf){
  var box=$("#radarCards");if(!box)return;
+ renderRadarMethodStats();
  selectedTimeframe=tf||selectedTimeframe||"15m";
  var head=$(".page-head"),sw=$("#timeframeSwitch");
  if(head&&!sw){sw=document.createElement("div");sw.id="timeframeSwitch";sw.className="timeframe-switch";head.insertAdjacentElement("afterend",sw);}
