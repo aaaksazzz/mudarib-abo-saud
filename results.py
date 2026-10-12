@@ -112,6 +112,31 @@ def _results_locked(core):
    duplicate=c.execute("select id from recommendation_results where market=? and symbol=? and direction=? and timeframe=? and created>=? and entry between ? and ? limit 1",(market,symbol,direction,timeframe,now-900,entry-tolerance,entry+tolerance)).fetchone()
    if duplicate: continue
    c.execute("insert into recommendation_results(market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,timeframe,strategy_key,method_votes,base_score) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(market,symbol,direction,entry,_num(x.get("tp1")),_num(x.get("tp2")),_num(x.get("tp3")),_num(x.get("sl")),created,now,timeframe,str(x.get("technical_method_key") or "technical-confluence"),__import__("json").dumps(x.get("methods") or {},ensure_ascii=False,separators=(",",":")),_num(x.get("recommendation_score") or x.get("ai_pct")) or 0))
+ # Track the exact public trade cards too, not only the internal technical scanner.
+ try:
+  import public_trades as public
+  with public._lock:
+   public_rows=list(public._cache.get("trades",[]))
+ except Exception:
+  public_rows=[]
+ for x in public_rows:
+  market=str(x.get("market") or "").lower()
+  if market=="gold": market="forex"
+  if market not in MARKETS: continue
+  symbol=str(x.get("symbol") or "").strip().upper()
+  direction=str(x.get("direction") or "").strip().upper()
+  entry=_num(x.get("entry")); created=_num(x.get("created_at")) or now
+  if created>100000000000: created/=1000.0
+  if created>now+300 or now-created>RETENTION: continue
+  if not symbol or direction not in ("BUY","SELL") or entry is None or entry<=0: continue
+  tp1,tp2,tp3,sl=(_num(x.get(k)) for k in ("tp1","tp2","tp3","sl"))
+  if not tp1 or not tp2 or not tp3 or not sl: continue
+  timeframe=str(x.get("timeframe") or "15m")
+  tolerance=max(abs(entry)*0.0025,1e-8)
+  duplicate=c.execute("select id from recommendation_results where market=? and symbol=? and direction=? and timeframe=? and created>=? and entry between ? and ? limit 1",(market,symbol,direction,timeframe,cutoff,entry-tolerance,entry+tolerance)).fetchone()
+  if duplicate: continue
+  votes={"origin":"public-trade","estimated":bool(x.get("is_estimated")),"source_count":int(x.get("source_count") or 0)}
+  c.execute("insert into recommendation_results(market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,timeframe,strategy_key,method_votes,base_score) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(market,symbol,direction,entry,tp1,tp2,tp3,sl,created,now,timeframe,"public-trade",__import__("json").dumps(votes,separators=(",",":")),_num(x.get("ai_pct") or x.get("source_quality")) or 0))
  c.commit()
  rows=c.execute("select id,market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,status,hit_target,result_price,result_at,timeframe,strategy_key,method_votes,base_score from recommendation_results where created>=? order by created desc",(cutoff,)).fetchall()
  # Fetch one quote per unique market/symbol concurrently; serial network calls made this
@@ -126,8 +151,9 @@ def _results_locked(core):
    if market=="futures":
     q=core._binance_futures_json("https://fapi.binance.com/fapi/v1/ticker/price?symbol="+raw,timeout=3)
     return float(q.get("price") or 0)
-   candles=core._yahoo_chart(symbol,"15m","60d","15m")
-   return float(candles[-1][0]) if candles else 0
+   import research_engine as engine
+   candles=engine._yahoo(symbol,market,"15m",4)
+   return float(candles[-1].get("close") or 0) if candles else 0
   except Exception:
    return 0
  keys=list(dict.fromkeys((row[1],row[2]) for row in rows if row[11]=="OPEN"))
