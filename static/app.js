@@ -1,7 +1,7 @@
 (function(){
 "use strict";
 var $=function(s){return document.querySelector(s);};
-var routes={home:"/",technical:"/static/technical.html?v=20261010-sitefix",patterns:"/static/patterns.html?v=20261012-patterns-menu-v2",radar:"/static/radar.html?v=20261008-core",gold:"/static/gold.html?v=20261008-core",results:"/static/results.html?v=20261011-azo-competition-v1",news:"/static/news.html?v=20261008-core",blog:"/static/blog.html?v=20261010-seo",spot:"/static/spot.html?v=20261008-core",futures:"/static/futures.html?v=20261008-core",alpha:"/static/alpha.html?v=20261010-alpha",whales:"/static/whales.html?v=20261010-whales",contracts:"/static/contracts.html?v=20261008-core",us:"/static/us.html?v=20261008-core",saudi:"/static/saudi.html?v=20261008-core",forex:"/static/forex.html?v=20261008-core",signup:"/static/signup.html?v=20261008-core",login:"/static/login.html?v=20261008-core",admin:"/static/admin.html?v=20261008-core",azo:"/static/azo.html?v=20261011-azo"};
+var routes={home:"/",technical:"/static/technical.html?v=20261010-sitefix",patterns:"/static/patterns.html?v=20261012-patterns-menu-v2",radar:"/static/radar.html?v=20261008-core",gold:"/static/gold.html?v=20261008-core",results:"/static/results.html?v=20261011-azo-competition-v1",news:"/static/news.html?v=20261008-core",blog:"/static/blog.html?v=20261010-seo",spot:"/static/spot.html?v=20261008-core",futures:"/static/futures.html?v=20261008-core",alpha:"/static/alpha.html?v=20261010-alpha",whales:"/static/whales.html?v=20261010-whales",contracts:"/static/contracts.html?v=20261008-core",us:"/static/us.html?v=20261008-core",saudi:"/static/saudi.html?v=20261008-core",forex:"/static/forex.html?v=20261008-core",signup:"/static/signup.html?v=20261008-core",login:"/static/login.html?v=20261008-core",admin:"/static/admin.html?v=20261008-core",azo:"/static/azo.html?v=20261011-azo",explosion:"/static/explosion.html?v=20261012-reverse-test"};
 var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false,trackingTimer=null;
 var timeframes=[["15m","15 دقيقة"],["30m","30 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
 var selectedTimeframe="15m";
@@ -400,8 +400,8 @@ function bind(){
   }
   side.querySelectorAll('[data-s="alpha"]').forEach(function(b){b.classList.toggle("active",page==="alpha"||new URLSearchParams(window.location.search).get("market")==="alpha");});
 
-  var labels={whales:"متابعة الحيتان",results:"النتائج",news:"الأخبار",blog:"المدونة",azo:"تحليل AZO"};
-  var icons={whales:"🐋",results:"📊",news:"📰",blog:"✍️",azo:"🧪"};
+  var labels={whales:"متابعة الحيتان",results:"النتائج",news:"الأخبار",blog:"المدونة",azo:"تحليل AZO",explosion:"راصد الانفجار السعري"};
+  var icons={whales:"🐋",results:"📊",news:"📰",blog:"✍️",azo:"🧪",explosion:"💥"};
   Object.keys(labels).forEach(function(k){
    if(!side.querySelector('[data-s="'+k+'"]')){
     var b=document.createElement("button");
@@ -464,7 +464,7 @@ function bind(){
    if(section.querySelector(".nav-item"))side.insertBefore(section,footer||null);
   };
   makeSection("الرئيسية",["home"],"menu-home");
-  makeSection("التداول الذكي",["radar","gold","whales"],"menu-trading");
+  makeSection("التداول الذكي",["radar","gold","whales","explosion"],"menu-trading");
   makeSection("النماذج والتحليل",["patterns","azo"],"menu-azo");
   if(methodGroup)side.insertBefore(methodGroup,footer||null);
   makeSection("النتائج والمحتوى",["results","news","blog"],"menu-content");
