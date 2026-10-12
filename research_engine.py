@@ -352,7 +352,7 @@ def _yahoo(symbol,market,interval="15m",limit=260):
         "us":symbol,
         "saudi":("^TASI" if str(symbol).upper() in {"TASI","^TASI"} else (symbol[:-3] if str(symbol).upper().endswith(".SR") else str(symbol))+".SR"),
         "contracts":{"ES":"ES=F","NQ":"NQ=F","YM":"YM=F","RTY":"RTY=F","WTI":"CL=F","NG":"NG=F","GC":"GC=F","SI":"SI=F","HG":"HG=F","ZB":"ZB=F","ZN":"ZN=F","ZF":"ZF=F","ZC":"ZC=F","ZS":"ZS=F","ZW":"ZW=F","6E":"6E=F","6B":"6B=F","6J":"6J=F","6A":"6A=F","6C":"6C=F"}.get(symbol,symbol),
-        "forex":symbol[:3]+symbol[3:]+"=X",
+        "forex":("GC=F" if str(symbol).upper()=="XAUUSD" else "SI=F" if str(symbol).upper()=="XAGUSD" else symbol[:3]+symbol[3:]+"=X"),
         "gold":"GC=F" if str(symbol).upper() in {"XAUUSD","GOLD","GC"} else symbol[:3]+symbol[3:]+"=X"
     }.get(market,symbol)
     hosts=("https://query1.finance.yahoo.com","https://query2.finance.yahoo.com")
