@@ -3647,13 +3647,80 @@ def _refresh_opportunities(market,timeframe,key):
               if x.get("symbol") and x.get("direction") in {"BUY","SELL"}
               and not x.get("research_only")
               and str(x.get("timeframe") or timeframe)==timeframe]
-        # Results-driven ranking: only closed 24h outcomes with a minimum sample can adjust scores.
+        # Evidence-based TOP 1 ranking for each market/timeframe.
+        # Only real market candles and recorded closed outcomes count; missing inputs stay missing.
         try:
             from strategy_feedback import apply_feedback
             rows=apply_feedback(market,timeframe,rows)
         except Exception as feedback_exc:
             print("[STRATEGY-LEARNING] skipped",str(feedback_exc)[:120],flush=True)
+        def _top1_history(symbol):
+            try:
+                con=sqlite3.connect(DB_PATH,timeout=2)
+                vals=con.execute("SELECT profit_pct,loss_pct FROM trades WHERE market=? AND upper(symbol)=? AND lower(status) NOT IN ('open','active','pending') AND (profit_pct IS NOT NULL OR loss_pct IS NOT NULL)",(market,str(symbol).upper())).fetchall()
+                con.close()
+                outcomes=[float(p) if p is not None else -abs(float(l)) for p,l in vals if p is not None or l is not None]
+                if len(outcomes)<8:return {"sample":len(outcomes),"score":None,"win_rate":None,"expectancy":None}
+                win=100*sum(1 for z in outcomes if z>0)/len(outcomes)
+                exp=sum(outcomes)/len(outcomes)
+                score=max(0,min(100,win*.7+max(0,min(100,50+exp*10))*.3))
+                return {"sample":len(outcomes),"score":round(score,1),"win_rate":round(win,1),"expectancy":round(exp,3)}
+            except Exception:
+                return {"sample":0,"score":None,"win_rate":None,"expectancy":None}
+        try:
+            import research_engine as _top1_engine
+        except Exception:
+            _top1_engine=None
+        for row in rows:
+            parts={}
+            side=str(row.get("direction") or row.get("side") or "").upper()
+            symbol=str(row.get("symbol") or "").upper()
+            if _top1_engine and market in ("us","saudi"):
+                try:
+                    candles=_top1_engine._yahoo(symbol,market,"1d",3) or []
+                    if len(candles)>=2:
+                        prev=float(candles[-2].get("close") or 0); last=float(candles[-1].get("close") or 0)
+                        if prev>0 and last>0:
+                            move=(last-prev)/prev*100
+                            row["top1_change_24h_pct"]=round(move,4)
+                            parts["movement"]=max(0,min(100,50+(move if side=="BUY" else -move)*10))
+                    if candles:
+                        volume=float(candles[-1].get("volume") or 0)
+                        if volume>0:
+                            import math
+                            row["top1_volume"]=volume
+                            parts["liquidity"]=max(0,min(100,(math.log10(max(1,volume))-3)*20))
+                except Exception:
+                    pass
+            history=_top1_history(symbol)
+            if history["score"] is not None:
+                parts["history"]=history["score"]
+            try:
+                entry=float(row.get("entry") or row.get("price") or 0)
+                stop=float(row.get("sl") or 0)
+                target=float(row.get("tp1") or 0)
+                live=float(row.get("current_price") or row.get("live_price") or entry)
+                if entry>0 and stop>0 and target>0:
+                    risk=abs(entry-stop); reward=target-entry if side=="BUY" else entry-target
+                    if risk>0 and reward>0:
+                        rr=max(0,min(100,(reward/risk)*40))
+                        drift=max(0,min(100,100-abs(live-entry)/entry*2000)) if live>0 else 50
+                        parts["entry_quality"]=rr*.7+drift*.3
+            except (TypeError,ValueError):
+                pass
+            weights={"movement":25,"history":25,"entry_quality":25,"liquidity":25}
+            active=[(k,float(v),weights[k]) for k,v in parts.items() if k in weights]
+            total=sum(w for _,_,w in active)
+            score=round(sum(v*w for _,v,w in active)/total,1) if total else None
+            row["top1_score"]=score
+            row["top1_components"]={k:round(v,1) for k,v in parts.items()}
+            row["top1_available_components"]=list(parts)
+            row["top1_history"]=history
+            row["top1_eligible"]=len(parts)>=2 and score is not None
+            row["rank_score"]=score
         rows.sort(key=lambda x:(
+            1 if x.get("top1_eligible") else 0,
+            float(x.get("top1_score") if x.get("top1_score") is not None else -1),
             float(x.get("recommendation_score") or x.get("ai_pct") or 0),
             int(x.get("source_count") or x.get("research_sources") or 0),
             float(x.get("external_agreement") or x.get("research_agreement") or 0)
