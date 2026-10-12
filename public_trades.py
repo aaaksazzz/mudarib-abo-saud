@@ -165,7 +165,7 @@ def public_trades(refresh: int = 0, market: str = "all", hours: int = 48):
         if hours not in (12,24,48): hours=48
         if market not in ("all",)+MARKETS: market="all"
         cutoff=now-hours*3600
-        filtered=[x for x in _cache["trades"] if float(x.get("created_at") or 0)>=cutoff and (market=="all" or x.get("market")==market)]
+        filtered=[x for x in _cache["trades"] if float(x.get("created_at") or 0)>=cutoff and (market=="all" or x.get("market")==market or (market=="forex" and x.get("market")=="gold"))]
         result=dict(_cache); result["trades"]=filtered; result["refreshing"]=_refreshing
         result["selected_market"]=market; result["window_hours"]=hours
         result["market_counts"]={m:sum(1 for x in _cache["trades"] if x.get("market")==m and float(x.get("created_at") or 0)>=cutoff) for m in MARKETS}
