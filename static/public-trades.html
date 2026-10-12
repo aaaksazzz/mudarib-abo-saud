@@ -32,8 +32,8 @@
 <a class="market-link" href="/static/signup.html">✚ <span>إنشاء حساب</span></a>
 </aside><div id="sidebarShade" class="sidebar-shade"></div>
 <main class="public-main public-wrap">
-<div class="public-heading"><div><span class="eyebrow">رصد الأسواق</span><h1 id="pageTitle">الصفقات العامة</h1><p>كل سوق له صفقاته الخاصة. اختر مدة البحث: 12 ساعة أو 24 ساعة أو آخر يومين.</p></div><button id="refresh" class="primary" type="button">↻ تحديث البحث</button></div>
-<div class="public-tools"><label for="hoursFilter">مدة البحث</label><select id="hoursFilter"><option value="12">آخر 12 ساعة</option><option value="24">آخر 24 ساعة</option><option value="48">آخر يومين (48 ساعة)</option></select><div id="counts" class="public-counts"></div></div>
+<div class="public-heading"><div><span class="eyebrow">رصد الأسواق</span><h1 id="pageTitle">الصفقات العامة</h1><p>كل سوق له صفقاته الخاصة. البيانات المتاحة ضمن آخر 24 ساعة فقط.</p></div><button id="refresh" class="primary" type="button">↻ تحديث البحث</button></div>
+<div class="public-tools"><label for="hoursFilter">مدة البحث</label><select id="hoursFilter"><option value="12">آخر 12 ساعة</option><option value="24">آخر 24 ساعة</option></select><div id="counts" class="public-counts"></div></div>
 <div class="public-note">تصنيف الصفقات حسب توافق المصادر وحداثة الإشارة. مستويات الدخول والأهداف تُعرض ضمن بطاقة كل صفقة.</div>
 <div id="status" class="public-status" role="status">جاري تحميل الصفقات…</div><div id="cards" class="public-grid"></div>
 </main></div>
@@ -44,7 +44,7 @@
  const marketNames={all:"كل الأسواق",spot:"سبوت",futures:"فيوتشر",alpha:"Binance Alpha",contracts:"العقود الأمريكية",us:"الأسهم الأمريكية",saudi:"السوق السعودي",forex:"الفوركس والذهب"};
  const params=new URLSearchParams(location.search);
  let selectedMarket=validMarkets.includes(params.get("market"))?params.get("market"):"all";
- let selectedHours=["12","24","48"].includes(params.get("hours"))?params.get("hours"):"24";
+ let selectedHours=["12","24"].includes(params.get("hours"))?params.get("hours"):"24";
  $("#hoursFilter").value=selectedHours;$("#pageTitle").textContent=selectedMarket==="all"?"الصفقات العامة — كل الأسواق":"صفقات "+marketNames[selectedMarket];
  document.querySelectorAll(".market-link").forEach(a=>{if(a.dataset.market===selectedMarket)a.classList.add("active");});
  const fmt=v=>{if(v===null||v===undefined||v===""||!Number.isFinite(Number(v)))return "—";return Number(v).toLocaleString("en-US",{maximumFractionDigits:8});};
@@ -52,17 +52,17 @@
  function updateUrl(){const p=new URLSearchParams();p.set("market",selectedMarket);p.set("hours",selectedHours);history.replaceState(null,"",location.pathname+"?"+p.toString());}
  function render(data){
   const rows=Array.isArray(data.trades)?data.trades:[];
-  $("#counts").innerHTML="<span>الصفقات: "+rows.length+"</span><span>"+(selectedHours==="12"?"آخر 12 ساعة":selectedHours==="24"?"آخر 24 ساعة":"آخر 48 ساعة")+"</span><span>"+esc(marketNames[selectedMarket])+"</span>";
+  $("#counts").innerHTML="<span>الصفقات: "+rows.length+"</span><span>"+(selectedHours==="12"?"آخر 12 ساعة":"آخر 24 ساعة")+"</span><span>"+esc(marketNames[selectedMarket])+"</span>";
   $("#status").textContent=data.refreshing?"جاري البحث في المصادر العامة وتحليل السوق…":(data.updated?"آخر تحديث: "+new Date(data.updated*1000).toLocaleString("ar-SA"):"بانتظار نتائج البحث");
-  if(!rows.length){$("#cards").innerHTML='<div class="public-empty">ما ظهرت صفقات مطابقة في <b>'+esc(marketNames[selectedMarket])+'</b> خلال المدة المحددة.<br>جرّب تمديد المدة أو اضغط «تحديث البحث» لإعادة البحث في هذا السوق فقط.</div>';return;}
+  if(!rows.length){$("#cards").innerHTML='<div class="public-empty">ما ظهرت صفقات مطابقة في <b>'+esc(marketNames[selectedMarket])+'</b> خلال المدة المحددة.<br>اضغط «تحديث البحث» لإعادة البحث في هذا السوق فقط.</div>';return;}
   const ranked=rows.slice().sort((a,b)=>Number(b.ai_pct||b.recommendation_score||0)-Number(a.ai_pct||a.recommendation_score||0)||Number(b.source_count||0)-Number(a.source_count||0)||Number(b.created_at||0)-Number(a.created_at||0));
   const ranks=new Map(ranked.map((x,i)=>[x.market+"|"+x.symbol+"|"+x.direction,i+1]));
-  $("#cards").innerHTML=rows.map(x=>{
+  $("#cards").innerHTML=ranked.map(x=>{
    const buy=String(x.direction||"").toUpperCase()==="BUY";
    const rank=ranks.get(x.market+"|"+x.symbol+"|"+x.direction)||0;
    const medal=rank===1?{cls:"rank-gold",icon:"🥇",label:"الأول · ذهبي"}:rank===2?{cls:"rank-silver",icon:"🥈",label:"الثاني · فضي"}:rank===3?{cls:"rank-bronze",icon:"🥉",label:"الثالث · برونزي"}:{cls:"",icon:"",label:""};
-   let date="حديثة";if(x.source_published){const d=new Date(x.source_published);if(!Number.isNaN(d.getTime()))date=d.toLocaleString("ar-SA");}
-   return '<article class="public-card '+medal.cls+'"><div class="trade-rank '+(rank>3?'regular':'')+'"><span class="rank-num">'+(rank<=3?medal.icon:"#"+rank)+'</span><span>'+(rank<=3?medal.label:"ترتيب الصفقة")+'</span></div><div class="public-card-head"><div><h3>'+esc(x.symbol||"أصل غير محدد")+'</h3><div class="public-meta">'+esc((x.market==="gold"?"الفوركس والذهب":null)||marketNames[x.market]||x.market_label||marketNames[selectedMarket])+' · '+esc(date)+'</div></div><span class="public-pill '+(buy?"public-buy":"public-sell")+'">'+(buy?"شراء / BUY":"بيع / SELL")+'</span></div><div class="public-levels"><div class="public-level"><small>الدخول</small><b>'+fmt(x.entry)+'</b></div><div class="public-level"><small>وقف الخسارة</small><b>'+fmt(x.sl)+'</b></div><div class="public-level"><small>الهدف 1</small><b>'+fmt(x.tp1)+'</b></div><div class="public-level"><small>الهدف 2</small><b>'+fmt(x.tp2)+'</b></div><div class="public-level"><small>الهدف 3</small><b>'+fmt(x.tp3)+'</b></div></div><div class="public-source">'+(x.scan_generated?'تحليل فني متعدد المناهج · إطار 15 دقيقة':'عدد المصادر المتوافقة: <b>'+Math.max(1,Number(x.source_count||1))+'</b>')+'</div></article>';
+   let date="";const stamp=x.source_published||((x.created_at&&x.scan_generated)?new Date(Number(x.created_at)*1000).toISOString():null);if(stamp){const d=new Date(stamp);if(!Number.isNaN(d.getTime()))date=d.toLocaleString("ar-SA");}if(!date)date="وقت النشر غير متاح";
+   return '<article class="public-card '+medal.cls+'"><div class="trade-rank '+(rank>3?'regular':'')+'"><span class="rank-num">'+(rank<=3?medal.icon:"#"+rank)+'</span><span>'+(rank<=3?medal.label:"ترتيب الصفقة")+'</span></div><div class="public-card-head"><div><h3>'+esc(x.symbol||"أصل غير محدد")+'</h3><div class="public-meta">'+esc((x.market==="gold"?"الفوركس والذهب":null)||marketNames[x.market]||x.market_label||marketNames[selectedMarket])+' · '+esc(date)+'</div></div><span class="public-pill '+(buy?"public-buy":"public-sell")+'">'+(buy?"شراء / BUY":"بيع / SELL")+'</span></div><div class="public-levels"><div class="public-level"><small>الدخول</small><b>'+fmt(x.entry)+'</b></div><div class="public-level"><small>وقف الخسارة</small><b>'+fmt(x.sl)+'</b></div><div class="public-level"><small>الهدف 1</small><b>'+fmt(x.tp1)+'</b></div><div class="public-level"><small>الهدف 2</small><b>'+fmt(x.tp2)+'</b></div><div class="public-level"><small>الهدف 3</small><b>'+fmt(x.tp3)+'</b></div></div><div class="public-source">'+(x.scan_generated?'مسح فني آلي · إطار '+esc(x.timeframe||"15m")+' · ليست توصية منشورة من مصدر خارجي':'مصادر عامة متوافقة: <b>'+Math.max(1,Number(x.source_count||1))+'</b>')+'</div></article>';
   }).join("");
  }
  async function load(force){
