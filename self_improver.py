@@ -293,12 +293,19 @@ def run_once():
         c.close()
 
 def _loop():
-    # Wait until the web app is fully started; then run immediately and every hour.
+    # Outcome checks run in small batches; weight fitting remains hourly to protect the small instance.
     time.sleep(60)
+    last_learning=0.0
     while True:
-        try: run_once()
-        except Exception as exc: print("[SELF-IMPROVER] loop error:",str(exc)[:160],flush=True)
-        time.sleep(3600)
+        try:
+            if time.time()-last_learning>=3600:
+                run_once()
+                last_learning=time.time()
+            else:
+                refresh_open_outcomes(6)
+        except Exception as exc:
+            print("[SELF-IMPROVER] loop error:",str(exc)[:160],flush=True)
+        time.sleep(120)
 
 def start_worker():
     global _started
