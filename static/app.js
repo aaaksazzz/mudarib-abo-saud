@@ -1,7 +1,7 @@
 (function(){
 "use strict";
 var $=function(s){return document.querySelector(s);};
-var routes={home:"/",technical:"/static/technical.html?v=20261012-methods-compact-v2",radar:"/static/radar.html?v=20261012-methods-compact-v2",gold:"/static/gold.html?v=20261012-gold-separated",results:"/static/results.html?v=20261012-results-refreshfix",news:"/static/news.html?v=20261012-methods-compact-v2",blog:"/static/blog.html?v=20261012-methods-compact-v2",spot:"/static/spot.html?v=20261012-methods-compact-v2",futures:"/static/futures.html?v=20261012-methods-compact-v2",alpha:"/static/alpha.html?v=20261012-methods-compact-v2",contracts:"/static/contracts.html?v=20261012-methods-compact-v2",us:"/static/us.html?v=20261012-methods-compact-v2",saudi:"/static/saudi.html?v=20261012-methods-compact-v2",forex:"/static/forex.html?v=20261012-methods-compact-v2",signup:"/static/signup.html?v=20261012-methods-compact-v2",login:"/static/login.html?v=20261012-methods-compact-v2",admin:"/admin",explosion:"/static/explosion.html?v=20261012-direction-fix",flareScanner:"/static/flare-scanner.html?v=20261012-flare-scanner-chart1"};
+var routes={home:"/",technical:"/static/technical.html?v=20261012-all-methods-scanfix",radar:"/static/radar.html?v=20261012-methods-compact-v2",gold:"/static/gold.html?v=20261012-gold-separated",results:"/static/results.html?v=20261012-results-refreshfix",news:"/static/news.html?v=20261012-methods-compact-v2",blog:"/static/blog.html?v=20261012-methods-compact-v2",spot:"/static/spot.html?v=20261012-methods-compact-v2",futures:"/static/futures.html?v=20261012-methods-compact-v2",alpha:"/static/alpha.html?v=20261012-methods-compact-v2",contracts:"/static/contracts.html?v=20261012-methods-compact-v2",us:"/static/us.html?v=20261012-methods-compact-v2",saudi:"/static/saudi.html?v=20261012-methods-compact-v2",forex:"/static/forex.html?v=20261012-methods-compact-v2",signup:"/static/signup.html?v=20261012-methods-compact-v2",login:"/static/login.html?v=20261012-methods-compact-v2",admin:"/admin",explosion:"/static/explosion.html?v=20261012-direction-fix",flareScanner:"/static/flare-scanner.html?v=20261012-flare-scanner-chart1"};
 var page=document.body.getAttribute("data-page")||"home",market=document.body.getAttribute("data-market")||"",loading=false,trackingTimer=null;
 /* إضافة رابط شرارات السوق إلى القائمة في جميع الصفحات */
 try{var flareSide=document.getElementById("sidebar");if(flareSide&&!flareSide.querySelector('[data-flare-nav="1"],a[href*="flare-scanner.html"]')){var flareLink=document.createElement("a");flareLink.href="/static/flare-scanner.html?v=20261012-flare-scanner-chart1";flareLink.className="nav-item";flareLink.setAttribute("data-flare-nav","1");flareLink.style.textDecoration="none";flareLink.style.display="block";flareLink.textContent="⚡ شرارات السوق";var flareFooter=flareSide.querySelector(".side-footer");if(flareFooter)flareSide.insertBefore(flareLink,flareFooter);else flareSide.appendChild(flareLink);}}catch(e){}
@@ -82,7 +82,7 @@ function renderTechnicalMethods(){
   if(detail){
    var methodReady=implementedTechnicalMethodIds.indexOf(pageTechnicalMethod)>=0;
    var methodStatus=methodReady?'<p class="method-status method-status-ready">⚠️ هذه قراءة أولية من تصويت شموع/سعر داخل الماسح المشترك، وليست استراتيجية مستقلة مكتملة أو باك تست مثبتًا. اتجاه ومستويات الصفقة تُعاد حسب تصويت المنهج.</p>':'<p class="method-status method-status-pending">ℹ هذا المنهج غير مربوط حاليًا بمحرك مستقل؛ لن نعرض إشارات عامة على أنها ناتجة عنه.</p>';
-   detail.innerHTML='<div class="method-detail-head"><b>'+active[1]+' '+active[2]+'</b><p>'+active[3]+'</p>'+methodStatus+'<a class="method-back-link" href="/static/technical.html?v=20261011-method-pages">← كل مناهج التحليل الفني</a></div>';
+   detail.innerHTML='<div class="method-detail-head"><b>'+active[1]+' '+active[2]+'</b><p>'+active[3]+'</p>'+methodStatus+'<a class="method-back-link" href="/static/technical.html?v=20261012-all-methods-scanfix">← كل مناهج التحليل الفني</a></div>';
    var panel=$("#technicalTradingPanel");
    if(panel){panel.style.display="";}
   }
@@ -95,7 +95,7 @@ function renderTechnicalMethods(){
  }
  if(!grid)return;
  grid.style.display="";
- grid.innerHTML=technicalMethods.filter(function(x){return x[0]!=="all";}).map(function(x){return '<a class="method-card method-link" href="/static/technical.html?method='+encodeURIComponent(x[0])+'&v=20261011-method-pages"><span class="method-icon">'+x[1]+'</span><b>'+x[2]+'</b><small>'+x[3]+'</small><span class="method-open">فتح صفحة المنهج ←</span></a>';}).join("");
+ grid.innerHTML=technicalMethods.filter(function(x){return x[0]!=="all";}).map(function(x){return '<a class="method-card method-link" href="/static/technical.html?method='+encodeURIComponent(x[0])+'&v=20261012-all-methods-scanfix"><span class="method-icon">'+x[1]+'</span><b>'+x[2]+'</b><small>'+x[3]+'</small><span class="method-open">فتح صفحة المنهج ←</span></a>';}).join("");
  if(detail)detail.innerHTML='<b>كل منهج له صفحة مستقلة</b><p>افتح المنهج لعرض تعريفه وحالة ربطه بالمحرك، بدون عرض صفحة التحليل العام بدلًا عنه.</p>';
 }
 
