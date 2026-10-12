@@ -20,7 +20,7 @@ try:
     with open(CACHE_FILE, "r", encoding="utf-8") as f:
         saved = json.load(f)
     now = time.time()
-    _cache["trades"] = [x for x in saved.get("trades", []) if float(x.get("expires_at") or 0) > now and now-float(x.get("created_at") or 0) <= RETENTION]
+    _cache["trades"] = [x for x in saved.get("trades", []) if float(x.get("expires_at") or 0) > now and now-float(x.get("created_at") or 0) <= RETENTION and not x.get("scan_generated")]
     _cache["updated"] = saved.get("updated")
     _cache["markets"] = saved.get("markets", {})
     _cache["market_updated"] = saved.get("market_updated", {})
@@ -333,7 +333,7 @@ def _build(only_market=None, hours=24):
     market_counts={}
     if only_market not in (None, "", "all"):
         with _lock:
-            previous_trades=list(_cache.get("trades",[]))
+            previous_trades=[x for x in _cache.get("trades",[]) if not x.get("scan_generated")]
             market_updated=dict(_cache.get("market_updated",{}))
             market_counts=dict(_cache.get("markets",{}))
         scanned=set(scan_markets)
@@ -372,7 +372,7 @@ def public_trades(refresh: int = 0, market: str = "all", hours: int = 24):
     except Exception: hours=24
     if hours not in (12, 24, 48): hours=24
     with _lock:
-        _cache["trades"]=[x for x in _cache.get("trades",[]) if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=hours*3600]
+        _cache["trades"]=[x for x in _cache.get("trades",[]) if float(x.get("expires_at") or 0)>now and now-float(x.get("created_at") or 0)<=hours*3600 and not x.get("scan_generated")]
         relevant=list(MARKETS) if market=="all" else [market]
         updated_map=_cache.get("market_updated",{})
         stale=(_cache.get("window_hours") != hours) or any(not updated_map.get(m) or now-float(updated_map.get(m) or 0)>=CACHE_TTL for m in relevant)
