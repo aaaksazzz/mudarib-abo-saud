@@ -2006,11 +2006,11 @@ def explosion_radar_api(market:str="spot",timeframe:str="15m",limit:int=25,strat
         down_score=max(0,min(99,compression_score*.25+vol_score*.12+down_pressure_score*.18+down_close_score*.10+downside_near*.20+down_structure*.15-extension_penalty))
         # Direction is selected by the actual directional setup score, not by whichever boundary is closest.
         if (up_score>=down_score) != reverse:
-            direction="صعود محتمل"; score=round(max(up_score,down_score)); target_distance=distance_high
+            direction="صعود محتمل"; score=round(up_score); target_distance=distance_high
             near=f"يبعد {distance_high:.2f}% عن قمة آخر 20 شمعة"
             structure_score=up_structure; direction_pressure=pressure
         else:
-            direction="هبوط محتمل"; score=round(max(up_score,down_score)); target_distance=distance_low
+            direction="هبوط محتمل"; score=round(down_score); target_distance=distance_low
             near=f"يبعد {distance_low:.2f}% عن قاع آخر 20 شمعة"
             structure_score=down_structure; direction_pressure=100-pressure
         # Conditional entry trigger plus ATR-based risk levels; not an automatic order.
@@ -2022,7 +2022,7 @@ def explosion_radar_api(market:str="spot",timeframe:str="15m",limit:int=25,strat
         atr14=sum(atr_values)/max(len(atr_values),1)
         risk_unit=max(atr14*1.2,last["close"]*0.005)
         if (up_score>=down_score) != reverse:
-            direction="صعود محتمل"; score=round(max(up_score,down_score)); target_distance=distance_high
+            direction="صعود محتمل"; score=round(up_score); target_distance=distance_high
             near=f"يبعد {distance_high:.2f}% عن قمة آخر 20 شمعة"
             structure_score=up_structure; direction_pressure=pressure
             entry=hi20*1.001
@@ -2030,7 +2030,7 @@ def explosion_radar_api(market:str="spot",timeframe:str="15m",limit:int=25,strat
             targets=[entry+risk_unit*n for n in (1,2,3)]
             entry_rule="دخول مشروط بعد اختراق القمة الأخيرة"
         else:
-            direction="هبوط محتمل"; score=round(max(up_score,down_score)); target_distance=distance_low
+            direction="هبوط محتمل"; score=round(down_score); target_distance=distance_low
             near=f"يبعد {distance_low:.2f}% عن قاع آخر 20 شمعة"
             structure_score=down_structure; direction_pressure=100-pressure
             entry=lo20*0.999
@@ -2074,7 +2074,7 @@ def explosion_radar_api(market:str="spot",timeframe:str="15m",limit:int=25,strat
         for job in as_completed(jobs):
             try:
                 row=job.result()
-                if row and row["score"]>=25: rows.append(row)
+                if row and row["score"]>=50 and row["stage"]!="ممتد — لا تطارده": rows.append(row)
             except Exception:
                 failures+=1
     rows.sort(key=lambda x:(x["early_candidate"],x["score"],x.get("quote_volume") or 0),reverse=True)
