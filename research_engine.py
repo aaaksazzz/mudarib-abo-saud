@@ -159,7 +159,7 @@ def _parse_news_xml(raw):
     out=[]
     for x in root.findall(".//item"):
         out.append({"title":html.unescape(x.findtext("title") or ""),"text":html.unescape(re.sub("<[^>]+>"," ",x.findtext("description") or "")),"url":x.findtext("link") or "","published":x.findtext("pubDate") or ""})
-    return out[:30]
+    return out[:60]
 
 def _news(q):
     # Strict 24-hour search window. Merge all providers instead of returning
@@ -194,7 +194,7 @@ def _news(q):
                 if not key or key in seen:continue
                 seen.add(key); merged.append(h)
     merged.sort(key=lambda x:float(x.get("published_ts") or 0),reverse=True)
-    return merged[:60]
+    return merged[:100]
 
 def _article(url):
     if not url:return ""
@@ -295,7 +295,7 @@ def _internet(market):
                 # Do not download every article: that can block the API when a feed
                 # returns many stories. Fetch the article only for likely trade signals.
                 base=(h["title"]+" "+h["text"]).strip()
-                signal_words=("entry","tp","take profit","stop loss","target","targets","sl","شراء","بيع","دخول","هدف","وقف")
+                signal_words=("entry","tp","take profit","stop loss","target","targets","sl","buy","sell","long","short","bullish","bearish","forecast","outlook","analyst","upgrade","downgrade","price prediction","price target","شراء","بيع","دخول","هدف","وقف","توقعات","نظرة","السعر المستهدف")
                 full=base
                 if any(w in base.lower() for w in signal_words):
                     full=base+" "+_article(h["url"])
