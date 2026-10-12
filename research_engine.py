@@ -946,18 +946,17 @@ def _public_scan(market,internet,timeframe="15m"):
         symbols=[s for s in symbols if _passes_volume_filter(s,market)]
     if market in ("spot","futures"):
         symbols=[s for s in symbols if str(s).upper().endswith("USDT")]
-    # Keep refreshes fast on the small service; the next refresh continues from
-    # the liquid universe rather than requiring external headlines.
-    # Keep the 512 MB / 0.2 vCPU service responsive. Non-crypto feeds are slower,
-    # so scan a focused liquid shortlist first and expand only after the cache is warm.
+    # Scan a bounded batch per refresh, but rotate across the entire eligible
+    # universe so symbols beyond the first page are not permanently ignored.
+    # Keep the small Northflank service responsive while progressively covering
+    # discovered US/Saudi equities, crypto pairs, contracts and FX instruments.
     caps={"spot":240,"futures":180,"us":60,"saudi":28,"contracts":16,"forex":36}
     cap=caps.get(market,24)
     if len(symbols)>cap:
         if market in ("spot","futures"):
             q=dict(_crypto_universe(market))
-            symbols=sorted(symbols,key=lambda s:q.get(s,0),reverse=True)[:cap]
-        else:
-            symbols=symbols[:cap]
+            symbols=sorted(symbols,key=lambda s:q.get(s,0),reverse=True)
+        symbols=_rotating_batch(symbols,cap,market)
     out=[]
     with ThreadPoolExecutor(max_workers=8) as pool:
         jobs={pool.submit(_analyze_symbol,s,market,timeframe):s for s in symbols}
