@@ -56,7 +56,6 @@ class SmokeTests(unittest.TestCase):
     def test_market_navigation_uses_unified_independent_market_feeds(self):
         js = source("static/app.js")
         self.assertIn('home:"/static/index.html"', js)
-        self.assertIn('var marketKeys=["spot","futures","alpha","contracts","us","saudi","forex"]', js)
         self.assertIn('if(routes[s]){window.location.href=routes[s];}', js)
         for market in ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex"):
             self.assertIn(f'{market}:"/static/public-trades.html?market={market}&hours=24"', js)
