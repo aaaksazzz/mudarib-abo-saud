@@ -327,6 +327,28 @@ def azo_scan(request: Request, market: str = "spot", timeframe: str = "15m"):
                 except Exception: rows = []
             except Exception:
                 rows = []
+        # Research feeds often return a ticker/direction without executable levels.
+        # AZO needs a real entry, three targets and a stop, so fall back to the site's
+        # native market scanner when the research snapshot cannot supply complete levels.
+        def _has_levels(item):
+            try:
+                return all(float(item.get(k) or 0) > 0 for k in ("entry","sl","tp1","tp2","tp3"))
+            except (TypeError, ValueError, AttributeError):
+                return False
+        if not any(isinstance(item, dict) and _has_levels(item) for item in (rows or [])):
+            try:
+                if market == "spot":
+                    rows = core._scan_spot_strategy(timeframe, 30)
+                elif market == "futures":
+                    rows = core._scan_binance_futures(timeframe)
+                elif market in ("contracts", "us", "saudi", "forex"):
+                    rows = core._scan_yahoo_market(market, timeframe)
+                else:
+                    rows = rows or []
+                print("[AZO] native scanner fallback:", market, timeframe, "rows=", len(rows or []), flush=True)
+            except Exception as exc:
+                print("[AZO] native scanner fallback failed:", market, str(exc)[:140], flush=True)
+
         results = []
         for row in rows or []:
             if not isinstance(row, dict): continue
