@@ -20,6 +20,7 @@
 <div class="p-chart-card"><div class="p-chart-head"><div><b id="chartTitle">API3/USDT · 1H</b><br><small id="chartUpdated">جارٍ الاتصال ببايننس…</small></div><div class="p-zoom" aria-label="التحكم بتكبير الشارت"><button id="zoomOut" type="button" aria-label="تصغير الشارت" title="تصغير">−</button><button id="zoomReset" type="button" aria-label="إعادة ضبط الشارت" title="إعادة الضبط">↺</button><button id="zoomIn" type="button" aria-label="تكبير الشارت" title="تكبير">+</button><span id="zoomLabel">60 شمعة</span></div></div><div id="chart" class="p-chart" role="img" aria-label="شارت شموع مرسومة آليًا" style="height:390px;min-height:300px"></div><div class="pattern-foot"><span><span class="p-live-dot"></span><span id="dataSourceLabel">شموع مباشرة من Binance Spot</span></span><span>رسم آلي للاتجاهات والدعم والمقاومة</span></div><div class="p-warn">تنبيه: القناة آلية وتقديرية، والأهداف مبنية على مضاعفات المخاطرة وليست إشارة مضمونة أو توصية مالية.</div></div>
 <div id="scanResults" class="p-explain" style="margin-bottom:12px">اضغط «ابحث عن نموذج» لبدء البحث. يتوقف تلقائيًا عند العثور على نموذج، وتقدر تضغط مرة ثانية للبحث عن نموذج آخر.</div><div class="p-levels"><div class="p-level entry"><small>الدخول المرجعي</small><b id="entry">—</b></div><div class="p-level stop"><small>وقف الخسارة SL</small><b id="sl">—</b><span class="pct" id="slPct">—</span></div><div class="p-level target"><small>الهدف TP1</small><b id="tp1">—</b><span class="pct" id="tp1Pct">—</span></div><div class="p-level target"><small>الهدف TP2</small><b id="tp2">—</b><span class="pct" id="tp2Pct">—</span></div><div class="p-level target"><small>الهدف TP3</small><b id="tp3">—</b><span class="pct" id="tp3Pct">—</span></div></div>
 <div id="explain" class="p-explain">يتم تحميل بيانات الشموع ثم تقدير القناة السعرية ومستويات المخاطرة.</div></div><section id="explosionWorkspace" class="explosion-workspace" hidden><iframe title="راصد الانفجار السعري — الاستراتيجية المعكوسة" src="/static/explosion.html?embedded=1&v=20261012-reverse-fixed" loading="lazy"></iframe></section></main></div><div id="overlay" class="overlay"></div></div>
+<script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
 <script src="/static/app.js?v=20261012-patterns-menu-fix"></script>
 <script>
 (function(){
@@ -89,39 +90,69 @@ function tvMarketSymbol(symbol){
  return /^[A-Z0-9_!.-]+:[A-Z0-9_!.-]+$/.test(symbol)?symbol:'BINANCE:'+symbol;
 }
 function drawOwnChart(data,symbol,tf,cup,patterns,levels){
- const el=$('chart'),visibleStart=Math.max(0,data.length-zoomBars),rows=data.slice(-zoomBars).map(k=>({time:Math.floor(+k[0]/1000),o:+k[1],h:+k[2],l:+k[3],c:+k[4]}));$('zoomLabel').textContent=rows.length+' شمعة';
- if(rows.length<10)throw Error('بيانات الشارت غير كافية');
- const W=1000,H=390,L=18,R=82,T=18,B=28,plotW=W-L-R,plotH=H-T-B,allPrices=rows.flatMap(z=>[z.h,z.l]).concat([levels&&levels.entry,levels&&levels.sl,...(levels&&levels.tps||[])]).map(Number).filter(v=>v>0&&Number.isFinite(v)),hi=Math.max(...allPrices),lo=Math.min(...allPrices),pad=(hi-lo)*.08||hi*.01,min=lo-pad,max=hi+pad;
- const y=p=>T+(max-p)/(max-min)*plotH,x=i=>L+(i+.5)*plotW/rows.length;
- const reg=arr=>{const n=arr.length;let sx=0,sy=0,sxx=0,sxy=0;arr.forEach((v,i)=>{sx+=i;sy+=v;sxx+=i*i;sxy+=i*v});const d=n*sxx-sx*sx,m=d?(n*sxy-sx*sy)/d:0;return {m,b:(sy-m*sx)/n}},hr=reg(rows.map(z=>z.h)),lr=reg(rows.map(z=>z.l)),line=(q,i)=>q.m*i+q.b;
- let svg='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="شارت شموع مرسوم آليًا مع خطوط الاتجاه والدعم والمقاومة" style="display:block;width:100%;height:100%;min-height:220px;background:#07111e;font-family:Arial,sans-serif">';
- for(let j=0;j<=5;j++){const yy=T+j*plotH/5,p=max-j*(max-min)/5;svg+='<line x1="'+L+'" y1="'+yy+'" x2="'+(W-R+5)+'" y2="'+yy+'" stroke="#1c3045"/><text x="'+(W-5)+'" y="'+(yy+4)+'" fill="#91a8c2" font-size="11" text-anchor="end">'+fmt(p)+'</text>'}
- rows.forEach((z,i)=>{const xx=x(i),cw=Math.max(3,plotW/rows.length*.58),up=z.c>=z.o,color=up?'#2bd69a':'#ff7186';svg+='<line x1="'+xx+'" y1="'+y(z.h)+'" x2="'+xx+'" y2="'+y(z.l)+'" stroke="'+color+'" stroke-width="1.2"/><rect x="'+(xx-cw/2)+'" y="'+Math.min(y(z.o),y(z.c))+'" width="'+cw+'" height="'+Math.max(1,Math.abs(y(z.o)-y(z.c)))+'" fill="'+color+'" rx=".6"/>'});
- const pathFor=fn=>rows.map((z,i)=>(i?'L':'M')+x(i).toFixed(2)+' '+y(fn(i)).toFixed(2)).join(' ');
- svg+='<path d="'+pathFor(i=>line(hr,i))+'" fill="none" stroke="#4b8cff" stroke-width="2" stroke-dasharray="7 5"/><path d="'+pathFor(i=>line(lr,i))+'" fill="none" stroke="#4b8cff" stroke-width="2" stroke-dasharray="7 5"/>';
- for(const period of [20,50])if(rows.length>=period){let pts=[];for(let i=period-1;i<rows.length;i++){let sum=0;for(let j=i-period+1;j<=i;j++)sum+=rows[j].c;pts.push((i?'L':'M')+x(i).toFixed(2)+' '+y(sum/period).toFixed(2))}svg+='<path d="'+pts.join(' ')+'" fill="none" stroke="'+(period===20?'#e0aaff':'#8ba7ff')+'" stroke-width="1.5"/>'}
- const support=Math.min(...rows.slice(-24).map(z=>z.l)),resistance=Math.max(...rows.slice(-24).map(z=>z.h));
- [{p:support,c:'#2bd69a',t:'دعم آلي'},{p:resistance,c:'#ff9f43',t:'مقاومة آلية'}].forEach(q=>{svg+='<line x1="'+L+'" y1="'+y(q.p)+'" x2="'+(W-R)+'" y2="'+y(q.p)+'" stroke="'+q.c+'" stroke-width="1.5" stroke-dasharray="4 4"/><text x="'+(W-R-5)+'" y="'+(y(q.p)-5)+'" fill="'+q.c+'" font-size="11" text-anchor="end">'+q.t+'</text>'});
- const last=rows[rows.length-1];
- // Draw explicit entry, stop and all three take-profit levels on the chart.
+ const el=$('chart');
+ if(!window.LightweightCharts)throw Error('مكتبة الشارت الاحترافي لم تُحمّل؛ تحقق من الاتصال ثم حدّث الصفحة');
+ const candles=data.slice(-zoomBars).map(k=>({time:Math.floor(+k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4]}));
+ if(candles.length<10)throw Error('بيانات الشارت غير كافية');
+ $('zoomLabel').textContent=candles.length+' شمعة';
+ if(!tvChart){
+  tvChart=LightweightCharts.createChart(el,{
+   width:Math.max(320,el.clientWidth||900),height:Math.max(280,el.clientHeight||390),
+   layout:{background:{type:'solid',color:'#07111e'},textColor:'#b9cce0',fontFamily:'Arial,sans-serif'},
+   grid:{vertLines:{color:'#14263a'},horzLines:{color:'#14263a'}},
+   crosshair:{mode:LightweightCharts.CrosshairMode.Normal,vertLine:{color:'#829bb5',labelBackgroundColor:'#20364d'},horzLine:{color:'#829bb5',labelBackgroundColor:'#20364d'}},
+   rightPriceScale:{borderColor:'#294158',scaleMargins:{top:.12,bottom:.12}},
+   timeScale:{borderColor:'#294158',timeVisible:true,secondsVisible:false,rightOffset:5,barSpacing:9},
+   handleScroll:{mouseWheel:true,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:false},
+   handleScale:{mouseWheel:true,pinch:true,axisPressedMouseMove:true}
+  });
+  tvCandles=tvChart.addCandlestickSeries({upColor:'#2bd69a',downColor:'#ff7186',borderUpColor:'#2bd69a',borderDownColor:'#ff7186',wickUpColor:'#2bd69a',wickDownColor:'#ff7186',priceLineVisible:true,lastValueVisible:true});
+  const resize=()=>{if(tvChart&&el.isConnected)tvChart.applyOptions({width:Math.max(320,el.clientWidth||900),height:Math.max(280,el.clientHeight||390)});};
+  if(window.ResizeObserver){new ResizeObserver(resize).observe(el)}else window.addEventListener('resize',resize);
+ }
+ tvOverlays.forEach(x=>{try{tvChart.removeSeries(x)}catch(e){}});
+ tvOverlays=[];
+ tvPriceLines.forEach(x=>{try{tvCandles.removePriceLine(x)}catch(e){}});
+ tvPriceLines=[];
+ tvCandles.setData(candles);
+ const lineFit=values=>{const n=values.length;let sx=0,sy=0,sxx=0,sxy=0;values.forEach((v,i)=>{sx+=i;sy+=v;sxx+=i*i;sxy+=i*v});const d=n*sxx-sx*sx,m=d?(n*sxy-sx*sy)/d:0;return {m,b:(sy-m*sx)/n}};
+ const addLine=(pts,color,width=2,style=LightweightCharts.LineStyle.Solid)=>{const clean=pts.filter((p,i)=>Number.isFinite(p.value)&&p.value>0&&(i===0||p.time>pts[i-1].time));if(clean.length<2)return null;const ser=tvChart.addLineSeries({color,lineWidth:width,lineStyle:style,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false,pointMarkersVisible:false});ser.setData(clean);tvOverlays.push(ser);return ser};
+ const n=candles.length,highReg=lineFit(candles.map(c=>c.high)),lowReg=lineFit(candles.map(c=>c.low));
+ addLine(candles.map((c,i)=>({time:c.time,value:highReg.m*i+highReg.b})),'#4b8cff',2,LightweightCharts.LineStyle.Dashed);
+ addLine(candles.map((c,i)=>({time:c.time,value:lowReg.m*i+lowReg.b})),'#4b8cff',2,LightweightCharts.LineStyle.Dashed);
+ for(const period of [20,50]){
+  if(n<period)continue;
+  const pts=[];for(let i=period-1;i<n;i++){let sum=0;for(let j=i-period+1;j<=i;j++)sum+=candles[j].close;pts.push({time:candles[i].time,value:sum/period})}
+  addLine(pts,period===20?'#e0aaff':'#8ba7ff',1,LightweightCharts.LineStyle.Solid);
+ }
+ const pivotHighs=[],pivotLows=[];
+ for(let i=2;i<candles.length-2;i++){
+  if(candles[i].high>=candles[i-1].high&&candles[i].high>=candles[i-2].high&&candles[i].high>=candles[i+1].high&&candles[i].high>=candles[i+2].high)pivotHighs.push({i,v:candles[i].high});
+  if(candles[i].low<=candles[i-1].low&&candles[i].low<=candles[i-2].low&&candles[i].low<=candles[i+1].low&&candles[i].low<=candles[i+2].low)pivotLows.push({i,v:candles[i].low});
+ }
+ const highs=pivotHighs.slice(-3),lows=pivotLows.slice(-3);
+ const pivotLine=(points,color)=>{const valid=points.filter(p=>p.i>=0&&p.i<n);if(valid.length>=2)addLine(valid.map(p=>({time:candles[p.i].time,value:p.v})),color,3)};
+ if(highs.length>=2&&Math.abs(highs.at(-1).v-highs.at(-2).v)/Math.max(highs.at(-1).v,highs.at(-2).v)<.03)pivotLine(highs.slice(-2),'#ff7186');
+ if(lows.length>=2&&Math.abs(lows.at(-1).v-lows.at(-2).v)/Math.max(lows.at(-1).v,lows.at(-2).v)<.03)pivotLine(lows.slice(-2),'#2bd69a');
+ if(highs.length>=3&&highs[1].v>highs[0].v&&highs[1].v>highs[2].v&&Math.abs(highs[0].v-highs[2].v)/highs[0].v<.06)pivotLine(highs,'#f4bd50');
+ if(lows.length>=3&&lows[1].v<lows[0].v&&lows[1].v<lows[2].v&&Math.abs(lows[0].v-lows[2].v)/lows[0].v<.06)pivotLine(lows,'#65e7d3');
+ if(cup&&Number.isFinite(Number(cup.rim))){
+  const start=Math.max(0,Math.min(n-1,Number(cup.left)||0)),bottom=Math.max(start,Math.min(n-1,Number(cup.bottom)||Math.floor(n*.5))),right=Math.max(bottom,Math.min(n-1,Number(cup.right)||n-2));
+  const curve=[];for(let j=0;j<=24;j++){const u=j/24,idx=Math.round(start+(right-start)*u),price=u<.5?Number(cup.rim)+(Number(cup.bottomPrice||cup.handleLow||candles[bottom].low)-Number(cup.rim))*Math.sin(Math.PI*u)**2:Number(cup.bottomPrice||cup.handleLow||candles[bottom].low)+(Number(cup.rim)-Number(cup.bottomPrice||cup.handleLow||candles[bottom].low))*Math.sin(Math.PI*(u-.5))**2;curve.push({time:candles[idx].time,value:price})}addLine(curve,'#f4bd50',3);
+ }
+ const visibleHigh=Math.max(...candles.map(c=>c.high)),visibleLow=Math.min(...candles.map(c=>c.low)),range=visibleHigh-visibleLow;
+ if(range>0){[{r:.236,c:'#a78bfa'},{r:.382,c:'#60a5fa'},{r:.5,c:'#fbbf24'},{r:.618,c:'#fb923c'},{r:.786,c:'#f472b6'}].forEach(f=>{const p=visibleHigh-range*f.r;addLine([{time:candles[0].time,value:p},{time:candles[n-1].time,value:p}],f.c,1,LightweightCharts.LineStyle.Dotted)})}
+ const support=Math.min(...candles.slice(-24).map(c=>c.low)),resistance=Math.max(...candles.slice(-24).map(c=>c.high));
+ addLine([{time:candles[Math.max(0,n-24)].time,value:support},{time:candles[n-1].time,value:support}],'#2bd69a',2,LightweightCharts.LineStyle.Dashed);
+ addLine([{time:candles[Math.max(0,n-24)].time,value:resistance},{time:candles[n-1].time,value:resistance}],'#ff9f43',2,LightweightCharts.LineStyle.Dashed);
  const lv=levels||{},entry=Number(lv.entry)||0,sl=Number(lv.sl)||0,tps=Array.isArray(lv.tps)?lv.tps:[];
  const pct=v=>entry>0?Math.abs((v-entry)/entry)*100:0;
- const drawLevel=(price,color,label,pctLabel)=>{if(!(price>min&&price<max))return;const yy=y(price);svg+='<line x1="'+L+'" y1="'+yy+'" x2="'+(W-R+3)+'" y2="'+yy+'" stroke="'+color+'" stroke-width="2" stroke-dasharray="6 4"/><rect x="'+(W-R+4)+'" y="'+(yy-10)+'" width="'+(R-8)+'" height="20" rx="4" fill="'+color+'"/><text x="'+(W-8)+'" y="'+(yy+4)+'" fill="#07111e" font-size="10" font-weight="800" text-anchor="end">'+label+' '+fmt(price)+(pctLabel?' · '+pctLabel:'')+'</text>'};
- if(entry)drawLevel(entry,'#45dbc8','دخول','0.00%');
- if(sl)drawLevel(sl,'#ff7186','وقف','−'+pct(sl).toFixed(2)+'%');
- tps.forEach((v,i)=>drawLevel(Number(v),'#2bd69a','TP'+(i+1),'+'+pct(Number(v)).toFixed(2)+'%'));
- // Draw the detected chart pattern geometry over the actual candles.
- const patList=Array.isArray(patterns)?patterns:[];
- patList.slice(0,3).forEach((pat,pi)=>{
-   const pts=(pat.points||[]).map(q=>({i:Number(q.i)-visibleStart,v:Number(q.v)})).filter(q=>Number.isFinite(q.i)&&q.i>=0&&q.i<rows.length&&Number.isFinite(q.v));
-   const color=pi===0?'#f4bd50':pi===1?'#c084fc':'#60a5fa';
-   if(pts.length>=2){const d=pts.map((q,j)=>(j?'L':'M')+x(q.i).toFixed(2)+' '+y(q.v).toFixed(2)).join(' ');svg+='<path d="'+d+'" fill="none" stroke="'+color+'" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>';pts.forEach(q=>{svg+='<circle cx="'+x(q.i)+'" cy="'+y(q.v)+'" r="4" fill="'+color+'" stroke="#07111e" stroke-width="1.5"/>'})}
-   else {svg+='<rect x="'+(L+8)+'" y="'+(T+8+pi*22)+'" width="190" height="19" rx="5" fill="'+color+'" opacity=".95"/><text x="'+(L+14)+'" y="'+(T+21+pi*22)+'" fill="#07111e" font-size="11" font-weight="800">'+String(pat.name||'نموذج فني')+'</text>'}
- });
- if(cup){const cupOffset=Math.max(0,data.length-72),x1=x(Math.max(0,Math.min(rows.length-1,Number(cup.left)+cupOffset-visibleStart))),xb=x(Math.max(0,Math.min(rows.length-1,Number(cup.bottom)+cupOffset-visibleStart))),x2=x(Math.max(0,Math.min(rows.length-1,Number(cup.right)+cupOffset-visibleStart)));const yy=y(Number(cup.rim)||entry);svg+='<path d="M'+x1+' '+yy+' Q'+xb+' '+y(Number(cup.bottomPrice)||lo)+' '+x2+' '+yy+'" fill="none" stroke="#f4bd50" stroke-width="3"/><text x="'+Math.min(W-R-8,x2+4)+'" y="'+(yy-8)+'" fill="#f4bd50" font-size="11" text-anchor="end">كوب وعروة</text>'}
- svg+='<text x="'+L+'" y="13" fill="#c7d8eb" font-size="12">'+symbol+' · '+tf+' · رسم تلقائي بلا شعار</text><text x="'+L+'" y="'+(H-6)+'" fill="#829bb5" font-size="10">'+new Date(rows[0].time*1000).toLocaleDateString('ar-SA')+'</text><text x="'+(W-R-2)+'" y="'+(H-6)+'" fill="#829bb5" font-size="10" text-anchor="end">'+new Date(last.time*1000).toLocaleDateString('ar-SA')+'</text></svg>';
- el.innerHTML=svg;
+ const addLevel=(price,color,title)=>{if(price>0&&Number.isFinite(price))tvPriceLines.push(tvCandles.createPriceLine({price,color,lineWidth:2,lineStyle:LightweightCharts.LineStyle.Dashed,axisLabelVisible:true,title}))};
+ addLevel(entry,'#45dbc8','ENTRY');addLevel(sl,'#ff7186','SL −'+pct(sl).toFixed(2)+'%');tps.forEach((v,i)=>addLevel(Number(v),'#2bd69a','TP'+(i+1)+' +'+pct(Number(v)).toFixed(2)+'%'));
+ tvChart.applyOptions({width:Math.max(320,el.clientWidth||900),height:Math.max(280,el.clientHeight||390)});
+ tvChart.timeScale().fitContent();
 }
+
 function render(data,symbol,tf,cup=null,patterns=[],analysis=null){
  const candles=data.map(k=>({time:Math.floor(+k[0]/1000),open:+k[1],high:+k[2],low:+k[3],close:+k[4],volume:+k[5]}));
  if(candles.length<10)throw Error('بيانات الشارت غير كافية');
