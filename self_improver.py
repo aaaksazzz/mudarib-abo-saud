@@ -87,7 +87,8 @@ def record_signals(market, timeframe, rows):
                 candle=str(row.get("candle_start") or row.get("candleStart") or "")
                 strategy=str(row.get("strategy_mode") or row.get("strategy_label") or row.get("tag") or "market-signal")
                 # Stable key prevents the same visible signal being counted repeatedly on page refresh.
-                key_created=now
+                minutes={"1m":1,"3m":3,"5m":5,"15m":15,"30m":30,"1h":60,"4h":240,"1d":1440,"1w":10080,"1M":43200}.get(tf,15)
+                key_created=float(int(now//(minutes*60))*(minutes*60))
                 if candle:
                     try:
                         from datetime import datetime
@@ -95,7 +96,7 @@ def record_signals(market, timeframe, rows):
                     except Exception: pass
                 exists=c.execute("""select id from recommendation_results
                     where market=? and symbol=? and direction=? and timeframe=? and abs(entry-?)<0.00000001 and created>=? limit 1""",
-                    (str(market),symbol,side,tf,entry,key_created-60)).fetchone()
+                    (str(market),symbol,side,tf,entry,key_created)).fetchone()
                 if exists: continue
                 c.execute("""insert into recommendation_results
                     (market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,status,hit_target,timeframe,strategy_key,method_votes,base_score)
