@@ -615,7 +615,9 @@ def analysis_page(request:Request): return RedirectResponse("/static/public-trad
 def market_page(request:Request,market:str):
     if market == "gold":
         return RedirectResponse("/static/forex.html",status_code=302)
-    files={"spot":"spot.html","futures":"futures.html","contracts":"contracts.html","us":"us.html","saudi":"saudi.html","forex":"forex.html","alpha":"alpha.html"}
+    files={"spot":"spot.html","futures":"futures.html","contracts":"contracts.html","us":"us.html","saudi":"saudi.html","forex":"forex.html"}
+    if market=="alpha":
+        return FileResponse(BASE/"static"/"alpha.html",headers={"Cache-Control":"no-store"})
     if market not in files:
         return RedirectResponse("/static/public-trades.html?market=all&hours=24",status_code=302)
     return FileResponse(BASE/"static"/files[market],headers={"Cache-Control":"no-store"})
