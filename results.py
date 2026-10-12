@@ -132,8 +132,11 @@ def _results_locked(core):
   if not tp1 or not tp2 or not tp3 or not sl: continue
   timeframe=str(x.get("timeframe") or "15m")
   tolerance=max(abs(entry)*0.0025,1e-8)
+  # Never keep two simultaneously-open recommendations for the same asset and market,
+  # especially opposite directions; let the current one resolve first.
+  active=c.execute("select id from recommendation_results where market=? and symbol=? and created>=? and status='OPEN' and strategy_key='public-trade' limit 1",(market,symbol,cutoff)).fetchone()
   duplicate=c.execute("select id from recommendation_results where market=? and symbol=? and direction=? and created>=? and entry between ? and ? and strategy_key='public-trade' limit 1",(market,symbol,direction,cutoff,entry-tolerance,entry+tolerance)).fetchone()
-  if duplicate: continue
+  if active or duplicate: continue
   votes={"origin":"public-trade","estimated":bool(x.get("is_estimated")),"source_count":int(x.get("source_count") or 0),"source_url":str(x.get("source_url") or "")}
   c.execute("insert into recommendation_results(market,symbol,direction,entry,tp1,tp2,tp3,sl,created,updated,timeframe,strategy_key,method_votes,base_score) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(market,symbol,direction,entry,tp1,tp2,tp3,sl,created,now,timeframe,"public-trade",__import__("json").dumps(votes,separators=(",",":")),_num(x.get("ai_pct") or x.get("source_quality")) or 0))
  c.commit()
