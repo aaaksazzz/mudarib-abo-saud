@@ -281,7 +281,7 @@ def _symbol(text,market):
 
 def _direction(text):
     t=text.upper()
-    b=re.findall(r"\b(BUY|LONG|BULLISH|UPGRADE|OUTPERFORM|OVERWEIGHT|BUYING|شراء|صعود|صاعد|يرتفع|ارتفاع|إيجابي|إيجابية)\b",t); s=re.findall(r"\b(SELL|SHORT|BEARISH|DOWNGRADE|UNDERPERFORM|UNDERWEIGHT|SELLING|بيع|هبوط|هابط|ينخفض|انخفاض|سلبي|سلبية)\b",t)
+    b=re.findall(r"\b(BUY|LONG|BULLISH|UPGRADE|OUTPERFORM|OVERWEIGHT|BUYING|RALLY|RALLIES|SURGE|SURGES|RISE|RISES|RISING|GAINS|GAINING|HIGHER|UPSIDE|POSITIVE|شراء|صعود|صاعد|يرتفع|ارتفاع|إيجابي|إيجابية)\b",t); s=re.findall(r"\b(SELL|SHORT|BEARISH|DOWNGRADE|UNDERPERFORM|UNDERWEIGHT|SELLING|SLUMP|SLUMPS|DROP|DROPS|FALL|FALLS|FALLING|DECLINE|DECLINES|DECLINING|LOWER|DOWNSIDE|NEGATIVE|بيع|هبوط|هابط|ينخفض|انخفاض|سلبي|سلبية)\b",t)
     return "BUY" if b and not s else "SELL" if s and not b else None
 
 def _internet(market):
