@@ -245,9 +245,9 @@ def azo_status(request: Request):
             trained_methods = int(c.execute("SELECT COUNT(DISTINCT market || '|' || timeframe || '|' || method) FROM self_improver_weights WHERE sample>=8").fetchone()[0] or 0)
         except sqlite3.OperationalError:
             pass
-        return {"ok":True,"name":"AZO","public":stats["unlocked"],"lab_unlocked":_is_lab(request),
-                "state":"public" if stats["unlocked"] else "learning",
-                "message":"تحليل AZO اجتاز شروط النشر التجريبية" if stats["unlocked"] else "قسم AZO مقفل للجمهور حتى يثبت نتائج كافية بعد الأهداف والوقف",
+        return {"ok":True,"name":"AZO","public":True,"lab_unlocked":_is_lab(request),
+                "state":"public",
+                "message":"نتائج AZO معروضة للجميع كتجربة؛ الأداء السابق لا يضمن الربح.",
                 "stats":stats,"trained_methods":trained_methods,"leaderboard":board,"updated":latest}
     finally:
         c.close()
@@ -361,7 +361,7 @@ def azo_scan(request: Request, market: str = "spot", timeframe: str = "15m"):
         c.commit()
         # Refresh the gate after new signals/outcomes have been processed.
         stats = _closed_stats(c)
-        published = stats["unlocked"]
+        published = True
         if not published and not lab:
             results = []
         results.sort(key=lambda x:(x["azo_score"],x["aligned_methods"],-x["opposed_methods"]),reverse=True)
