@@ -41,10 +41,12 @@ def apply_feedback(market,timeframe,rows):
                 for method,vote in votes.items():
                     try: vote=float(vote)
                     except Exception: continue
+                    if vote == 0 or side not in ("BUY","SELL"): continue
                     aligned=(side=="BUY" and vote>0) or (side=="SELL" and vote<0)
-                    if not aligned: continue
+                    # Include opposing votes: a method is rewarded only when its own direction worked.
+                    method_r = r_value if aligned else -r_value
                     key=(m,tf,str(method))
-                    stats.setdefault(key,[]).append(r_value)
+                    stats.setdefault(key,[]).append(method_r)
             except Exception:
                 continue
         out=[]
@@ -57,14 +59,14 @@ def apply_feedback(market,timeframe,rows):
             for method,vote in votes.items():
                 try: v=float(vote)
                 except Exception: continue
+                if v == 0 or side not in ("BUY","SELL"): continue
                 aligned=(side=="BUY" and v>0) or (side=="SELL" and v<0)
-                if not aligned: continue
                 values=stats.get((market,timeframe,str(method)),[])
                 if len(values)<MIN_SAMPLE: continue
-                # Shrink the mean toward zero so small samples cannot dominate ranking.
+                # A historically reliable method that disagrees with this signal lowers its score.
                 mean=max(-1.5,min(3.0,sum(values)/len(values)))
                 confidence=len(values)/(len(values)+20.0)
-                adjustments.append(mean*8.0*confidence)
+                adjustments.append((1.0 if aligned else -1.0)*mean*8.0*confidence)
             adjustment=(sum(adjustments)/len(adjustments)) if adjustments else 0.0
             row["base_score"]=round(base,2)
             row["learning_adjustment"]=round(adjustment,2)
