@@ -48,14 +48,25 @@ def _stamp(value):
         return 0.0
 
 def _last_price(engine, market, symbol, ticker_maps):
-    try:
-        if market in ("spot", "alpha", "futures"):
-            key = "futures" if market == "futures" else "spot"
+    """Prefer intraday prices; fall back to the latest daily close when markets are closed
+    or a provider does not expose intraday candles for the instrument."""
+    if market in ("spot", "alpha", "futures"):
+        key = "futures" if market == "futures" else "spot"
+        try:
             return float(ticker_maps.get(key, {}).get(str(symbol).upper(), 0) or 0)
-        candles = engine._yahoo(str(symbol), market, "15m", 2)
-        return float(candles[-1].get("close") or 0) if candles else 0.0
-    except Exception:
-        return 0.0
+        except (TypeError, ValueError):
+            return 0.0
+
+    for interval in ("15m", "1d"):
+        try:
+            candles = engine._yahoo(str(symbol), market, interval, 2)
+            if candles:
+                price = float(candles[-1].get("close") or 0)
+                if price > 0:
+                    return price
+        except Exception:
+            continue
+    return 0.0
 
 def _source_timeframe(title, body):
     """Read a timeframe only when the external source explicitly labels one."""
