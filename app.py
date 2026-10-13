@@ -180,7 +180,7 @@ def _seo_post(slug):
 
 @app.get("/robots.txt", response_class=HTMLResponse)
 def robots_txt():
-    return HTMLResponse("User-agent: *\\nAllow: /\\nDisallow: /api/\\nDisallow: /admin\\nSitemap: " + SEO_BASE_URL + "/sitemap.xml", media_type="text/plain")
+    return HTMLResponse("User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nSitemap: " + SEO_BASE_URL + "/sitemap.xml", media_type="text/plain")
 
 
 @app.get("/sitemap.xml", response_class=HTMLResponse)
@@ -222,7 +222,7 @@ def seo_blog_article(slug: str):
     canonical = SEO_BASE_URL + "/blog/" + str(post.get("slug") or slug)
     published = time.strftime("%Y-%m-%d", time.gmtime(int(post.get("published_at") or time.time())))
     article_json = json.dumps({"@context":"https://schema.org","@type":"Article","headline":title,"description":description,"datePublished":published,"dateModified":published,"inLanguage":"ar-SA","mainEntityOfPage":canonical,"author":{"@type":"Organization","name":"التداول الذكي PRO"},"publisher":{"@type":"Organization","name":"التداول الذكي PRO"}}, ensure_ascii=False).replace("</", "<\\/")
-    paragraphs = "".join("<p>" + escape(p.strip()) + "</p>" for p in body.split("\\n") if p.strip()) or "<p>" + escape(body) + "</p>"
+    paragraphs = "".join("<p>" + escape(p.strip()) + "</p>" for p in body.splitlines() if p.strip()) or "<p>" + escape(body) + "</p>"
     html = '<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + escape(title) + ' | مدونة التداول الذكي PRO</title><meta name="description" content="' + escape(description[:300], quote=True) + '"><meta name="robots" content="index,follow,max-image-preview:large"><link rel="canonical" href="' + canonical + '"><meta property="og:type" content="article"><meta property="og:locale" content="ar_SA"><meta property="og:title" content="' + escape(title, quote=True) + '"><meta property="og:description" content="' + escape(description[:300], quote=True) + '"><meta property="og:url" content="' + canonical + '"><script type="application/ld+json">' + article_json + '</script><style>body{margin:0;background:#080d18;color:#edf3ff;font:17px/2 system-ui,Tahoma,Arial}main{max-width:820px;margin:auto;padding:28px 18px}a{color:#7fb3ff;text-decoration:none}.crumb{font-size:13px;color:#93a0b3}article{background:#111b2a;border:1px solid #29384d;border-radius:18px;padding:clamp(20px,5vw,42px);margin-top:18px}.category{color:#54ddb0;font-size:13px;font-weight:800}h1{font-size:clamp(28px,5vw,42px);line-height:1.4}p{margin:18px 0}footer{color:#93a0b3;font-size:13px;margin-top:24px}</style></head><body><main><p class="crumb"><a href="/">الرئيسية</a> / <a href="/blog">المدونة</a> / ' + escape(title) + '</p><article><p class="category">' + escape(str(post.get("category") or "تعليم التداول")) + '</p><h1>' + escape(title) + '</h1><p>' + escape(description) + '</p>' + paragraphs + '<p><strong>تنبيه:</strong> هذا محتوى تعليمي، وليس توصية شراء أو بيع أو ضمانًا للربح.</p></article><footer><a href="/blog">← جميع المقالات</a></footer></main></body></html>'
     return HTMLResponse(html)
 
