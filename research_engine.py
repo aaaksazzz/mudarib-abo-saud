@@ -90,6 +90,19 @@ MARKET_QUERIES={
  "alpha":["Binance Alpha token buy sell signal today","Binance Alpha token recommendation entry target stop loss","Binance Alpha new token analysis today","site:binance.com/en/alpha token listing today"]
 }
 
+# Open-ended discovery terms: search the whole indexed web, not only named publishers.
+for _market, _terms in {
+ "spot":["crypto analyst recommendation today entry target stop loss","cryptocurrency trading idea buy sell long short latest","altcoin setup entry take profit stop loss","crypto token recommendation community discussion today"],
+ "futures":["perpetual crypto futures setup long short entry target","crypto derivatives analyst trade idea today","futures long short signal entry stop target"],
+ "us":["US equity analyst recommendation buy sell target price latest","US stock trade setup entry stop loss target","stock market investor recommendation discussion today"],
+ "saudi":["توصيات أسهم سعودية شراء بيع دخول هدف وقف","توصية سهم سعودي اليوم تحليل فني","السوق السعودي فرص تداول آراء المحللين اليوم"],
+ "contracts":["index futures trade setup ES NQ YM entry target stop","commodity futures analyst trade recommendation latest"],
+ "forex":["forex pair trade setup entry take profit stop loss","currency analyst buy sell recommendation latest"],
+ "gold":["gold XAUUSD trade setup entry target stop loss","gold market analyst buy sell recommendation latest"],
+ "alpha":["Binance Alpha token trading idea recommendation today","new crypto token entry target stop loss analysis"]
+}.items():
+    MARKET_QUERIES[_market].extend(_terms)
+
 # Expanded source discovery for broader coverage across market-specific communities and publishers.
 MARKET_QUERIES["spot"] += [
  "altcoin market analysis today volume breakout cryptocurrency",
@@ -160,30 +173,33 @@ def _parse_news_xml(raw):
     out=[]
     for x in root.findall(".//item"):
         out.append({"title":html.unescape(x.findtext("title") or ""),"text":html.unescape(re.sub("<[^>]+>"," ",x.findtext("description") or "")),"url":x.findtext("link") or "","published":x.findtext("pubDate") or ""})
-    return out[:60]
+    return out[:100]
 
 def _news(q):
-    # Strict 24-hour search window. Merge all providers instead of returning
-    # the first non-empty feed, so recommendation coverage is broad.
-    # Search two indexes and a second regional Google News feed; merge/dedupe below.
-    # Multi-region discovery: Google News US/UK/Canada/Australia + Saudi Arabic and Bing.
-    # Results are deduplicated by article URL and filtered to the recent research window below.
+    # Open discovery: do not constrain recommendations to named websites/channels.
+    # Strip legacy site: operators, then search broadly across web and news indexes.
+    # Keep only fresh, dated results; deduplicate syndicated copies across feeds.
+    search_q=re.sub(r"(?i)\bsite:\S+"," ",str(q or ""))
+    search_q=re.sub(r"\s+"," ",search_q).strip()
+    if not search_q:return []
+    recent_q=search_q+" when:2d"
     urls=[
-        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:2d","hl":"en-US","gl":"US","ceid":"US:en"}),
-        "https://www.bing.com/news/search?"+urllib.parse.urlencode({"q":q,"format":"rss","freshness":"Week"}),
-        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:2d","hl":"en-GB","gl":"GB","ceid":"GB:en"}),
-        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:2d","hl":"en-CA","gl":"CA","ceid":"CA:en"}),
-        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:2d","hl":"en-AU","gl":"AU","ceid":"AU:en"}),
-        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":q+" when:2d","hl":"ar","gl":"SA","ceid":"SA:ar"})
+        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":recent_q,"hl":"en-US","gl":"US","ceid":"US:en"}),
+        "https://www.bing.com/news/search?"+urllib.parse.urlencode({"q":search_q,"format":"rss","freshness":"Week"}),
+        # General Bing web search RSS expands beyond news publishers and named websites.
+        "https://www.bing.com/search?"+urllib.parse.urlencode({"q":search_q,"format":"rss"}),
+        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":recent_q,"hl":"en-GB","gl":"GB","ceid":"GB:en"}),
+        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":recent_q,"hl":"en-CA","gl":"CA","ceid":"CA:en"}),
+        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":recent_q,"hl":"en-AU","gl":"AU","ceid":"AU:en"}),
+        "https://news.google.com/rss/search?"+urllib.parse.urlencode({"q":recent_q,"hl":"ar","gl":"SA","ceid":"SA:ar"})
     ]
     cutoff=time.time()-MAX_SOURCE_AGE
     merged=[]; seen=set(); now=time.time()
-    # Query regional indexes concurrently to keep the loading state short while
-    # retaining multiple independent news/search sources.
     def fetch_feed(url):
-        try:return _parse_news_xml(_fetch(url))
+        try:return _parse_news_xml(_fetch(url,5))
         except Exception:return []
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    # Parallel feed reads; failures are isolated so one blocked index does not stop discovery.
+    with ThreadPoolExecutor(max_workers=4) as pool:
         for hits in pool.map(fetch_feed,urls):
             for h in hits:
                 published=h.get("published") or ""
@@ -195,7 +211,7 @@ def _news(q):
                 if not key or key in seen:continue
                 seen.add(key); merged.append(h)
     merged.sort(key=lambda x:float(x.get("published_ts") or 0),reverse=True)
-    return merged[:100]
+    return merged[:250]
 
 def _article(url):
     if not url:return ""
