@@ -95,7 +95,7 @@ def standalone_method_page(slug: str):
     if not method:
         return HTMLResponse("<h1>المنهج غير موجود</h1><a href='/'>العودة للموقع</a>", status_code=404)
     page = BASE / "static" / "method.html"
-    html = page.read_text(encoding="utf-8").replace("__METHOD_NAME__", method).replace("__METHOD_SLUG__", slug)
+    html = page.read_text(encoding="utf-8").replace("__METHOD_NAME_JSON__", json.dumps(method, ensure_ascii=False)).replace("__METHOD_NAME__", method).replace("__METHOD_SLUG__", slug)
     return HTMLResponse(html)
 
 
