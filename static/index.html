@@ -163,6 +163,18 @@ body{background:radial-gradient(ellipse at 72% -15%,rgba(41,91,111,.24),transpar
 #marketNav .ico{color:#8ab6ff}
 #contentNav .ico{color:#9aacc5}
 @media(max-width:700px){.method-menu #methodNav{max-height:36vh}}
+
+/* Navigation placement: keep the sidebar on the LEFT on desktop and mobile */
+@media (min-width:701px){
+  .layout{direction:ltr;grid-template-columns:268px minmax(0,1fr)!important}
+  .sidebar{grid-column:1!important;grid-row:1;direction:rtl;border-left:1px solid var(--line)!important;border-right:0!important}
+  .main{grid-column:2!important;grid-row:1;direction:rtl;min-width:0}
+}
+@media (max-width:700px){
+  .sidebar{left:0!important;right:auto!important;transform:translateX(-110%)!important;box-shadow:12px 0 50px #0008!important}
+  .sidebar.open{transform:translateX(0)!important}
+}
+
 </style><link rel="stylesheet" href="/static/premium.css?v=20261013-pro3">
 </head>
 <body><div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div><div class="layout">
