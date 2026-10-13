@@ -334,9 +334,14 @@ def require_admin(credentials: HTTPBasicCredentials = None):
 
 @app.get("/api/news")
 def market_news(limit: int = Query(12, ge=1, le=30)):
+    from urllib.parse import urlencode
+    queries = [
+        "تداول العملات الرقمية OR بيتكوين OR إيثيريوم",
+        "أسواق العملات المشفرة OR Binance",
+    ]
     feed_urls = [
-        "https://news.google.com/rss/search?q=تداول+العملات+الرقمية+OR+بيتكوين+OR+إيثيريوم&hl=ar&gl=SA&ceid=SA:ar",
-        "https://news.google.com/rss/search?q=أسواق+العملات+المشفرة+OR+Binance&hl=ar&gl=SA&ceid=SA:ar",
+        "https://news.google.com/rss/search?" + urlencode({"q": query, "hl": "ar", "gl": "SA", "ceid": "SA:ar"})
+        for query in queries
     ]
     items, seen = [], set()
     for url in feed_urls:
