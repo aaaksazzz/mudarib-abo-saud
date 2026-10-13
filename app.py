@@ -409,47 +409,96 @@ def build_signal(market: str, ticker: dict, interval: str):
     if len(candles) < 205:
         return None
     closes = [k["close"] for k in candles]
-    e50, e200 = ema(closes, 50), ema(closes, 200)
-    if e50 is None or e200 is None:
+    highs = [k["high"] for k in candles]
+    lows = [k["low"] for k in candles]
+    opens = [k["open"] for k in candles]
+    volumes = [k["volume"] for k in candles]
+    price, prev = closes[-1], closes[-2]
+    e20, e50, e200 = ema(closes, 20), ema(closes, 50), ema(closes, 200)
+    if None in (e20, e50, e200) or price <= 0:
         return None
-    # ATR-based risk levels from actual Binance candles; not a guaranteed outcome.
-    tr = []
-    for i in range(1, len(candles)):
-        cur, prev = candles[i], candles[i - 1]
-        tr.append(max(cur["high"] - cur["low"], abs(cur["high"] - prev["close"]),
-                      abs(cur["low"] - prev["close"])))
+    tr = [max(candles[i]["high"]-candles[i]["low"],
+              abs(candles[i]["high"]-candles[i-1]["close"]),
+              abs(candles[i]["low"]-candles[i-1]["close"])) for i in range(1, len(candles))]
     atr = sum(tr[-14:]) / min(14, len(tr))
-    price = closes[-1]
-    if atr <= 0 or price <= 0:
+    if atr <= 0:
         return None
-    if e50 > e200 and price > e50 and closes[-1] >= closes[-2]:
-        side = "BUY"
-    elif market == "futures" and e50 < e200 and price < e50 and closes[-1] <= closes[-2]:
-        side = "SELL"
-    else:
+    prior_high, prior_low = max(highs[-21:-1]), min(lows[-21:-1])
+    avg_vol = sum(volumes[-21:-1]) / max(1, len(volumes[-21:-1]))
+    candle_range = max(highs[-1] - lows[-1], 1e-12)
+    body = abs(closes[-1] - opens[-1])
+    bullish = closes[-1] > opens[-1]
+    bearish = closes[-1] < opens[-1]
+    # Independent rule families: trend, structure, momentum, volume, candle shape and location.
+    tests = {
+        "الاتجاه EMA20/50": e20 > e50,
+        "الاتجاه EMA50/200": e50 > e200,
+        "السعر فوق EMA200": price > e200,
+        "زخم 4 شمعات": price > closes[-5] if len(closes) >= 5 else False,
+        "كسر قمة 20 شمعة": price > prior_high,
+        "كسر قاع 20 شمعة": price < prior_low,
+        "شمعة صاعدة": bullish,
+        "شمعة هابطة": bearish,
+        "حجم تداول مرتفع": avg_vol > 0 and volumes[-1] >= avg_vol * 1.5,
+        "إغلاق قرب القمة": (highs[-1]-price)/candle_range < 0.2,
+        "إغلاق قرب القاع": (price-lows[-1])/candle_range < 0.2,
+        "قوة جسم الشمعة": body/candle_range >= 0.6,
+        "سحب سيولة القاع": lows[-1] < prior_low and price > prior_low,
+        "رفض قمة سابقة": highs[-1] > prior_high and price < prior_high,
+        "قرب مقاومة": abs(price-prior_high)/price < 0.004,
+        "قرب دعم": abs(price-prior_low)/price < 0.004,
+        "فجوة سعرية صاعدة": candles[-3]["high"] < lows[-1],
+        "فجوة سعرية هابطة": candles[-3]["low"] > highs[-1],
+        "تتابع صاعد": closes[-1] > closes[-2] > closes[-3],
+        "تتابع هابط": closes[-1] < closes[-2] < closes[-3],
+        "VWAP تقريبي": price > (sum(closes[-20+i]*volumes[-20+i] for i in range(20))/max(sum(volumes[-20:]),1e-12)),
+        "فوق منتصف النطاق": price > (max(highs[-50:])+min(lows[-50:]))/2,
+        "تذبذب معقول": (highs[-1]-lows[-1])/price < 0.05,
+    }
+    bullish_points = sum([
+        price > e200, e50 > e200, e20 > e50, price > closes[-5],
+        price > prior_high, bullish, (highs[-1]-price)/candle_range < 0.2,
+        lows[-1] < prior_low and price > prior_low,
+        price > (sum(closes[-20+i]*volumes[-20+i] for i in range(20))/max(sum(volumes[-20:]),1e-12)),
+        price > (max(highs[-50:])+min(lows[-50:]))/2,
+    ])
+    bearish_points = sum([
+        price < e200, e50 < e200, e20 < e50, price < closes[-5],
+        price < prior_low, bearish, (price-lows[-1])/candle_range < 0.2,
+        highs[-1] > prior_high and price < prior_high,
+        price < (sum(closes[-20+i]*volumes[-20+i] for i in range(20))/max(sum(volumes[-20:]),1e-12)),
+        price < (max(highs[-50:])+min(lows[-50:]))/2,
+    ])
+    side = "BUY" if bullish_points > bearish_points else "SELL" if bearish_points > bullish_points else None
+    if side is None:
+        return None
+    score = int(100 * max(bullish_points, bearish_points) / 10)
+    if score < 60:
+        return None
+    # Require multiple independent confirmations; never claim every named method was fully proven by code.
+    confirmations = bullish_points if side == "BUY" else bearish_points
+    if confirmations < 6:
         return None
     entry = price
-    risk = atr * 1.5
+    risk = max(atr * 1.5, entry * 0.002)
     if side == "BUY":
-        stop, t1, t2, t3 = entry - risk, entry + risk, entry + 2*risk, entry + 3*risk
+        stop, t1, t2, t3 = entry-risk, entry+risk, entry+2*risk, entry+3*risk
     else:
-        stop, t1, t2, t3 = entry + risk, entry - risk, entry - 2*risk, entry - 3*risk
-    if min(stop, t1, t2, t3) <= 0 or (side == "BUY" and stop >= entry) or (side == "SELL" and stop <= entry):
+        stop, t1, t2, t3 = entry+risk, entry-risk, entry-2*risk, entry-3*risk
+    if min(stop, t1, t2, t3) <= 0:
         return None
-    spread = abs(e50 - e200) / entry * 100
-    momentum = abs(closes[-1] - closes[-4]) / entry * 100 if len(closes) >= 4 else 0
-    score = min(94, max(60, int(65 + min(spread, 2.0)*7 + min(momentum, 2.0)*4)))
-    risk_pct = abs(entry - stop) / entry * 100
+    active = [name for name, passed in tests.items() if passed]
     return {
         "symbol": ticker["symbol"], "side": side, "market": market, "interval": interval,
         "entry": entry, "stop": stop, "tp1": t1, "tp2": t2, "tp3": t3,
-        "stop_pct": risk_pct, "tp1_pct": abs(t1-entry)/entry*100,
+        "stop_pct": abs(entry-stop)/entry*100, "tp1_pct": abs(t1-entry)/entry*100,
         "tp2_pct": abs(t2-entry)/entry*100, "tp3_pct": abs(t3-entry)/entry*100,
-        "score": score, "quote_volume": ticker["quote_volume"], "updated_at": int(time.time()),
-        "method": "اتجاه EMA50/200 + تأكيد حركة الشمعة",
-        "status": "مراقبة — لم يُسجّل تحقق هدف أو وقف"
+        "score": min(95, score), "confirmations": confirmations,
+        "methods": active, "quote_volume": ticker.get("quote_volume", 0),
+        "updated_at": int(time.time()),
+        "method": "توافق الاتجاه والبنية والزخم والحجم والشموع ومناطق السعر",
+        "status": "إشارة توافق فني أولية؛ ليست ضمانًا للربح"
     }
-
 
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(12, ge=1, le=20)):
