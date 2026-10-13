@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE = Path(__file__).resolve().parent
-app = FastAPI(title="التداول الذكي PRO", version="2.1.0")
+app = FastAPI(title="التداول الذكي PRO", version="2.1.1")
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
 BINANCE = {
@@ -83,13 +83,15 @@ def home():
     # Keep the interactive technical filter separate from the main page markup.
     if 'src="/static/technical.js"' not in html:
         html = html.replace("</body>", '<script src="/static/technical.js?v=2.1"></script></body>')
+    # Do not expose admin navigation until authenticated role-based access is implemented.
+    html = html.replace('<button data-page="admin"><span class="ico">⚙</span>الإدارة</button>', "")
     return HTMLResponse(html)
 
 
 @app.get("/health")
 @app.get("/api/health")
 def health():
-    return {"ok": True, "service": "smart-trading-pro", "version": "2.1.0", "timestamp": int(time.time())}
+    return {"ok": True, "service": "smart-trading-pro", "version": "2.1.1", "timestamp": int(time.time())}
 
 
 @app.get("/api/market/{market}")
