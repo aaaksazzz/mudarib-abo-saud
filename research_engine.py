@@ -1041,6 +1041,65 @@ def _symbols_for_market(market,internet):
     return seen
 
 
+def _ma_strategy_signal(symbol, market, timeframe="15m"):
+    """Primary market strategy: SMA50/SMA200 must agree on the selected and higher timeframe."""
+    pairs={"15m":("15m","4h"),"1h":("1h","1d"),"4h":("4h","1w"),"1d":("1d","1M")}
+    frames=pairs.get(str(timeframe))
+    if not frames:
+        return None
+    readings=[]
+    candle_sets=[]
+    for frame in frames:
+        try:
+            if market=="alpha":
+                candles=_alpha_klines(symbol,frame,limit=260)
+            elif market in ("spot","futures"):
+                candles=_candles(_crypto_klines(symbol,market,frame,260))
+            else:
+                candles=_yahoo(symbol,market,frame,260)
+            closes=[float(c.get("close") or 0) for c in candles if float(c.get("close") or 0)>0]
+            if len(closes)<200:
+                return None
+            ma50=sum(closes[-50:])/50.0
+            ma200=sum(closes[-200:])/200.0
+            if abs(ma50-ma200)<=max(ma200,1e-12)*1e-8:
+                return None
+            side="BUY" if ma50>ma200 else "SELL"
+            readings.append((side,abs(ma50-ma200)/ma200*100.0))
+            candle_sets.append(candles)
+        except Exception:
+            return None
+    # No signal when the higher timeframe disagrees with the selected timeframe.
+    if readings[0][0]!=readings[1][0]:
+        return None
+    side=readings[0][0]
+    candles=candle_sets[0]
+    entry=float(candles[-1].get("close") or 0)
+    if entry<=0:
+        return None
+    recent=candles[-21:-1] or candles[-20:]
+    support=min(float(c.get("low") or entry) for c in recent)
+    resistance=max(float(c.get("high") or entry) for c in recent)
+    raw_risk=abs(entry-(support if side=="BUY" else resistance))*.5
+    risk=min(entry*.03,max(entry*.005,raw_risk))
+    if side=="BUY":
+        sl=entry-risk
+        tps=[entry+risk,entry+2*risk,entry+3*risk]
+    else:
+        sl=entry+risk
+        tps=sorted([max(entry-risk,entry*.01),max(entry-2*risk,entry*.005),max(entry-3*risk,entry*.001)],reverse=True)
+    gap=readings[0][1]+readings[1][1]
+    score=round(min(95.0,65.0+min(15.0,gap)*2.0),1)
+    return {"symbol":symbol,"market":market,"side":side,"direction":side,"timeframe":timeframe,
+            "entry":entry,"price":entry,"current_price":entry,"sl":sl,"tp1":tps[0],"tp2":tps[1],"tp3":tps[2],
+            "targets":tps,"ai_pct":score,"recommendation_score":score,"site_score":score,
+            "signal_label":("شراء" if side=="BUY" else "بيع")+" · SMA50/200 متعدد الفريمات",
+            "methods":{"sma50_200":1 if side=="BUY" else -1,"higher_tf_sma50_200":1 if side=="BUY" else -1},
+            "sma50_200_alignment":True,"higher_timeframe_alignment":True,
+            "price_source":"public market candles",
+            "reason":"استراتيجية متوسط 50/200: الاتجاه متوافق على الفريم المحدد والفريم الأعلى؛ المستويات محسوبة من نطاق السعر الأخير."}
+
+
 def _public_scan(market,internet,timeframe="15m"):
     """Market-data scan: recommendations support ranking, never market coverage."""
     symbols=_symbols_for_market(market,internet)
@@ -1062,26 +1121,11 @@ def _public_scan(market,internet,timeframe="15m"):
         except Exception:
             crypto_ticker_map={}
     with ThreadPoolExecutor(max_workers=8) as pool:
-        jobs={pool.submit(_analyze_symbol,s,market,timeframe):s for s in symbols}
+        jobs={pool.submit(_ma_strategy_signal,s,market,timeframe):s for s in symbols}
         for fut in as_completed(jobs):
             try:a=fut.result()
             except Exception:a=None
-            # Some non-crypto markets were returning zero cards because the strict
-            # multi-method gate rejected every candidate. Use a separately labeled
-            # classical price/structure read as a fallback, still requiring real candles.
-            if not a and market not in {"spot"}:
-                try:
-                    a=_analyze_symbol_method(jobs[fut],market,timeframe,"classical")
-                    if a:
-                        a["signal_label"]="شراء · كلاسيكي (بديل)" if a.get("side")=="BUY" else "بيع · كلاسيكي (بديل)"
-                        a["fallback_scan"]=True
-                        a["reason"]="قراءة فنية كلاسيكية من بيانات الشموع الفعلية؛ لا تعني ضمان الربح."
-                except Exception:
-                    a=None
             if not a or a.get("side") not in {"BUY","SELL"}:continue
-            # Require the exact higher-timeframe SMA50/SMA200 agreement selected by the user.
-            if not _trend_alignment(jobs[fut],market,timeframe,str(a.get("side") or "").upper()):
-                continue
             # Validate published levels: never expose negative targets or a stop on the wrong side.
             entry=float(a.get("entry") or a.get("price") or 0)
             side=str(a.get("side") or "").upper()
