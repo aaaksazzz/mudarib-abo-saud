@@ -713,8 +713,11 @@ def _analyze_symbol(symbol,market,timeframe="15m"):
     # Score is an evidence score, not a probability of winning.
     score=max(0.0,min(98.0,0.55*strength+0.30*float(gate.get("strength") or 0)+min(12,aligned*1.2)))
     # Expose distinct, explicitly approximate price/volume method votes for the method pages.
-    # Initialize the live candle price before any expanded vote uses it.
-    price=float(a["price"])
+    # Prefer the analyzed close, but safely fall back to the last validated candle close.
+    # This prevents a missing optional analysis field from aborting the whole symbol scan.
+    price=float(a.get("price") or candles[-1].get("close") or 0.0)
+    if price <= 0:
+        return None
     # These are candle-derived proxies, not exchange order-book/tick data or a claim of exact pattern detection.
     extra_methods=dict(methods)
     sign=lambda x: 1 if x>0 else -1 if x<0 else 0
