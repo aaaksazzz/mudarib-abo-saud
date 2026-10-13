@@ -121,20 +121,54 @@ def _prepare(engine, market, raw, ticker_maps, retention=86400):
     price = _last_price(engine, market, symbol, ticker_maps)
     explicit_levels = bool(entry and targets and sl)
     if not entry or not targets or not sl:
-        if not price: return None
-        entry = float(entry or price)
-        risk = abs(entry * 0.01)
-        if risk <= 0: return None
-        if direction == "BUY":
-            sl = float(sl or entry-risk); generated = [entry+risk, entry+2*risk, entry+3*risk]
-        else:
-            sl = float(sl or entry+risk); generated = [entry-risk, entry-2*risk, entry-3*risk]
-        targets = list(targets or [])
-        for value in generated:
-            if len(targets) >= 3: break
-            targets.append(value)
-        targets = targets[:3]
-        level_type = "مستويات تقديرية محسوبة من السعر العام"
+        # Missing targets/stop: first ask the full technical confluence engine for
+        # price-action/structure/liquidity, Wyckoff, Fibonacci, candlesticks,
+        # breakout/retest, volume and the other implemented chart methodologies.
+        # Only use technical levels when its direction agrees with the external idea.
+        technical = None
+        for method in ("confluence", "classical"):
+            try:
+                if method == "confluence":
+                    technical = engine._analyze_symbol(symbol, market, "15m")
+                else:
+                    technical = engine._analyze_symbol_method(symbol, market, "15m", "classical")
+                if technical and str(technical.get("side") or "").upper() == direction:
+                    break
+                technical = None
+            except Exception:
+                technical = None
+        if technical:
+            tech_entry = float(technical.get("entry") or technical.get("price") or 0)
+            tech_sl = float(technical.get("sl") or 0)
+            tech_targets = [technical.get(k) for k in ("tp1", "tp2", "tp3")]
+            try:
+                tech_targets = [float(v) for v in tech_targets if v is not None]
+            except (TypeError, ValueError):
+                tech_targets = []
+            levels_valid = (
+                tech_entry > 0 and tech_sl > 0 and len(tech_targets) == 3 and
+                ((direction == "BUY" and tech_sl < tech_entry < tech_targets[0] <= tech_targets[1] <= tech_targets[2]) or
+                 (direction == "SELL" and tech_targets[2] <= tech_targets[1] <= tech_targets[0] < tech_entry < tech_sl))
+            )
+            if levels_valid:
+                entry, sl, targets = tech_entry, tech_sl, tech_targets
+                level_type = "مستويات محسوبة بمناهج التحليل الفني"
+        if not entry or not targets or not sl:
+            if not price: return None
+            entry = float(entry or price)
+            risk = abs(entry * 0.01)
+            if risk <= 0: return None
+            if direction == "BUY":
+                sl = float(sl or entry-risk); generated = [entry+risk, entry+2*risk, entry+3*risk]
+            else:
+                sl = float(sl or entry+risk); generated = [entry-risk, entry-2*risk, entry-3*risk]
+            targets = list(targets or [])
+            for value in generated:
+                if len(targets) >= 3: break
+                targets.append(value)
+            targets = targets[:3]
+            if level_type != "مستويات محسوبة بمناهج التحليل الفني":
+                level_type = "مستويات تقديرية محسوبة من السعر العام"
     targets = [float(v) for v in (targets or []) if v is not None]
     if not entry or not sl or float(entry) <= 0 or float(sl) <= 0: return None
     risk = abs(float(entry)-float(sl))
