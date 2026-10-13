@@ -149,6 +149,83 @@ def standalone_method_page(slug: str):
     return HTMLResponse(html)
 
 
+
+SEO_BASE_URL = "https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run"
+SEO_POSTS = [
+    {"slug":"risk-management-stop-loss","category":"إدارة المخاطر","title":"كيف تحدد وقف الخسارة قبل الدخول؟","description":"خطوات عملية لتحديد نقطة إبطال الفكرة وحجم المركز والمخاطرة قبل فتح الصفقة.","body":"ابدأ بتحديد المستوى الذي يثبت أن فكرة التداول لم تعد صحيحة. ضع وقف الخسارة خلف هذا المستوى مع مراعاة تذبذب الأصل، ثم احسب المسافة بين الدخول والوقف. حدّد حجم المركز بحيث لا تتجاوز الخسارة المحتملة النسبة التي اخترتها من رأس المال. لا توسّع الوقف لمجرد أن الصفقة بدأت تخسر، ولا تدخل صفقة من دون نقطة إبطال واضحة."},
+    {"slug":"ema50-ema200-trend-filter","category":"قراءة السوق","title":"EMA50 وEMA200: فلتر اتجاه وليس ضمان ربح","description":"كيف تستخدم المتوسطات لفهم الاتجاه مع تجنب الاعتماد عليها وحدها في اتخاذ القرار.","body":"وجود EMA50 فوق EMA200 قد يشير إلى اتجاه صاعد، لكن المتوسطات تتأخر عن السعر وقد تعطي إشارات متكررة في السوق العرضي. افحص بنية القمم والقيعان ومناطق الدعم والمقاومة وحجم التداول. اختبر القواعد على بيانات خارج فترة بناء الاستراتيجية، واحتسب الرسوم والانزلاق قبل تقييمها."},
+    {"slug":"breakout-retest-price-action","category":"حركة السعر","title":"كيف تقرأ كسر القمة وإعادة الاختبار؟","description":"خطوات لتقييم الاختراق ومراقبة الإغلاق وإعادة الاختبار وتحديد نقطة إبطال الفكرة.","body":"حدد قمة واضحة اختبرها السعر أكثر من مرة. انتظر إغلاقًا واضحًا فوقها بدل الاعتماد على ذيل شمعة فقط، ثم راقب هل يعود السعر إلى المنطقة ويجد قبولًا فوقها. إذا عاد السعر وأغلق أسفل المستوى بسرعة فقد يكون الاختراق فاشلًا. اجعل وقف الخسارة عند نقطة إبطال الفكرة، ولا تعتبر أي نموذج ضمانًا للربح."},
+    {"slug":"liquidity-sweep-vs-market-structure","category":"SMC والسيولة","title":"ما الفرق بين سحب السيولة وكسر البنية؟","description":"شرح تعليمي لسحب القمم والقيعان وتغير البنية والسياق المطلوب قبل اتخاذ القرار.","body":"قد يتحرك السعر فوق قمة سابقة ثم يعود أسفلها، وهذا يسمى غالبًا سحب سيولة في بعض مدارس التحليل. لكن الحركة وحدها لا تكفي. افحص موقع السعر داخل النطاق واتجاه الفريم الأعلى والإغلاق الذي يؤكد الرفض أو تحول البنية. عرّف قواعدك بوضوح واختبرها بدل الاكتفاء باسم النموذج."},
+    {"slug":"risk-reward-win-rate","category":"العائد والمخاطرة","title":"كيف تقارن بين هدف الربح ووقف الخسارة؟","description":"فهم نسبة العائد إلى المخاطرة وعلاقتها بمعدل الفوز والتكاليف والنتائج الفعلية.","body":"إذا كانت المسافة إلى الهدف ضعف المسافة إلى الوقف، فالعائد النظري إلى المخاطرة 2:1 قبل الرسوم والانزلاق. لكن النتيجة تعتمد على معدل الفوز ومتوسط الربح والخسارة الفعليين وتكاليف التداول. احسب التوقع الرياضي من سجل صفقات كافٍ، وافصل بيانات التدريب عن الاختبار، ولا تعتمد على النسبة وحدها."},
+    {"slug":"backtest-trading-strategy","category":"اختبار الاستراتيجيات","title":"اختبر استراتيجية التداول قبل تشغيلها","description":"قائمة عملية للاختبار خارج العينة واحتساب الرسوم والانزلاق والتراجع وعدد الصفقات.","body":"اكتب شروط الدخول والخروج بصيغة قابلة للتنفيذ من دون تفسير شخصي. اختبر فترة تاريخية لم تستخدمها لضبط القواعد، واحتسب الرسوم والانزلاق وتأخر التنفيذ. راقب أقصى تراجع وعدد الصفقات ومتوسط الربح والخسارة والأداء حسب حالة السوق. الاختبار التاريخي لا يضمن الأداء المستقبلي."}
+]
+
+
+def _seo_escape(value):
+    from html import escape
+    return escape(str(value or ""), quote=True)
+
+
+def _seo_post(slug):
+    for post in SEO_POSTS:
+        if post["slug"] == slug:
+            return post
+    for post in read_json_file(ARTICLES_PATH, []):
+        if str(post.get("slug") or "") == slug:
+            return post
+        if str(post.get("id") or "") == slug:
+            return {**post, "slug": slug, "description": post.get("summary") or post.get("body", "")[:180]}
+    return None
+
+
+@app.get("/robots.txt", response_class=HTMLResponse)
+def robots_txt():
+    return HTMLResponse("User-agent: *\\nAllow: /\\nDisallow: /api/\\nDisallow: /admin\\nSitemap: " + SEO_BASE_URL + "/sitemap.xml", media_type="text/plain")
+
+
+@app.get("/sitemap.xml", response_class=HTMLResponse)
+def sitemap_xml():
+    from xml.sax.saxutils import escape as xml_escape
+    urls = [(SEO_BASE_URL + "/", "daily", "1.0"), (SEO_BASE_URL + "/blog", "weekly", "0.9")]
+    urls.extend((SEO_BASE_URL + "/blog/" + p["slug"], "monthly", "0.7") for p in SEO_POSTS)
+    urls.extend((SEO_BASE_URL + "/analysis/" + slug, "monthly", "0.6") for slug in METHOD_SLUGS)
+    items = "".join("<url><loc>" + xml_escape(url) + "</loc><changefreq>" + freq + "</changefreq><priority>" + priority + "</priority></url>" for url, freq, priority in urls)
+    xml = '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + items + "</urlset>"
+    return HTMLResponse(xml, media_type="application/xml")
+
+
+@app.get("/blog", response_class=HTMLResponse)
+def seo_blog_index():
+    from html import escape
+    posts = list(SEO_POSTS)
+    dynamic = read_json_file(ARTICLES_PATH, [])
+    for item in dynamic:
+        slug = str(item.get("slug") or item.get("id") or "")
+        if slug:
+            posts.insert(0, {**item, "slug": slug, "description": item.get("summary") or str(item.get("body", ""))[:180]})
+    cards = "".join('<article class="post"><p class="category">' + escape(str(p.get("category", "تعليم التداول"))) + '</p><h2><a href="/blog/' + escape(str(p["slug"]), quote=True) + '">' + escape(str(p["title"])) + '</a></h2><p>' + escape(str(p.get("description") or p.get("summary") or "")) + '</p><a class="read" href="/blog/' + escape(str(p["slug"]), quote=True) + '">اقرأ المقال ←</a></article>' for p in posts)
+    canonical = SEO_BASE_URL + "/blog"
+    html = '<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>مدونة التداول | تعليم التحليل الفني وإدارة المخاطر</title><meta name="description" content="مقالات عربية عملية عن التحليل الفني وحركة السعر والسيولة وإدارة المخاطر واختبار استراتيجيات التداول."><meta name="robots" content="index,follow,max-image-preview:large"><link rel="canonical" href="' + canonical + '"><meta property="og:type" content="website"><meta property="og:locale" content="ar_SA"><meta property="og:title" content="مدونة التداول الذكي PRO"><meta property="og:description" content="تعلم قراءة السوق وإدارة المخاطر واختبار استراتيجيات التداول."><meta property="og:url" content="' + canonical + '"><script type="application/ld+json">{"@context":"https://schema.org","@type":"Blog","name":"مدونة التداول الذكي PRO","url":"' + canonical + '","inLanguage":"ar-SA"}</script><style>body{margin:0;background:#080d18;color:#edf3ff;font:16px/1.9 system-ui,Tahoma,Arial}main{max-width:1000px;margin:auto;padding:28px 18px}a{color:#7fb3ff;text-decoration:none}header,article{background:#111b2a;border:1px solid #29384d;border-radius:16px;padding:22px;margin:14px 0}h1{font-size:clamp(28px,5vw,42px);line-height:1.4}h2{font-size:22px;margin:4px 0}.category{color:#54ddb0;font-size:13px}.read{font-weight:800}nav a{margin-left:16px}</style></head><body><main><nav><a href="/">الرئيسية</a><a href="/blog">المدونة</a></nav><header><h1>مدونة التداول الذكي PRO</h1><p>محتوى تعليمي عربي يساعدك على فهم حركة السعر وبنية السوق والسيولة وإدارة المخاطر. المقالات تعليمية ولا تمثل توصيات استثمارية.</p></header>' + cards + '<footer><p>التداول ينطوي على مخاطر. اختبر أي استراتيجية على بيانات تاريخية وخارج العينة قبل استخدامها.</p></footer></main></body></html>'
+    return HTMLResponse(html)
+
+
+@app.get("/blog/{slug}", response_class=HTMLResponse)
+def seo_blog_article(slug: str):
+    from html import escape
+    post = _seo_post(slug)
+    if not post:
+        return HTMLResponse("<!doctype html><html lang='ar' dir='rtl'><meta charset='utf-8'><title>المقال غير موجود</title><h1>المقال غير موجود</h1><a href='/blog'>العودة للمدونة</a></html>", status_code=404)
+    title = str(post.get("title") or "مقال تعليمي")
+    description = str(post.get("description") or post.get("summary") or str(post.get("body") or "")[:180])
+    body = str(post.get("body") or post.get("summary") or "")
+    canonical = SEO_BASE_URL + "/blog/" + str(post.get("slug") or slug)
+    published = time.strftime("%Y-%m-%d", time.gmtime(int(post.get("published_at") or time.time())))
+    article_json = json.dumps({"@context":"https://schema.org","@type":"Article","headline":title,"description":description,"datePublished":published,"dateModified":published,"inLanguage":"ar-SA","mainEntityOfPage":canonical,"author":{"@type":"Organization","name":"التداول الذكي PRO"},"publisher":{"@type":"Organization","name":"التداول الذكي PRO"}}, ensure_ascii=False).replace("</", "<\\/")
+    paragraphs = "".join("<p>" + escape(p.strip()) + "</p>" for p in body.split("\\n") if p.strip()) or "<p>" + escape(body) + "</p>"
+    html = '<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + escape(title) + ' | مدونة التداول الذكي PRO</title><meta name="description" content="' + escape(description[:300], quote=True) + '"><meta name="robots" content="index,follow,max-image-preview:large"><link rel="canonical" href="' + canonical + '"><meta property="og:type" content="article"><meta property="og:locale" content="ar_SA"><meta property="og:title" content="' + escape(title, quote=True) + '"><meta property="og:description" content="' + escape(description[:300], quote=True) + '"><meta property="og:url" content="' + canonical + '"><script type="application/ld+json">' + article_json + '</script><style>body{margin:0;background:#080d18;color:#edf3ff;font:17px/2 system-ui,Tahoma,Arial}main{max-width:820px;margin:auto;padding:28px 18px}a{color:#7fb3ff;text-decoration:none}.crumb{font-size:13px;color:#93a0b3}article{background:#111b2a;border:1px solid #29384d;border-radius:18px;padding:clamp(20px,5vw,42px);margin-top:18px}.category{color:#54ddb0;font-size:13px;font-weight:800}h1{font-size:clamp(28px,5vw,42px);line-height:1.4}p{margin:18px 0}footer{color:#93a0b3;font-size:13px;margin-top:24px}</style></head><body><main><p class="crumb"><a href="/">الرئيسية</a> / <a href="/blog">المدونة</a> / ' + escape(title) + '</p><article><p class="category">' + escape(str(post.get("category") or "تعليم التداول")) + '</p><h1>' + escape(title) + '</h1><p>' + escape(description) + '</p>' + paragraphs + '<p><strong>تنبيه:</strong> هذا محتوى تعليمي، وليس توصية شراء أو بيع أو ضمانًا للربح.</p></article><footer><a href="/blog">← جميع المقالات</a></footer></main></body></html>'
+    return HTMLResponse(html)
+
+
 @app.get("/", response_class=HTMLResponse)
 def home():
     page = BASE / "static" / "index.html"
