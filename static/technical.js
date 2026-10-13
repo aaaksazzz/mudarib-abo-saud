@@ -25,7 +25,7 @@
     notice.textContent = "جاري فحص EMA50 وEMA200 على " + frameNames[interval] + " وتأكيد الاتجاه على الفريم الأعلى…";
     body.innerHTML = '<tr><td colspan="5" class="empty">جاري فحص بيانات الشموع الفعلية…</td></tr>';
     try {
-      const response = await fetch("/api/technical/" + market + "?interval=" + encodeURIComponent(interval) + "&limit=12", {cache:"no-store"});
+      const response = await fetch("/api/technical/" + market + "?interval=" + encodeURIComponent(interval) + "&limit=40", {cache:"no-store"});
       const data = await response.json();
       if (!response.ok || !data.live) throw new Error(data.message || "تعذر جلب البيانات");
       if (!data.items.length) {
