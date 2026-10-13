@@ -61,10 +61,23 @@ def fetch_json(url: str, timeout: int = 8):
     parsed = urlsplit(url)
     host = parsed.netloc.lower()
     fallback_hosts = {
+        # Binance spot REST aliases / public market-data host.
         "api.binance.com": ["api1.binance.com", "api2.binance.com", "api3.binance.com", "api-gcp.binance.com", "data-api.binance.vision"],
         "api1.binance.com": ["api.binance.com", "api2.binance.com", "api3.binance.com", "api-gcp.binance.com", "data-api.binance.vision"],
-        "fapi.binance.com": ["fapi1.binance.com", "fapi2.binance.com"],
+        "api2.binance.com": ["api.binance.com", "api1.binance.com", "api3.binance.com", "api-gcp.binance.com", "data-api.binance.vision"],
+        "api3.binance.com": ["api.binance.com", "api1.binance.com", "api2.binance.com", "api-gcp.binance.com", "data-api.binance.vision"],
+        "api-gcp.binance.com": ["api.binance.com", "api1.binance.com", "api2.binance.com", "api3.binance.com", "data-api.binance.vision"],
+        "data-api.binance.vision": ["api.binance.com", "api1.binance.com", "api2.binance.com", "api3.binance.com", "api-gcp.binance.com"],
+        # Binance USD-M futures hosts.
+        "fapi.binance.com": ["fapi1.binance.com", "fapi2.binance.com", "fapi3.binance.com"],
+        "fapi1.binance.com": ["fapi.binance.com", "fapi2.binance.com", "fapi3.binance.com"],
+        "fapi2.binance.com": ["fapi.binance.com", "fapi1.binance.com", "fapi3.binance.com"],
+        "fapi3.binance.com": ["fapi.binance.com", "fapi1.binance.com", "fapi2.binance.com"],
+        # Yahoo Finance public chart endpoints.
         "query1.finance.yahoo.com": ["query2.finance.yahoo.com", "query3.finance.yahoo.com", "query4.finance.yahoo.com"],
+        "query2.finance.yahoo.com": ["query1.finance.yahoo.com", "query3.finance.yahoo.com", "query4.finance.yahoo.com"],
+        "query3.finance.yahoo.com": ["query1.finance.yahoo.com", "query2.finance.yahoo.com", "query4.finance.yahoo.com"],
+        "query4.finance.yahoo.com": ["query1.finance.yahoo.com", "query2.finance.yahoo.com", "query3.finance.yahoo.com"],
     }
     hosts = [host] + fallback_hosts.get(host, [])
     last_error = None
