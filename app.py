@@ -298,7 +298,7 @@ def method_filter(market: str, method: str = Query(...), interval: str = Query("
         except (urllib.error.URLError, TimeoutError, ValueError, OSError, IndexError, TypeError, ZeroDivisionError):
             return None
     found = []
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    with ThreadPoolExecutor(max_workers=12) as pool:
         for future in as_completed([pool.submit(analyze, t) for t in tickers]):
             item = future.result()
             if item:
