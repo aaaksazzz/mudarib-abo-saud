@@ -61,10 +61,10 @@ def fetch_json(url: str, timeout: int = 8):
     parsed = urlsplit(url)
     host = parsed.netloc.lower()
     fallback_hosts = {
-        "api.binance.com": ["api1.binance.com", "api2.binance.com", "api3.binance.com"],
-        "api1.binance.com": ["api.binance.com", "api2.binance.com", "api3.binance.com"],
+        "api.binance.com": ["api1.binance.com", "api2.binance.com", "api3.binance.com", "api-gcp.binance.com", "data-api.binance.vision"],
+        "api1.binance.com": ["api.binance.com", "api2.binance.com", "api3.binance.com", "api-gcp.binance.com", "data-api.binance.vision"],
         "fapi.binance.com": ["fapi1.binance.com", "fapi2.binance.com"],
-        "query1.finance.yahoo.com": ["query2.finance.yahoo.com", "query3.finance.yahoo.com"],
+        "query1.finance.yahoo.com": ["query2.finance.yahoo.com", "query3.finance.yahoo.com", "query4.finance.yahoo.com"],
     }
     hosts = [host] + fallback_hosts.get(host, [])
     last_error = None
