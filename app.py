@@ -324,64 +324,141 @@ METHOD_RULES = {
 
 
 def method_signal(candles, ticker, method_key):
+    """Return a candidate only when this rule has a defensible directional trigger.
+    These are rule-based approximations, not full implementations of discretionary methods.
+    """
     if len(candles) < 30:
         return None
     c = candles
     closes = [x["close"] for x in c]
     highs = [x["high"] for x in c]
     lows = [x["low"] for x in c]
-    opens = [x["open"] for x in c]
     volumes = [x["volume"] for x in c]
     last, prev = c[-1], c[-2]
+    price = last["close"]
+    if price <= 0:
+        return None
     prior_high = max(highs[-21:-1])
     prior_low = min(lows[-21:-1])
     avg_vol = sum(volumes[-21:-1]) / 20 if sum(volumes[-21:-1]) else 0
-    body = abs(last["close"] - last["open"])
     candle_range = max(last["high"] - last["low"], 1e-12)
     bullish = last["close"] > last["open"]
     bearish = last["close"] < last["open"]
     e20, e50, e200 = ema(closes, 20), ema(closes, 50), ema(closes, 200)
-    # Every method has its own explicit rule; unsupported concepts are labelled estimates.
-    rules = {
-        "price_action": bullish and last["close"] > prev["close"] or bearish and last["close"] < prev["close"],
-        "smc": last["close"] > prior_high or last["close"] < prior_low,
-        "ict": last["close"] > prior_high or last["close"] < prior_low,
-        "order_flow": avg_vol > 0 and volumes[-1] >= avg_vol * 1.5 and (bullish or bearish),
-        "bos_choch": last["close"] > prior_high or last["close"] < prior_low,
-        "liquidity_sweep": (last["high"] > prior_high and last["close"] < prior_high) or (last["low"] < prior_low and last["close"] > prior_low),
-        "fvg": (c[-3]["high"] < last["low"]) or (c[-3]["low"] > last["high"]),
-        "retest": abs(last["close"] - prior_high) / max(last["close"], 1e-12) < 0.004 or abs(last["close"] - prior_low) / max(last["close"], 1e-12) < 0.004,
-        "vsa": avg_vol > 0 and volumes[-1] >= avg_vol * 1.5 and candle_range < (sum(highs[-15+i] - lows[-15+i] for i in range(15))/15) * 0.8,
-        "regime": e20 is not None and e50 is not None and (e20 > e50 or e20 < e50),
-        "dow_mtf": e50 is not None and (closes[-1] > e50 or closes[-1] < e50),
-        "support_resistance": abs(last["close"] - prior_high) / max(last["close"], 1e-12) < 0.003 or abs(last["close"] - prior_low) / max(last["close"], 1e-12) < 0.003,
-        "momentum": len(closes) >= 5 and abs(closes[-1] - closes[-5]) / max(closes[-5], 1e-12) >= 0.003,
-        "candlestick": candle_range > 0 and (body / candle_range >= 0.65 or body / candle_range <= 0.15),
-        "chart_patterns": (last["close"] > prior_high) or (last["close"] < prior_low),
-        "volume_profile": avg_vol > 0 and volumes[-1] > avg_vol * 1.2,
-        "vwap": last["close"] > (sum(x["close"] * x["volume"] for x in c[-20:]) / max(sum(x["volume"] for x in c[-20:]), 1e-12)) if sum(x["volume"] for x in c[-20:]) > 0 else False,
-        "indicators": e20 is not None and e50 is not None and ((last["close"] > e20 > e50) or (last["close"] < e20 < e50)),
-        "divergence": (closes[-1] > closes[-5] and closes[-5] < closes[-9]) or (closes[-1] < closes[-5] and closes[-5] > closes[-9]),
-        "fibonacci": abs(last["close"] - (max(highs[-30:]) - (max(highs[-30:])-min(lows[-30:]))*0.618)) / max(last["close"], 1e-12) < 0.01,
-        "ichimoku": e20 is not None and e50 is not None and ((last["close"] > e20 and e20 > e50) or (last["close"] < e20 and e20 < e50)),
-        "wyckoff": avg_vol > 0 and volumes[-1] >= avg_vol * 1.3 and ((last["low"] < prior_low and last["close"] > prior_low) or (last["high"] > prior_high and last["close"] < prior_high)),
-        "elliott": (closes[-1] > closes[-2] > closes[-3] > closes[-4]) or (closes[-1] < closes[-2] < closes[-3] < closes[-4]),
-        "harmonic": abs(last["close"] - (min(lows[-20:]) + (max(highs[-20:])-min(lows[-20:]))*0.618)) / max(last["close"], 1e-12) < 0.008,
-        "channels": abs((highs[-1]-highs[-6]) - (lows[-1]-lows[-6])) / max(last["close"], 1e-12) < 0.01,
-        "quant": len(closes) >= 20 and abs(closes[-1] - sum(closes[-20:])/20) / max(closes[-1], 1e-12) > 0.002,
-        "gann": abs(last["close"] - closes[-9]) / max(last["close"], 1e-12) > 0.003,
-        "risk_management": (last["high"] - last["low"]) / max(last["close"], 1e-12) < 0.05,
-    }
-    if not rules.get(method_key, False):
+    vwap_den = sum(volumes[-20:])
+    vwap = sum(x["close"] * x["volume"] for x in c[-20:]) / vwap_den if vwap_den > 0 else None
+    side = None
+
+    # Count only a directional trigger for the selected rule; do not count
+    # neutral conditions (e.g. "small candle" or "low volatility") as a trade method.
+    if method_key == "price_action":
+        if bullish and price > prev["close"]: side = "BUY"
+        elif bearish and price < prev["close"]: side = "SELL"
+    elif method_key in ("smc", "ict", "bos_choch", "chart_patterns"):
+        if price > prior_high: side = "BUY"
+        elif price < prior_low: side = "SELL"
+    elif method_key == "order_flow":
+        if avg_vol > 0 and volumes[-1] >= avg_vol * 1.5:
+            if bullish: side = "BUY"
+            elif bearish: side = "SELL"
+    elif method_key == "liquidity_sweep":
+        if last["low"] < prior_low and price > prior_low: side = "BUY"
+        elif last["high"] > prior_high and price < prior_high: side = "SELL"
+    elif method_key == "fvg":
+        if c[-3]["high"] < last["low"]: side = "BUY"
+        elif c[-3]["low"] > last["high"]: side = "SELL"
+    elif method_key == "retest":
+        near_high = abs(price - prior_high) / price < 0.004
+        near_low = abs(price - prior_low) / price < 0.004
+        if near_high and price >= prior_high and bullish: side = "BUY"
+        elif near_low and price <= prior_low and bearish: side = "SELL"
+    elif method_key == "vsa":
+        avg_range = sum(highs[-15+i] - lows[-15+i] for i in range(15)) / 15
+        if avg_vol > 0 and volumes[-1] >= avg_vol * 1.5 and candle_range < avg_range * 0.8:
+            if bullish: side = "BUY"
+            elif bearish: side = "SELL"
+    elif method_key == "regime":
+        if e20 is not None and e50 is not None:
+            if e20 > e50: side = "BUY"
+            elif e20 < e50: side = "SELL"
+    elif method_key == "dow_mtf":
+        if e50 is not None:
+            if price > e50: side = "BUY"
+            elif price < e50: side = "SELL"
+    elif method_key == "support_resistance":
+        if abs(price - prior_low) / price < 0.003 and bullish: side = "BUY"
+        elif abs(price - prior_high) / price < 0.003 and bearish: side = "SELL"
+    elif method_key == "momentum":
+        if len(closes) >= 5:
+            move = (price - closes[-5]) / max(closes[-5], 1e-12)
+            if move >= 0.003: side = "BUY"
+            elif move <= -0.003: side = "SELL"
+    elif method_key == "candlestick":
+        if candle_range > 0 and abs(price - last["open"]) / candle_range >= 0.65:
+            if bullish: side = "BUY"
+            elif bearish: side = "SELL"
+    elif method_key == "volume_profile":
+        if vwap is not None:
+            if price > vwap and bullish: side = "BUY"
+            elif price < vwap and bearish: side = "SELL"
+    elif method_key == "vwap":
+        if vwap is not None:
+            if price > vwap: side = "BUY"
+            elif price < vwap: side = "SELL"
+    elif method_key == "indicators":
+        if e20 is not None and e50 is not None:
+            if price > e20 > e50: side = "BUY"
+            elif price < e20 < e50: side = "SELL"
+    elif method_key == "divergence":
+        # A simple swing-reversal proxy; deliberately conservative.
+        if len(closes) >= 9:
+            if closes[-1] > closes[-5] and closes[-5] < closes[-9] and bullish: side = "BUY"
+            elif closes[-1] < closes[-5] and closes[-5] > closes[-9] and bearish: side = "SELL"
+    elif method_key == "fibonacci":
+        lo, hi = min(lows[-30:]), max(highs[-30:])
+        retrace = hi - (hi - lo) * 0.618
+        if abs(price - retrace) / price < 0.01 and bullish: side = "BUY"
+        elif abs(price - (lo + (hi - lo) * 0.618)) / price < 0.01 and bearish: side = "SELL"
+    elif method_key == "ichimoku":
+        if e20 is not None and e50 is not None:
+            if price > e20 > e50: side = "BUY"
+            elif price < e20 < e50: side = "SELL"
+    elif method_key == "wyckoff":
+        if avg_vol > 0 and volumes[-1] >= avg_vol * 1.3:
+            if last["low"] < prior_low and price > prior_low: side = "BUY"
+            elif last["high"] > prior_high and price < prior_high: side = "SELL"
+    elif method_key == "elliott":
+        if closes[-1] > closes[-2] > closes[-3] > closes[-4]: side = "BUY"
+        elif closes[-1] < closes[-2] < closes[-3] < closes[-4]: side = "SELL"
+    elif method_key == "harmonic":
+        lo, hi = min(lows[-20:]), max(highs[-20:])
+        if abs(price - (lo + (hi-lo)*0.618)) / price < 0.008 and bullish: side = "BUY"
+        elif abs(price - (hi - (hi-lo)*0.618)) / price < 0.008 and bearish: side = "SELL"
+    elif method_key == "channels":
+        high_slope = highs[-1] - highs[-6]
+        low_slope = lows[-1] - lows[-6]
+        if high_slope > 0 and low_slope > 0 and bullish: side = "BUY"
+        elif high_slope < 0 and low_slope < 0 and bearish: side = "SELL"
+    elif method_key == "quant":
+        mean20 = sum(closes[-20:]) / 20
+        if price > mean20: side = "BUY"
+        elif price < mean20: side = "SELL"
+    elif method_key == "gann":
+        if price > closes[-9] * 1.003: side = "BUY"
+        elif price < closes[-9] * 0.997: side = "SELL"
+    # Risk management is not a directional signal and must never inflate confluence.
+    if side is None or method_key == "risk_management":
         return None
-    # Entry/SL/TP are derived from the scanned candle and recent true range.
-    side = "BUY" if last["close"] >= prev["close"] else "SELL"
-    tr = [max(c[i]["high"]-c[i]["low"], abs(c[i]["high"]-c[i-1]["close"]), abs(c[i]["low"]-c[i-1]["close"])) for i in range(1, len(c))]
+
+    tr = [max(c[i]["high"]-c[i]["low"], abs(c[i]["high"]-c[i-1]["close"]),
+              abs(c[i]["low"]-c[i-1]["close"])) for i in range(1, len(c))]
     atr = sum(tr[-14:]) / max(1, len(tr[-14:]))
-    entry = last["close"]
-    risk = max(atr * 1.25, entry * 0.002)
-    stop, tp1, tp2, tp3 = ((entry-risk, entry+risk, entry+2*risk, entry+3*risk) if side == "BUY"
-                           else (entry+risk, entry-risk, entry-2*risk, entry-3*risk))
+    entry = price
+    risk = max(atr * 1.5, entry * 0.002)
+    if side == "BUY":
+        stop, tp1, tp2, tp3 = entry-risk, entry+risk, entry+2*risk, entry+3*risk
+    else:
+        stop, tp1, tp2, tp3 = entry+risk, entry-risk, entry-2*risk, entry-3*risk
     if stop <= 0 or min(tp1, tp2, tp3) <= 0:
         return None
     return {**ticker, "side": side, "method": method_key, "entry": entry, "stop": stop,
