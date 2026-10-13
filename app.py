@@ -33,7 +33,7 @@ CACHE = {}
 CACHE_TTL = 20
 TECH_CACHE = {}
 TECH_CACHE_TTL = 90
-STABLES = {"USDC", "USDT", "BUSD", "FDUSD", "TUSD", "DAI", "USDP", "USDE"}
+STABLES = {"USDC", "USDT", "BUSD", "FDUSD", "TUSD", "DAI", "USDP", "USDE", "USD1", "USDD", "USTC", "EUR", "EURC"}
 INTERVALS = {"15m", "1h", "4h", "1d", "1w", "1M"}
 HIGHER_INTERVAL = {"15m": "1h", "1h": "4h", "4h": "1d", "1d": "1w", "1w": "1M", "1M": "1M"}
 
@@ -176,6 +176,116 @@ def technical_filter(market: str, interval: str = Query("15m"), limit: int = Que
     return result
 
 
+
+
+METHOD_RULES = {
+    "Price Action": "price_action", "SMC": "smc", "ICT": "ict",
+    "Order Flow": "order_flow", "BOS / CHOCH": "bos_choch",
+    "Liquidity Sweep": "liquidity_sweep", "FVG / Imbalance": "fvg",
+    "Retest": "retest", "VSA": "vsa", "Market Regime": "regime",
+    "Dow / MTF": "dow_mtf", "Support / Resistance": "support_resistance",
+    "Momentum": "momentum", "Candlestick Analysis": "candlestick",
+    "Chart Patterns": "chart_patterns", "Volume Profile": "volume_profile",
+    "VWAP": "vwap", "Indicators": "indicators", "Divergence": "divergence",
+    "Fibonacci": "fibonacci", "Ichimoku": "ichimoku", "Wyckoff": "wyckoff",
+    "Elliott Wave": "elliott", "Harmonic Patterns": "harmonic",
+    "Channels / Trendlines": "channels", "Quant / Statistical": "quant",
+    "Gann": "gann", "Risk Management": "risk_management"
+}
+
+
+def method_signal(candles, ticker, method_key):
+    if len(candles) < 30:
+        return None
+    c = candles
+    closes = [x["close"] for x in c]
+    highs = [x["high"] for x in c]
+    lows = [x["low"] for x in c]
+    opens = [x["open"] for x in c]
+    volumes = [x["volume"] for x in c]
+    last, prev = c[-1], c[-2]
+    prior_high = max(highs[-21:-1])
+    prior_low = min(lows[-21:-1])
+    avg_vol = sum(volumes[-21:-1]) / 20 if sum(volumes[-21:-1]) else 0
+    body = abs(last["close"] - last["open"])
+    candle_range = max(last["high"] - last["low"], 1e-12)
+    bullish = last["close"] > last["open"]
+    bearish = last["close"] < last["open"]
+    e20, e50, e200 = ema(closes, 20), ema(closes, 50), ema(closes, 200)
+    # Every method has its own explicit rule; unsupported concepts are labelled estimates.
+    rules = {
+        "price_action": bullish and last["close"] > prev["close"] or bearish and last["close"] < prev["close"],
+        "smc": last["close"] > prior_high or last["close"] < prior_low,
+        "ict": last["close"] > prior_high or last["close"] < prior_low,
+        "order_flow": avg_vol > 0 and volumes[-1] >= avg_vol * 1.5 and (bullish or bearish),
+        "bos_choch": last["close"] > prior_high or last["close"] < prior_low,
+        "liquidity_sweep": (last["high"] > prior_high and last["close"] < prior_high) or (last["low"] < prior_low and last["close"] > prior_low),
+        "fvg": (c[-3]["high"] < last["low"]) or (c[-3]["low"] > last["high"]),
+        "retest": abs(last["close"] - prior_high) / max(last["close"], 1e-12) < 0.004 or abs(last["close"] - prior_low) / max(last["close"], 1e-12) < 0.004,
+        "vsa": avg_vol > 0 and volumes[-1] >= avg_vol * 1.5 and candle_range < (sum(highs[-15+i] - lows[-15+i] for i in range(15))/15) * 0.8,
+        "regime": e20 is not None and e50 is not None and (e20 > e50 or e20 < e50),
+        "dow_mtf": e50 is not None and (closes[-1] > e50 or closes[-1] < e50),
+        "support_resistance": abs(last["close"] - prior_high) / max(last["close"], 1e-12) < 0.003 or abs(last["close"] - prior_low) / max(last["close"], 1e-12) < 0.003,
+        "momentum": len(closes) >= 5 and abs(closes[-1] - closes[-5]) / max(closes[-5], 1e-12) >= 0.003,
+        "candlestick": candle_range > 0 and (body / candle_range >= 0.65 or body / candle_range <= 0.15),
+        "chart_patterns": (last["close"] > prior_high) or (last["close"] < prior_low),
+        "volume_profile": avg_vol > 0 and volumes[-1] > avg_vol * 1.2,
+        "vwap": sum(x["close"] * x["volume"] for x in c[-20:]) / max(sum(x["volume"] for x in c[-20:]), 1e-12) != 0,
+        "indicators": e20 is not None and e50 is not None and e20 != e50,
+        "divergence": (closes[-1] > closes[-5] and closes[-5] < closes[-9]) or (closes[-1] < closes[-5] and closes[-5] > closes[-9]),
+        "fibonacci": abs(last["close"] - (max(highs[-30:]) - (max(highs[-30:])-min(lows[-30:]))*0.618)) / max(last["close"], 1e-12) < 0.01,
+        "ichimoku": e20 is not None and e50 is not None and ((last["close"] > e20 and e20 > e50) or (last["close"] < e20 and e20 < e50)),
+        "wyckoff": avg_vol > 0 and volumes[-1] >= avg_vol * 1.3 and ((last["low"] < prior_low and last["close"] > prior_low) or (last["high"] > prior_high and last["close"] < prior_high)),
+        "elliott": (closes[-1] > closes[-2] > closes[-3] > closes[-4]) or (closes[-1] < closes[-2] < closes[-3] < closes[-4]),
+        "harmonic": abs(last["close"] - (min(lows[-20:]) + (max(highs[-20:])-min(lows[-20:]))*0.618)) / max(last["close"], 1e-12) < 0.008,
+        "channels": abs((highs[-1]-highs[-6]) - (lows[-1]-lows[-6])) / max(last["close"], 1e-12) < 0.01,
+        "quant": len(closes) >= 20 and abs(closes[-1] - sum(closes[-20:])/20) / max(closes[-1], 1e-12) > 0.002,
+        "gann": abs(last["close"] - closes[-9]) / max(last["close"], 1e-12) > 0.003,
+        "risk_management": (last["high"] - last["low"]) / max(last["close"], 1e-12) < 0.05,
+    }
+    if not rules.get(method_key, False):
+        return None
+    # Direction is only inferred from actual candle movement; not every pattern is a trade.
+    side = "BUY" if last["close"] >= prev["close"] else "SELL"
+    return {**ticker, "side": side, "method": method_key,
+            "status": "اجتاز شرط المنهج (فحص آلي أولي)",
+            "change_pct": ticker["change_pct"]}
+
+
+@app.get("/api/methods/{market}")
+def method_filter(market: str, method: str = Query(...), interval: str = Query("15m"), limit: int = Query(40, ge=1, le=100)):
+    market = market.lower()
+    if market not in BINANCE:
+        return JSONResponse({"ok": False, "live": False, "items": [], "message": "مصدر هذا السوق غير مربوط حاليًا."})
+    if interval not in INTERVALS:
+        return JSONResponse({"ok": False, "live": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
+    method_key = METHOD_RULES.get(method)
+    if not method_key:
+        return JSONResponse({"ok": False, "live": False, "items": [], "message": "المنهج غير معروف."}, status_code=422)
+    try:
+        tickers = market_tickers(market)[:limit]
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+        return JSONResponse({"ok": False, "live": False, "items": [], "message": "تعذر جلب بيانات السوق المباشرة."}, status_code=503)
+    def analyze(ticker):
+        try:
+            candles = candle_data(market, ticker["symbol"], interval)
+            return method_signal(candles, ticker, method_key)
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError, IndexError, TypeError, ZeroDivisionError):
+            return None
+    found = []
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        for future in as_completed([pool.submit(analyze, t) for t in tickers]):
+            item = future.result()
+            if item:
+                found.append(item)
+    found.sort(key=lambda x: x["quote_volume"], reverse=True)
+    return {"ok": True, "live": True, "market": market, "method": method, "interval": interval,
+            "scanned": len(tickers), "analyzed": len(tickers), "count": len(found),
+            "updated_at": int(time.time()), "items": found,
+            "message": "تم فحص الشموع المباشرة وفق شرط أولي خاص بالمنهج المختار. بعض المناهج المركبة تحتاج تأكيدًا بصريًا/سياقيًا؛ النتيجة ليست ضمانًا أو توصية آلية مكتملة."}
+
+
+
 SIGNAL_CACHE = {}
 SIGNAL_CACHE_TTL = 75
 
@@ -184,8 +294,8 @@ def candle_data(market: str, symbol: str, interval: str):
     from urllib.parse import urlencode
     url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 220})
     raw = fetch_json(url, timeout=8)
-    return [{"high": float(k[2]), "low": float(k[3]), "close": float(k[4])}
-            for k in raw if len(k) > 4]
+    return [{"open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
+            for k in raw if len(k) > 5]
 
 
 def build_signal(market: str, ticker: dict, interval: str):
