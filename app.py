@@ -24,7 +24,7 @@ except PermissionError:
     DATA_DIR=BASE/"data"; DATA_DIR.mkdir(parents=True,exist_ok=True)
 DB_PATH=DATA_DIR/"app.db"
 SECRET=os.getenv("SESSION_SECRET") or secrets.token_hex(32)
-MARKETS={"spot":"السبوت","futures":"الفيوتشر","contracts":"العقود الأمريكية","us":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس","gold":"الذهب"}
+MARKETS={"spot":"السبوت","futures":"الفيوتشر","alpha":"Binance Alpha","contracts":"العقود الأمريكية","us":"السوق الأمريكي","saudi":"السوق السعودي","forex":"الفوركس","gold":"الذهب"}
 TIMEFRAMES=["1m","3m","5m","15m","30m","1h","4h","1d","1w","1M"]
 BREADTH_REFERENCE={x:x for x in TIMEFRAMES}
 REFERENCE_TIMEFRAMES=list(TIMEFRAMES)
@@ -67,7 +67,7 @@ async def _enforce_market_switches(request:Request,call_next):
             key=m
     if path=="/api/opportunities":
         m=str(q.get("market") or "").lower()
-        if m in ("spot","futures","alpha","contracts","us","saudi","forex"):
+        if m in ("spot","futures","alpha","contracts","us","saudi","forex","gold"):
             key=m
     if key:
         try:
