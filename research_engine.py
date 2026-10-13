@@ -1330,6 +1330,9 @@ def discover(market,timeframe="15m"):
         direction=r.get("direction")
         if market in {"us","saudi","spot","futures"} and not _passes_volume_filter(r.get("symbol"), market):
             continue
+        # Keep external recommendations only when they agree with the same dual-timeframe trend rule.
+        if not _trend_alignment(r.get("symbol"),market,timeframe,str(direction or "").upper()):
+            continue
 
         px=entry
         if px is None:
