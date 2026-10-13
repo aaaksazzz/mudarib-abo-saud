@@ -1,16 +1,23 @@
 import json
 import os
 import time
+import secrets
+import xml.etree.ElementTree as ET
 import urllib.request
 import urllib.error
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from fastapi import FastAPI, Query, Depends
+from fastapi import FastAPI, Query, Depends, HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE = Path(__file__).resolve().parent
-app = FastAPI(title="التداول الذكي PRO", version="2.1.1")
+app = FastAPI(title="التداول الذكي PRO", version="2.1.2")
+security = HTTPBasic(auto_error=False)
+DATA_DIR = Path(os.getenv("DATA_DIR", "/tmp/smart-trading-pro-data"))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+RESULTS_PATH = DATA_DIR / "results.json"
+ARTICLES_PATH = DATA_DIR / "articles.json"
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
 BINANCE = {
@@ -83,15 +90,13 @@ def home():
     # Keep the interactive technical filter separate from the main page markup.
     if 'src="/static/technical.js"' not in html:
         html = html.replace("</body>", '<script src="/static/technical.js?v=2.1"></script></body>')
-    # Do not expose admin navigation until authenticated role-based access is implemented.
-    html = html.replace('<button data-page="admin"><span class="ico">⚙</span>الإدارة</button>', "")
     return HTMLResponse(html)
 
 
 @app.get("/health")
 @app.get("/api/health")
 def health():
-    return {"ok": True, "service": "smart-trading-pro", "version": "2.1.1", "timestamp": int(time.time())}
+    return {"ok": True, "service": "smart-trading-pro", "version": "2.1.2", "timestamp": int(time.time())}
 
 
 @app.get("/api/market/{market}")
