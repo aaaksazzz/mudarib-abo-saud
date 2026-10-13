@@ -57,6 +57,23 @@ def _last_price(engine, market, symbol, ticker_maps):
     except Exception:
         return 0.0
 
+def _source_timeframe(title, body):
+    """Read a timeframe only when the external source explicitly labels one."""
+    text = str(title or "") + " " + str(body or "")
+    frame = r"(1m|3m|5m|15m|30m|45m|1h|2h|3h|4h|6h|8h|12h|1d|1w|1mo)"
+    patterns = (
+        r"\b(?:time\s*frame|timeframe|interval|tf)\s*[:=@-]?\s*" + frame + r"\b",
+        r"(?:الفريم|الإطار\s*الزمني)\s*[:=@-]?\s*" + frame + r"\b",
+    )
+    import re
+    for pattern in patterns:
+        match = re.search(pattern, text, re.I)
+        if match:
+            value = match.group(1).lower()
+            return "1M" if value == "1mo" else value
+    return None
+
+
 def _prepare(engine, market, raw, ticker_maps, retention=86400):
     title = str(raw.get("source_title") or "").strip()
     body = str(raw.get("source_text") or title).strip()
@@ -136,7 +153,7 @@ def _prepare(engine, market, raw, ticker_maps, retention=86400):
         source_quality = min(source_quality, 45)
     return {"market":market,"market_label":LABELS[market],"symbol":symbol,"direction":direction,"source_quality":source_quality,"live_price":round(float(price),8) if price else None,
         "entry":round(float(entry),8),"tp1":round(targets[0],8),"tp2":round(targets[1],8),"tp3":round(targets[2],8),"sl":round(float(sl),8),
-        "source_title":title,"source_url":url,"source_published":published,"created_at":published_at,"expires_at":published_at+retention,
+        "source_title":title,"source_url":url,"source_published":published,"timeframe":_source_timeframe(title, body),"created_at":published_at,"expires_at":published_at+retention,
         "level_type":level_type,"is_estimated":level_type!="مستويات منشورة بالمصدر","status":"نشطة","source_count":1,"mention_count":1,"source_domains_count":1,"source_domains":[urlparse(url).netloc.lower().removeprefix("www.")],"source_urls":[url], "risk_pct":round(abs(float(entry)-float(sl))/float(entry)*100,2), "tp1_pct":round(((targets[0]-float(entry)) if direction=="BUY" else (float(entry)-targets[0]))/float(entry)*100,2), "tp2_pct":round(((targets[1]-float(entry)) if direction=="BUY" else (float(entry)-targets[1]))/float(entry)*100,2), "tp3_pct":round(((targets[2]-float(entry)) if direction=="BUY" else (float(entry)-targets[2]))/float(entry)*100,2)}
 
 def _fetch_market(engine, market, ticker_maps, retention=86400):
