@@ -108,7 +108,7 @@
    const buy=String(x.direction||"").toUpperCase()==="BUY";
    const rank=Number(x._marketRank||i+1);
    const qualified=!!x.top1_eligible&&Number.isFinite(Number(x.top1_score));
-   const medal=qualified&&rank===1?{cls:"rank-gold",icon:"💎",label:"TOP 1 · جوهرة السوق"}:rank===2?{cls:"rank-silver",icon:"🥈",label:"الثاني · فضي"}:rank===3?{cls:"rank-bronze",icon:"🥉",label:"الثالث · برونزي"}:{cls:"",icon:"",label:""};
+   const medal=qualified&&rank===1?{cls:"rank-gold",icon:"💎",label:"TOP 1 · جوهرة السوق"}:qualified&&rank===2?{cls:"rank-silver",icon:"🥈",label:"الثاني · فضي"}:qualified&&rank===3?{cls:"rank-bronze",icon:"🥉",label:"الثالث · برونزي"}:{cls:"",icon:"",label:""};
    let date="";const stamp=x.source_published||((x.created_at&&x.scan_generated)?new Date(Number(x.created_at)*1000).toISOString():null);if(stamp){const d=new Date(stamp);if(!Number.isNaN(d.getTime()))date=d.toLocaleString("ar-SA");}if(!date)date="وقت النشر غير متاح";
    const score=Number(x.top1_score);
    const entry=Number(x.entry||0), stop=Number(x.sl||0);
