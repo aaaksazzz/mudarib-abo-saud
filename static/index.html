@@ -38,6 +38,109 @@
 @media(max-width:1050px){.signal-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.signal-grid{grid-template-columns:1fr}.quick-filters{flex-wrap:nowrap;overflow-x:auto;padding-bottom:5px}.quick-filters .filter-label{position:sticky;right:0;background:var(--panel);padding:4px 0}.signal-card{padding:12px}.signal-entry strong{font-size:18px}}
 
 .content-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}.content-card{padding:16px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(145deg,#142033,#0d1523);min-width:0}.content-card .content-tag{display:inline-flex;font-size:10px;color:var(--green);background:#123129;border-radius:7px;padding:5px 8px;margin-bottom:10px}.content-card h3{font-size:14px;line-height:1.7;margin:0 0 8px}.content-card p{font-size:12px;color:#a8b8ce;line-height:1.9;margin:0 0 12px}.content-card a,.content-card button{color:var(--green);font-size:12px;text-decoration:none;background:transparent;border:0;padding:0}.content-empty{padding:26px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:12px;grid-column:1/-1}.result-stats{margin:14px 0;grid-template-columns:repeat(4,minmax(0,1fr))}.formbox label{display:grid;gap:6px;color:var(--muted);font-size:12px}.formbox textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:12px;background:#0b1422;color:white;resize:vertical}.divider{height:1px;background:var(--line);margin:22px 0}@media(max-width:1000px){.content-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.content-grid{grid-template-columns:1fr}.result-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* SMART TRADING PRO — unified design system */
+:root{
+ --bg:#070b13;--panel:#0f1726;--panel2:#121e30;--line:#26354b;
+ --text:#f1f5fc;--muted:#93a4bc;--green:#39dfad;--red:#ff7485;
+ --blue:#78adff;--gold:#edc76d;--radius:16px;
+}
+html{scroll-behavior:smooth}
+body{font-size:14px;line-height:1.65;background:radial-gradient(ellipse at 58% -20%,#183451 0,transparent 44%),var(--bg)}
+button,input,textarea,select{font-family:inherit}
+button:disabled{opacity:.5;cursor:not-allowed}
+.layout{grid-template-columns:minmax(0,1fr) 268px;max-width:1800px;margin:0 auto}
+.sidebar{background:rgba(9,15,26,.97);border-right:1px solid #26364b;padding:18px 13px}
+.brand{padding:7px 8px 20px;border-bottom:1px solid #1e2a3c;margin-bottom:10px}
+.brand small{display:block;font-size:11px;margin-top:2px}
+.nav-label{font-weight:800;letter-spacing:.1px;color:#7f93af;padding-top:18px}
+.nav{gap:4px}
+.nav button{min-height:40px;padding:9px 11px;font-size:12px;border-radius:10px}
+.nav button.active,.nav button:hover{background:#15283a;border-color:#29445d}
+.nav button.active{box-shadow:inset -3px 0 0 var(--green)}
+.nav .ico{flex:0 0 20px;font-size:14px}
+.main{padding:26px clamp(14px,2.6vw,38px) 54px}
+.topbar{padding-bottom:17px;border-bottom:1px solid #1e2a3b;margin-bottom:20px}
+.topbar h1{font-weight:850;letter-spacing:-.4px}
+.eyebrow{font-size:10px;letter-spacing:1.1px;text-transform:uppercase}
+.top-actions{flex-wrap:wrap}
+.pill,.btn{min-height:38px;border-radius:10px;font-weight:700;transition:all .16s ease}
+.btn:hover,.pill:hover{border-color:#49617e;background:#17263a}
+.btn.primary{background:linear-gradient(135deg,#43e2b3,#27bd96);box-shadow:0 6px 18px #20d6a01c}
+.panel,.stat{border-color:#26364b;border-radius:var(--radius);background:linear-gradient(145deg,rgba(18,29,46,.98),rgba(10,17,29,.98));box-shadow:0 12px 32px #0002}
+.panel{padding:clamp(14px,1.5vw,21px)}
+.panel-head{flex-wrap:wrap}
+.panel h2{font-size:16px;font-weight:800;letter-spacing:-.15px}
+.sub{line-height:1.7}
+.stats{gap:12px}
+.stat{padding:16px}
+.stat .value{font-size:clamp(19px,2vw,25px);letter-spacing:-.3px}
+.section{animation:section-in .18s ease both}
+@keyframes section-in{from{opacity:.65;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
+.tabs{gap:6px}
+.tabs button,.quick-filters button{min-height:34px;border-radius:9px;font-weight:700;transition:all .15s ease}
+.tabs button:hover,.quick-filters button:hover{border-color:#4b6889;color:#fff}
+.tabs button.active,.quick-filters button.active{background:#123a30;border-color:#258b6a;color:#52e4b8;box-shadow:inset 0 0 0 1px #1a604c}
+.notice{border:1px solid #2a405a;border-right:3px solid #4c9dd8;background:linear-gradient(90deg,#0c1727,#111f31);border-radius:11px;padding:12px 14px}
+.table-wrap{border:1px solid #202e42;border-radius:12px;background:#0b1320;max-width:100%}
+table{font-size:12px}
+thead{background:#111d2e}
+th{font-weight:750;color:#a5b6ce;padding:12px 11px}
+td{padding:12px 11px}
+tbody tr{transition:background .12s ease}
+tbody tr:hover{background:#121f30}
+.empty{white-space:normal;line-height:1.8}
+.market-cards{gap:11px}
+.market-card{position:relative;min-height:120px;padding:15px;border-radius:14px;background:linear-gradient(145deg,#142238,#0d1727);border-color:#263a52}
+.market-card strong{font-size:13px;line-height:1.5}
+.methods{gap:10px}
+.method{min-height:120px;padding:15px;border-radius:13px;background:linear-gradient(145deg,#142238,#0d1727);border-color:#26374d;transition:transform .15s,border-color .15s,background .15s}
+.method[hidden]{display:none!important}
+.method strong{font-size:13px;color:#f1f6ff}
+.method p{line-height:1.8}
+.method:hover{background:linear-gradient(145deg,#172b42,#101c2d);border-color:#3d6583}
+.signal-grid{gap:12px}
+.signal-card{border-radius:14px;box-shadow:0 8px 24px #0002}
+.signal-entry,.signal-level{background:#0a1220}
+.signal-empty{background:#0c1523;line-height:1.9}
+.content-grid{gap:12px}
+.content-card{border-radius:14px;background:linear-gradient(145deg,#142238,#0d1727);border-color:#26374d}
+.feed-item{border-radius:12px}
+.formbox{width:100%}
+.formbox input,.formbox textarea{min-height:42px}
+:focus-visible{outline:2px solid #45dcb1!important;outline-offset:2px}
+@media(min-width:701px){
+ .layout{grid-template-columns:minmax(0,1fr) 268px}
+ .sidebar{border-right:0;border-left:1px solid #26364b}
+}
+@media(max-width:1050px){
+ .layout{grid-template-columns:minmax(0,1fr) 244px}
+ .signal-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .methods{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:700px){
+ .layout{display:block}
+ .main{padding:13px 11px 30px}
+ .topbar{gap:10px;margin-bottom:14px;padding-bottom:13px}
+ .topbar h1{font-size:22px;line-height:1.35}
+ .top-actions{gap:6px}
+ .top-actions .btn{min-height:35px;padding:7px 9px}
+ .panel{padding:13px;border-radius:13px}
+ .stats{gap:8px}
+ .stat{padding:12px;border-radius:12px}
+ .stat .value{font-size:19px;margin:6px 0 3px}
+ .market-cards{gap:8px}
+ .market-card{min-height:100px;padding:11px;border-radius:12px}
+ .methods{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ .method{min-height:110px;padding:12px}
+ .method p{font-size:11px}
+ .signal-grid{grid-template-columns:1fr}
+ .table-wrap{border-radius:10px}
+ th,td{padding:10px 9px}
+ .sidebar{border-left:1px solid #26364b}
+}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+
 </style></head>
 <body><div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div><div class="layout">
 <aside class="sidebar" id="sidebar"><div class="brand"><div class="logo">S</div><div><strong>التداول الذكي <span style="color:var(--green)">PRO</span></strong><small>منصة متابعة الأسواق</small></div></div>
