@@ -81,7 +81,7 @@ def candle_closes(market, symbol, interval):
     from urllib.parse import urlencode
     url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 220})
     candles = fetch_json(url, timeout=7)
-    return [float(candle[4]) for candle in candles if len(candle) > 4]
+    return [float(candle[4]) for candle in candles if len(candle) > 6 and int(candle[6]) < int(time.time() * 1000)]
 
 
 METHOD_SLUGS = {name.lower().replace(" / ", "-").replace(" ", "-").replace("/", "-"): name for name in [
@@ -140,7 +140,7 @@ def market_data(market: str, limit: int = Query(40, ge=1, le=100)):
 
 
 @app.get("/api/technical/{market}")
-def technical_filter(market: str, interval: str = Query("15m"), limit: int = Query(12, ge=1, le=20)):
+def technical_filter(market: str, interval: str = Query("15m"), limit: int = Query(40, ge=1, le=60)):
     market = market.lower()
     if market not in BINANCE:
         return JSONResponse({"ok": False, "live": False, "items": [], "message": "الفلتر الفني متاح حاليًا لسبوت وفيوتشر Binance فقط."})
@@ -320,7 +320,7 @@ def candle_data(market: str, symbol: str, interval: str):
     url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 220})
     raw = fetch_json(url, timeout=8)
     return [{"open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
-            for k in raw if len(k) > 5]
+            for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
 
 
 def build_signal(market: str, ticker: dict, interval: str):
@@ -384,7 +384,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
     if cached and now - cached[0] < SIGNAL_CACHE_TTL:
         return cached[1]
     try:
-        tickers = market_tickers(market)[:limit]
+        tickers = market_tickers(market)[:max(40, limit * 3)]
     except (urllib.error.URLError, TimeoutError, ValueError, OSError):
         return JSONResponse({"ok": False, "live": False, "items": [], "message": "تعذر جلب أسعار السوق الآن."}, status_code=503)
 
@@ -440,7 +440,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
     write_json_file(RESULTS_PATH, history[-1000:])
     result = {"ok": True, "live": True, "market": market, "interval": interval,
               "scanned": len(tickers), "count": len(found), "updated_at": int(now),
-              "items": found, "message": "الدخول والوقف والأهداف محسوبة من شموع Binance وATR. سجل النتائج يعتمد على السعر المرصود عند تحديث الخدمة، وليس سجل تداول لحظي كاملًا؛ لا توجد نسبة ربح تاريخية موثقة."}
+              "items": found[:limit], "message": "الدخول والوقف والأهداف محسوبة من شموع Binance وATR. سجل النتائج يعتمد على السعر المرصود عند تحديث الخدمة، وليس سجل تداول لحظي كاملًا؛ لا توجد نسبة ربح تاريخية موثقة."}
     SIGNAL_CACHE[key] = (now, result)
     return result
 
