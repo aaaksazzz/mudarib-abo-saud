@@ -535,7 +535,8 @@ def build_signal(market: str, ticker: dict, interval: str):
     method_hits = []
     for method_name, method_key in METHOD_RULES.items():
         try:
-            if method_signal(candles, ticker, method_key):
+            method_result = method_signal(candles, ticker, method_key)
+            if method_result and method_result.get("side") == side:
                 method_hits.append(method_name)
         except (ValueError, TypeError, IndexError, ZeroDivisionError):
             continue
