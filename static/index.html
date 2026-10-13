@@ -199,8 +199,9 @@ document.querySelectorAll("[data-frame]").forEach(b=>b.addEventListener("click",
 
 document.querySelectorAll("[data-method-market]").forEach(b=>b.addEventListener("click",()=>{methodMarket=b.dataset.methodMarket;document.querySelectorAll("[data-method-market]").forEach(x=>x.classList.toggle("active",x===b));if(selectedMethod)runMethodFilter();}));
 document.querySelectorAll("[data-method-frame]").forEach(b=>b.addEventListener("click",()=>{methodFrame=b.dataset.methodFrame;document.querySelectorAll("[data-method-frame]").forEach(x=>x.classList.toggle("active",x===b));if(selectedMethod)runMethodFilter();}));
-function selectAnalysisMethod(name){selectedMethod=name;setPage("methods");document.querySelectorAll(".method").forEach(card=>{const title=card.querySelector("strong")?.textContent?.trim()||"";card.hidden=title!==name;});const heading=document.querySelector("#page-methods h2");if(heading)heading.textContent="تحليل مستقل: "+name;runMethodFilter();closeSidebar();}
-document.querySelectorAll(".method").forEach(b=>{b.style.cursor="pointer";b.addEventListener("click",()=>selectAnalysisMethod(b.querySelector("strong")?.textContent?.trim()||"Price Action"));});
+function methodSlug(name){return String(name).toLowerCase().replace(" / ","-").replaceAll(" ","-").replaceAll("/","-");}
+function selectAnalysisMethod(name){closeSidebar();window.location.href="/analysis/"+methodSlug(name);}
+document.querySelectorAll(".method").forEach(b=>{b.style.cursor="pointer";b.setAttribute("role","link");b.tabIndex=0;const open=()=>selectAnalysisMethod(b.querySelector("strong")?.textContent?.trim()||"Price Action");b.addEventListener("click",open);b.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();open();}});});
 document.addEventListener("click",e=>{const method=e.target.closest("[data-method-open]");if(method){selectAnalysisMethod(method.dataset.methodOpen);return;}const all=e.target.closest("#page-methods [data-show-all-methods]");if(all){document.querySelectorAll(".method").forEach(card=>card.hidden=false);const heading=document.querySelector("#page-methods h2");if(heading)heading.textContent="مكتبة مناهج التحليل";}});
 
 function fmtSignalPrice(n){const v=Number(n);if(!Number.isFinite(v))return "—";return v.toLocaleString("en-US",{maximumFractionDigits:v<1?8:4,minimumFractionDigits:0});}
