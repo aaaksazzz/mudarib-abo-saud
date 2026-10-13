@@ -5,7 +5,7 @@ import urllib.request
 import urllib.error
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -267,6 +267,110 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
               "items": found, "message": "مستويات الدخول والوقف والأهداف محسوبة من شموع Binance وATR. درجة التوافق تقدير فني وليست احتمال ربح مثبتًا. لا تتوفر نتائج تاريخية موثقة لهذه الإشارات بعد."}
     SIGNAL_CACHE[key] = (now, result)
     return result
+
+
+def read_json_file(path, default):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return default
+
+
+def write_json_file(path, data):
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def require_admin(credentials: HTTPBasicCredentials = None):
+    username = os.getenv("ADMIN_USERNAME", "")
+    password = os.getenv("ADMIN_PASSWORD", "")
+    if not username or not password:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="الإدارة مقفلة: عيّن ADMIN_USERNAME وADMIN_PASSWORD في متغيرات الخدمة.")
+    if credentials is None or not (
+        secrets.compare_digest(credentials.username, username)
+        and secrets.compare_digest(credentials.password, password)
+    ):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="بيانات دخول الإدارة غير صحيحة.", headers={"WWW-Authenticate": "Basic"})
+    return True
+
+
+@app.get("/api/news")
+def market_news(limit: int = Query(12, ge=1, le=30)):
+    feed_urls = [
+        "https://news.google.com/rss/search?q=تداول+العملات+الرقمية+OR+بيتكوين+OR+إيثيريوم&hl=ar&gl=SA&ceid=SA:ar",
+        "https://news.google.com/rss/search?q=أسواق+العملات+المشفرة+OR+Binance&hl=ar&gl=SA&ceid=SA:ar",
+    ]
+    items, seen = [], set()
+    for url in feed_urls:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "SmartTradingPro/2.2"})
+            with urllib.request.urlopen(req, timeout=6) as response:
+                root = ET.fromstring(response.read())
+            for node in root.findall("./channel/item"):
+                title = (node.findtext("title") or "").strip()
+                link = (node.findtext("link") or "").strip()
+                pub = (node.findtext("pubDate") or "").strip()
+                source = node.findtext("source") or "Google News"
+                if not title or not link or link in seen:
+                    continue
+                seen.add(link)
+                items.append({"title": title, "url": link, "published": pub, "source": source})
+        except (urllib.error.URLError, TimeoutError, OSError, ET.ParseError, ValueError):
+            continue
+    items.sort(key=lambda x: x["published"], reverse=True)
+    return {"ok": True, "live": bool(items), "items": items[:limit],
+            "message": "عناوين مجمعة من Google News؛ افتح الخبر الأصلي للتحقق من التفاصيل." if items else "تعذر تحميل موجز الأخبار الآن؛ جرّب التحديث لاحقًا."}
+
+
+@app.get("/api/blog")
+def blog_articles():
+    return {"ok": True, "items": read_json_file(ARTICLES_PATH, [])}
+
+
+@app.get("/api/results")
+def signal_results(limit: int = Query(100, ge=1, le=500)):
+    items = read_json_file(RESULTS_PATH, [])
+    items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+    closed = [x for x in items if x.get("result") in ("TP1", "TP2", "TP3", "SL")]
+    wins = [x for x in closed if x.get("result") in ("TP1", "TP2", "TP3")]
+    return {"ok": True, "items": items[:limit], "total": len(items), "closed": len(closed),
+            "wins": len(wins), "losses": len(closed)-len(wins),
+            "win_rate": round(len(wins)*100/len(closed), 1) if closed else None,
+            "message": "النتائج تسجل من وقت اكتشاف الإشارة داخل الخدمة؛ إعادة تشغيل الخدمة قد تفقد السجل ما لم يُضبط DATA_DIR على تخزين دائم."}
+
+
+@app.get("/api/admin/status")
+def admin_status(credentials: HTTPBasicCredentials = Depends(security)):
+    require_admin(credentials)
+    return {"ok": True, "authenticated": True, "articles": len(read_json_file(ARTICLES_PATH, [])),
+            "data_dir": str(DATA_DIR)}
+
+
+@app.post("/api/admin/articles")
+def admin_publish_article(payload: dict, credentials: HTTPBasicCredentials = Depends(security)):
+    require_admin(credentials)
+    title = str(payload.get("title", "")).strip()[:180]
+    category = str(payload.get("category", "تعليم التداول")).strip()[:60]
+    summary = str(payload.get("summary", "")).strip()[:600]
+    body = str(payload.get("body", "")).strip()[:12000]
+    if len(title) < 5 or len(body) < 30:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail="أدخل عنوانًا واضحًا ومحتوى لا يقل عن 30 حرفًا.")
+    articles = read_json_file(ARTICLES_PATH, [])
+    article = {"id": str(int(time.time()*1000)), "title": title, "category": category,
+               "summary": summary, "body": body, "published_at": int(time.time())}
+    articles.insert(0, article)
+    write_json_file(ARTICLES_PATH, articles[:500])
+    return {"ok": True, "article": article}
+
+
+@app.get("/api/admin/articles")
+def admin_list_articles(credentials: HTTPBasicCredentials = Depends(security)):
+    require_admin(credentials)
+    return {"ok": True, "items": read_json_file(ARTICLES_PATH, [])}
 
 
 @app.get("/api/status")
