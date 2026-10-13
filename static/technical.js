@@ -17,7 +17,9 @@
     const sub = document.getElementById("marketSub");
     if (!body || !notice || !sub) return;
     if (market !== "spot" && market !== "futures") {
-      notice.textContent = "فلتر EMA متعدد الفريمات متاح حاليًا لسبوت وفيوتشر Binance فقط؛ لا توجد بيانات فنية مختلقة لبقية الأسواق.";
+      body.innerHTML = '<tr><td colspan="5" class="empty">هذا السوق غير مربوط ببيانات شموع مباشرة حتى الآن.</td></tr>';
+      sub.textContent = "لا توجد بيانات فنية مباشرة لهذا السوق";
+      notice.textContent = "فلتر EMA متعدد الفريمات متاح حاليًا لسبوت وفيوتشر Binance فقط؛ تم مسح نتائج السوق السابق لمنع خلط البيانات.";
       return;
     }
     notice.textContent = "جاري فحص EMA50 وEMA200 على " + frameNames[interval] + " وتأكيد الاتجاه على الفريم الأعلى…";
