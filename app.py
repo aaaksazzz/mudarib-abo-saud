@@ -511,12 +511,19 @@ def build_signal(market: str, ticker: dict, interval: str):
     side = "BUY" if bullish_points > bearish_points else "SELL" if bearish_points > bullish_points else None
     if side is None:
         return None
-    score = int(100 * max(bullish_points, bearish_points) / 10)
-    if score < 60:
-        return None
-    # Require multiple independent confirmations; never claim every named method was fully proven by code.
+    # Evaluate every named-method rule and make method confluence part of eligibility and score.
+    method_hits = []
+    for method_name, method_key in METHOD_RULES.items():
+        try:
+            if method_signal(candles, ticker, method_key):
+                method_hits.append(method_name)
+        except (ValueError, TypeError, IndexError, ZeroDivisionError):
+            continue
     confirmations = bullish_points if side == "BUY" else bearish_points
-    if confirmations < 6:
+    directional_score = 100 * max(bullish_points, bearish_points) / 10
+    method_score = min(len(method_hits), 10) * 10
+    score = int(0.7 * directional_score + 0.3 * method_score)
+    if score < 60 or confirmations < 6 or len(method_hits) < 3:
         return None
     entry = price
     risk = max(atr * 1.5, entry * 0.002)
@@ -526,15 +533,7 @@ def build_signal(market: str, ticker: dict, interval: str):
         stop, t1, t2, t3 = entry+risk, entry-risk, entry-2*risk, entry-3*risk
     if min(stop, t1, t2, t3) <= 0:
         return None
-    # Evaluate the site's complete named-method rule set on the same real candles.
     # These are rule hits, not proof that every discretionary concept is fully automated.
-    method_hits = []
-    for method_name, method_key in METHOD_RULES.items():
-        try:
-            if method_signal(candles, ticker, method_key):
-                method_hits.append(method_name)
-        except (ValueError, TypeError, IndexError, ZeroDivisionError):
-            continue
     if side == "BUY":
         directional = ["EMA20 فوق EMA50" if e20 > e50 else "EMA20 دون EMA50",
                         "EMA50 فوق EMA200" if e50 > e200 else "EMA50 دون EMA200",
