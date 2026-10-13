@@ -212,7 +212,7 @@ def build_signal(market: str, ticker: dict, interval: str):
         stop, t1, t2, t3 = entry - risk, entry + risk, entry + 2*risk, entry + 3*risk
     else:
         stop, t1, t2, t3 = entry + risk, entry - risk, entry - 2*risk, entry - 3*risk
-    if stop <= 0 or (side == "BUY" and stop >= entry) or (side == "SELL" and stop <= entry):
+    if min(stop, t1, t2, t3) <= 0 or (side == "BUY" and stop >= entry) or (side == "SELL" and stop <= entry):
         return None
     spread = abs(e50 - e200) / entry * 100
     momentum = abs(closes[-1] - closes[-4]) / entry * 100 if len(closes) >= 4 else 0
