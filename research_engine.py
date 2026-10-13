@@ -929,8 +929,6 @@ def discover_method(market, timeframe, method_id):
         return []
     symbols=_symbols_for_market(market,[])
     if market in ("spot","futures"):symbols=[s for s in symbols if str(s).upper().endswith("USDT")]
-    if market=="us":
-        symbols=[s for s in symbols if _passes_volume_filter(s,market)]
     caps={"spot":120,"futures":120,"alpha":48,"us":80,"saudi":160,"contracts":20,"forex":34}
     if len(symbols)>caps.get(market,40):
         symbols=_rotating_batch(symbols,caps.get(market,40),market)
@@ -962,13 +960,16 @@ def _rotating_batch(symbols, size, market):
     return (symbols[offset:offset+size] + symbols[:max(0,offset+size-len(symbols))])
 
 def _us_universe(min_volume=0):
-    """Discover all available US-listed equities without a daily-volume cutoff."""
-    key="all_us_equities"; now=time.time(); cached=US_UNIVERSE_CACHE.get(key)
+    """Discover US-listed equities; apply the >1M daily-share gate at the screener, not by probing every ticker."""
+    minimum=max(0,int(min_volume or 0))
+    key="all_us_equities_volume_"+str(minimum); now=time.time(); cached=US_UNIVERSE_CACHE.get(key)
     if cached and now-cached[0]<900:return list(cached[1])
     symbols=[]; seen=set()
     try:
         for offset in range(0,10000,250):
-            body={"offset":offset,"size":250,"sortField":"dayvolume","sortType":"DESC","quoteType":"EQUITY","query":{"operator":"EQ","operands":["region","us"]}}
+            region={"operator":"EQ","operands":["region","us"]}
+            query=region if minimum<=0 else {"operator":"AND","operands":[region,{"operator":"GT","operands":["dayvolume",minimum]}]}
+            body={"offset":offset,"size":250,"sortField":"dayvolume","sortType":"DESC","quoteType":"EQUITY","query":query}
             req=urllib.request.Request("https://query1.finance.yahoo.com/v1/finance/screener",data=json.dumps(body).encode(),headers={"User-Agent":UA,"Content-Type":"application/json"},method="POST")
             raw=json.loads(urllib.request.urlopen(req,timeout=8).read().decode("utf-8","ignore"))
             quotes=(((raw.get("finance") or {}).get("result") or [{}])[0]).get("quotes") or []
@@ -981,9 +982,10 @@ def _us_universe(min_volume=0):
     except Exception as exc:
         print("[UNIVERSE] US screener partial/fallback",str(exc)[:100],flush=True)
     if not symbols:
-        symbols=list(BASE_UNIVERSE.get("us",[]))
+        fallback=list(BASE_UNIVERSE.get("us",[]))
+        symbols=[sym for sym in fallback if minimum<=0 or _passes_volume_filter(sym,"us")]
     US_UNIVERSE_CACHE[key]=(now,symbols)
-    print("[UNIVERSE] US equities discovered (no volume cutoff)",len(symbols),flush=True)
+    print("[UNIVERSE] US equities discovered",len(symbols),"minimum_daily_volume",minimum,flush=True)
     return list(symbols)
 
 def _saudi_universe(min_volume=0):
@@ -1026,7 +1028,7 @@ def _symbols_for_market(market,internet):
                 eligible.append(symbol)
         return list(dict.fromkeys(eligible))
     if market=="us":
-        base=_us_universe(0)
+        base=_us_universe(1000000)
     elif market=="saudi":
         # Apply the Saudi-only daily-volume rule after discovering all listed equities.
         base=["TASI"] + _saudi_universe(0)
@@ -1043,10 +1045,6 @@ def _public_scan(market,internet,timeframe="15m"):
     symbols=_symbols_for_market(market,internet)
     if market in ("spot","futures"):
         symbols=[s for s in symbols if str(s).upper().endswith("USDT")]
-    # Enforce liquidity before rotating/capping, so thinly traded US stocks cannot
-    # consume a scan slot and hide eligible names. Saudi/FX/gold/contracts stay open.
-    if market=="us":
-        symbols=[s for s in symbols if _passes_volume_filter(s,market)]
     # Spot and futures universes are already restricted to >1M USDT quote volume.
     caps={"spot":240,"futures":180,"alpha":48,"us":60,"saudi":28,"contracts":16,"forex":36}
     cap=caps.get(market,24)
