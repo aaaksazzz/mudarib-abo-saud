@@ -84,6 +84,21 @@ def candle_closes(market, symbol, interval):
     return [float(candle[4]) for candle in candles if len(candle) > 4]
 
 
+METHOD_SLUGS = {name.lower().replace(" / ", "-").replace(" ", "-").replace("/", "-"): name for name in [
+    "Price Action", "SMC", "ICT", "Order Flow", "BOS / CHOCH", "Liquidity Sweep", "FVG / Imbalance", "Retest", "VSA", "Market Regime", "Dow / MTF", "Support / Resistance", "Momentum", "Candlestick Analysis", "Chart Patterns", "Volume Profile", "VWAP", "Indicators", "Divergence", "Fibonacci", "Ichimoku", "Wyckoff", "Elliott Wave", "Harmonic Patterns", "Channels / Trendlines", "Quant / Statistical", "Gann", "Risk Management"
+]}
+
+
+@app.get("/analysis/{slug}", response_class=HTMLResponse)
+def standalone_method_page(slug: str):
+    method = METHOD_SLUGS.get(slug.lower())
+    if not method:
+        return HTMLResponse("<h1>المنهج غير موجود</h1><a href='/'>العودة للموقع</a>", status_code=404)
+    page = BASE / "static" / "method.html"
+    html = page.read_text(encoding="utf-8").replace("__METHOD_NAME__", method).replace("__METHOD_SLUG__", slug)
+    return HTMLResponse(html)
+
+
 @app.get("/", response_class=HTMLResponse)
 def home():
     page = BASE / "static" / "index.html"
@@ -245,11 +260,21 @@ def method_signal(candles, ticker, method_key):
     }
     if not rules.get(method_key, False):
         return None
-    # Direction is only inferred from actual candle movement; not every pattern is a trade.
+    # Entry/SL/TP are derived from the scanned candle and recent true range.
     side = "BUY" if last["close"] >= prev["close"] else "SELL"
-    return {**ticker, "side": side, "method": method_key,
-            "status": "اجتاز شرط المنهج (فحص آلي أولي)",
-            "change_pct": ticker["change_pct"]}
+    tr = [max(c[i]["high"]-c[i]["low"], abs(c[i]["high"]-c[i-1]["close"]), abs(c[i]["low"]-c[i-1]["close"])) for i in range(1, len(c))]
+    atr = sum(tr[-14:]) / max(1, len(tr[-14:]))
+    entry = last["close"]
+    risk = max(atr * 1.25, entry * 0.002)
+    stop, tp1, tp2, tp3 = ((entry-risk, entry+risk, entry+2*risk, entry+3*risk) if side == "BUY"
+                           else (entry+risk, entry-risk, entry-2*risk, entry-3*risk))
+    if stop <= 0 or min(tp1, tp2, tp3) <= 0:
+        return None
+    return {**ticker, "side": side, "method": method_key, "entry": entry, "stop": stop,
+            "tp1": tp1, "tp2": tp2, "tp3": tp3,
+            "stop_pct": abs(entry-stop)/entry*100, "tp1_pct": abs(tp1-entry)/entry*100,
+            "score": min(95, 60 + int(min(abs(entry-prev["close"])/entry*100, 3)*8)),
+            "status": "إشارة اجتازت شرط المنهج — تحقق آلي أولي", "change_pct": ticker["change_pct"]}
 
 
 @app.get("/api/methods/{market}")
