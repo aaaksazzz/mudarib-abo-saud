@@ -9,6 +9,7 @@ MAX_SOURCE_AGE=48*60*60
 MIN_CRYPTO_QUOTE_VOLUME=1_000_000.0
 CACHE={}
 ACTIVE_SIGNALS={}
+_VOLUME_TICKER_CACHE={}
 
 # Persistent opportunity store. Northflank mounts /data as the durable volume.
 # Keep a small per-market snapshot so detected trades survive refreshes/restarts.
@@ -1220,8 +1221,15 @@ def _passes_volume_filter(symbol, market):
         if market=="saudi":
             return True
         if market in ("spot","futures"):
-            q=_binance24(market=="futures") or []
-            row=next((x for x in q if str(x.get("symbol","")).upper()==str(symbol).upper()),None)
+            key=str(market)
+            cached=_VOLUME_TICKER_CACHE.get(key)
+            if not cached or time.time()-cached[0]>60:
+                rows=_binance24(market=="futures") or []
+                snapshot={str(x.get("symbol") or "").upper():x for x in rows}
+                _VOLUME_TICKER_CACHE[key]=(time.time(),snapshot)
+            else:
+                snapshot=cached[1]
+            row=snapshot.get(str(symbol).upper())
             return bool(row) and float(row.get("quoteVolume") or 0) > 1000000
         return True
     except Exception:
