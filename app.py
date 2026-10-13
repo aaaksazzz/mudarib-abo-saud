@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE = Path(__file__).resolve().parent
-app = FastAPI(title="التداول الذكي PRO", version="2.1.2")
+app = FastAPI(title="التداول الذكي PRO", version="2.1.3")
 security = HTTPBasic(auto_error=False)
 DATA_DIR = Path(os.getenv("DATA_DIR", "/tmp/smart-trading-pro-data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -129,7 +129,43 @@ def home():
 @app.get("/health")
 @app.get("/api/health")
 def health():
-    return {"ok": True, "service": "smart-trading-pro", "version": "2.1.2", "timestamp": int(time.time())}
+    return {"ok": True, "service": "smart-trading-pro", "version": "2.1.3", "timestamp": int(time.time())}
+
+
+def fetch_yahoo_quote(symbol: str):
+    """Fetch one public Yahoo Finance quote; source may be delayed."""
+    try:
+        from urllib.parse import quote
+        url = "https://query1.finance.yahoo.com/v8/finance/chart/" + quote(symbol, safe="") + "?range=5d&interval=1d"
+        chart = fetch_json(url, timeout=5).get("chart", {})
+        rows = chart.get("result") or []
+        if not rows:
+            return None
+        item = rows[0]
+        meta = item.get("meta") or {}
+        price = meta.get("regularMarketPrice")
+        previous = meta.get("chartPreviousClose") or meta.get("previousClose")
+        if price is None or previous in (None, 0):
+            closes = (item.get("indicators", {}).get("quote") or [{}])[0].get("close") or []
+            valid = [v for v in closes if v is not None]
+            if price is None and valid:
+                price = valid[-1]
+            if previous in (None, 0) and len(valid) >= 2:
+                previous = valid[-2]
+        if price is None:
+            return None
+        price = float(price)
+        previous = float(previous) if previous is not None else price
+        return {
+            "symbol": symbol, "name": YAHOO_LABELS.get(symbol, symbol.replace(".SR", "")),
+            "price": price,
+            "change_pct": ((price - previous) / previous * 100) if previous else 0.0,
+            "quote_volume": 0, "currency": meta.get("currency", ""),
+            "exchange": meta.get("fullExchangeName") or meta.get("exchangeName") or "Yahoo Finance",
+            "quote_time": meta.get("regularMarketTime"), "delayed": True,
+        }
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError, KeyError):
+        return None
 
 
 @app.get("/api/market/{market}")
@@ -141,39 +177,17 @@ def market_data(market: str, limit: int = Query(40, ge=1, le=100)):
         if cached and now - cached[0] < YAHOO_CACHE_TTL:
             data = cached[1]
         else:
+            # Query symbols concurrently so a slow quote cannot block the whole market page.
             data = []
-            for symbol in YAHOO_MARKETS[market]:
-                try:
-                    from urllib.parse import quote
-                    url = "https://query1.finance.yahoo.com/v8/finance/chart/" + quote(symbol, safe="") + "?range=5d&interval=1d"
-                    chart = fetch_json(url, timeout=5).get("chart", {})
-                    rows = chart.get("result") or []
-                    if not rows:
-                        continue
-                    item = rows[0]
-                    meta = item.get("meta") or {}
-                    price = meta.get("regularMarketPrice")
-                    previous = meta.get("chartPreviousClose") or meta.get("previousClose")
-                    if price is None or previous in (None, 0):
-                        closes = (item.get("indicators", {}).get("quote") or [{}])[0].get("close") or []
-                        valid = [v for v in closes if v is not None]
-                        if price is None and valid:
-                            price = valid[-1]
-                        if previous in (None, 0) and len(valid) >= 2:
-                            previous = valid[-2]
-                    if price is None:
-                        continue
-                    price = float(price)
-                    previous = float(previous) if previous is not None else price
-                    data.append({
-                        "symbol": symbol, "name": YAHOO_LABELS.get(symbol, symbol.replace(".SR", "")),
-                        "price": price, "change_pct": ((price - previous) / previous * 100) if previous else 0.0,
-                        "quote_volume": 0, "currency": meta.get("currency", ""),
-                        "exchange": meta.get("fullExchangeName") or meta.get("exchangeName") or "Yahoo Finance",
-                        "quote_time": meta.get("regularMarketTime"), "delayed": True,
-                    })
-                except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError, KeyError):
-                    continue
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                futures = [pool.submit(fetch_yahoo_quote, symbol) for symbol in YAHOO_MARKETS[market]]
+                for future in as_completed(futures):
+                    try:
+                        item = future.result()
+                    except Exception:
+                        item = None
+                    if item:
+                        data.append(item)
             if not data:
                 return JSONResponse({
                     "ok": False, "market": market, "live": False, "items": [],
@@ -187,7 +201,7 @@ def market_data(market: str, limit: int = Query(40, ge=1, le=100)):
     if market not in BINANCE:
         return JSONResponse({
             "ok": True, "market": market, "live": False, "items": [],
-            "message": "هذا السوق غير متاح من مصادر الأسعار الموصولة حاليًا؛ لم نعرض بيانات تقديرية."
+            "message": "هذا السوق غير مربوط بمصدر بيانات حاليًا؛ لم نعرض أسعارًا تقديرية."
         })
     now = time.time()
     cached = CACHE.get(market)
@@ -481,6 +495,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
             continue
         record["last_price"] = price_now
         side = record.get("side")
+        direction = 1 if side == "BUY" else -1
+        record["pnl_pct"] = round((price_now - record["entry"]) / record["entry"] * 100 * direction, 4)
         hit = None
         if side == "BUY":
             if price_now <= record["stop"]: hit = "SL"
@@ -495,7 +511,6 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         if hit:
             record["result"] = hit
             record["closed_at"] = int(now)
-            record["pnl_pct"] = round((price_now-record["entry"])/record["entry"]*100 * (1 if side == "BUY" else -1), 4)
     for item in found:
         ident = (market, interval, item["symbol"])
         if ident in active_keys:
