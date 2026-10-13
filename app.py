@@ -3,40 +3,93 @@ import os
 import time
 import urllib.request
 import urllib.error
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from fastapi import FastAPI, Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE = Path(__file__).resolve().parent
-app = FastAPI(title="التداول الذكي PRO", version="2.0.0")
+app = FastAPI(title="التداول الذكي PRO", version="2.1.0")
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
 BINANCE = {
     "spot": "https://api.binance.com/api/v3/ticker/24hr",
     "futures": "https://fapi.binance.com/fapi/v1/ticker/24hr",
 }
+KLINES = {
+    "spot": "https://api.binance.com/api/v3/klines",
+    "futures": "https://fapi.binance.com/fapi/v1/klines",
+}
 CACHE = {}
 CACHE_TTL = 20
+TECH_CACHE = {}
+TECH_CACHE_TTL = 90
 STABLES = {"USDC", "USDT", "BUSD", "FDUSD", "TUSD", "DAI", "USDP", "USDE"}
+INTERVALS = {"15m", "1h", "4h", "1d", "1w", "1M"}
+HIGHER_INTERVAL = {"15m": "1h", "1h": "4h", "4h": "1d", "1d": "1w", "1w": "1M", "1M": "1M"}
 
 
 def fetch_json(url: str, timeout: int = 8):
-    req = urllib.request.Request(url, headers={"User-Agent": "SmartTradingPro/2.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "SmartTradingPro/2.1"})
     with urllib.request.urlopen(req, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def ema(values, period):
+    if len(values) < period:
+        return None
+    alpha = 2 / (period + 1)
+    value = sum(values[:period]) / period
+    for item in values[period:]:
+        value = item * alpha + value * (1 - alpha)
+    return value
+
+
+def market_tickers(market):
+    raw = fetch_json(BINANCE[market])
+    rows = []
+    for item in raw:
+        symbol = str(item.get("symbol", ""))
+        if not symbol.endswith("USDT"):
+            continue
+        base = symbol[:-4]
+        if base in STABLES:
+            continue
+        try:
+            price = float(item.get("lastPrice") or 0)
+            change = float(item.get("priceChangePercent") or 0)
+            quote_volume = float(item.get("quoteVolume") or 0)
+        except (TypeError, ValueError):
+            continue
+        if price <= 0 or quote_volume < 1_000_000:
+            continue
+        rows.append({"symbol": symbol, "price": price, "change_pct": change, "quote_volume": quote_volume})
+    rows.sort(key=lambda x: x["quote_volume"], reverse=True)
+    return rows
+
+
+def candle_closes(market, symbol, interval):
+    from urllib.parse import urlencode
+    url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 220})
+    candles = fetch_json(url, timeout=7)
+    return [float(candle[4]) for candle in candles if len(candle) > 4]
 
 
 @app.get("/", response_class=HTMLResponse)
 def home():
     page = BASE / "static" / "index.html"
-    return HTMLResponse(page.read_text(encoding="utf-8"))
+    html = page.read_text(encoding="utf-8")
+    # Keep the interactive technical filter separate from the main page markup.
+    if 'src="/static/technical.js"' not in html:
+        html = html.replace("</body>", '<script src="/static/technical.js?v=2.1"></script></body>')
+    return HTMLResponse(html)
 
 
 @app.get("/health")
 @app.get("/api/health")
 def health():
-    return {"ok": True, "service": "smart-trading-pro", "version": "2.0.0", "timestamp": int(time.time())}
+    return {"ok": True, "service": "smart-trading-pro", "version": "2.1.0", "timestamp": int(time.time())}
 
 
 @app.get("/api/market/{market}")
@@ -53,36 +106,66 @@ def market_data(market: str, limit: int = Query(40, ge=1, le=100)):
         data = cached[1]
     else:
         try:
-            raw = fetch_json(BINANCE[market])
-            rows = []
-            for item in raw:
-                symbol = str(item.get("symbol", ""))
-                if not symbol.endswith("USDT"):
-                    continue
-                base = symbol[:-4]
-                if base in STABLES:
-                    continue
-                try:
-                    price = float(item.get("lastPrice") or 0)
-                    change = float(item.get("priceChangePercent") or 0)
-                    quote_volume = float(item.get("quoteVolume") or 0)
-                except (TypeError, ValueError):
-                    continue
-                if price <= 0 or quote_volume < 1_000_000:
-                    continue
-                rows.append({
-                    "symbol": symbol, "price": price, "change_pct": change,
-                    "quote_volume": quote_volume,
-                })
-            rows.sort(key=lambda x: x["quote_volume"], reverse=True)
-            data = rows
+            data = market_tickers(market)
             CACHE[market] = (now, data)
-        except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError):
             return JSONResponse({
                 "ok": False, "market": market, "live": False, "items": [],
                 "message": "تعذر جلب الأسعار المباشرة الآن. حاول التحديث بعد قليل."
             }, status_code=503)
     return {"ok": True, "market": market, "live": True, "updated_at": int(now), "items": data[:limit]}
+
+
+@app.get("/api/technical/{market}")
+def technical_filter(market: str, interval: str = Query("15m"), limit: int = Query(12, ge=1, le=20)):
+    market = market.lower()
+    if market not in BINANCE:
+        return JSONResponse({"ok": False, "live": False, "items": [], "message": "الفلتر الفني متاح حاليًا لسبوت وفيوتشر Binance فقط."})
+    if interval not in INTERVALS:
+        return JSONResponse({"ok": False, "live": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
+    cache_key = (market, interval, limit)
+    now = time.time()
+    cached = TECH_CACHE.get(cache_key)
+    if cached and now - cached[0] < TECH_CACHE_TTL:
+        return cached[1]
+    try:
+        tickers = market_tickers(market)[:limit]
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+        return JSONResponse({"ok": False, "live": False, "items": [], "message": "تعذر جلب بيانات السوق المباشرة."}, status_code=503)
+
+    higher = HIGHER_INTERVAL[interval]
+    def analyze(ticker):
+        try:
+            closes, higher_closes = None, None
+            closes = candle_closes(market, ticker["symbol"], interval)
+            higher_closes = closes if higher == interval else candle_closes(market, ticker["symbol"], higher)
+            e50, e200 = ema(closes, 50), ema(closes, 200)
+            h50, h200 = ema(higher_closes, 50), ema(higher_closes, 200)
+            if None in (e50, e200, h50, h200):
+                return None
+            eligible = ticker["price"] > e200 and e50 > e200 and h50 > h200
+            return {**ticker, "ema50": e50, "ema200": e200, "higher_interval": higher,
+                    "higher_ema50": h50, "higher_ema200": h200, "eligible": eligible}
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError, IndexError, TypeError):
+            return None
+
+    analyzed = []
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = [pool.submit(analyze, ticker) for ticker in tickers]
+        for future in as_completed(futures):
+            item = future.result()
+            if item is not None:
+                analyzed.append(item)
+    analyzed.sort(key=lambda x: x["quote_volume"], reverse=True)
+    eligible_items = [item for item in analyzed if item["eligible"]]
+    result = {
+        "ok": True, "live": True, "market": market, "interval": interval,
+        "higher_interval": higher, "scanned": len(tickers), "analyzed": len(analyzed),
+        "updated_at": int(now), "items": eligible_items,
+        "message": "شرط الاتجاه: السعر فوق EMA200 وEMA50 فوق EMA200 على الفريم المختار، مع تأكيد EMA50 فوق EMA200 على الفريم الأعلى. هذا فلتر اتجاه وليس ضمان ربح."
+    }
+    TECH_CACHE[cache_key] = (now, result)
+    return result
 
 
 @app.get("/api/status")
