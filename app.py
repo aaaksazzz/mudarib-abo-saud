@@ -262,9 +262,44 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
     for i, item in enumerate(found):
         item["rank"] = i + 1
         item["medal"] = medals[i] if i < 3 else "standard"
+    history = read_json_file(RESULTS_PATH, [])
+    active_keys = {(x.get("market"), x.get("interval"), x.get("symbol")) for x in history if x.get("result") == "مفتوحة"}
+    ticker_prices = {x["symbol"]: x["price"] for x in tickers}
+    for record in history:
+        if record.get("result") != "مفتوحة" or record.get("market") != market or record.get("interval") != interval:
+            continue
+        price_now = ticker_prices.get(record.get("symbol"))
+        if not price_now:
+            continue
+        record["last_price"] = price_now
+        side = record.get("side")
+        hit = None
+        if side == "BUY":
+            if price_now <= record["stop"]: hit = "SL"
+            elif price_now >= record["tp3"]: hit = "TP3"
+            elif price_now >= record["tp2"]: record["reached"] = "TP2"
+            elif price_now >= record["tp1"]: record["reached"] = "TP1"
+        else:
+            if price_now >= record["stop"]: hit = "SL"
+            elif price_now <= record["tp3"]: hit = "TP3"
+            elif price_now <= record["tp2"]: record["reached"] = "TP2"
+            elif price_now <= record["tp1"]: record["reached"] = "TP1"
+        if hit:
+            record["result"] = hit
+            record["closed_at"] = int(now)
+            record["pnl_pct"] = round((price_now-record["entry"])/record["entry"]*100 * (1 if side == "BUY" else -1), 4)
+    for item in found:
+        ident = (market, interval, item["symbol"])
+        if ident in active_keys:
+            continue
+        history.append({**item, "id": str(int(now*1000)) + "-" + item["symbol"], "created_at": int(now),
+                        "last_price": ticker_prices.get(item["symbol"], item["entry"]), "result": "مفتوحة",
+                        "reached": None, "pnl_pct": 0.0})
+        active_keys.add(ident)
+    write_json_file(RESULTS_PATH, history[-1000:])
     result = {"ok": True, "live": True, "market": market, "interval": interval,
               "scanned": len(tickers), "count": len(found), "updated_at": int(now),
-              "items": found, "message": "مستويات الدخول والوقف والأهداف محسوبة من شموع Binance وATR. درجة التوافق تقدير فني وليست احتمال ربح مثبتًا. لا تتوفر نتائج تاريخية موثقة لهذه الإشارات بعد."}
+              "items": found, "message": "الدخول والوقف والأهداف محسوبة من شموع Binance وATR. سجل النتائج يعتمد على السعر المرصود عند تحديث الخدمة، وليس سجل تداول لحظي كاملًا؛ لا توجد نسبة ربح تاريخية موثقة."}
     SIGNAL_CACHE[key] = (now, result)
     return result
 
