@@ -623,4 +623,16 @@ def admin_list_articles(credentials: HTTPBasicCredentials = Depends(security)):
 
 @app.get("/api/status")
 def status():
-    return {"ok": True, "site": "ready", "markets": {"spot": "live", "futures": "live", "alpha": "not_connected", "contracts": "not_connected", "us": "not_connected", "saudi": "not_connected", "forex": "not_connected", "gold": "not_connected"}}
+    return {
+        "ok": True, "site": "ready",
+        "markets": {
+            "spot": "live_binance", "futures": "live_binance",
+            "alpha": "not_connected",
+            "contracts": "public_quotes_may_be_delayed",
+            "us": "public_quotes_may_be_delayed",
+            "saudi": "public_quotes_may_be_delayed",
+            "forex": "public_quotes_may_be_delayed",
+            "gold": "included_in_forex_quotes"
+        },
+        "note": "Yahoo Finance returns last available public quotes for selected symbols; these may be delayed. This endpoint does not claim full-universe or execution-grade real-time coverage."
+    }
