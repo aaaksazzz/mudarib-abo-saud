@@ -186,7 +186,7 @@ def robots_txt():
 @app.get("/sitemap.xml", response_class=HTMLResponse)
 def sitemap_xml():
     from xml.sax.saxutils import escape as xml_escape
-    urls = [(SEO_BASE_URL + "/", "daily", "1.0"), (SEO_BASE_URL + "/blog", "weekly", "0.9")]
+    urls = [(SEO_BASE_URL + "/", "daily", "1.0"), (SEO_BASE_URL + "/blog", "weekly", "0.9")] + [(SEO_BASE_URL + p, "daily", "0.8") for p in ["/markets/spot", "/markets/futures", "/markets/contracts", "/markets/us-stocks", "/markets/saudi", "/markets/forex-gold", "/markets/alpha", "/radar", "/gold", "/results", "/news"]]
     urls.extend((SEO_BASE_URL + "/blog/" + p["slug"], "monthly", "0.7") for p in SEO_POSTS)
     urls.extend((SEO_BASE_URL + "/blog/" + str(p.get("slug") or p.get("id")), "monthly", "0.6") for p in read_json_file(ARTICLES_PATH, []) if p.get("slug") or p.get("id"))
     urls.extend((SEO_BASE_URL + "/analysis/" + slug, "monthly", "0.6") for slug in METHOD_SLUGS)
@@ -232,6 +232,30 @@ def home():
     page = BASE / "static" / "index.html"
     html = page.read_text(encoding="utf-8")
     # Keep the interactive technical filter separate from the main page markup.
+    if 'src="/static/technical.js"' not in html:
+        html = html.replace("</body>", '<script src="/static/technical.js?v=2.1"></script></body>')
+    return HTMLResponse(html)
+
+
+
+
+# Serve the same app shell at stable, section-specific URLs so each page can be bookmarked/shared.
+@app.get("/markets/spot", response_class=HTMLResponse)
+@app.get("/markets/futures", response_class=HTMLResponse)
+@app.get("/markets/contracts", response_class=HTMLResponse)
+@app.get("/markets/us-stocks", response_class=HTMLResponse)
+@app.get("/markets/saudi", response_class=HTMLResponse)
+@app.get("/markets/forex-gold", response_class=HTMLResponse)
+@app.get("/markets/alpha", response_class=HTMLResponse)
+@app.get("/radar", response_class=HTMLResponse)
+@app.get("/gold", response_class=HTMLResponse)
+@app.get("/results", response_class=HTMLResponse)
+@app.get("/news", response_class=HTMLResponse)
+@app.get("/account", response_class=HTMLResponse)
+@app.get("/admin", response_class=HTMLResponse)
+def section_page():
+    page = BASE / "static" / "index.html"
+    html = page.read_text(encoding="utf-8")
     if 'src="/static/technical.js"' not in html:
         html = html.replace("</body>", '<script src="/static/technical.js?v=2.1"></script></body>')
     return HTMLResponse(html)
