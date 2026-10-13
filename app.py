@@ -170,6 +170,105 @@ def technical_filter(market: str, interval: str = Query("15m"), limit: int = Que
     return result
 
 
+SIGNAL_CACHE = {}
+SIGNAL_CACHE_TTL = 75
+
+
+def candle_data(market: str, symbol: str, interval: str):
+    from urllib.parse import urlencode
+    url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 220})
+    raw = fetch_json(url, timeout=8)
+    return [{"high": float(k[2]), "low": float(k[3]), "close": float(k[4])}
+            for k in raw if len(k) > 4]
+
+
+def build_signal(market: str, ticker: dict, interval: str):
+    candles = candle_data(market, ticker["symbol"], interval)
+    if len(candles) < 205:
+        return None
+    closes = [k["close"] for k in candles]
+    e50, e200 = ema(closes, 50), ema(closes, 200)
+    if e50 is None or e200 is None:
+        return None
+    # ATR-based risk levels from actual Binance candles; not a guaranteed outcome.
+    tr = []
+    for i in range(1, len(candles)):
+        cur, prev = candles[i], candles[i - 1]
+        tr.append(max(cur["high"] - cur["low"], abs(cur["high"] - prev["close"]),
+                      abs(cur["low"] - prev["close"])))
+    atr = sum(tr[-14:]) / min(14, len(tr))
+    price = closes[-1]
+    if atr <= 0 or price <= 0:
+        return None
+    if e50 > e200 and price > e50 and closes[-1] >= closes[-2]:
+        side = "BUY"
+    elif market == "futures" and e50 < e200 and price < e50 and closes[-1] <= closes[-2]:
+        side = "SELL"
+    else:
+        return None
+    entry = price
+    risk = atr * 1.5
+    if side == "BUY":
+        stop, t1, t2, t3 = entry - risk, entry + risk, entry + 2*risk, entry + 3*risk
+    else:
+        stop, t1, t2, t3 = entry + risk, entry - risk, entry - 2*risk, entry - 3*risk
+    if stop <= 0 or (side == "BUY" and stop >= entry) or (side == "SELL" and stop <= entry):
+        return None
+    spread = abs(e50 - e200) / entry * 100
+    momentum = abs(closes[-1] - closes[-4]) / entry * 100 if len(closes) >= 4 else 0
+    score = min(94, max(60, int(65 + min(spread, 2.0)*7 + min(momentum, 2.0)*4)))
+    risk_pct = abs(entry - stop) / entry * 100
+    return {
+        "symbol": ticker["symbol"], "side": side, "market": market, "interval": interval,
+        "entry": entry, "stop": stop, "tp1": t1, "tp2": t2, "tp3": t3,
+        "stop_pct": risk_pct, "tp1_pct": abs(t1-entry)/entry*100,
+        "tp2_pct": abs(t2-entry)/entry*100, "tp3_pct": abs(t3-entry)/entry*100,
+        "score": score, "quote_volume": ticker["quote_volume"], "updated_at": int(time.time()),
+        "method": "اتجاه EMA50/200 + تأكيد حركة الشمعة",
+        "status": "مراقبة — لم يُسجّل تحقق هدف أو وقف"
+    }
+
+
+@app.get("/api/signals/{market}")
+def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(12, ge=1, le=20)):
+    market = market.lower()
+    if market not in BINANCE:
+        return JSONResponse({"ok": False, "live": False, "items": [],
+                             "message": "مصدر هذا السوق غير مربوط؛ لا يمكن إنشاء صفقات فعلية."})
+    if interval not in INTERVALS:
+        return JSONResponse({"ok": False, "live": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
+    key = (market, interval, limit)
+    now = time.time()
+    cached = SIGNAL_CACHE.get(key)
+    if cached and now - cached[0] < SIGNAL_CACHE_TTL:
+        return cached[1]
+    try:
+        tickers = market_tickers(market)[:limit]
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+        return JSONResponse({"ok": False, "live": False, "items": [], "message": "تعذر جلب أسعار السوق الآن."}, status_code=503)
+
+    found = []
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        jobs = [pool.submit(build_signal, market, ticker, interval) for ticker in tickers]
+        for job in as_completed(jobs):
+            try:
+                item = job.result()
+                if item:
+                    found.append(item)
+            except (urllib.error.URLError, TimeoutError, ValueError, OSError, IndexError, TypeError, ZeroDivisionError):
+                continue
+    found.sort(key=lambda x: (x["score"], x["quote_volume"]), reverse=True)
+    medals = ["gold", "silver", "bronze"]
+    for i, item in enumerate(found):
+        item["rank"] = i + 1
+        item["medal"] = medals[i] if i < 3 else "standard"
+    result = {"ok": True, "live": True, "market": market, "interval": interval,
+              "scanned": len(tickers), "count": len(found), "updated_at": int(now),
+              "items": found, "message": "مستويات الدخول والوقف والأهداف محسوبة من شموع Binance وATR. درجة التوافق تقدير فني وليست احتمال ربح مثبتًا. لا تتوفر نتائج تاريخية موثقة لهذه الإشارات بعد."}
+    SIGNAL_CACHE[key] = (now, result)
+    return result
+
+
 @app.get("/api/status")
 def status():
     return {"ok": True, "site": "ready", "markets": {"spot": "live", "futures": "live", "alpha": "not_connected", "contracts": "not_connected", "us": "not_connected", "saudi": "not_connected", "forex": "not_connected", "gold": "not_connected"}}
