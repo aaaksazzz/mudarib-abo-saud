@@ -527,6 +527,16 @@ def build_signal(market: str, ticker: dict, interval: str):
     if min(stop, t1, t2, t3) <= 0:
         return None
     active = [name for name, passed in tests.items() if passed]
+    # Evaluate the site's complete named-method rule set on the same real candles.
+    # These are rule hits, not proof that every discretionary concept is fully automated.
+    method_hits = []
+    for method_name, method_key in METHOD_RULES.items():
+        try:
+            if method_signal(candles, ticker, method_key):
+                method_hits.append(method_name)
+        except (ValueError, TypeError, IndexError, ZeroDivisionError):
+            continue
+    active = list(dict.fromkeys(active + method_hits))
     return {
         "symbol": ticker["symbol"], "side": side, "market": market, "interval": interval,
         "entry": entry, "stop": stop, "tp1": t1, "tp2": t2, "tp3": t3,
