@@ -1039,10 +1039,11 @@ def _public_scan(market,internet,timeframe="15m"):
     symbols=_symbols_for_market(market,internet)
     if market in ("spot","futures"):
         symbols=[s for s in symbols if str(s).upper().endswith("USDT")]
-    # Scan a bounded batch per refresh, but rotate across the entire eligible
-    # universe so symbols beyond the first page are not permanently ignored.
-    # Keep the small Northflank service responsive while progressively covering
-    # discovered US/Saudi equities, crypto pairs, contracts and FX instruments.
+    # Enforce liquidity before rotating/capping, so thinly traded US stocks cannot
+    # consume a scan slot and hide eligible names. Saudi/FX/gold/contracts stay open.
+    if market=="us":
+        symbols=[s for s in symbols if _passes_volume_filter(s,market)]
+    # Spot and futures universes are already restricted to >1M USDT quote volume.
     caps={"spot":240,"futures":180,"alpha":48,"us":60,"saudi":28,"contracts":16,"forex":36}
     cap=caps.get(market,24)
     if len(symbols)>cap:
@@ -1050,9 +1051,6 @@ def _public_scan(market,internet,timeframe="15m"):
             q=dict(_crypto_universe(market))
             symbols=sorted(symbols,key=lambda s:q.get(s,0),reverse=True)
         symbols=_rotating_batch(symbols,cap,market)
-    # Apply US volume threshold only to this refresh batch; Saudi equities stay open.
-    if market=="us":
-        symbols=[s for s in symbols if _passes_volume_filter(s,market)]
     out=[]
     with ThreadPoolExecutor(max_workers=8) as pool:
         jobs={pool.submit(_analyze_symbol,s,market,timeframe):s for s in symbols}
@@ -1072,6 +1070,9 @@ def _public_scan(market,internet,timeframe="15m"):
                 except Exception:
                     a=None
             if not a or a.get("side") not in {"BUY","SELL"}:continue
+            # Require the exact higher-timeframe SMA50/SMA200 agreement selected by the user.
+            if not _trend_alignment(jobs[fut],market,timeframe,str(a.get("side") or "").upper()):
+                continue
             # Validate published levels: never expose negative targets or a stop on the wrong side.
             entry=float(a.get("entry") or a.get("price") or 0)
             side=str(a.get("side") or "").upper()
@@ -1102,8 +1103,20 @@ def _public_scan(market,internet,timeframe="15m"):
                 if people_side != a["side"]:
                     final_score -= min(10.0,mentions*2.0)
             final_score=max(0.0,min(100.0,final_score))
+            # Rank the surviving setups by recent price change in the trade direction.
+            try:
+                if market in ("spot","futures"):
+                    ticker_rows=_binance24(market=="futures")
+                    ticker=next((z for z in ticker_rows if str(z.get("symbol") or "").upper()==sym.upper()),{})
+                    raw_change=float(ticker.get("priceChangePercent") or 0)
+                else:
+                    daily=_yahoo(sym,market,"1d",3) or []
+                    raw_change=((float(daily[-1]["close"])/float(daily[-2]["close"]))-1)*100 if len(daily)>1 and float(daily[-2]["close"]) else 0.0
+                directed_change=raw_change if a["side"]=="BUY" else -raw_change
+            except Exception:
+                raw_change=0.0; directed_change=0.0
             out.append({
-                "symbol":sym,"direction":a["side"],"side":a["side"],"timeframe":timeframe,"signal_label":a.get("signal_label"),
+                "symbol":sym,"direction":a["side"],"side":a["side"],"timeframe":timeframe,"change_pct":round(raw_change,3),"directed_change_pct":round(directed_change,3),"signal_label":a.get("signal_label"),
                 "entry":a.get("entry"),"targets":a.get("targets"),
                 "tp1":a.get("tp1"),"tp2":a.get("tp2"),"tp3":a.get("tp3"),"sl":a.get("sl"),
                 "ai_pct":round(final_score,1),
@@ -1120,6 +1133,7 @@ def _public_scan(market,internet,timeframe="15m"):
                 "price_source":"public market data",
                 "reason":"توجه الناس والتوصيات أولاً، ثم تجميع مناهج التحليل السعري بدون مؤشرات فنية"
             })
+    out.sort(key=lambda x:(-float(x.get("directed_change_pct") or 0),-float(x.get("recommendation_score") or x.get("ai_pct") or 0)))
     return out
 
 
@@ -1191,21 +1205,48 @@ def _external_trade_fields(text):
 
 
 def _passes_volume_filter(symbol, market):
-    """US stocks require more than 1M shares in daily volume; Saudi stocks have no volume cutoff."""
+    """Require >1M daily traded volume for US stocks and Binance Spot/Futures coins; Saudi and other markets remain unrestricted."""
     try:
         if market=="us":
-            q=_yahoo(symbol,market,"1d") or []
-            if not q: return False
-            return float(q[-1].get("volume") or 0) > 1000000
+            q=_yahoo(symbol,market,"1d",3) or []
+            return bool(q) and float(q[-1].get("volume") or 0) > 1000000
         if market=="saudi":
             return True
-        if market=="spot":
-            q=_binance24(False) or []
+        if market in ("spot","futures"):
+            q=_binance24(market=="futures") or []
             row=next((x for x in q if str(x.get("symbol","")).upper()==str(symbol).upper()),None)
-            return float((row or {}).get("quoteVolume") or (row or {}).get("volume") or 0) > 1000000
+            return bool(row) and float(row.get("quoteVolume") or 0) > 1000000
         return True
     except Exception:
         return False
+
+
+def _trend_alignment(symbol, market, timeframe, side):
+    """Apply the requested dual-timeframe SMA50/SMA200 trend confirmation."""
+    pairs={"15m":("15m","4h"),"1h":("1h","1d"),"4h":("4h","1w"),"1d":("1d","1M")}
+    frames=pairs.get(str(timeframe))
+    if not frames or side not in {"BUY","SELL"}:
+        return False
+    for frame in frames:
+        try:
+            if market=="alpha":
+                candles=_alpha_klines(symbol,frame,limit=260)
+            elif market in ("spot","futures"):
+                candles=_candles(_crypto_klines(symbol,market,frame,260))
+            else:
+                candles=_yahoo(symbol,market,frame,260)
+            closes=[float(c.get("close") or 0) for c in candles if float(c.get("close") or 0)>0]
+            # Do not silently waive a requested 200-period confirmation when history is unavailable.
+            if len(closes)<200:
+                return False
+            ma50=sum(closes[-50:])/50.0
+            ma200=sum(closes[-200:])/200.0
+            bullish=ma50>ma200
+            if (side=="BUY" and not bullish) or (side=="SELL" and bullish) or ma50==ma200:
+                return False
+        except Exception:
+            return False
+    return True
 
 def discover(market,timeframe="15m"):
     """Combine per-timeframe public analysis with external recommendation coverage."""
