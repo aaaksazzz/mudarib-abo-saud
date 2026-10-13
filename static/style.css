@@ -172,3 +172,34 @@ form button[type=submit],form .primary{margin-top:8px}
 .trade-tracking-card.rank-bronze .trade-rank{color:#f4f7fb!important}
 .trade-tracking-card.rank-silver:before{content:"المركز الثاني";position:absolute;top:0;left:0;padding:5px 10px;border-radius:0 0 12px 0;background:linear-gradient(135deg,#e1e5eb,#8c96a5);color:#151a22;font-size:11px;font-weight:900}
 .trade-tracking-card.rank-bronze:before{content:"المركز الثالث";position:absolute;top:0;left:0;padding:5px 10px;border-radius:0 0 12px 0;background:linear-gradient(135deg,#fff,#d9e0e8);color:#151a22;font-size:11px;font-weight:900}
+
+
+/* Mobile navigation readability fix: keep the drawer opaque over page content. */
+@media (max-width: 760px) {
+  .sidebar {
+    background: #071321 !important;
+    background-color: #071321 !important;
+    opacity: 1 !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+    z-index: 120 !important;
+    box-shadow: -18px 0 48px rgba(0, 0, 0, .65) !important;
+    border-left: 1px solid #29415c !important;
+    isolation: isolate;
+  }
+  .sidebar .nav-item {
+    color: #f1f5f9 !important;
+    background: #0c1b2b !important;
+    border-color: #24384d !important;
+  }
+  .sidebar .nav-item span,
+  .sidebar .side-title,
+  .sidebar .nav-label {
+    opacity: 1 !important;
+  }
+  .overlay.show {
+    z-index: 110 !important;
+    background: rgba(0, 0, 0, .72) !important;
+    backdrop-filter: none !important;
+  }
+}
