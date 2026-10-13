@@ -7,7 +7,8 @@ import urllib.request
 import urllib.error
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from fastapi import FastAPI, Query, Depends, HTTPBasic, HTTPBasicCredentials
+from fastapi import FastAPI, Query, Depends
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
