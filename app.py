@@ -526,7 +526,6 @@ def build_signal(market: str, ticker: dict, interval: str):
         stop, t1, t2, t3 = entry+risk, entry-risk, entry-2*risk, entry-3*risk
     if min(stop, t1, t2, t3) <= 0:
         return None
-    active = [name for name, passed in tests.items() if passed]
     # Evaluate the site's complete named-method rule set on the same real candles.
     # These are rule hits, not proof that every discretionary concept is fully automated.
     method_hits = []
@@ -536,7 +535,23 @@ def build_signal(market: str, ticker: dict, interval: str):
                 method_hits.append(method_name)
         except (ValueError, TypeError, IndexError, ZeroDivisionError):
             continue
-    active = list(dict.fromkeys(active + method_hits))
+    if side == "BUY":
+        directional = ["EMA20 فوق EMA50" if e20 > e50 else "EMA20 دون EMA50",
+                        "EMA50 فوق EMA200" if e50 > e200 else "EMA50 دون EMA200",
+                        "السعر فوق EMA200" if price > e200 else "السعر دون EMA200"]
+        if price > prior_high: directional.append("كسر قمة 20 شمعة")
+        if lows[-1] < prior_low and price > prior_low: directional.append("سحب سيولة القاع")
+        if bullish: directional.append("شمعة صاعدة")
+    else:
+        directional = ["EMA20 دون EMA50" if e20 < e50 else "EMA20 فوق EMA50",
+                        "EMA50 دون EMA200" if e50 < e200 else "EMA50 فوق EMA200",
+                        "السعر دون EMA200" if price < e200 else "السعر فوق EMA200"]
+        if price < prior_low: directional.append("كسر قاع 20 شمعة")
+        if highs[-1] > prior_high and price < prior_high: directional.append("رفض القمة / سحب سيولة")
+        if bearish: directional.append("شمعة هابطة")
+    if avg_vol > 0 and volumes[-1] >= avg_vol * 1.5:
+        directional.append("تأكيد حجم التداول")
+    active = list(dict.fromkeys(directional + method_hits))
     return {
         "symbol": ticker["symbol"], "side": side, "market": market, "interval": interval,
         "entry": entry, "stop": stop, "tp1": t1, "tp2": t2, "tp3": t3,
