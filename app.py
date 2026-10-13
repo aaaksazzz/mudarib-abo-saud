@@ -56,9 +56,29 @@ HIGHER_INTERVAL = {"15m": "1h", "1h": "4h", "4h": "1d", "1d": "1w", "1w": "1M", 
 
 
 def fetch_json(url: str, timeout: int = 8):
-    req = urllib.request.Request(url, headers={"User-Agent": "SmartTradingPro/2.1"})
-    with urllib.request.urlopen(req, timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8"))
+    """Fetch JSON with ordered standby hosts for the public market-data providers."""
+    from urllib.parse import urlsplit, urlunsplit
+    parsed = urlsplit(url)
+    host = parsed.netloc.lower()
+    fallback_hosts = {
+        "api.binance.com": ["api1.binance.com", "api2.binance.com", "api3.binance.com"],
+        "api1.binance.com": ["api.binance.com", "api2.binance.com", "api3.binance.com"],
+        "fapi.binance.com": ["fapi1.binance.com", "fapi2.binance.com"],
+        "query1.finance.yahoo.com": ["query2.finance.yahoo.com", "query3.finance.yahoo.com"],
+    }
+    hosts = [host] + fallback_hosts.get(host, [])
+    last_error = None
+    for candidate in hosts:
+        candidate_url = urlunsplit((parsed.scheme, candidate, parsed.path, parsed.query, parsed.fragment))
+        req = urllib.request.Request(candidate_url, headers={"User-Agent": "Mozilla/5.0 SmartTradingPro/2.2"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            last_error = exc
+    if last_error:
+        raise last_error
+    raise urllib.error.URLError("All configured market data providers failed")
 
 
 def ema(values, period):
@@ -326,8 +346,8 @@ def method_signal(candles, ticker, method_key):
         "candlestick": candle_range > 0 and (body / candle_range >= 0.65 or body / candle_range <= 0.15),
         "chart_patterns": (last["close"] > prior_high) or (last["close"] < prior_low),
         "volume_profile": avg_vol > 0 and volumes[-1] > avg_vol * 1.2,
-        "vwap": sum(x["close"] * x["volume"] for x in c[-20:]) / max(sum(x["volume"] for x in c[-20:]), 1e-12) != 0,
-        "indicators": e20 is not None and e50 is not None and e20 != e50,
+        "vwap": last["close"] > (sum(x["close"] * x["volume"] for x in c[-20:]) / max(sum(x["volume"] for x in c[-20:]), 1e-12)) if sum(x["volume"] for x in c[-20:]) > 0 else False,
+        "indicators": e20 is not None and e50 is not None and ((last["close"] > e20 > e50) or (last["close"] < e20 < e50)),
         "divergence": (closes[-1] > closes[-5] and closes[-5] < closes[-9]) or (closes[-1] < closes[-5] and closes[-5] > closes[-9]),
         "fibonacci": abs(last["close"] - (max(highs[-30:]) - (max(highs[-30:])-min(lows[-30:]))*0.618)) / max(last["close"], 1e-12) < 0.01,
         "ichimoku": e20 is not None and e50 is not None and ((last["close"] > e20 and e20 > e50) or (last["close"] < e20 and e20 < e50)),
@@ -521,9 +541,12 @@ def build_signal(market: str, ticker: dict, interval: str):
             continue
     confirmations = bullish_points if side == "BUY" else bearish_points
     directional_score = 100 * max(bullish_points, bearish_points) / 10
-    method_score = min(len(method_hits), 10) * 10
-    score = int(0.7 * directional_score + 0.3 * method_score)
-    if score < 60 or confirmations < 6 or len(method_hits) < 3:
+    method_count = len(method_hits)
+    method_score = min(method_count, 10) * 10
+    # A single valid method may surface a candidate; stronger confluence raises its rank.
+    # Keep a small directional floor so an isolated rule is not presented as a strong trade.
+    score = int(0.65 * directional_score + 0.35 * method_score)
+    if score < 35 or confirmations < 3 or method_count < 1:
         return None
     entry = price
     risk = max(atr * 1.5, entry * 0.002)
@@ -556,11 +579,12 @@ def build_signal(market: str, ticker: dict, interval: str):
         "entry": entry, "stop": stop, "tp1": t1, "tp2": t2, "tp3": t3,
         "stop_pct": abs(entry-stop)/entry*100, "tp1_pct": abs(t1-entry)/entry*100,
         "tp2_pct": abs(t2-entry)/entry*100, "tp3_pct": abs(t3-entry)/entry*100,
-        "score": min(95, score), "confirmations": confirmations,
-        "methods": active, "quote_volume": ticker.get("quote_volume", 0),
-        "updated_at": int(time.time()),
-        "method": "توافق الاتجاه والبنية والزخم والحجم والشموع ومناطق السعر",
-        "status": "إشارة توافق فني أولية؛ ليست ضمانًا للربح"
+        "score": min(98, score), "confirmations": confirmations,
+        "method_count": method_count, "importance": ("صفقة مهمة جدًا" if method_count >= 10 else "صفقة مهمة" if method_count >= 6 else "توافق متوسط" if method_count >= 3 else "إشارة أولية"),
+        "methods": active, "method_hits": method_hits,
+        "quote_volume": ticker.get("quote_volume", 0), "updated_at": int(time.time()),
+        "method": "ترتيب حسب توافق المناهج مع اتجاه السعر",
+        "status": "عدد المناهج المتوافقة يرفع ترتيب الإشارة؛ الإشارة الأولية تحتاج تحققًا إضافيًا"
     }
 
 @app.get("/api/signals/{market}")
@@ -605,7 +629,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
                     found.append(item)
             except (urllib.error.URLError, TimeoutError, ValueError, OSError, IndexError, TypeError, ZeroDivisionError):
                 continue
-    found.sort(key=lambda x: (x["score"], x["quote_volume"]), reverse=True)
+    found.sort(key=lambda x: (x.get("method_count", 0), x["score"], x["quote_volume"]), reverse=True)
     medals = ["gold", "silver", "bronze"]
     for i, item in enumerate(found):
         item["rank"] = i + 1
