@@ -126,16 +126,21 @@ def _prepare(engine, market, raw, ticker_maps, retention=86400):
         # breakout/retest, volume and the other implemented chart methodologies.
         # Only use technical levels when its direction agrees with the external idea.
         technical = None
-        for method in ("confluence", "classical"):
+        technical_timeframe = _source_timeframe(title, body) or "15m"
+        # Try the broad confluence engine, then the expanded vote across all
+        # implemented technical methods (SMC/ICT, structure, patterns, Fibonacci,
+        # Elliott, Wyckoff, candles, volume, Ichimoku, momentum and more).
+        for method in ("confluence", "all"):
             try:
                 if method == "confluence":
-                    technical = engine._analyze_symbol(symbol, market, "15m")
+                    technical = engine._analyze_symbol(symbol, market, technical_timeframe)
                 else:
-                    technical = engine._analyze_symbol_method(symbol, market, "15m", "classical")
+                    technical = engine._analyze_symbol_method(symbol, market, technical_timeframe, "all")
                 if technical and str(technical.get("side") or "").upper() == direction:
                     break
                 technical = None
-            except Exception:
+            except Exception as exc:
+                print("[PUBLIC-TRADES] technical method failed market=%s symbol=%s method=%s error=%s" % (market, symbol, method, str(exc)[:100]), flush=True)
                 technical = None
         if technical:
             tech_entry = float(technical.get("entry") or technical.get("price") or 0)
