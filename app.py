@@ -397,11 +397,50 @@ SIGNAL_CACHE_TTL = 75
 
 
 def candle_data(market: str, symbol: str, interval: str):
-    from urllib.parse import urlencode
-    url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 220})
-    raw = fetch_json(url, timeout=8)
-    return [{"open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
-            for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
+    from urllib.parse import urlencode, quote
+    if market in BINANCE:
+        url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 220})
+        raw = fetch_json(url, timeout=8)
+        return [{"open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
+                for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
+    if market not in YAHOO_MARKETS:
+        return []
+    yahoo_interval = {"15m":"15m", "1h":"60m", "4h":"60m", "1d":"1d", "1w":"1wk", "1M":"1mo"}.get(interval)
+    yahoo_range = {"15m":"60d", "1h":"730d", "4h":"730d", "1d":"5y", "1w":"10y", "1M":"max"}.get(interval)
+    if not yahoo_interval:
+        return []
+    url = "https://query1.finance.yahoo.com/v8/finance/chart/" + quote(symbol, safe="") + "?" + urlencode({"interval": yahoo_interval, "range": yahoo_range})
+    payload = fetch_json(url, timeout=9)
+    result = (payload.get("chart") or {}).get("result") or []
+    if not result:
+        return []
+    data = result[0]
+    stamps = data.get("timestamp") or []
+    q = ((data.get("indicators") or {}).get("quote") or [{}])[0]
+    out = []
+    for i, stamp in enumerate(stamps):
+        try:
+            o, h, l, c = q["open"][i], q["high"][i], q["low"][i], q["close"][i]
+            v = (q.get("volume") or [0] * len(stamps))[i] or 0
+            if None in (o, h, l, c) or int(stamp) >= int(time.time()):
+                continue
+            out.append({"time": int(stamp), "open": float(o), "high": float(h), "low": float(l), "close": float(c), "volume": float(v)})
+        except (IndexError, TypeError, ValueError):
+            continue
+    if interval == "4h":
+        grouped = {}
+        for candle in out:
+            bucket = candle["time"] // 14400
+            if bucket not in grouped:
+                grouped[bucket] = {"time": bucket*14400, "open": candle["open"], "high": candle["high"], "low": candle["low"], "close": candle["close"], "volume": candle["volume"]}
+            else:
+                g = grouped[bucket]
+                g["high"] = max(g["high"], candle["high"])
+                g["low"] = min(g["low"], candle["low"])
+                g["close"] = candle["close"]
+                g["volume"] += candle["volume"]
+        out = [grouped[k] for k in sorted(grouped)]
+    return out[-500:]
 
 
 def build_signal(market: str, ticker: dict, interval: str):
@@ -503,7 +542,7 @@ def build_signal(market: str, ticker: dict, interval: str):
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(12, ge=1, le=20)):
     market = market.lower()
-    if market not in BINANCE:
+    if market not in BINANCE and market not in YAHOO_MARKETS:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "مصدر هذا السوق غير مربوط؛ لا يمكن إنشاء صفقات فعلية."})
     if interval not in INTERVALS:
@@ -514,7 +553,21 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
     if cached and now - cached[0] < SIGNAL_CACHE_TTL:
         return cached[1]
     try:
-        tickers = market_tickers(market)[:max(40, limit * 3)]
+        if market in BINANCE:
+            tickers = market_tickers(market)[:max(40, limit * 3)]
+        else:
+            tickers = []
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                for future in as_completed([pool.submit(fetch_yahoo_quote, symbol) for symbol in YAHOO_MARKETS[market]]):
+                    try:
+                        quote_item = future.result()
+                    except Exception:
+                        quote_item = None
+                    if quote_item:
+                        quote_item["quote_volume"] = 0
+                        tickers.append(quote_item)
+            tickers.sort(key=lambda x: x.get("change_pct", 0), reverse=True)
+            tickers = tickers[:max(20, limit)]
     except (urllib.error.URLError, TimeoutError, ValueError, OSError):
         return JSONResponse({"ok": False, "live": False, "items": [], "message": "تعذر جلب أسعار السوق الآن."}, status_code=503)
 
