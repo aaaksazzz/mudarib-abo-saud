@@ -24,7 +24,7 @@ main{max-width:1120px;margin:auto;padding:20px 14px 48px}.top{display:flex;align
 <p class="muted" style="font-size:11px;margin-top:18px">الإشارات ناتجة عن شروط آلية أولية وليست ضمانًا للربح. الدخول والوقف والأهداف تقديرات من الشموع وATR، ويلزم اختبار المنهج قبل الاعتماد عليه.</p>
 </main>
 <script>
-const method=JSON.parse(__METHOD_NAME_JSON__);
+const method=__METHOD_NAME_JSON__;
 const fmt=n=>{n=Number(n);return Number.isFinite(n)?n.toLocaleString("en-US",{maximumFractionDigits:n<1?8:4}):"—"};
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 document.getElementById("scan").addEventListener("click",scan);
