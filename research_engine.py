@@ -445,7 +445,7 @@ def _yahoo(symbol,market,interval="15m",limit=260):
         "gold":"GC=F" if str(symbol).upper() in {"XAUUSD","GOLD","GC"} else symbol[:3]+symbol[3:]+"=X"
     }.get(market,symbol)
     hosts=("https://query1.finance.yahoo.com","https://query2.finance.yahoo.com")
-    ranges=("10y","5y","2y") if interval=="1M" else ("5y","2y","1y") if interval=="1w" else ("7d","5d","1d") if interval=="1m" else ("60d","30d","10d")
+    ranges=("max","10y","5y") if interval=="1M" else ("max","5y","2y") if interval=="1w" else ("7d","5d","1d") if interval=="1m" else ("60d","30d","10d")
     for host in hosts:
         for rg in ranges:
             try:
@@ -929,8 +929,11 @@ def discover_method(market, timeframe, method_id):
         return []
     symbols=_symbols_for_market(market,[])
     if market in ("spot","futures"):symbols=[s for s in symbols if str(s).upper().endswith("USDT")]
+    if market=="us":
+        symbols=[s for s in symbols if _passes_volume_filter(s,market)]
     caps={"spot":120,"futures":120,"alpha":48,"us":80,"saudi":160,"contracts":20,"forex":34}
-    symbols=symbols[:caps.get(market,40)]
+    if len(symbols)>caps.get(market,40):
+        symbols=_rotating_batch(symbols,caps.get(market,40),market)
     from concurrent.futures import ThreadPoolExecutor, as_completed
     rows=[]
     with ThreadPoolExecutor(max_workers=8) as pool:
@@ -938,9 +941,10 @@ def discover_method(market, timeframe, method_id):
         for fut in as_completed(jobs):
             try:
                 row=fut.result()
-                if row:rows.append(row)
+                if row and _trend_alignment(jobs[fut],market,timeframe,str(row.get("side") or row.get("direction") or "").upper()):
+                    rows.append(row)
             except Exception:pass
-    rows.sort(key=lambda r:float(r.get("recommendation_score") or 0),reverse=True)
+    rows.sort(key=lambda r:(-float(r.get("directed_change_pct") or 0),-float(r.get("recommendation_score") or 0)))
     print("[TECHNICAL-METHOD]",market,timeframe,method_id,"rows",len(rows),flush=True)
     return rows[:100]
 
@@ -1136,7 +1140,7 @@ def _public_scan(market,internet,timeframe="15m"):
                 "research_mode":True,"research_only":False,
                 "people_direction":people_side,"people_mentions":mentions,
                 "price_source":"public market data",
-                "reason":"توجه الناس والتوصيات أولاً، ثم تجميع مناهج التحليل السعري بدون مؤشرات فنية"
+                "reason":"توصيات المصادر مع تأكيد اتجاه المتوسط 50/200 على الفريم الحالي والفريم الأعلى؛ الترتيب حسب التغير في اتجاه الصفقة"
             })
     out.sort(key=lambda x:(-float(x.get("directed_change_pct") or 0),-float(x.get("recommendation_score") or x.get("ai_pct") or 0)))
     return out
