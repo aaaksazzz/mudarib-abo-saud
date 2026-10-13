@@ -29,6 +29,23 @@ KLINES = {
     "spot": "https://api.binance.com/api/v3/klines",
     "futures": "https://fapi.binance.com/fapi/v1/klines",
 }
+# Public Yahoo Finance quote universe for markets that do not use Binance.
+# Quotes are last available exchange quotes and may be delayed; never fabricate prices.
+YAHOO_MARKETS = {
+    "us": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "BRK-B", "JPM", "LLY", "WMT", "XOM", "AMD", "NFLX", "COST", "ORCL", "PLTR", "COIN", "INTC"],
+    "saudi": ["2222.SR", "1120.SR", "2010.SR", "1180.SR", "7010.SR", "1211.SR", "2380.SR", "1150.SR", "2280.SR", "4001.SR", "2082.SR", "2223.SR", "4200.SR", "7203.SR"],
+    "contracts": ["ES=F", "NQ=F", "YM=F", "RTY=F", "GC=F", "SI=F", "CL=F", "NG=F"],
+    "forex": ["EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X", "USDCHF=X", "NZDUSD=X", "EURGBP=X", "XAUUSD=X", "XAGUSD=X"],
+}
+YAHOO_LABELS = {
+    "ES=F": "S&P 500 Futures", "NQ=F": "Nasdaq 100 Futures", "YM=F": "Dow Futures", "RTY=F": "Russell 2000 Futures",
+    "GC=F": "Gold Futures", "SI=F": "Silver Futures", "CL=F": "WTI Crude Oil Futures", "NG=F": "Natural Gas Futures",
+    "EURUSD=X": "EUR/USD", "GBPUSD=X": "GBP/USD", "USDJPY=X": "USD/JPY", "AUDUSD=X": "AUD/USD",
+    "USDCAD=X": "USD/CAD", "USDCHF=X": "USD/CHF", "NZDUSD=X": "NZD/USD", "EURGBP=X": "EUR/GBP",
+    "XAUUSD=X": "Gold Spot", "XAGUSD=X": "Silver Spot",
+}
+YAHOO_CACHE = {}
+YAHOO_CACHE_TTL = 45
 CACHE = {}
 CACHE_TTL = 20
 TECH_CACHE = {}
@@ -118,10 +135,59 @@ def health():
 @app.get("/api/market/{market}")
 def market_data(market: str, limit: int = Query(40, ge=1, le=100)):
     market = market.lower()
+    if market in YAHOO_MARKETS:
+        now = time.time()
+        cached = YAHOO_CACHE.get(market)
+        if cached and now - cached[0] < YAHOO_CACHE_TTL:
+            data = cached[1]
+        else:
+            data = []
+            for symbol in YAHOO_MARKETS[market]:
+                try:
+                    from urllib.parse import quote
+                    url = "https://query1.finance.yahoo.com/v8/finance/chart/" + quote(symbol, safe="") + "?range=5d&interval=1d"
+                    chart = fetch_json(url, timeout=5).get("chart", {})
+                    rows = chart.get("result") or []
+                    if not rows:
+                        continue
+                    item = rows[0]
+                    meta = item.get("meta") or {}
+                    price = meta.get("regularMarketPrice")
+                    previous = meta.get("chartPreviousClose") or meta.get("previousClose")
+                    if price is None or previous in (None, 0):
+                        closes = (item.get("indicators", {}).get("quote") or [{}])[0].get("close") or []
+                        valid = [v for v in closes if v is not None]
+                        if price is None and valid:
+                            price = valid[-1]
+                        if previous in (None, 0) and len(valid) >= 2:
+                            previous = valid[-2]
+                    if price is None:
+                        continue
+                    price = float(price)
+                    previous = float(previous) if previous is not None else price
+                    data.append({
+                        "symbol": symbol, "name": YAHOO_LABELS.get(symbol, symbol.replace(".SR", "")),
+                        "price": price, "change_pct": ((price - previous) / previous * 100) if previous else 0.0,
+                        "quote_volume": 0, "currency": meta.get("currency", ""),
+                        "exchange": meta.get("fullExchangeName") or meta.get("exchangeName") or "Yahoo Finance",
+                        "quote_time": meta.get("regularMarketTime"), "delayed": True,
+                    })
+                except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError, KeyError):
+                    continue
+            if not data:
+                return JSONResponse({
+                    "ok": False, "market": market, "live": False, "items": [],
+                    "message": "تعذر جلب الأسعار من مزود السوق الآن. جرّب التحديث لاحقًا."
+                }, status_code=503)
+            data.sort(key=lambda x: x["change_pct"], reverse=True)
+            YAHOO_CACHE[market] = (now, data)
+        return {"ok": True, "market": market, "live": True, "provider": "Yahoo Finance",
+                "delayed": True, "updated_at": int(now), "items": data[:limit],
+                "message": "آخر أسعار متاحة من Yahoo Finance؛ قد تكون متأخرة وليست تنفيذًا لحظيًا مضمونًا."}
     if market not in BINANCE:
         return JSONResponse({
             "ok": True, "market": market, "live": False, "items": [],
-            "message": "مصدر الأسعار المباشر لهذا السوق غير مربوط حاليًا؛ لم نعرض بيانات تقديرية."
+            "message": "هذا السوق غير متاح من مصادر الأسعار الموصولة حاليًا؛ لم نعرض بيانات تقديرية."
         })
     now = time.time()
     cached = CACHE.get(market)
@@ -136,7 +202,8 @@ def market_data(market: str, limit: int = Query(40, ge=1, le=100)):
                 "ok": False, "market": market, "live": False, "items": [],
                 "message": "تعذر جلب الأسعار المباشرة الآن. حاول التحديث بعد قليل."
             }, status_code=503)
-    return {"ok": True, "market": market, "live": True, "updated_at": int(now), "items": data[:limit]}
+    return {"ok": True, "market": market, "live": True, "provider": "Binance",
+            "updated_at": int(now), "items": data[:limit]}
 
 
 @app.get("/api/technical/{market}")
