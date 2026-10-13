@@ -1052,6 +1052,12 @@ def _public_scan(market,internet,timeframe="15m"):
             symbols=sorted(symbols,key=lambda s:q.get(s,0),reverse=True)
         symbols=_rotating_batch(symbols,cap,market)
     out=[]
+    crypto_ticker_map={}
+    if market in ("spot","futures"):
+        try:
+            crypto_ticker_map={str(z.get("symbol") or "").upper():z for z in (_binance24(market=="futures") or [])}
+        except Exception:
+            crypto_ticker_map={}
     with ThreadPoolExecutor(max_workers=8) as pool:
         jobs={pool.submit(_analyze_symbol,s,market,timeframe):s for s in symbols}
         for fut in as_completed(jobs):
@@ -1106,8 +1112,7 @@ def _public_scan(market,internet,timeframe="15m"):
             # Rank the surviving setups by recent price change in the trade direction.
             try:
                 if market in ("spot","futures"):
-                    ticker_rows=_binance24(market=="futures")
-                    ticker=next((z for z in ticker_rows if str(z.get("symbol") or "").upper()==sym.upper()),{})
+                    ticker=crypto_ticker_map.get(sym.upper(),{})
                     raw_change=float(ticker.get("priceChangePercent") or 0)
                 else:
                     daily=_yahoo(sym,market,"1d",3) or []
@@ -1269,7 +1274,7 @@ def discover(market,timeframe="15m"):
         full=str(r.get("source_title",""))+" "+str(r.get("source_text",""))+" "+str(r.get("source_url",""))
         entry,targets,sl=_external_trade_fields(full)
         direction=r.get("direction")
-        if market in {"us","saudi","spot"} and not _passes_volume_filter(r.get("symbol"), market):
+        if market in {"us","saudi","spot","futures"} and not _passes_volume_filter(r.get("symbol"), market):
             continue
 
         px=entry
@@ -1374,6 +1379,7 @@ def discover(market,timeframe="15m"):
     # الترتيب يكون حسب قوة التوصية الفعلية، وليس لأن الاتجاه BUY قبل SELL.
     # كثرة المصادر المستقلة ترفع الصفقة أولاً، ثم درجة التحليل.
     merged.sort(key=lambda x:(
+        -float(x.get("directed_change_pct") or 0),
         -int(x.get("source_count") or 0),
         -float(x.get("recommendation_score") or x.get("ai_pct") or 0),
         -(1 if x.get("source_published") else 0)
@@ -1388,6 +1394,7 @@ def discover(market,timeframe="15m"):
     elif persisted:
         merged=list(persisted)
         merged.sort(key=lambda x:(
+            -float(x.get("directed_change_pct") or 0),
             -int(x.get("source_count") or 0),
             -float(x.get("recommendation_score") or x.get("ai_pct") or 0),
             -(1 if x.get("source_published") else 0)
