@@ -668,13 +668,13 @@ def method_signal(candles, ticker, method_key):
     elif method_key == "ict":
         bull_fvg = highs[-3] < lows[-1]
         bear_fvg = lows[-3] > highs[-1]
-        displacement = abs(body) >= atr * 0.8
+        displacement = abs(body) >= atr * 0.6
         if bull_fvg and bullish and displacement and (e50 is None or price >= e50): side = "BUY"
         elif bear_fvg and bearish and displacement and (e50 is None or price <= e50): side = "SELL"
     elif method_key == "order_flow":
         # OHLCV cannot provide true bid/ask aggressor flow; this is a volume-pressure proxy only.
         close_location = (price-lows[-1])/candle_range
-        if avg_vol > 0 and volumes[-1] >= avg_vol*1.5:
+        if avg_vol > 0 and volumes[-1] >= avg_vol*1.3:
             if bullish and close_location >= 0.75: side = "BUY"
             elif bearish and close_location <= 0.25: side = "SELL"
     elif method_key == "bos_choch":
@@ -687,13 +687,13 @@ def method_signal(candles, ticker, method_key):
         if highs[-3] < lows[-1] and bullish and price > closes[-2]: side = "BUY"
         elif lows[-3] > highs[-1] and bearish and price < closes[-2]: side = "SELL"
     elif method_key == "retest":
-        tol = max(atr*0.25, price*0.001)
+        tol = max(atr*0.35, price*0.0015)
         if abs(lows[-1]-prev_sh) <= tol and price > prev_sh and bullish: side = "BUY"
         elif abs(highs[-1]-prev_sl) <= tol and price < prev_sl and bearish: side = "SELL"
     elif method_key == "vsa":
         avg_range = mean([highs[i]-lows[i] for i in range(max(0,len(c)-16),len(c)-1)])
         loc = (price-lows[-1])/candle_range
-        if avg_vol > 0 and avg_range > 0 and volumes[-1] >= avg_vol*1.5 and candle_range < avg_range*0.8:
+        if avg_vol > 0 and avg_range > 0 and volumes[-1] >= avg_vol*1.5 and candle_range < avg_range*0.9:
             if loc >= 0.7 and bullish: side = "BUY"
             elif loc <= 0.3 and bearish: side = "SELL"
     elif method_key == "regime":
@@ -706,19 +706,19 @@ def method_signal(candles, ticker, method_key):
         if bullish_structure and price > e50: side = "BUY"
         elif bearish_structure and price < e50: side = "SELL"
     elif method_key == "support_resistance":
-        tol = max(atr*0.4, price*0.002)
+        tol = max(atr*0.5, price*0.0025)
         if abs(lows[-1]-prev_sl) <= tol and bullish and price > closes[-2]: side = "BUY"
         elif abs(highs[-1]-prev_sh) <= tol and bearish and price < closes[-2]: side = "SELL"
     elif method_key == "momentum":
         move = (price-closes[-6])/max(closes[-6],1e-12)
-        if move >= 0.004 and bullish: side = "BUY"
-        elif move <= -0.004 and bearish: side = "SELL"
+        if move >= 0.003 and bullish: side = "BUY"
+        elif move <= -0.003 and bearish: side = "SELL"
     elif method_key == "candlestick":
         prev_body = abs(closes[-2]-opens[-2])
         body_size = abs(body)
         lower_wick = min(price,opens[-1])-lows[-1]
         upper_wick = highs[-1]-max(price,opens[-1])
-        if bullish and closes[-2] < opens[-2] and price >= opens[-2] and opens[-1] <= closes[-2] and body_size >= prev_body*0.8:
+        if bullish and closes[-2] < opens[-2] and price >= opens[-2] and opens[-1] <= closes[-2] and body_size >= prev_body*0.65:
             side = "BUY"
         elif bearish and closes[-2] > opens[-2] and price <= opens[-2] and opens[-1] >= closes[-2] and body_size >= prev_body*0.8:
             side = "SELL"
@@ -743,23 +743,23 @@ def method_signal(candles, ticker, method_key):
             if broke_down and closes[i]>opens[i] and price<lows[i] and closes[i]-price>=atr:
                 side="SELL"; break
     elif method_key == "breakout":
-        if price>max(highs[-21:-1]) and bullish and body>=atr*0.15: side="BUY"
-        elif price<min(lows[-21:-1]) and bearish and -body>=atr*0.15: side="SELL"
+        if price>max(highs[-21:-1]) and bullish and body>=atr*0.10: side="BUY"
+        elif price<min(lows[-21:-1]) and bearish and -body>=atr*0.10: side="SELL"
     elif method_key == "trend_following":
         if e20 is not None and e50 is not None and e200 is not None:
-            if price>e20>e50>e200 and bullish_structure: side="BUY"
-            elif price<e20<e50<e200 and bearish_structure: side="SELL"
+            if price>e20 and e20>e50>e200: side="BUY"
+            elif price<e20 and e20<e50<e200: side="SELL"
     elif method_key == "mean_reversion":
         mean20=mean(closes[-20:])
         deviation=(price-mean20)/max(mean20,1e-12)
-        if deviation<=-0.02 and (bullish or (rsi_now is not None and rsi_now<30)): side="BUY"
-        elif deviation>=0.02 and (bearish or (rsi_now is not None and rsi_now>70)): side="SELL"
+        if deviation<=-0.015 and (bullish or (rsi_now is not None and rsi_now<30)): side="BUY"
+        elif deviation>=0.015 and (bearish or (rsi_now is not None and rsi_now>70)): side="SELL"
     elif method_key == "range_trading":
         rh,rl=max(highs[-20:]),min(lows[-20:])
         size=rh-rl
-        if size>0 and size/price<0.08:
-            if price<=rl+size*0.15 and bullish: side="BUY"
-            elif price>=rh-size*0.15 and bearish: side="SELL"
+        if size>0 and size/price<0.10:
+            if price<=rl+size*0.20 and bullish: side="BUY"
+            elif price>=rh-size*0.20 and bearish: side="SELL"
     elif method_key == "volume_profile":
         # Candle-volume histogram proxy; no trade-level volume-at-price data is available.
         sample=c[-50:]
@@ -798,10 +798,10 @@ def method_signal(candles, ticker, method_key):
             sh,sl=recent_sh[-1],recent_sl[-1]
             if sl[0]<sh[0] and sh[1]>sl[1]:
                 impulse=sh[1]-sl[1]; retr=(sh[1]-price)/max(impulse,1e-12)
-                if 0.5<=retr<=0.618 and bullish and price>sl[1]: side="BUY"
+                if 0.382<=retr<=0.65 and bullish and price>sl[1]: side="BUY"
             elif sh[0]<sl[0] and sh[1]>sl[1]:
                 impulse=sh[1]-sl[1]; retr=(price-sl[1])/max(impulse,1e-12)
-                if 0.5<=retr<=0.618 and bearish and price<sh[1]: side="SELL"
+                if 0.382<=retr<=0.65 and bearish and price<sh[1]: side="SELL"
     elif method_key == "ichimoku":
         if len(c)>=52:
             tenkan=(max(highs[-9:])+min(lows[-9:]))/2
@@ -812,7 +812,7 @@ def method_signal(candles, ticker, method_key):
             if price>cloud_top and tenkan>kijun: side="BUY"
             elif price<cloud_bottom and tenkan<kijun: side="SELL"
     elif method_key == "wyckoff":
-        if avg_vol>0 and volumes[-1]>=avg_vol*1.3:
+        if avg_vol>0 and volumes[-1]>=avg_vol*1.2:
             loc=(price-lows[-1])/candle_range
             if lows[-1]<prior_low and price>prior_low and loc>0.6: side="BUY"
             elif highs[-1]>prior_high and price<prior_high and loc<0.4: side="SELL"
@@ -833,7 +833,7 @@ def method_signal(candles, ticker, method_key):
             xa,ab,bc,cd=abs(a-x),abs(b-a),abs(cc-b),abs(d-cc)
             if min(xa,ab,bc)>0:
                 rab,rbc,rcd=ab/xa,bc/ab,cd/bc
-                if 0.55<=rab<=0.72 and 0.35<=rbc<=0.90 and 1.1<=rcd<=1.8:
+                if 0.50<=rab<=0.78 and 0.30<=rbc<=0.95 and 1.0<=rcd<=2.0:
                     if bullish and d<=min(x,b,cc): side="BUY"
                     elif bearish and d>=max(x,b,cc): side="SELL"
     elif method_key == "channels":
@@ -852,8 +852,8 @@ def method_signal(candles, ticker, method_key):
     elif method_key == "gann":
         # ATR-normalized slope proxy; true Gann angles require a defined chart scale/anchor.
         move=(price-closes[-10])/max(atr*9,1e-12)
-        if move>=1.0 and bullish: side="BUY"
-        elif move<=-1.0 and bearish: side="SELL"
+        if move>=0.8 and bullish: side="BUY"
+        elif move<=-0.8 and bearish: side="SELL"
 
     if side is None or method_key == "risk_management":
         return None
