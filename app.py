@@ -247,6 +247,18 @@ def _seo_post(slug):
     for post in SEO_POSTS:
         if post["slug"] == slug:
             return post
+    legacy_slugs = {
+        "risk-management-stop-loss": "ar-stop-loss",
+        "ema50-ema200-trend-filter": "ar-ema-filter",
+        "breakout-retest-price-action": "ar-breakout-retest",
+        "liquidity-sweep-vs-market-structure": "ar-liquidity-sweep",
+        "risk-reward-win-rate": "ar-risk-reward",
+        "backtest-trading-strategy": "ar-backtesting",
+    }
+    if slug in legacy_slugs:
+        legacy_post = next((p for p in SEO_POSTS if p["slug"] == legacy_slugs[slug]), None)
+        if legacy_post:
+            return {**legacy_post, "slug": slug}
     for post in read_json_file(ARTICLES_PATH, []):
         if str(post.get("slug") or "") == slug:
             return post
@@ -265,6 +277,7 @@ def sitemap_xml():
     from xml.sax.saxutils import escape as xml_escape
     urls = [(SEO_BASE_URL + "/", "daily", "1.0"), (SEO_BASE_URL + "/blog", "weekly", "0.9")] + [(SEO_BASE_URL + p, "daily", "0.8") for p in ["/markets/spot", "/markets/futures", "/markets/contracts", "/markets/us-stocks", "/markets/saudi", "/markets/forex-gold", "/markets/alpha", "/radar", "/gold", "/analysis", "/results", "/news"]]
     urls.extend((SEO_BASE_URL + "/blog/" + p["slug"], "monthly", "0.7") for p in SEO_POSTS)
+    urls.extend((SEO_BASE_URL + "/blog/" + slug, "monthly", "0.6") for slug in ["risk-management-stop-loss", "ema50-ema200-trend-filter", "breakout-retest-price-action", "liquidity-sweep-vs-market-structure", "risk-reward-win-rate", "backtest-trading-strategy"])
     urls.extend((SEO_BASE_URL + "/blog/" + str(p.get("slug") or p.get("id")), "monthly", "0.6") for p in read_json_file(ARTICLES_PATH, []) if p.get("slug") or p.get("id"))
     urls.extend((SEO_BASE_URL + "/analysis/" + slug, "monthly", "0.6") for slug in METHOD_SLUGS)
     items = "".join("<url><loc>" + xml_escape(url) + "</loc><changefreq>" + freq + "</changefreq><priority>" + priority + "</priority></url>" for url, freq, priority in urls)
