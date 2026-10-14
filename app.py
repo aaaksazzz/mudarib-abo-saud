@@ -481,7 +481,7 @@ def market_data(market: str, limit: int = Query(40, ge=1, le=500)):
                     "message": "تعذر جلب الأسعار من مزود السوق الآن. جرّب التحديث لاحقًا."
                 }, status_code=503)
             # Apply the $1M daily dollar-turnover rule to US equities only.
-            # Saudi equities are intentionally exempt; keep every listed TASI/NOMU stock.
+            # Saudi equities are intentionally exempt; keep every listed TASI stock only; NOMU is excluded.
             if market == "us":
                 data = [item for item in data if item.get("dollar_volume", 0) >= 1_000_000]
                 if not data:
@@ -1110,7 +1110,7 @@ def _load_saudi_symbols():
     if SAUDI_SYMBOL_CACHE["symbols"] and now - SAUDI_SYMBOL_CACHE["at"] < 21600:
         return SAUDI_SYMBOL_CACHE["symbols"]
     loaded = {}
-    for market_code in ("TASI", "NOMU"):
+    for market_code in ("TASI",):
         try:
             data = fetch_json("https://api.sahmk.sa/api/v1/companies/?market=" + market_code + "&limit=500&offset=0", timeout=5)
             rows = data.get("results", []) if isinstance(data, dict) else []
