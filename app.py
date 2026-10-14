@@ -899,7 +899,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
     for i, item in enumerate(found):
         item["rank"] = i + 1
         item["medal"] = medals[i] if i < 3 else "standard"
-    history = read_json_file(RESULTS_PATH, [])
+    history = prune_results()
     active_keys = {(x.get("market"), x.get("interval"), x.get("symbol")) for x in history if x.get("result") == "مفتوحة"}
     ticker_prices = {x["symbol"]: x["price"] for x in tickers}
     for record in history:
@@ -953,6 +953,21 @@ def write_json_file(path, data):
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(path)
+
+
+def prune_results(max_age_seconds=86400):
+    """Keep the visible results window to the latest 24 hours."""
+    now = int(time.time())
+    items = read_json_file(RESULTS_PATH, [])
+    fresh = [
+        item for item in items
+        if isinstance(item, dict)
+        and isinstance(item.get("created_at"), (int, float))
+        and 0 <= now - int(item["created_at"]) <= max_age_seconds
+    ]
+    if len(fresh) != len(items):
+        write_json_file(RESULTS_PATH, fresh[-1000:])
+    return fresh[-1000:]
 
 
 def require_admin(credentials: HTTPBasicCredentials = None):
@@ -1010,7 +1025,7 @@ def blog_articles():
 
 @app.get("/api/results")
 def signal_results(limit: int = Query(100, ge=1, le=500)):
-    items = read_json_file(RESULTS_PATH, [])
+    items = prune_results()
     items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
     closed = [x for x in items if x.get("result") in ("TP1", "TP2", "TP3", "SL")]
     wins = [x for x in closed if x.get("result") in ("TP1", "TP2", "TP3")]
