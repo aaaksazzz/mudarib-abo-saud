@@ -39,6 +39,31 @@ def test_market_sections_have_unique_canonical_and_metadata():
         assert f'<meta property="og:url" content="https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run{path}">' in response.text, path
 
 
+
+def test_legacy_singular_market_urls_redirect_to_canonical_market_pages():
+    paths = {
+        "/market/spot": "/markets/spot",
+        "/market/futures": "/markets/futures",
+        "/market/saudi": "/markets/saudi",
+        "/market/us-stocks": "/markets/us-stocks",
+        "/market/contracts": "/markets/contracts",
+        "/market/forex-gold": "/markets/forex-gold",
+        "/market/alpha": "/markets/alpha",
+    }
+    for path, destination in paths.items():
+        response = client.get(path, follow_redirects=False)
+        assert response.status_code == 308, path
+        assert response.headers["location"] == destination, path
+
+
+def test_analysis_ui_loads_full_method_catalog_dynamically():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert 'id="methodSearch"' in response.text
+    assert "loadMethodCatalog()" in response.text
+    assert 'getJson("/api/methods/catalog")' in response.text
+
+
 def test_blog_and_method_pages_have_distinct_canonicals():
     blog = client.get("/blog")
     article = client.get("/blog/risk-management-stop-loss")
