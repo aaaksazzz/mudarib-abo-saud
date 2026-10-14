@@ -338,6 +338,7 @@ def home():
 
 # Serve the same app shell at stable, section-specific URLs so each page can be bookmarked/shared.
 @app.get("/analysis", response_class=HTMLResponse)
+@app.get("/tasi-analysis", response_class=HTMLResponse)
 @app.get("/markets/spot", response_class=HTMLResponse)
 @app.get("/markets/futures", response_class=HTMLResponse)
 @app.get("/markets/contracts", response_class=HTMLResponse)
@@ -361,6 +362,7 @@ def section_page(request: Request):
     # The SPA shell is shared, but search engines must not see every section as "/".
     section_seo = {
         "/analysis": ("مناهج التحليل الفني | التداول الذكي PRO", "مكتبة مناهج التحليل الفني: حركة السعر، SMC، ICT، السيولة، النماذج، وإدارة المخاطر."),
+        "/tasi-analysis": ("تحليل المؤشر العام لتاسي | التداول الذكي PRO", "تحليل اتجاه المؤشر العام للسوق السعودي تاسي، تغيراته ومستوياته الفنية عبر عدة أطر زمنية."),
         "/markets/spot": ("سوق السبوت | التداول الذكي PRO", "متابعة أسعار Binance Spot وفرص السوق حسب الفريم، مع توضيح أن الإشارات آلية أولية وليست ضمانًا للربح."),
         "/markets/futures": ("سوق الفيوتشر | التداول الذكي PRO", "متابعة أسعار Binance Futures وفرص العقود ببيانات السوق العامة، مع إدارة المخاطر ووقف الخسارة."),
         "/markets/contracts": ("العقود الأمريكية | التداول الذكي PRO", "متابعة العقود الأمريكية مثل S&P 500 وناسداك والذهب والنفط من أسعار عامة قد تكون متأخرة."),
