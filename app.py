@@ -1,6 +1,9 @@
 import json
 import os
 import time
+import math
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import secrets
 import xml.etree.ElementTree as ET
 import urllib.request
@@ -571,6 +574,58 @@ def technical_filter(market: str, interval: str = Query("15m"), limit: int = Que
 
 
 
+# Correlated aliases/proxies count as one independent confirmation family.
+METHOD_FAMILY_OVERRIDES = {
+    "smc": "structure_smc_ict", "ict": "structure_smc_ict", "bos_choch": "structure_smc_ict",
+    "order_blocks": "structure_smc_ict", "breaker_blocks": "structure_smc_ict", "mitigation_blocks": "structure_smc_ict",
+    "unicorn_model": "structure_smc_ict", "ict_ote": "structure_smc_ict", "ict_kill_zone": "structure_smc_ict",
+    "fvg": "imbalance", "fvg_retest": "imbalance", "liquidity_void": "imbalance", "volume_imbalance": "imbalance",
+    "liquidity_sweep": "liquidity_reversal", "turtle_soup": "liquidity_reversal", "failed_breakout": "liquidity_reversal",
+    "liquidity_reclaim": "liquidity_reversal", "judas_swing": "liquidity_reversal", "wyckoff_spring": "liquidity_reversal",
+    "wyckoff_upthrust": "liquidity_reversal", "range_liquidity_reclaim": "liquidity_reversal",
+    "vwap": "vwap_value", "anchored_vwap": "vwap_value", "vwap_reclaim": "vwap_value",
+    "mean_reversion": "mean_reversion", "zscore_reversion": "mean_reversion", "rsi_reversal": "mean_reversion",
+    "connors_rsi": "mean_reversion", "stochastic": "mean_reversion", "williams_r": "mean_reversion",
+    "bollinger_bands": "mean_reversion",
+    "breakout": "breakout_channel", "volatility_breakout": "breakout_channel", "atr_breakout": "breakout_channel",
+    "donchian": "breakout_channel", "price_channel": "breakout_channel", "channel_breakout": "breakout_channel",
+    "pivot_breakout": "breakout_channel", "orb": "breakout_channel", "session_range": "breakout_channel",
+    "range_expansion": "breakout_channel", "range_compression": "breakout_channel",
+    "relative_volume_breakout": "breakout_channel", "darvas_box": "breakout_channel",
+    "turtle_trading": "breakout_channel", "fractal_breakout": "breakout_channel",
+    "momentum": "trend_momentum", "trend_following": "trend_momentum", "dual_momentum": "trend_momentum",
+    "relative_strength": "trend_momentum", "macd": "trend_momentum", "ppo": "trend_momentum",
+    "trix": "trend_momentum", "kama": "trend_momentum", "tema": "trend_momentum",
+    "elder_impulse": "trend_momentum", "supertrend": "trend_momentum", "aroon": "trend_momentum",
+    "vortex": "trend_momentum", "dmi": "trend_momentum", "adx_trend": "trend_momentum",
+    "cvd_proxy": "ohlcv_volume_proxy", "footprint_proxy": "ohlcv_volume_proxy", "absorption": "ohlcv_volume_proxy",
+    "order_flow": "ohlcv_volume_proxy", "market_profile": "ohlcv_volume_proxy", "volume_profile": "ohlcv_volume_proxy",
+    "obv_trend": "ohlcv_volume_proxy", "accumulation_distribution": "ohlcv_volume_proxy", "pvt": "ohlcv_volume_proxy",
+    "chaikin_oscillator": "ohlcv_volume_proxy", "chaikin_money_flow": "ohlcv_volume_proxy",
+    "ease_movement": "ohlcv_volume_proxy", "volume_climax": "ohlcv_volume_proxy",
+    "relative_volume_climax": "ohlcv_volume_proxy", "klinger_oscillator": "ohlcv_volume_proxy",
+    "wyckoff_effort_result": "ohlcv_volume_proxy", "failed_auction": "ohlcv_volume_proxy",
+    "candlestick": "candlestick_reversal", "three_bar_reversal": "candlestick_reversal",
+    "outside_bar": "candlestick_reversal", "three_line_strike": "candlestick_reversal",
+    "marubozu": "candlestick_reversal", "doji_reversal": "candlestick_reversal", "star_pattern": "candlestick_reversal",
+    "piercing_dark_cloud": "candlestick_reversal", "tweezer": "candlestick_reversal", "key_reversal": "candlestick_reversal",
+    "support_resistance": "levels_fibonacci", "pivot_points": "levels_fibonacci", "pivot_reversal": "levels_fibonacci",
+    "fib_confluence": "levels_fibonacci", "fibonacci": "levels_fibonacci", "fib_extension": "levels_fibonacci",
+    "multi_swing_ote": "levels_fibonacci", "premium_discount": "levels_fibonacci",
+    "gartley": "harmonic_patterns", "bat_pattern": "harmonic_patterns", "butterfly_pattern": "harmonic_patterns",
+    "crab_pattern": "harmonic_patterns", "shark_pattern": "harmonic_patterns", "harmonic": "harmonic_patterns",
+    "chart_patterns": "chart_patterns", "triple_top_bottom": "chart_patterns", "head_shoulders": "chart_patterns",
+    "inverse_head_shoulders": "chart_patterns", "wedge": "chart_patterns", "flag": "chart_patterns",
+    "pennant": "chart_patterns", "cup_handle": "chart_patterns", "rectangle": "chart_patterns",
+    "rounding_pattern": "chart_patterns", "three_drives": "chart_patterns", "wolfe_waves": "chart_patterns",
+    "andrews_pitchfork": "channels_trendlines", "channels": "channels_trendlines",
+    "linear_regression_channel": "channels_trendlines", "stddev_channel": "channels_trendlines",
+    "range_trading": "range_context", "regime": "range_context", "choppiness": "range_context",
+}
+def method_family(method_key):
+    return METHOD_FAMILY_OVERRIDES.get(method_key, method_key)
+
+
 METHOD_RULES = {
     "Price Action": "price_action", "SMC": "smc", "ICT": "ict",
     "Order Flow": "order_flow", "BOS / CHOCH": "bos_choch",
@@ -586,20 +641,105 @@ METHOD_RULES = {
     "Fibonacci": "fibonacci", "Ichimoku": "ichimoku", "Wyckoff": "wyckoff",
     "Elliott Wave": "elliott", "Harmonic Patterns": "harmonic",
     "Channels / Trendlines": "channels", "Quant / Statistical": "quant",
-    "Gann": "gann", "Risk Management": "risk_management"
+    "Gann": "gann",
+    # Expanded method catalogue: OHLCV-capable rules are evaluated below; data-heavy methods are explicitly labeled approximations.
+    "SMT Divergence": "smt_divergence", "Power of Three (AMD)": "power_of_three",
+    "Judas Swing": "judas_swing", "Turtle Soup": "turtle_soup",
+    "Unicorn Model": "unicorn_model", "Breaker Blocks": "breaker_blocks",
+    "Mitigation Blocks": "mitigation_blocks", "Liquidity Void": "liquidity_void",
+    "Donchian Channels": "donchian", "Keltner Channels": "keltner",
+    "Heikin Ashi": "heikin_ashi", "Renko Approximation": "renko",
+    "Point & Figure Approximation": "point_figure", "Opening Range Breakout": "orb",
+    "Inside Bar Breakout": "inside_bar", "Outside Bar Reversal": "outside_bar",
+    "Three-Bar Reversal": "three_bar_reversal", "Gap Trading": "gap_trading",
+    "Cumulative Volume Delta Proxy": "cvd_proxy", "Footprint Proxy": "footprint_proxy",
+    "Market Profile / TPO Proxy": "market_profile", "Anchored VWAP Proxy": "anchored_vwap",
+    "Volume Imbalance": "volume_imbalance", "Absorption Proxy": "absorption",
+    "Open Interest / Funding": "oi_funding",
+    "Pairs Trading Proxy": "pairs_trading", "Statistical Arbitrage Proxy": "stat_arb",
+    "Cointegration Proxy": "cointegration", "Z-Score Reversion": "zscore_reversion",
+    "Relative Strength": "relative_strength", "Cross-Market Correlation": "cross_market",
+    "Seasonality": "seasonality", "Volatility Breakout": "volatility_breakout",
+    "Turtle Trading": "turtle_trading", "Supertrend": "supertrend",
+    "ATR Breakout": "atr_breakout", "Pivot Points": "pivot_points",
+    "Parabolic SAR Proxy": "parabolic_sar", "Chandelier Exit": "chandelier_exit",
+    "Dual Momentum": "dual_momentum", "Bollinger Bands": "bollinger_bands",
+    "MACD": "macd", "RSI Reversal": "rsi_reversal", "Stochastic": "stochastic",
+    "ADX Trend Filter": "adx_trend", "OBV Trend": "obv_trend",
+    "Accumulation / Distribution": "accumulation_distribution",
+    "CCI": "cci", "Williams %R": "williams_r", "Money Flow Index": "mfi",
+    "Rate of Change": "roc", "TRIX": "trix", "DMI / DI Cross": "dmi",
+    "Elder Ray": "elder_ray", "KAMA Trend": "kama", "TEMA Trend": "tema",
+    "Triple Top / Bottom": "triple_top_bottom", "Head & Shoulders": "head_shoulders",
+    "Inverse Head & Shoulders": "inverse_head_shoulders", "Rising / Falling Wedge": "wedge",
+    "Bull / Bear Flag": "flag", "Pennant Breakout": "pennant",
+    "Cup & Handle Approximation": "cup_handle", "Rectangle Breakout": "rectangle",
+    "Rounding Bottom / Top": "rounding_pattern", "Three Drives": "three_drives",
+    "Key Reversal Day": "key_reversal", "NR7 / Narrow Range": "nr7",
+    "Volatility Contraction Pattern": "vcp", "Darvas Box": "darvas_box",
+    "Elder Triple Screen Proxy": "triple_screen", "Ichimoku Kumo Breakout": "kumo_breakout",
+    "Fisher Transform Proxy": "fisher_transform", "Chaikin Money Flow": "chaikin_money_flow",
+    "Force Index": "force_index", "Ulcer Index Risk Filter": "ulcer_filter",
+    "Aroon Trend": "aroon", "Vortex Indicator": "vortex", "Choppiness Index": "choppiness",
+    "Ultimate Oscillator": "ultimate_oscillator", "Relative Vigor Index": "rvi",
+    "True Strength Index": "tsi", "Percentage Price Oscillator": "ppo",
+    "Detrended Price Oscillator": "dpo", "Price Channel Breakout": "price_channel",
+    "Connors RSI Proxy": "connors_rsi", "Elder Impulse System": "elder_impulse",
+    "Three-Line Strike": "three_line_strike", "Marubozu Candle": "marubozu",
+    "Doji Reversal": "doji_reversal", "Morning / Evening Star": "star_pattern",
+    "Piercing / Dark Cloud": "piercing_dark_cloud", "Tweezer Top / Bottom": "tweezer",
+    "Gap-and-Go": "gap_go", "Failed Breakout": "failed_breakout",
+    "Liquidity Grab & Reclaim": "liquidity_reclaim", "Range Expansion": "range_expansion",
+    "ATR Trailing Stop": "atr_trailing", "Volatility Stop": "volatility_stop",
+    "Pivot Reversal": "pivot_reversal", "Fibonacci Retracement Confluence": "fib_confluence",
+    "Trendline Break & Retest": "trendline_retest", "Channel Breakout": "channel_breakout",
+    "Volume Climax": "volume_climax", "Price-Volume Trend": "pvt",
+    "Chaikin Oscillator Proxy": "chaikin_oscillator", "Ease of Movement": "ease_movement",
+    "Relative Volume Breakout": "relative_volume_breakout", "VWAP Reclaim": "vwap_reclaim",
+    "Opening Gap Reversal": "gap_reversal", "Range Compression Breakout": "range_compression",
+    "Williams Alligator Proxy": "alligator", "Fractal Breakout": "fractal_breakout",
+    "Fibonacci Extension": "fib_extension", "Classic Pivot Breakout": "pivot_breakout",
+    "Fair Value Gap Retest": "fvg_retest", "Equal Highs / Lows": "equal_highs_lows",
+    "Premium / Discount Zones": "premium_discount", "Session Range Breakout": "session_range",
+    "Risk Management": "risk_management",
+    "Wyckoff Spring": "wyckoff_spring", "Wyckoff Upthrust": "wyckoff_upthrust",
+    "Wyckoff SOS / SOW": "wyckoff_sos_sow", "Wyckoff LPS / LPSY": "wyckoff_lps",
+    "ICT Optimal Trade Entry (OTE) Proxy": "ict_ote",
+    "ICT Kill Zone": "ict_kill_zone", "Gartley Pattern Proxy": "gartley",
+    "Bat Pattern Proxy": "bat_pattern", "Butterfly Pattern Proxy": "butterfly_pattern",
+    "Crab Pattern Proxy": "crab_pattern", "Shark Pattern Proxy": "shark_pattern",
+    "Andrews Pitchfork Proxy": "andrews_pitchfork", "Wolfe Waves Proxy": "wolfe_waves",
+    "TTM Squeeze Proxy": "ttm_squeeze", "Coppock Curve": "coppock_curve",
+    "Klinger Oscillator Proxy": "klinger_oscillator", "Schaff Trend Cycle Proxy": "schaff_cycle",
+    "Hurst Exponent Filter": "hurst_filter", "Hurst Cycle Proxy": "hurst_cycle",
+    "Adaptive Moving Average Crossover": "adaptive_ma", "McGinley Dynamic Proxy": "mcginley",
+    "Linear Regression Channel": "linear_regression_channel", "Standard Deviation Channel": "stddev_channel",
+    "Donchian Midline Reversal": "donchian_midline", "Volatility-Adjusted Momentum": "vol_adjusted_momentum",
+    "Relative Volume Climax Reversal": "relative_volume_climax", "Accumulation / Distribution Divergence": "ad_divergence",
+    "Wyckoff Effort vs Result": "wyckoff_effort_result", "Failed Auction Proxy": "failed_auction",
+    "Range Liquidity Reclaim": "range_liquidity_reclaim", "Multi-Swing Fibonacci OTE": "multi_swing_ote"
 }
 
 
 def method_signal(candles, ticker, method_key):
-    """Evaluate method-specific OHLCV setups; label approximations honestly."""
-    if len(candles) < 30:
+    """Evaluate method-specific OHLCV setups; unavailable auxiliary data must not be fabricated."""
+    if not isinstance(candles, list) or len(candles) < 30:
         return None
     c = candles
-    closes = [float(x["close"]) for x in c]
-    highs = [float(x["high"]) for x in c]
-    lows = [float(x["low"]) for x in c]
-    opens = [float(x["open"]) for x in c]
-    volumes = [max(0.0, float(x.get("volume", 0) or 0)) for x in c]
+    try:
+        closes = [float(x["close"]) for x in c]
+        highs = [float(x["high"]) for x in c]
+        lows = [float(x["low"]) for x in c]
+        opens = [float(x["open"]) for x in c]
+        volumes = [max(0.0, float(x.get("volume", 0) or 0)) for x in c]
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return None
+    # Reject malformed OHLCV instead of allowing bad prices to create a signal.
+    for o, h, l, close, volume in zip(opens, highs, lows, closes, volumes):
+        if not all(math.isfinite(v) for v in (o, h, l, close, volume)):
+            return None
+        if min(o, h, l, close) <= 0 or h < max(o, l, close) or l > min(o, h, close):
+            return None
     last, prev = c[-1], c[-2]
     price = closes[-1]
     if price <= 0:
@@ -855,6 +995,360 @@ def method_signal(candles, ticker, method_key):
         if move>=1.0 and bullish: side="BUY"
         elif move<=-1.0 and bearish: side="SELL"
 
+    # Extended OHLCV rule set. Methods needing unavailable tick/order-book/cross-asset data are marked proxies or return no signal.
+    elif method_key in ("donchian", "turtle_trading"):
+        upper=max(highs[-21:-1]); lower=min(lows[-21:-1])
+        if price>upper and bullish: side="BUY"
+        elif price<lower and bearish: side="SELL"
+    elif method_key == "keltner":
+        mid=ema(closes,20); width=atr*2
+        if mid is not None and price>mid+width and bullish: side="BUY"
+        elif mid is not None and price<mid-width and bearish: side="SELL"
+    elif method_key in ("heikin_ashi","renko","point_figure"):
+        up=sum(closes[i]>opens[i] for i in range(-4,0))
+        down=sum(closes[i]<opens[i] for i in range(-4,0))
+        if up>=3 and price>e20: side="BUY"
+        elif down>=3 and price<e20: side="SELL"
+    elif method_key in ("orb","session_range"):
+        # Session timestamps are not supplied; uses the recent candle range as an explicitly labeled proxy.
+        if price>prior_high and bullish: side="BUY"
+        elif price<prior_low and bearish: side="SELL"
+    elif method_key == "inside_bar":
+        if highs[-2]<highs[-3] and lows[-2]>lows[-3]:
+            if price>highs[-2] and bullish: side="BUY"
+            elif price<lows[-2] and bearish: side="SELL"
+    elif method_key == "outside_bar":
+        if highs[-1]>highs[-2] and lows[-1]<lows[-2]:
+            if bullish and price>closes[-2]: side="BUY"
+            elif bearish and price<closes[-2]: side="SELL"
+    elif method_key == "three_bar_reversal":
+        if closes[-3]<opens[-3] and closes[-2]<opens[-2] and bullish and price>highs[-2]: side="BUY"
+        elif closes[-3]>opens[-3] and closes[-2]>opens[-2] and bearish and price<lows[-2]: side="SELL"
+    elif method_key == "gap_trading":
+        gap=(opens[-1]-closes[-2])/max(closes[-2],1e-12)
+        if gap>0.005 and bullish: side="BUY"
+        elif gap< -0.005 and bearish: side="SELL"
+    elif method_key in ("smt_divergence","pairs_trading","stat_arb","cointegration","cross_market","oi_funding"):
+        # Requires a second symbol, confirmed funding/OI, or paired series not present in this function.
+        side=None
+    elif method_key in ("power_of_three","judas_swing","turtle_soup","unicorn_model","breaker_blocks","mitigation_blocks","liquidity_void","fvg_retest","equal_highs_lows","premium_discount"):
+        if lows[-1]<prior_low and price>prior_low and bullish and price>closes[-2]: side="BUY"
+        elif highs[-1]>prior_high and price<prior_high and bearish and price<closes[-2]: side="SELL"
+        elif method_key in ("breaker_blocks","mitigation_blocks","unicorn_model") and broke_up and bullish_structure: side="BUY"
+        elif method_key in ("breaker_blocks","mitigation_blocks","unicorn_model") and broke_down and bearish_structure: side="SELL"
+    elif method_key in ("cvd_proxy","footprint_proxy","volume_imbalance","absorption","market_profile","anchored_vwap","obv_trend","accumulation_distribution"):
+        # OHLCV-only volume proxy; not true bid/ask delta, footprint, TPO, or anchored VWAP.
+        loc=(price-lows[-1])/candle_range
+        if avg_vol>0 and volumes[-1]>=avg_vol*1.4 and bullish and loc>=0.7: side="BUY"
+        elif avg_vol>0 and volumes[-1]>=avg_vol*1.4 and bearish and loc<=0.3: side="SELL"
+    elif method_key in ("zscore_reversion","mean_reversion"):
+        m=mean(closes[-20:]); sd=mean([(x-m)**2 for x in closes[-20:]])**0.5
+        z=(price-m)/max(sd,1e-12)
+        if z<=-1.5 and (bullish or (rsi_now is not None and rsi_now<35)): side="BUY"
+        elif z>=1.5 and (bearish or (rsi_now is not None and rsi_now>65)): side="SELL"
+    elif method_key in ("relative_strength","dual_momentum","momentum"):
+        move=(price-closes[-10])/max(closes[-10],1e-12)
+        if move>0.015 and bullish and (e20 is None or price>e20): side="BUY"
+        elif move< -0.015 and bearish and (e20 is None or price<e20): side="SELL"
+    elif method_key == "seasonality":
+        # Calendar seasonality requires reliable timestamps and a historical seasonal sample; no unsupported signal.
+        side=None
+    elif method_key in ("volatility_breakout","atr_breakout"):
+        if price>prior_high and bullish and body>=atr*0.2: side="BUY"
+        elif price<prior_low and bearish and -body>=atr*0.2: side="SELL"
+    elif method_key == "supertrend":
+        if e20 is not None and price>e20+atr*1.5 and bullish: side="BUY"
+        elif e20 is not None and price<e20-atr*1.5 and bearish: side="SELL"
+    elif method_key == "pivot_points":
+        pp=(highs[-2]+lows[-2]+closes[-2])/3
+        if price>pp and closes[-2]<=pp and bullish: side="BUY"
+        elif price<pp and closes[-2]>=pp and bearish: side="SELL"
+    elif method_key in ("parabolic_sar","chandelier_exit"):
+        trail_high=max(highs[-22:-1])-atr*3
+        trail_low=min(lows[-22:-1])+atr*3
+        if price>trail_high and bullish: side="BUY"
+        elif price<trail_low and bearish: side="SELL"
+    elif method_key == "bollinger_bands":
+        m=mean(closes[-20:]); sd=mean([(x-m)**2 for x in closes[-20:]])**0.5
+        if price<m-2*sd and bullish: side="BUY"
+        elif price>m+2*sd and bearish: side="SELL"
+    elif method_key == "macd":
+        fast=ema(closes,12); slow=ema(closes,26)
+        prev_fast=ema(closes[:-1],12); prev_slow=ema(closes[:-1],26)
+        if fast is not None and slow is not None and prev_fast is not None and prev_slow is not None:
+            if fast>slow and prev_fast<=prev_slow: side="BUY"
+            elif fast<slow and prev_fast>=prev_slow: side="SELL"
+    elif method_key == "rsi_reversal":
+        if rsi_now is not None and rsi_now<30 and bullish: side="BUY"
+        elif rsi_now is not None and rsi_now>70 and bearish: side="SELL"
+    elif method_key == "stochastic":
+        lo=min(lows[-14:]); hi=max(highs[-14:]); k=100*(price-lo)/max(hi-lo,1e-12)
+        prev_k=100*(closes[-2]-min(lows[-14:-1]))/max(max(highs[-14:-1])-min(lows[-14:-1]),1e-12)
+        if k>20 and prev_k<=20 and bullish: side="BUY"
+        elif k<80 and prev_k>=80 and bearish: side="SELL"
+    elif method_key == "fisher_transform":
+        changes=[closes[i]-closes[i-1] for i in range(1,len(closes))]
+        z=changes[-5:]
+        if mean(z)>0 and bullish and price>e20: side="BUY"
+        elif mean(z)<0 and bearish and price<e20: side="SELL"
+    elif method_key == "aroon":
+        window_high=highs[-25:]; window_low=lows[-25:]
+        up=100*(window_high.index(max(window_high)))/24
+        down=100*(window_low.index(min(window_low)))/24
+        if up>=70 and down<=30 and bullish: side="BUY"
+        elif down>=70 and up<=30 and bearish: side="SELL"
+    elif method_key == "vortex":
+        vp=sum(abs(highs[i]-lows[i-1]) for i in range(-14,0))
+        vm=sum(abs(lows[i]-highs[i-1]) for i in range(-14,0))
+        if vp>vm*1.1 and bullish: side="BUY"
+        elif vm>vp*1.1 and bearish: side="SELL"
+    elif method_key == "choppiness":
+        trsum=sum(true_ranges[-14:])
+        choppy=100*__import__("math").log10(max(trsum/max(max(highs[-14:])-min(lows[-14:]),1e-12),1e-12))/__import__("math").log10(14)
+        if choppy<45 and price>e20 and bullish: side="BUY"
+        elif choppy<45 and price<e20 and bearish: side="SELL"
+    elif method_key == "ultimate_oscillator":
+        bp=[]; tr=[]
+        for i in range(-28,0):
+            prev_close=closes[i-1]
+            bp.append(closes[i]-min(lows[i],prev_close))
+            tr.append(max(highs[i],prev_close)-min(lows[i],prev_close))
+        uo=100*(4*sum(bp[-7:])/max(sum(tr[-7:]),1e-12)+2*sum(bp[-14:])/max(sum(tr[-14:]),1e-12)+sum(bp[-28:])/max(sum(tr[-28:]),1e-12))/7
+        if uo>55 and bullish: side="BUY"
+        elif uo<45 and bearish: side="SELL"
+    elif method_key == "rvi":
+        numerator=mean([closes[i]-opens[i] for i in range(-10,0)])
+        denominator=mean([highs[i]-lows[i] for i in range(-10,0)])
+        rvi=numerator/max(denominator,1e-12)
+        if rvi>0.15 and bullish: side="BUY"
+        elif rvi< -0.15 and bearish: side="SELL"
+    elif method_key == "tsi":
+        mom=[closes[i]-closes[i-1] for i in range(1,len(closes))]
+        fast=ema(mom,13); slow=ema(mom,25)
+        tsi=fast/max(abs(slow or 0),1e-12) if fast is not None else 0
+        if tsi>0.1 and bullish and price>e20: side="BUY"
+        elif tsi< -0.1 and bearish and price<e20: side="SELL"
+    elif method_key == "ppo":
+        e12,e26=ema(closes,12),ema(closes,26)
+        ppo=100*(e12-e26)/max(abs(e26 or price),1e-12) if e12 is not None and e26 is not None else 0
+        if ppo>0 and bullish: side="BUY"
+        elif ppo<0 and bearish: side="SELL"
+    elif method_key == "dpo":
+        shift=10
+        dpo=price-mean(closes[-21:-11])
+        if dpo>0 and bullish: side="BUY"
+        elif dpo<0 and bearish: side="SELL"
+    elif method_key == "price_channel":
+        if price>prior_high and bullish: side="BUY"
+        elif price<prior_low and bearish: side="SELL"
+    elif method_key == "connors_rsi":
+        short_rsi=rsi(closes,3)
+        if short_rsi is not None and short_rsi<10 and price>e200 and bullish: side="BUY"
+        elif short_rsi is not None and short_rsi>90 and price<e200 and bearish: side="SELL"
+    elif method_key == "elder_impulse":
+        if e20 is not None and e50 is not None and price>e20>e50 and bullish: side="BUY"
+        elif e20 is not None and e50 is not None and price<e20<e50 and bearish: side="SELL"
+    elif method_key in ("three_line_strike","marubozu","doji_reversal","star_pattern","piercing_dark_cloud","tweezer"):
+        prev_body=abs(closes[-2]-opens[-2]); prev_prev_body=abs(closes[-3]-opens[-3])
+        upper=highs[-1]-max(opens[-1],closes[-1]); lower=min(opens[-1],closes[-1])-lows[-1]
+        if method_key=="marubozu" and bullish and upper<candle_range*0.08 and lower<candle_range*0.08: side="BUY"
+        elif method_key=="marubozu" and bearish and upper<candle_range*0.08 and lower<candle_range*0.08: side="SELL"
+        elif method_key=="doji_reversal" and abs(body)<=candle_range*0.1 and lower>upper*1.8 and price>closes[-2]: side="BUY"
+        elif method_key=="doji_reversal" and abs(body)<=candle_range*0.1 and upper>lower*1.8 and price<closes[-2]: side="SELL"
+        elif method_key=="three_line_strike" and bullish and all(closes[i]>opens[i] for i in range(-4,-1)) and price<opens[-4] and price>closes[-4]: side="BUY"
+        elif method_key in ("star_pattern","piercing_dark_cloud","tweezer") and bullish and price>closes[-2] and lower>prev_body*0.7: side="BUY"
+        elif method_key in ("star_pattern","piercing_dark_cloud","tweezer") and bearish and price<closes[-2] and upper>prev_body*0.7: side="SELL"
+    elif method_key in ("gap_go","gap_reversal","gap_trading"):
+        gap=(opens[-1]-closes[-2])/max(closes[-2],1e-12)
+        if gap>0.005 and price>opens[-1] and bullish: side="BUY"
+        elif gap< -0.005 and price<opens[-1] and bearish: side="SELL"
+        elif method_key=="gap_reversal" and gap>0.01 and price<opens[-1] and bearish: side="SELL"
+        elif method_key=="gap_reversal" and gap< -0.01 and price>opens[-1] and bullish: side="BUY"
+    elif method_key in ("failed_breakout","liquidity_reclaim"):
+        if highs[-1]>prior_high and price<prior_high and bearish: side="SELL"
+        elif lows[-1]<prior_low and price>prior_low and bullish: side="BUY"
+    elif method_key in ("range_expansion","range_compression","relative_volume_breakout"):
+        avg_range=mean([highs[i]-lows[i] for i in range(-20,-1)])
+        if method_key=="range_expansion" and candle_range>avg_range*1.5 and bullish and price>closes[-2]: side="BUY"
+        elif method_key=="range_expansion" and candle_range>avg_range*1.5 and bearish and price<closes[-2]: side="SELL"
+        elif method_key=="range_compression" and candle_range<avg_range*0.6 and price>prior_high and bullish: side="BUY"
+        elif method_key=="range_compression" and candle_range<avg_range*0.6 and price<prior_low and bearish: side="SELL"
+        elif method_key=="relative_volume_breakout" and volumes[-1]>avg_vol*1.5 and price>prior_high and bullish: side="BUY"
+        elif method_key=="relative_volume_breakout" and volumes[-1]>avg_vol*1.5 and price<prior_low and bearish: side="SELL"
+    elif method_key in ("atr_trailing","volatility_stop"):
+        stop=price-atr*3
+        if price>stop and price>e20 and bullish: side="BUY"
+        elif price<e20 and bearish: side="SELL"
+    elif method_key in ("pivot_reversal","pivot_breakout"):
+        pivot=(highs[-2]+lows[-2]+closes[-2])/3
+        if price>pivot and bullish: side="BUY"
+        elif price<pivot and bearish: side="SELL"
+    elif method_key in ("fib_confluence","trendline_retest","channel_breakout"):
+        mid=(max(highs[-20:])+min(lows[-20:]))/2
+        if price>mid and bullish and price>e20: side="BUY"
+        elif price<mid and bearish and price<e20: side="SELL"
+    elif method_key in ("pvt","chaikin_oscillator","ease_movement","volume_climax"):
+        signed_volume=volumes[-1]*(1 if price>closes[-2] else -1 if price<closes[-2] else 0)
+        if method_key=="volume_climax" and volumes[-1]>avg_vol*2 and candle_range>atr*1.5:
+            if bullish: side="BUY"
+            elif bearish: side="SELL"
+        elif signed_volume>0 and bullish and price>e20: side="BUY"
+        elif signed_volume<0 and bearish and price<e20: side="SELL"
+    elif method_key in ("vwap_reclaim","anchored_vwap"):
+        if rolling_vwap is not None and price>rolling_vwap and closes[-2]<=rolling_vwap and bullish: side="BUY"
+        elif rolling_vwap is not None and price<rolling_vwap and closes[-2]>=rolling_vwap and bearish: side="SELL"
+    elif method_key == "wyckoff_spring":
+        if lows[-1] < prior_low and price > prior_low and bullish and volumes[-1] >= avg_vol*0.8: side="BUY"
+    elif method_key == "wyckoff_upthrust":
+        if highs[-1] > prior_high and price < prior_high and bearish and volumes[-1] >= avg_vol*0.8: side="SELL"
+    elif method_key == "wyckoff_sos_sow":
+        if price > prior_high and bullish and volumes[-1] > avg_vol*1.3: side="BUY"
+        elif price < prior_low and bearish and volumes[-1] > avg_vol*1.3: side="SELL"
+    elif method_key == "wyckoff_lps":
+        tol=max(atr*0.4,price*0.002)
+        if abs(lows[-1]-prev_sh)<tol and price>e20 and bullish: side="BUY"
+        elif abs(highs[-1]-prev_sl)<tol and price<e20 and bearish: side="SELL"
+    elif method_key in ("ict_ote","multi_swing_ote"):
+        swing_hi=max(highs[-30:]); swing_lo=min(lows[-30:]); span=swing_hi-swing_lo
+        if span>0:
+            buy_zone=swing_hi-span*0.79 <= price <= swing_hi-span*0.62
+            sell_zone=swing_lo+span*0.62 <= price <= swing_lo+span*0.79
+            if buy_zone and bullish and price>e20: side="BUY"
+            elif sell_zone and bearish and price<e20: side="SELL"
+    elif method_key == "ict_kill_zone":
+        # ICT kill zones in New York local time; zone conversion accounts for daylight saving.
+        stamp = last.get("time", last.get("timestamp"))
+        if stamp is not None:
+            try:
+                stamp = float(stamp)
+                if stamp > 1e12:
+                    stamp /= 1000.0
+                local_time = datetime.fromtimestamp(stamp, timezone.utc).astimezone(ZoneInfo("America/New_York"))
+                minute = local_time.hour * 60 + local_time.minute
+                in_kill_zone = (120 <= minute < 300) or (420 <= minute < 600)
+                if in_kill_zone and bullish and price > e20 and abs(body) >= atr * 0.5: side = "BUY"
+                elif in_kill_zone and bearish and price < e20 and abs(body) >= atr * 0.5: side = "SELL"
+            except (ValueError, TypeError, OverflowError):
+                side = None
+    elif method_key in ("gartley","bat_pattern","butterfly_pattern","crab_pattern","shark_pattern"):
+        # Approximate harmonic completion from recent swing ratios; requires independent validation before production use.
+        swings=(recent_sl[-2][1],recent_sh[-2][1],recent_sl[-1][1],recent_sh[-1][1]) if len(recent_sl)>=2 and len(recent_sh)>=2 else None
+        if swings:
+            a,b,cc,d=swings
+            ab=abs(b-a); bc=abs(cc-b); cd=abs(d-cc)
+            ratio=cd/max(bc,1e-12)
+            if 0.5<=ratio<=1.9 and price>e20 and bullish: side="BUY"
+            elif 0.5<=ratio<=1.9 and price<e20 and bearish: side="SELL"
+    elif method_key in ("andrews_pitchfork","wolfe_waves","linear_regression_channel","stddev_channel"):
+        # Channel proxy based on recent range; not a geometrically fitted pitchfork or Wolfe-wave detector.
+        mid=(max(highs[-20:])+min(lows[-20:]))/2
+        if price>mid and bullish and price>e20: side="BUY"
+        elif price<mid and bearish and price<e20: side="SELL"
+    elif method_key in ("ttm_squeeze","range_compression"):
+        short_range=max(highs[-6:])-min(lows[-6:])
+        long_range=max(highs[-20:])-min(lows[-20:])
+        if long_range>0 and short_range/long_range<0.35 and price>prior_high and bullish: side="BUY"
+        elif long_range>0 and short_range/long_range<0.35 and price<prior_low and bearish: side="SELL"
+    elif method_key == "coppock_curve":
+        roc11=(price-closes[-12])/max(closes[-12],1e-12)
+        roc14=(price-closes[-15])/max(closes[-15],1e-12)
+        if roc11+roc14>0 and bullish: side="BUY"
+        elif roc11+roc14<0 and bearish: side="SELL"
+    elif method_key in ("klinger_oscillator","wyckoff_effort_result","relative_volume_climax","failed_auction"):
+        if avg_vol>0 and volumes[-1]>avg_vol*1.7 and candle_range>atr:
+            loc=(price-lows[-1])/candle_range
+            if loc>0.75 and bullish: side="BUY"
+            elif loc<0.25 and bearish: side="SELL"
+    elif method_key in ("schaff_cycle","adaptive_ma","mcginley","donchian_midline","vol_adjusted_momentum","volatility_adjusted_momentum"):
+        if price>e20 and e20>e50 and bullish: side="BUY"
+        elif price<e20 and e20<e50 and bearish: side="SELL"
+    elif method_key in ("hurst_filter","hurst_cycle"):
+        # Lightweight lag-1 persistence proxy, not a statistically rigorous Hurst exponent.
+        returns=[closes[i]/max(closes[i-1],1e-12)-1 for i in range(-20,0)]
+        persistence=sum(1 for a,b in zip(returns,returns[1:]) if a*b>0)/max(len(returns)-1,1)
+        if persistence>0.65 and price>e20 and bullish: side="BUY"
+        elif persistence>0.65 and price<e20 and bearish: side="SELL"
+    elif method_key in ("volatility_adjusted_momentum","range_liquidity_reclaim"):
+        if lows[-1]<prior_low and price>prior_low and bullish: side="BUY"
+        elif highs[-1]>prior_high and price<prior_high and bearish: side="SELL"
+    elif method_key == "cci":
+        typical=[(highs[i]+lows[i]+closes[i])/3 for i in range(len(c))]
+        m=mean(typical[-20:]); md=mean([abs(x-m) for x in typical[-20:]])
+        cci=(typical[-1]-m)/max(0.015*md,1e-12)
+        if cci>100 and bullish: side="BUY"
+        elif cci< -100 and bearish: side="SELL"
+    elif method_key == "williams_r":
+        hh=max(highs[-14:]); ll=min(lows[-14:]); wr=-100*(hh-price)/max(hh-ll,1e-12)
+        if wr>-80 and rsi_now is not None and rsi_now<40 and bullish: side="BUY"
+        elif wr< -20 and rsi_now is not None and rsi_now>60 and bearish: side="SELL"
+    elif method_key == "mfi":
+        pos=neg=0.0
+        for i in range(-14,0):
+            flow=((highs[i]+lows[i]+closes[i])/3)*volumes[i]
+            prevtyp=(highs[i-1]+lows[i-1]+closes[i-1])/3
+            if (highs[i]+lows[i]+closes[i])/3>prevtyp: pos+=flow
+            else: neg+=flow
+        mfi=100-100/(1+pos/max(neg,1e-12))
+        if mfi<20 and bullish: side="BUY"
+        elif mfi>80 and bearish: side="SELL"
+    elif method_key == "roc":
+        roc=(price-closes[-11])/max(closes[-11],1e-12)
+        if roc>0.02 and bullish: side="BUY"
+        elif roc< -0.02 and bearish: side="SELL"
+    elif method_key == "trix":
+        e1=[ema(closes[:i],15) for i in range(1,len(closes)+1)]
+        e1=[x for x in e1 if x is not None]
+        e2=[ema(e1[:i],15) for i in range(1,len(e1)+1)]
+        e2=[x for x in e2 if x is not None]
+        e3=[ema(e2[:i],15) for i in range(1,len(e2)+1)]
+        if len(e3)>1:
+            if e3[-1]>e3[-2] and bullish: side="BUY"
+            elif e3[-1]<e3[-2] and bearish: side="SELL"
+    elif method_key == "dmi":
+        plus=sum(max(highs[i]-highs[i-1],0) for i in range(-14,0))
+        minus=sum(max(lows[i-1]-lows[i],0) for i in range(-14,0))
+        if plus>minus*1.25 and bullish: side="BUY"
+        elif minus>plus*1.25 and bearish: side="SELL"
+    elif method_key == "elder_ray":
+        bull=highs[-1]-(e20 or price); bear=lows[-1]-(e20 or price)
+        if bull>0 and bear<0 and bullish: side="BUY"
+        elif bear<0 and bull<0 and bearish: side="SELL"
+    elif method_key in ("kama","tema","alligator","triple_screen"):
+        # Smoothing/screening approximations; not a substitute for full platform-specific indicator calculation.
+        if e20 is not None and e50 is not None and price>e20>e50 and bullish: side="BUY"
+        elif e20 is not None and e50 is not None and price<e20<e50 and bearish: side="SELL"
+    elif method_key == "chaikin_money_flow":
+        mfv=sum((((closes[i]-lows[i])-(highs[i]-closes[i]))/max(highs[i]-lows[i],1e-12))*volumes[i] for i in range(-20,0))
+        cmf=mfv/max(sum(volumes[-20:]),1e-12)
+        if cmf>0.15 and bullish: side="BUY"
+        elif cmf< -0.15 and bearish: side="SELL"
+    elif method_key == "ad_divergence":
+        signed_now=volumes[-1]*(1 if closes[-1]>closes[-2] else -1 if closes[-1]<closes[-2] else 0)
+        signed_prev=volumes[-6]*(1 if closes[-6]>closes[-7] else -1 if closes[-6]<closes[-7] else 0)
+        if price>closes[-6] and signed_now>signed_prev and bullish: side="BUY"
+        elif price<closes[-6] and signed_now<signed_prev and bearish: side="SELL"
+    elif method_key == "force_index":
+        force=(closes[-1]-closes[-2])*volumes[-1]
+        if force>0 and volumes[-1]>=avg_vol and bullish: side="BUY"
+        elif force<0 and volumes[-1]>=avg_vol and bearish: side="SELL"
+    elif method_key == "ulcer_filter":
+        peak=max(closes[-14:]); drawdown=(price-peak)/max(peak,1e-12)
+        if drawdown> -0.02 and price>e20 and bullish: side="BUY"
+        elif drawdown< -0.08 and price<e20 and bearish: side="SELL"
+    elif method_key in ("triple_top_bottom","head_shoulders","inverse_head_shoulders","wedge","flag","pennant","cup_handle","rectangle","rounding_pattern","three_drives","key_reversal","nr7","vcp","darvas_box","fractal_breakout","pivot_breakout","kumo_breakout","fib_extension"):
+        # Pattern-family proxy using confirmed swing structure and compression/breakout; full discretionary geometry is not claimed.
+        recent_range=max(highs[-10:])-min(lows[-10:])
+        earlier_range=max(highs[-20:-10])-min(lows[-20:-10])
+        compressed=earlier_range>0 and recent_range<earlier_range*0.75
+        if (method_key in ("flag","pennant","vcp","nr7","darvas_box","rectangle","fractal_breakout","pivot_breakout","kumo_breakout") or compressed) and price>prior_high and bullish: side="BUY"
+        elif (method_key in ("flag","pennant","vcp","nr7","darvas_box","rectangle","fractal_breakout","pivot_breakout","kumo_breakout") or compressed) and price<prior_low and bearish: side="SELL"
+        elif method_key in ("triple_top_bottom","head_shoulders") and bearish_structure and price<prev_sl and bearish: side="SELL"
+        elif method_key in ("triple_top_bottom","inverse_head_shoulders") and bullish_structure and price>prev_sh and bullish: side="BUY"
+    elif method_key == "adx_trend":
+        if e20 is not None and e50 is not None and abs(e20-e50)/price>0.003:
+            if e20>e50 and price>e20 and bullish: side="BUY"
+            elif e20<e50 and price<e20 and bearish: side="SELL"
+    
     if side is None or method_key == "risk_management":
         return None
     entry=price
@@ -871,7 +1365,8 @@ def method_signal(candles, ticker, method_key):
     evidence+=int(avg_vol>0 and volumes[-1]>=avg_vol*1.5)
     evidence+=int(rsi_now is not None and ((side=="BUY" and rsi_now>=50) or (side=="SELL" and rsi_now<=50)))
     score=min(90,58+8*evidence)
-    return {**ticker,"side":side,"method":method_key,"entry":entry,"stop":stop,
+    return {**ticker,"side":side,"method":method_key,"score_type":"rule_evidence_not_probability",
+            "score_label":"قوة الشواهد وليست احتمال ربح","entry":entry,"stop":stop,
             "tp1":tp1,"tp2":tp2,"tp3":tp3,
             "stop_pct":abs(entry-stop)/entry*100,"tp1_pct":abs(tp1-entry)/entry*100,
             "score":score,
@@ -919,6 +1414,60 @@ def tasi_index_analysis(interval: str = Query("1d")):
                          "low": round(c["low"], 2), "close": round(c["close"], 2), "volume": c.get("volume", 0)}
                         for c in candles[-60:]],
             "message": "تحليل فني للمؤشر العام، وليس توصية على سهم منفرد. بيانات Yahoo قد تكون متأخرة."}
+
+# Method audit endpoint: exposes implementation/data limits instead of implying every catalogue entry is fully validated.
+METHOD_AUXILIARY_DATA_REQUIRED = {
+    "smt_divergence": "مقارنة أصلين مترابطين على الأقل",
+    "pairs_trading": "سلسلة أسعار أصلين",
+    "stat_arb": "سلاسل أسعار متعددة واختبار إحصائي",
+    "cointegration": "سلاسل أسعار متعددة واختبار تكامل مشترك",
+    "cross_market": "بيانات سوق/أصل مقارن",
+    "oi_funding": "بيانات الفائدة المفتوحة والتمويل",
+}
+METHOD_RISK_ONLY_KEYS = {"risk_management"}
+METHOD_PROXY_KEYS = {
+    key for label, key in METHOD_RULES.items()
+    if "proxy" in label.lower() or "approximation" in label.lower()
+} | {
+    "cvd_proxy", "footprint_proxy", "market_profile", "anchored_vwap", "absorption",
+    "parabolic_sar", "connors_rsi", "fisher_transform", "chaikin_oscillator",
+    "triple_screen", "alligator", "hurst_cycle", "mcginley", "failed_auction",
+}
+
+
+@app.get("/api/methods/catalog")
+def method_catalog():
+    items = []
+    for label, key in METHOD_RULES.items():
+        if key in METHOD_RISK_ONLY_KEYS:
+            status = "risk_tool"
+            signal_capable = False
+            note = "أداة لإدارة المخاطر وليست مولّد إشارة دخول."
+        elif key in METHOD_AUXILIARY_DATA_REQUIRED:
+            status = "needs_auxiliary_data"
+            signal_capable = False
+            note = METHOD_AUXILIARY_DATA_REQUIRED[key]
+        elif key in METHOD_PROXY_KEYS:
+            status = "approximation"
+            signal_capable = True
+            note = "تقريب مبني على OHLCV؛ لا يعادل بيانات الأوامر/الجلسات الأصلية ولا يُعد مثبت الربحية."
+        else:
+            status = "ohlcv_rule_unvalidated"
+            signal_capable = True
+            note = "قاعدة شموع/سعر/حجم؛ يلزم اختبار تاريخي مستقل قبل اعتمادها."
+        items.append({
+            "name": label, "key": key, "status": status,
+            "signal_capable": signal_capable, "note": note,
+            "score_is_probability": False,
+        })
+    counts = {}
+    for item in items:
+        counts[item["status"]] = counts.get(item["status"], 0) + 1
+    return {
+        "ok": True, "count": len(items), "counts": counts, "items": items,
+        "message": "وجود المنهج في القائمة لا يعني اجتيازه اختبار ربحية. score يقيس شواهد القاعدة فقط، وليس احتمال الربح.",
+    }
+
 
 @app.get("/api/methods/{market}")
 def method_filter(market: str, method: str = Query(...), interval: str = Query("15m"), limit: int = Query(40, ge=1, le=100)):
@@ -968,6 +1517,30 @@ def method_filter(market: str, method: str = Query(...), interval: str = Query("
 
 
 
+@app.get("/api/risk/position-size")
+def risk_position_size(
+    equity: float = Query(..., gt=0),
+    risk_pct: float = Query(1.0, gt=0, le=5),
+    entry: float = Query(..., gt=0),
+    stop: float = Query(..., gt=0),
+):
+    """Position sizing from supplied equity and stop; excludes costs and leverage constraints."""
+    if not all(math.isfinite(v) for v in (equity, risk_pct, entry, stop)) or entry == stop:
+        return JSONResponse({"ok": False, "message": "تحقق من رأس المال وسعر الدخول والوقف؛ يجب أن يختلف الوقف عن الدخول."}, status_code=422)
+    distance = abs(entry - stop)
+    risk_amount = equity * (risk_pct / 100.0)
+    quantity = risk_amount / distance
+    notional = quantity * entry
+    return {
+        "ok": True, "equity": equity, "risk_pct": risk_pct,
+        "risk_amount": round(risk_amount, 8), "entry": entry, "stop": stop,
+        "stop_distance_pct": round(distance / entry * 100.0, 6),
+        "quantity_before_costs": round(quantity, 8),
+        "notional_before_leverage": round(notional, 8),
+        "disclaimer": "حساب نظري قبل الرسوم والانزلاق والتمويل وحدود المنصة؛ لا يضمن الخسارة القصوى الفعلية."
+    }
+
+
 SIGNAL_CACHE = {}
 SIGNAL_CACHE_TTL = 75
 
@@ -977,7 +1550,7 @@ def candle_data(market: str, symbol: str, interval: str):
     if market in BINANCE:
         url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 220})
         raw = fetch_json(url, timeout=8)
-        return [{"open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
+        return [{"time": int(k[0]) // 1000, "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
                 for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
     if market not in YAHOO_MARKETS and market != "tasi_index":
         return []
@@ -1098,7 +1671,9 @@ def build_signal(market: str, ticker: dict, interval: str):
             continue
     confirmations = bullish_points if side == "BUY" else bearish_points
     directional_score = 100 * max(bullish_points, bearish_points) / 10
-    method_count = len(method_hits)
+    method_families = sorted({method_family(METHOD_RULES[name]) for name in method_hits})
+    method_count_raw = len(method_hits)
+    method_count = len(method_families)
     method_score = min(method_count, 10) * 10
     # A single valid method may surface a candidate; stronger confluence raises its rank.
     # Keep a small directional floor so an isolated rule is not presented as a strong trade.
@@ -1137,7 +1712,9 @@ def build_signal(market: str, ticker: dict, interval: str):
         "stop_pct": abs(entry-stop)/entry*100, "tp1_pct": abs(t1-entry)/entry*100,
         "tp2_pct": abs(t2-entry)/entry*100, "tp3_pct": abs(t3-entry)/entry*100,
         "score": min(98, score), "confirmations": confirmations,
-        "method_count": method_count, "importance": ("صفقة مهمة جدًا" if method_count >= 10 else "صفقة مهمة" if method_count >= 6 else "توافق متوسط" if method_count >= 3 else "إشارة أولية"),
+        "method_count": method_count, "method_count_raw": method_count_raw,
+        "method_families": method_families,
+        "importance": ("صفقة مهمة جدًا" if method_count >= 7 else "صفقة مهمة" if method_count >= 5 else "توافق متوسط" if method_count >= 3 else "إشارة أولية"),
         "methods": active, "method_hits": method_hits,
         "quote_volume": ticker.get("quote_volume", 0), "updated_at": int(time.time()),
         "method": "ترتيب حسب توافق المناهج مع اتجاه السعر",
