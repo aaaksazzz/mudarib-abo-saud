@@ -985,37 +985,131 @@ def require_admin(credentials: HTTPBasicCredentials = None):
     return True
 
 
-@app.get("/api/news")
-def market_news(limit: int = Query(12, ge=1, le=30)):
-    from urllib.parse import urlencode
-    queries = [
-        "تداول العملات الرقمية OR بيتكوين OR إيثيريوم",
-        "أسواق العملات المشفرة OR Binance",
-    ]
-    feed_urls = [
-        "https://news.google.com/rss/search?" + urlencode({"q": query, "hl": "ar", "gl": "SA", "ceid": "SA:ar"})
-        for query in queries
-    ]
-    items, seen = [], set()
-    for url in feed_urls:
+NEWS_CACHE = {"at": 0, "items": []}
+
+def _news_universe():
+    coins = {}
+    for market in ("spot", "futures"):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "SmartTradingPro/2.2"})
-            with urllib.request.urlopen(req, timeout=6) as response:
+            for row in market_tickers(market):
+                symbol = str(row.get("symbol", ""))
+                if symbol.endswith("USDT"):
+                    base = symbol[:-4]
+                    coins[base] = {"symbol": base, "name": base, "kind": "عملة", "market": market}
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+            continue
+    assets = list(coins.values())
+    for market in ("us", "saudi", "contracts", "forex"):
+        for symbol in YAHOO_MARKETS.get(market, []):
+            clean = symbol.replace(".SR", "").replace("=F", "").replace("=X", "")
+            assets.append({"symbol": clean, "name": YAHOO_LABELS.get(symbol, clean), "kind": "سهم" if market in ("us", "saudi") else ("عقد" if market == "contracts" else "فوركس/ذهب"), "market": market})
+    return assets, coins
+
+@app.get("/api/universe-counts")
+def universe_counts():
+    assets, coins = _news_universe()
+    spot_count = 0
+    futures_count = 0
+    for market in ("spot", "futures"):
+        try:
+            rows = market_tickers(market)
+            if market == "spot":
+                spot_count = len(rows)
+            else:
+                futures_count = len(rows)
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+            pass
+    return {"ok": True, "unique_coins": len(coins), "spot_pairs": spot_count,
+            "futures_pairs": futures_count, "us_stocks": len(YAHOO_MARKETS["us"]),
+            "saudi_stocks": len(YAHOO_MARKETS["saudi"]),
+            "total_stocks": len(YAHOO_MARKETS["us"]) + len(YAHOO_MARKETS["saudi"]),
+            "contracts": len(YAHOO_MARKETS["contracts"]), "forex_gold": len(YAHOO_MARKETS["forex"]),
+            "filters": "Binance USDT pairs with 24h quote volume >= $1M; excludes configured stablecoins",
+            "stock_symbols": YAHOO_MARKETS["us"] + YAHOO_MARKETS["saudi"]}
+
+def _news_direction(title):
+    t = title.lower()
+    buy_words = ("يرتفع", "ارتفاع", "صعود", "يقفز", "مكاسب", "شراء", "إيجابي", "نمو قوي", "اختراق صاعد", "surge", "rally", "gains", "bullish", "upgrade", "beat estimates", "record high", "jumps", "soars")
+    sell_words = ("يهبط", "هبوط", "تراجع", "انخفاض", "خسائر", "بيع", "سلبي", "انهيار", "هبوط حاد", "falls", "drop", "decline", "losses", "bearish", "downgrade", "misses estimates", "sell-off", "plunges", "slumps")
+    buy = any(w in t for w in buy_words)
+    sell = any(w in t for w in sell_words)
+    if buy and not sell:
+        return {"direction": "BUY", "direction_ar": "توجه صاعد / شراء محتمل"}
+    if sell and not buy:
+        return {"direction": "SELL", "direction_ar": "توجه هابط / بيع محتمل"}
+    return {"direction": "UNCLEAR", "direction_ar": "غير واضح — الخبر وحده لا يحدد شراء أو بيع"}
+
+@app.get("/api/news")
+def market_news(limit: int = Query(30, ge=1, le=100)):
+    from urllib.parse import urlencode
+    now = time.time()
+    if now - NEWS_CACHE["at"] < 300 and NEWS_CACHE["items"]:
+        return {"ok": True, "live": True, "items": NEWS_CACHE["items"][:limit], "cached": True,
+                "message": "أخبار مجمعة ومصنفة حسب الأصول التي أمكن تحديدها؛ راجع الخبر الأصلي قبل اتخاذ القرار."}
+    assets, coins = _news_universe()
+    queries = [
+        ("أخبار العملات الرقمية", "cryptocurrency OR Bitcoin OR Ethereum OR crypto market"),
+        ("أخبار الأسهم الأمريكية", "US stocks OR Nasdaq OR S&P 500 earnings shares"),
+        ("أخبار السوق السعودي", "أسهم السوق السعودي تداول شركات السعودية"),
+        ("أخبار الفوركس والذهب والعقود", "forex OR gold OR oil OR Nasdaq futures OR dollar"),
+    ]
+    coin_symbols = sorted(coins.keys())
+    for start in range(0, len(coin_symbols), 25):
+        queries.append(("العملات الرقمية", " OR ".join(coin_symbols[start:start+25]) + " cryptocurrency crypto"))
+    stock_symbols = [s.replace(".SR", "") for m in ("us", "saudi") for s in YAHOO_MARKETS[m]]
+    for start in range(0, len(stock_symbols), 20):
+        queries.append(("الأسهم", " OR ".join(stock_symbols[start:start+20]) + " stock shares"))
+    def read_feed(entry):
+        label, query = entry
+        url = "https://news.google.com/rss/search?" + urlencode({"q": query, "hl": "ar", "gl": "SA", "ceid": "SA:ar"})
+        found = []
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "SmartTradingPro/2.3"})
+            with urllib.request.urlopen(req, timeout=4) as response:
                 root = ET.fromstring(response.read())
             for node in root.findall("./channel/item"):
                 title = (node.findtext("title") or "").strip()
                 link = (node.findtext("link") or "").strip()
                 pub = (node.findtext("pubDate") or "").strip()
                 source = node.findtext("source") or "Google News"
-                if not title or not link or link in seen:
-                    continue
-                seen.add(link)
-                items.append({"title": title, "url": link, "published": pub, "source": source})
+                if title and link:
+                    found.append({"title": title, "url": link, "published": pub, "source": source, "category": label})
         except (urllib.error.URLError, TimeoutError, OSError, ET.ParseError, ValueError):
-            continue
+            pass
+        return found
+    items, seen = [], set()
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures = [pool.submit(read_feed, query) for query in queries]
+        for future in as_completed(futures):
+            try:
+                rows = future.result()
+            except Exception:
+                rows = []
+            for item in rows:
+                if item["url"] in seen:
+                    continue
+                seen.add(item["url"])
+                title_lower = item["title"].lower()
+                matched = []
+                import re
+                for asset in assets:
+                    symbol = asset["symbol"]
+                    name = asset["name"]
+                    symbol_match = len(symbol) >= 3 and re.search(r"(?<![A-Za-z0-9])" + re.escape(symbol) + r"(?![A-Za-z0-9])", item["title"], re.I)
+                    name_match = len(name) >= 4 and name.lower() in title_lower
+                    if symbol_match or name_match:
+                        matched.append({"symbol": symbol, "name": name, "kind": asset["kind"], "market": asset["market"]})
+                    if len(matched) >= 8:
+                        break
+                item["assets"] = matched
+                item["asset_labels"] = [x["symbol"] for x in matched] or ["لم يُحدد أصل بعينه"]
+                item.update(_news_direction(item["title"]))
+                items.append(item)
     items.sort(key=lambda x: x["published"], reverse=True)
-    return {"ok": True, "live": bool(items), "items": items[:limit],
-            "message": "عناوين مجمعة من Google News؛ افتح الخبر الأصلي للتحقق من التفاصيل." if items else "تعذر تحميل موجز الأخبار الآن؛ جرّب التحديث لاحقًا."}
+    NEWS_CACHE["at"], NEWS_CACHE["items"] = now, items
+    return {"ok": True, "live": bool(items), "items": items[:limit], "cached": False,
+            "universe": {"unique_coins": len(coins), "total_stocks": len(YAHOO_MARKETS["us"]) + len(YAHOO_MARKETS["saudi"])},
+            "message": "التصنيف آلي أولي من عنوان الخبر؛ إذا لم تكفِ الدلالة يظهر «غير واضح». ليس توصية مالية." if items else "تعذر تحميل موجز الأخبار الآن؛ جرّب التحديث لاحقًا."}
 
 
 @app.get("/api/blog")
