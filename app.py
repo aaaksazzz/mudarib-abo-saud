@@ -135,7 +135,7 @@ def candle_closes(market, symbol, interval):
 
 
 METHOD_SLUGS = {name.lower().replace(" / ", "-").replace(" ", "-").replace("/", "-"): name for name in [
-    "Price Action", "SMC", "ICT", "Order Flow", "BOS / CHOCH", "Liquidity Sweep", "FVG / Imbalance", "Retest", "VSA", "Market Regime", "Dow / MTF", "Support / Resistance", "Momentum", "Candlestick Analysis", "Chart Patterns", "Volume Profile", "VWAP", "Indicators", "Divergence", "Fibonacci", "Ichimoku", "Wyckoff", "Elliott Wave", "Harmonic Patterns", "Channels / Trendlines", "Quant / Statistical", "Gann", "Risk Management"
+    "Price Action", "SMC", "ICT", "Order Flow", "BOS / CHOCH", "Liquidity Sweep", "FVG / Imbalance", "Retest", "VSA", "Market Regime", "Dow / MTF", "Support / Resistance", "Momentum", "Candlestick Analysis", "Chart Patterns", "Classical Analysis", "Order Blocks", "Breakout Strategy", "Trend Following", "Mean Reversion", "Range Trading", "Volume Profile", "VWAP", "Indicators", "Divergence", "Fibonacci", "Ichimoku", "Wyckoff", "Elliott Wave", "Harmonic Patterns", "Channels / Trendlines", "Quant / Statistical", "Gann", "Risk Management"
 ]}
 
 
@@ -417,7 +417,10 @@ METHOD_RULES = {
     "Retest": "retest", "VSA": "vsa", "Market Regime": "regime",
     "Dow / MTF": "dow_mtf", "Support / Resistance": "support_resistance",
     "Momentum": "momentum", "Candlestick Analysis": "candlestick",
-    "Chart Patterns": "chart_patterns", "Volume Profile": "volume_profile",
+    "Chart Patterns": "chart_patterns", "Classical Analysis": "classical",
+    "Order Blocks": "order_blocks", "Breakout Strategy": "breakout",
+    "Trend Following": "trend_following", "Mean Reversion": "mean_reversion",
+    "Range Trading": "range_trading", "Volume Profile": "volume_profile",
     "VWAP": "vwap", "Indicators": "indicators", "Divergence": "divergence",
     "Fibonacci": "fibonacci", "Ichimoku": "ichimoku", "Wyckoff": "wyckoff",
     "Elliott Wave": "elliott", "Harmonic Patterns": "harmonic",
@@ -500,6 +503,31 @@ def method_signal(candles, ticker, method_key):
         if candle_range > 0 and abs(price - last["open"]) / candle_range >= 0.65:
             if bullish: side = "BUY"
             elif bearish: side = "SELL"
+    elif method_key == "classical":
+        # Classical chart analysis proxy: breakout or rejection around recent support/resistance.
+        if price > prior_high and bullish: side = "BUY"
+        elif price < prior_low and bearish: side = "SELL"
+        elif abs(price-prior_low)/price < 0.0025 and bullish: side = "BUY"
+        elif abs(price-prior_high)/price < 0.0025 and bearish: side = "SELL"
+    elif method_key == "order_blocks":
+        # Lightweight order-block proxy: impulsive close through the prior candle range.
+        if bullish and price > prev["high"] and volumes[-1] >= max(avg_vol, 1e-12): side = "BUY"
+        elif bearish and price < prev["low"] and volumes[-1] >= max(avg_vol, 1e-12): side = "SELL"
+    elif method_key == "breakout":
+        if price > prior_high and bullish: side = "BUY"
+        elif price < prior_low and bearish: side = "SELL"
+    elif method_key == "trend_following":
+        if e20 is not None and e50 is not None and e200 is not None:
+            if price > e20 > e50 > e200: side = "BUY"
+            elif price < e20 < e50 < e200: side = "SELL"
+    elif method_key == "mean_reversion":
+        mean20 = sum(closes[-20:]) / 20
+        if price < mean20 * 0.98 and bullish: side = "BUY"
+        elif price > mean20 * 1.02 and bearish: side = "SELL"
+    elif method_key == "range_trading":
+        range_high, range_low = max(highs[-20:]), min(lows[-20:])
+        if abs(price-range_low)/price < 0.003 and bullish: side = "BUY"
+        elif abs(price-range_high)/price < 0.003 and bearish: side = "SELL"
     elif method_key == "volume_profile":
         if vwap is not None:
             if price > vwap and bullish: side = "BUY"
