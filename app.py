@@ -985,17 +985,51 @@ def require_admin(credentials: HTTPBasicCredentials = None):
     return True
 
 
-NEWS_CACHE = {"at": 0, "items": []}
+NEWS_CACHE = {}
+NEWS_UNIVERSE_CACHE = {"at": 0, "assets": [], "coins": {}, "counts": {}}
+SAUDI_SYMBOL_CACHE = {"at": 0, "symbols": []}
+
+def _load_saudi_symbols():
+    now = time.time()
+    if SAUDI_SYMBOL_CACHE["symbols"] and now - SAUDI_SYMBOL_CACHE["at"] < 21600:
+        return SAUDI_SYMBOL_CACHE["symbols"]
+    loaded = {}
+    for market_code in ("TASI", "NOMU"):
+        try:
+            data = fetch_json("https://api.sahmk.sa/api/v1/companies/?market=" + market_code + "&limit=500&offset=0", timeout=5)
+            rows = data.get("results", []) if isinstance(data, dict) else []
+            for row in rows:
+                raw_symbol = str(row.get("symbol") or row.get("ticker") or "").strip()
+                if not raw_symbol:
+                    continue
+                digits = raw_symbol.split(".")[0].strip()
+                if not digits.isdigit():
+                    continue
+                yahoo_symbol = digits.zfill(4) + ".SR"
+                loaded[yahoo_symbol] = str(row.get("name_ar") or row.get("name_en") or row.get("name") or digits)
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError, TypeError):
+            continue
+    if loaded:
+        YAHOO_MARKETS["saudi"] = sorted(loaded.keys())
+        YAHOO_LABELS.update(loaded)
+        SAUDI_SYMBOL_CACHE.update({"symbols": list(loaded.keys()), "at": now})
+    return SAUDI_SYMBOL_CACHE["symbols"] or YAHOO_MARKETS["saudi"]
 
 def _news_universe():
-    coins = {}
+    now = time.time()
+    if NEWS_UNIVERSE_CACHE["assets"] and now - NEWS_UNIVERSE_CACHE["at"] < 60:
+        return NEWS_UNIVERSE_CACHE["assets"], NEWS_UNIVERSE_CACHE["coins"], NEWS_UNIVERSE_CACHE["counts"]
+    _load_saudi_symbols()
+    coins, counts = {}, {"spot_pairs": 0, "futures_pairs": 0}
     for market in ("spot", "futures"):
         try:
-            for row in market_tickers(market):
+            rows = market_tickers(market)
+            counts["spot_pairs" if market == "spot" else "futures_pairs"] = len(rows)
+            for row in rows:
                 symbol = str(row.get("symbol", ""))
                 if symbol.endswith("USDT"):
                     base = symbol[:-4]
-                    coins[base] = {"symbol": base, "name": base, "kind": "عملة", "market": market}
+                    coins[base] = {"symbol": base, "name": base, "kind": "عملة رقمية", "market": market}
         except (urllib.error.URLError, TimeoutError, ValueError, OSError):
             continue
     assets = list(coins.values())
@@ -1003,36 +1037,24 @@ def _news_universe():
         for symbol in YAHOO_MARKETS.get(market, []):
             clean = symbol.replace(".SR", "").replace("=F", "").replace("=X", "")
             assets.append({"symbol": clean, "name": YAHOO_LABELS.get(symbol, clean), "kind": "سهم" if market in ("us", "saudi") else ("عقد" if market == "contracts" else "فوركس/ذهب"), "market": market})
-    return assets, coins
+    counts.update({"unique_coins": len(coins), "us_stocks": len(YAHOO_MARKETS["us"]),
+        "saudi_stocks": len(YAHOO_MARKETS["saudi"]), "total_stocks": len(YAHOO_MARKETS["us"]) + len(YAHOO_MARKETS["saudi"]),
+        "contracts": len(YAHOO_MARKETS["contracts"]), "forex_gold": len(YAHOO_MARKETS["forex"]),
+        "saudi_universe_source": "directory" if SAUDI_SYMBOL_CACHE["symbols"] else "fallback"})
+    NEWS_UNIVERSE_CACHE.update({"at": now, "assets": assets, "coins": coins, "counts": counts})
+    return assets, coins, counts
 
 @app.get("/api/universe-counts")
 def universe_counts():
-    assets, coins = _news_universe()
-    spot_count = 0
-    futures_count = 0
-    for market in ("spot", "futures"):
-        try:
-            rows = market_tickers(market)
-            if market == "spot":
-                spot_count = len(rows)
-            else:
-                futures_count = len(rows)
-        except (urllib.error.URLError, TimeoutError, ValueError, OSError):
-            pass
-    return {"ok": True, "unique_coins": len(coins), "spot_pairs": spot_count,
-            "futures_pairs": futures_count, "us_stocks": len(YAHOO_MARKETS["us"]),
-            "saudi_stocks": len(YAHOO_MARKETS["saudi"]),
-            "total_stocks": len(YAHOO_MARKETS["us"]) + len(YAHOO_MARKETS["saudi"]),
-            "contracts": len(YAHOO_MARKETS["contracts"]), "forex_gold": len(YAHOO_MARKETS["forex"]),
-            "filters": "Binance USDT pairs with 24h quote volume >= $1M; excludes configured stablecoins",
+    assets, coins, counts = _news_universe()
+    return {"ok": True, **counts, "filters": "Binance USDT pairs with 24h quote volume >= $1M; excludes configured stablecoins",
             "stock_symbols": YAHOO_MARKETS["us"] + YAHOO_MARKETS["saudi"]}
 
 def _news_direction(title):
     t = title.lower()
     buy_words = ("يرتفع", "ارتفاع", "صعود", "يقفز", "مكاسب", "شراء", "إيجابي", "نمو قوي", "اختراق صاعد", "surge", "rally", "gains", "bullish", "upgrade", "beat estimates", "record high", "jumps", "soars")
     sell_words = ("يهبط", "هبوط", "تراجع", "انخفاض", "خسائر", "بيع", "سلبي", "انهيار", "هبوط حاد", "falls", "drop", "decline", "losses", "bearish", "downgrade", "misses estimates", "sell-off", "plunges", "slumps")
-    buy = any(w in t for w in buy_words)
-    sell = any(w in t for w in sell_words)
+    buy, sell = any(w in t for w in buy_words), any(w in t for w in sell_words)
     if buy and not sell:
         return {"direction": "BUY", "direction_ar": "توجه صاعد / شراء محتمل"}
     if sell and not buy:
@@ -1040,31 +1062,60 @@ def _news_direction(title):
     return {"direction": "UNCLEAR", "direction_ar": "غير واضح — الخبر وحده لا يحدد شراء أو بيع"}
 
 @app.get("/api/news")
-def market_news(limit: int = Query(30, ge=1, le=100)):
+def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all"), refresh: bool = Query(False)):
     from urllib.parse import urlencode
+    market = market.lower().strip()
+    if market not in {"all", "crypto", "us", "saudi", "forex", "contracts"}:
+        market = "all"
     now = time.time()
-    if now - NEWS_CACHE["at"] < 300 and NEWS_CACHE["items"]:
-        return {"ok": True, "live": True, "items": NEWS_CACHE["items"][:limit], "cached": True,
-                "message": "أخبار مجمعة ومصنفة حسب الأصول التي أمكن تحديدها؛ راجع الخبر الأصلي قبل اتخاذ القرار."}
-    assets, coins = _news_universe()
-    queries = [
-        ("أخبار العملات الرقمية", "cryptocurrency OR Bitcoin OR Ethereum OR crypto market"),
-        ("أخبار الأسهم الأمريكية", "US stocks OR Nasdaq OR S&P 500 earnings shares"),
-        ("أخبار السوق السعودي", "أسهم السوق السعودي تداول شركات السعودية"),
-        ("أخبار الفوركس والذهب والعقود", "forex OR gold OR oil OR Nasdaq futures OR dollar"),
-    ]
-    coin_symbols = sorted(coins.keys())
-    for start in range(0, len(coin_symbols), 25):
-        queries.append(("العملات الرقمية", " OR ".join(coin_symbols[start:start+25]) + " cryptocurrency crypto"))
-    stock_symbols = [s.replace(".SR", "") for m in ("us", "saudi") for s in YAHOO_MARKETS[m]]
-    for start in range(0, len(stock_symbols), 20):
-        queries.append(("الأسهم", " OR ".join(stock_symbols[start:start+20]) + " stock shares"))
+    cached = NEWS_CACHE.get(market)
+    if not refresh and cached and now - cached["at"] < 300:
+        return {"ok": True, "live": True, "items": cached["items"][:limit], "cached": True, "market": market,
+                "message": "اختر السوق من القائمة لتغيير نوع الأخبار؛ راجع الخبر الأصلي قبل اتخاذ القرار."}
+    assets, coins, counts = _news_universe()
+    if market == "crypto":
+        allowed_assets = [a for a in assets if a["kind"] == "عملة رقمية"]
+        queries = [("العملات الرقمية", "cryptocurrency OR Bitcoin OR Ethereum OR crypto market")]
+        symbols = sorted(coins)
+        for start in range(0, len(symbols), 25):
+            queries.append(("العملات الرقمية", " OR ".join(symbols[start:start+25]) + " cryptocurrency crypto"))
+    elif market == "us":
+        allowed_assets = [a for a in assets if a["market"] == "us"]
+        symbols = YAHOO_MARKETS["us"]
+        queries = [("الأسهم الأمريكية", "US stocks Nasdaq S&P 500 earnings shares")]
+        for start in range(0, len(symbols), 20):
+            queries.append(("الأسهم الأمريكية", " OR ".join(symbols[start:start+20]) + " stock shares earnings"))
+    elif market == "saudi":
+        allowed_assets = [a for a in assets if a["market"] == "saudi"]
+        symbols = [s.replace(".SR", "") for s in YAHOO_MARKETS["saudi"]]
+        queries = [("السوق السعودي", "أسهم السوق السعودي تداول الشركات السعودية تاسي نمو")]
+        for start in range(0, len(symbols), 20):
+            queries.append(("السوق السعودي", " OR ".join(symbols[start:start+20]) + " سهم تداول شركة السعودية"))
+    elif market == "forex":
+        allowed_assets = [a for a in assets if a["market"] == "forex"]
+        queries = [("الفوركس والذهب", "forex EURUSD GBPUSD USDJPY gold XAUUSD dollar currency market")]
+    elif market == "contracts":
+        allowed_assets = [a for a in assets if a["market"] == "contracts"]
+        queries = [("العقود الأمريكية", "S&P 500 futures Nasdaq futures Dow futures gold oil futures ES NQ GC CL")]
+    else:
+        allowed_assets = assets
+        queries = [("العملات الرقمية", "cryptocurrency OR Bitcoin OR Ethereum OR crypto market"),
+            ("الأسهم الأمريكية", "US stocks OR Nasdaq OR S&P 500 earnings shares"),
+            ("السوق السعودي", "أسهم السوق السعودي تداول شركات السعودية تاسي نمو"),
+            ("الفوركس والذهب", "forex OR gold OR dollar currency market"),
+            ("العقود الأمريكية", "S&P 500 futures Nasdaq futures Dow futures gold oil futures")]
+        for start in range(0, len(coins), 25):
+            queries.append(("العملات الرقمية", " OR ".join(sorted(coins)[start:start+25]) + " cryptocurrency crypto"))
+        for group_market, label in (("us", "الأسهم الأمريكية"), ("saudi", "السوق السعودي")):
+            group_symbols = [s.replace(".SR", "") for s in YAHOO_MARKETS[group_market]]
+            for start in range(0, len(group_symbols), 20):
+                queries.append((label, " OR ".join(group_symbols[start:start+20]) + " stock shares"))
     def read_feed(entry):
         label, query = entry
         url = "https://news.google.com/rss/search?" + urlencode({"q": query, "hl": "ar", "gl": "SA", "ceid": "SA:ar"})
         found = []
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "SmartTradingPro/2.3"})
+            req = urllib.request.Request(url, headers={"User-Agent": "SmartTradingPro/2.4"})
             with urllib.request.urlopen(req, timeout=4) as response:
                 root = ET.fromstring(response.read())
             for node in root.findall("./channel/item"):
@@ -1092,9 +1143,8 @@ def market_news(limit: int = Query(30, ge=1, le=100)):
                 title_lower = item["title"].lower()
                 matched = []
                 import re
-                for asset in assets:
-                    symbol = asset["symbol"]
-                    name = asset["name"]
+                for asset in allowed_assets:
+                    symbol, name = asset["symbol"], asset["name"]
                     symbol_match = len(symbol) >= 3 and re.search(r"(?<![A-Za-z0-9])" + re.escape(symbol) + r"(?![A-Za-z0-9])", item["title"], re.I)
                     name_match = len(name) >= 4 and name.lower() in title_lower
                     if symbol_match or name_match:
@@ -1106,10 +1156,9 @@ def market_news(limit: int = Query(30, ge=1, le=100)):
                 item.update(_news_direction(item["title"]))
                 items.append(item)
     items.sort(key=lambda x: x["published"], reverse=True)
-    NEWS_CACHE["at"], NEWS_CACHE["items"] = now, items
-    return {"ok": True, "live": bool(items), "items": items[:limit], "cached": False,
-            "universe": {"unique_coins": len(coins), "total_stocks": len(YAHOO_MARKETS["us"]) + len(YAHOO_MARKETS["saudi"])},
-            "message": "التصنيف آلي أولي من عنوان الخبر؛ إذا لم تكفِ الدلالة يظهر «غير واضح». ليس توصية مالية." if items else "تعذر تحميل موجز الأخبار الآن؛ جرّب التحديث لاحقًا."}
+    NEWS_CACHE[market] = {"at": now, "items": items}
+    return {"ok": True, "live": bool(items), "items": items[:limit], "cached": False, "market": market, "universe": counts,
+            "message": "الأخبار مفصولة حسب السوق المحدد؛ التوجه تصنيف آلي أولي من العنوان فقط وليس توصية مالية." if items else "ما لقينا أخبار في هذا التصنيف الآن؛ جرّب تحديث البحث لاحقًا."}
 
 
 @app.get("/api/blog")
