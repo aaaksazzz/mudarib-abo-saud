@@ -574,6 +574,58 @@ def technical_filter(market: str, interval: str = Query("15m"), limit: int = Que
 
 
 
+# Correlated aliases/proxies count as one independent confirmation family.
+METHOD_FAMILY_OVERRIDES = {
+    "smc": "structure_smc_ict", "ict": "structure_smc_ict", "bos_choch": "structure_smc_ict",
+    "order_blocks": "structure_smc_ict", "breaker_blocks": "structure_smc_ict", "mitigation_blocks": "structure_smc_ict",
+    "unicorn_model": "structure_smc_ict", "ict_ote": "structure_smc_ict", "ict_kill_zone": "structure_smc_ict",
+    "fvg": "imbalance", "fvg_retest": "imbalance", "liquidity_void": "imbalance", "volume_imbalance": "imbalance",
+    "liquidity_sweep": "liquidity_reversal", "turtle_soup": "liquidity_reversal", "failed_breakout": "liquidity_reversal",
+    "liquidity_reclaim": "liquidity_reversal", "judas_swing": "liquidity_reversal", "wyckoff_spring": "liquidity_reversal",
+    "wyckoff_upthrust": "liquidity_reversal", "range_liquidity_reclaim": "liquidity_reversal",
+    "vwap": "vwap_value", "anchored_vwap": "vwap_value", "vwap_reclaim": "vwap_value",
+    "mean_reversion": "mean_reversion", "zscore_reversion": "mean_reversion", "rsi_reversal": "mean_reversion",
+    "connors_rsi": "mean_reversion", "stochastic": "mean_reversion", "williams_r": "mean_reversion",
+    "bollinger_bands": "mean_reversion",
+    "breakout": "breakout_channel", "volatility_breakout": "breakout_channel", "atr_breakout": "breakout_channel",
+    "donchian": "breakout_channel", "price_channel": "breakout_channel", "channel_breakout": "breakout_channel",
+    "pivot_breakout": "breakout_channel", "orb": "breakout_channel", "session_range": "breakout_channel",
+    "range_expansion": "breakout_channel", "range_compression": "breakout_channel",
+    "relative_volume_breakout": "breakout_channel", "darvas_box": "breakout_channel",
+    "turtle_trading": "breakout_channel", "fractal_breakout": "breakout_channel",
+    "momentum": "trend_momentum", "trend_following": "trend_momentum", "dual_momentum": "trend_momentum",
+    "relative_strength": "trend_momentum", "macd": "trend_momentum", "ppo": "trend_momentum",
+    "trix": "trend_momentum", "kama": "trend_momentum", "tema": "trend_momentum",
+    "elder_impulse": "trend_momentum", "supertrend": "trend_momentum", "aroon": "trend_momentum",
+    "vortex": "trend_momentum", "dmi": "trend_momentum", "adx_trend": "trend_momentum",
+    "cvd_proxy": "ohlcv_volume_proxy", "footprint_proxy": "ohlcv_volume_proxy", "absorption": "ohlcv_volume_proxy",
+    "order_flow": "ohlcv_volume_proxy", "market_profile": "ohlcv_volume_proxy", "volume_profile": "ohlcv_volume_proxy",
+    "obv_trend": "ohlcv_volume_proxy", "accumulation_distribution": "ohlcv_volume_proxy", "pvt": "ohlcv_volume_proxy",
+    "chaikin_oscillator": "ohlcv_volume_proxy", "chaikin_money_flow": "ohlcv_volume_proxy",
+    "ease_movement": "ohlcv_volume_proxy", "volume_climax": "ohlcv_volume_proxy",
+    "relative_volume_climax": "ohlcv_volume_proxy", "klinger_oscillator": "ohlcv_volume_proxy",
+    "wyckoff_effort_result": "ohlcv_volume_proxy", "failed_auction": "ohlcv_volume_proxy",
+    "candlestick": "candlestick_reversal", "three_bar_reversal": "candlestick_reversal",
+    "outside_bar": "candlestick_reversal", "three_line_strike": "candlestick_reversal",
+    "marubozu": "candlestick_reversal", "doji_reversal": "candlestick_reversal", "star_pattern": "candlestick_reversal",
+    "piercing_dark_cloud": "candlestick_reversal", "tweezer": "candlestick_reversal", "key_reversal": "candlestick_reversal",
+    "support_resistance": "levels_fibonacci", "pivot_points": "levels_fibonacci", "pivot_reversal": "levels_fibonacci",
+    "fib_confluence": "levels_fibonacci", "fibonacci": "levels_fibonacci", "fib_extension": "levels_fibonacci",
+    "multi_swing_ote": "levels_fibonacci", "premium_discount": "levels_fibonacci",
+    "gartley": "harmonic_patterns", "bat_pattern": "harmonic_patterns", "butterfly_pattern": "harmonic_patterns",
+    "crab_pattern": "harmonic_patterns", "shark_pattern": "harmonic_patterns", "harmonic": "harmonic_patterns",
+    "chart_patterns": "chart_patterns", "triple_top_bottom": "chart_patterns", "head_shoulders": "chart_patterns",
+    "inverse_head_shoulders": "chart_patterns", "wedge": "chart_patterns", "flag": "chart_patterns",
+    "pennant": "chart_patterns", "cup_handle": "chart_patterns", "rectangle": "chart_patterns",
+    "rounding_pattern": "chart_patterns", "three_drives": "chart_patterns", "wolfe_waves": "chart_patterns",
+    "andrews_pitchfork": "channels_trendlines", "channels": "channels_trendlines",
+    "linear_regression_channel": "channels_trendlines", "stddev_channel": "channels_trendlines",
+    "range_trading": "range_context", "regime": "range_context", "choppiness": "range_context",
+}
+def method_family(method_key):
+    return METHOD_FAMILY_OVERRIDES.get(method_key, method_key)
+
+
 METHOD_RULES = {
     "Price Action": "price_action", "SMC": "smc", "ICT": "ict",
     "Order Flow": "order_flow", "BOS / CHOCH": "bos_choch",
@@ -1564,7 +1616,9 @@ def build_signal(market: str, ticker: dict, interval: str):
             continue
     confirmations = bullish_points if side == "BUY" else bearish_points
     directional_score = 100 * max(bullish_points, bearish_points) / 10
-    method_count = len(method_hits)
+    method_families = sorted({method_family(METHOD_RULES[name]) for name in method_hits})
+    method_count_raw = len(method_hits)
+    method_count = len(method_families)
     method_score = min(method_count, 10) * 10
     # A single valid method may surface a candidate; stronger confluence raises its rank.
     # Keep a small directional floor so an isolated rule is not presented as a strong trade.
@@ -1603,7 +1657,9 @@ def build_signal(market: str, ticker: dict, interval: str):
         "stop_pct": abs(entry-stop)/entry*100, "tp1_pct": abs(t1-entry)/entry*100,
         "tp2_pct": abs(t2-entry)/entry*100, "tp3_pct": abs(t3-entry)/entry*100,
         "score": min(98, score), "confirmations": confirmations,
-        "method_count": method_count, "importance": ("صفقة مهمة جدًا" if method_count >= 10 else "صفقة مهمة" if method_count >= 6 else "توافق متوسط" if method_count >= 3 else "إشارة أولية"),
+        "method_count": method_count, "method_count_raw": method_count_raw,
+        "method_families": method_families,
+        "importance": ("صفقة مهمة جدًا" if method_count >= 7 else "صفقة مهمة" if method_count >= 5 else "توافق متوسط" if method_count >= 3 else "إشارة أولية"),
         "methods": active, "method_hits": method_hits,
         "quote_volume": ticker.get("quote_volume", 0), "updated_at": int(time.time()),
         "method": "ترتيب حسب توافق المناهج مع اتجاه السعر",
