@@ -1057,7 +1057,7 @@ def method_signal(candles, ticker, method_key):
         elif (method_key in ("flag","pennant","vcp","nr7","darvas_box","rectangle","fractal_breakout","pivot_breakout","kumo_breakout") or compressed) and price<prior_low and bearish: side="SELL"
         elif method_key in ("triple_top_bottom","head_shoulders") and bearish_structure and price<prev_sl and bearish: side="SELL"
         elif method_key in ("triple_top_bottom","inverse_head_shoulders") and bullish_structure and price>prev_sh and bullish: side="BUY"
-        elif method_key == "adx_trend":
+    elif method_key == "adx_trend":
         if e20 is not None and e50 is not None and abs(e20-e50)/price>0.003:
             if e20>e50 and price>e20 and bullish: side="BUY"
             elif e20<e50 and price<e20 and bearish: side="SELL"
