@@ -612,6 +612,21 @@ METHOD_RULES = {
     "MACD": "macd", "RSI Reversal": "rsi_reversal", "Stochastic": "stochastic",
     "ADX Trend Filter": "adx_trend", "OBV Trend": "obv_trend",
     "Accumulation / Distribution": "accumulation_distribution",
+    "CCI": "cci", "Williams %R": "williams_r", "Money Flow Index": "mfi",
+    "Rate of Change": "roc", "TRIX": "trix", "DMI / DI Cross": "dmi",
+    "Elder Ray": "elder_ray", "KAMA Trend": "kama", "TEMA Trend": "tema",
+    "Triple Top / Bottom": "triple_top_bottom", "Head & Shoulders": "head_shoulders",
+    "Inverse Head & Shoulders": "inverse_head_shoulders", "Rising / Falling Wedge": "wedge",
+    "Bull / Bear Flag": "flag", "Pennant Breakout": "pennant",
+    "Cup & Handle Approximation": "cup_handle", "Rectangle Breakout": "rectangle",
+    "Rounding Bottom / Top": "rounding_pattern", "Three Drives": "three_drives",
+    "Key Reversal Day": "key_reversal", "NR7 / Narrow Range": "nr7",
+    "Volatility Contraction Pattern": "vcp", "Darvas Box": "darvas_box",
+    "Elder Triple Screen Proxy": "triple_screen", "Ichimoku Kumo Breakout": "kumo_breakout",
+    "Fisher Transform Proxy": "fisher_transform", "Chaikin Money Flow": "chaikin_money_flow",
+    "Force Index": "force_index", "Ulcer Index Risk Filter": "ulcer_filter",
+    "Williams Alligator Proxy": "alligator", "Fractal Breakout": "fractal_breakout",
+    "Fibonacci Extension": "fib_extension", "Classic Pivot Breakout": "pivot_breakout",
     "Fair Value Gap Retest": "fvg_retest", "Equal Highs / Lows": "equal_highs_lows",
     "Premium / Discount Zones": "premium_discount", "Session Range Breakout": "session_range",
     "Risk Management": "risk_management"
@@ -974,7 +989,75 @@ def method_signal(candles, ticker, method_key):
         prev_k=100*(closes[-2]-min(lows[-14:-1]))/max(max(highs[-14:-1])-min(lows[-14:-1]),1e-12)
         if k>20 and prev_k<=20 and bullish: side="BUY"
         elif k<80 and prev_k>=80 and bearish: side="SELL"
-    elif method_key == "adx_trend":
+    elif method_key == "cci":
+        typical=[(highs[i]+lows[i]+closes[i])/3 for i in range(len(c))]
+        m=mean(typical[-20:]); md=mean([abs(x-m) for x in typical[-20:]])
+        cci=(typical[-1]-m)/max(0.015*md,1e-12)
+        if cci>100 and bullish: side="BUY"
+        elif cci< -100 and bearish: side="SELL"
+    elif method_key == "williams_r":
+        hh=max(highs[-14:]); ll=min(lows[-14:]); wr=-100*(hh-price)/max(hh-ll,1e-12)
+        if wr>-80 and rsi_now is not None and rsi_now<40 and bullish: side="BUY"
+        elif wr< -20 and rsi_now is not None and rsi_now>60 and bearish: side="SELL"
+    elif method_key == "mfi":
+        pos=neg=0.0
+        for i in range(-14,0):
+            flow=((highs[i]+lows[i]+closes[i])/3)*volumes[i]
+            prevtyp=(highs[i-1]+lows[i-1]+closes[i-1])/3
+            if (highs[i]+lows[i]+closes[i])/3>prevtyp: pos+=flow
+            else: neg+=flow
+        mfi=100-100/(1+pos/max(neg,1e-12))
+        if mfi<20 and bullish: side="BUY"
+        elif mfi>80 and bearish: side="SELL"
+    elif method_key == "roc":
+        roc=(price-closes[-11])/max(closes[-11],1e-12)
+        if roc>0.02 and bullish: side="BUY"
+        elif roc< -0.02 and bearish: side="SELL"
+    elif method_key == "trix":
+        e1=[ema(closes[:i],15) for i in range(1,len(closes)+1)]
+        e1=[x for x in e1 if x is not None]
+        e2=[ema(e1[:i],15) for i in range(1,len(e1)+1)]
+        e2=[x for x in e2 if x is not None]
+        e3=[ema(e2[:i],15) for i in range(1,len(e2)+1)]
+        if len(e3)>1:
+            if e3[-1]>e3[-2] and bullish: side="BUY"
+            elif e3[-1]<e3[-2] and bearish: side="SELL"
+    elif method_key == "dmi":
+        plus=sum(max(highs[i]-highs[i-1],0) for i in range(-14,0))
+        minus=sum(max(lows[i-1]-lows[i],0) for i in range(-14,0))
+        if plus>minus*1.25 and bullish: side="BUY"
+        elif minus>plus*1.25 and bearish: side="SELL"
+    elif method_key == "elder_ray":
+        bull=highs[-1]-(e20 or price); bear=lows[-1]-(e20 or price)
+        if bull>0 and bear<0 and bullish: side="BUY"
+        elif bear<0 and bull<0 and bearish: side="SELL"
+    elif method_key in ("kama","tema","alligator","triple_screen"):
+        # Smoothing/screening approximations; not a substitute for full platform-specific indicator calculation.
+        if e20 is not None and e50 is not None and price>e20>e50 and bullish: side="BUY"
+        elif e20 is not None and e50 is not None and price<e20<e50 and bearish: side="SELL"
+    elif method_key == "chaikin_money_flow":
+        mfv=sum((((closes[i]-lows[i])-(highs[i]-closes[i]))/max(highs[i]-lows[i],1e-12))*volumes[i] for i in range(-20,0))
+        cmf=mfv/max(sum(volumes[-20:]),1e-12)
+        if cmf>0.15 and bullish: side="BUY"
+        elif cmf< -0.15 and bearish: side="SELL"
+    elif method_key == "force_index":
+        force=(closes[-1]-closes[-2])*volumes[-1]
+        if force>0 and volumes[-1]>=avg_vol and bullish: side="BUY"
+        elif force<0 and volumes[-1]>=avg_vol and bearish: side="SELL"
+    elif method_key == "ulcer_filter":
+        peak=max(closes[-14:]); drawdown=(price-peak)/max(peak,1e-12)
+        if drawdown> -0.02 and price>e20 and bullish: side="BUY"
+        elif drawdown< -0.08 and price<e20 and bearish: side="SELL"
+    elif method_key in ("triple_top_bottom","head_shoulders","inverse_head_shoulders","wedge","flag","pennant","cup_handle","rectangle","rounding_pattern","three_drives","key_reversal","nr7","vcp","darvas_box","fractal_breakout","pivot_breakout","kumo_breakout","fib_extension"):
+        # Pattern-family proxy using confirmed swing structure and compression/breakout; full discretionary geometry is not claimed.
+        recent_range=max(highs[-10:])-min(lows[-10:])
+        earlier_range=max(highs[-20:-10])-min(lows[-20:-10])
+        compressed=earlier_range>0 and recent_range<earlier_range*0.75
+        if (method_key in ("flag","pennant","vcp","nr7","darvas_box","rectangle","fractal_breakout","pivot_breakout","kumo_breakout") or compressed) and price>prior_high and bullish: side="BUY"
+        elif (method_key in ("flag","pennant","vcp","nr7","darvas_box","rectangle","fractal_breakout","pivot_breakout","kumo_breakout") or compressed) and price<prior_low and bearish: side="SELL"
+        elif method_key in ("triple_top_bottom","head_shoulders") and bearish_structure and price<prev_sl and bearish: side="SELL"
+        elif method_key in ("triple_top_bottom","inverse_head_shoulders") and bullish_structure and price>prev_sh and bullish: side="BUY"
+        elif method_key == "adx_trend":
         if e20 is not None and e50 is not None and abs(e20-e50)/price>0.003:
             if e20>e50 and price>e20 and bullish: side="BUY"
             elif e20<e50 and price<e20 and bearish: side="SELL"
