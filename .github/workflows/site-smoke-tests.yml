@@ -25,4 +25,4 @@ jobs:
       - name: Compile Python
         run: python -m py_compile app.py
       - name: Run smoke tests
-        run: pytest -q
+        run: python -m pytest -q
