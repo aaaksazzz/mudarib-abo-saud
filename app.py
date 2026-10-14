@@ -1756,6 +1756,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         if market in BINANCE:
             tickers = market_tickers(market)[:max(40, limit * 3)]
         else:
+            # Load the full TASI equity directory before building Saudi signals; otherwise
+            # the fallback list silently limits the signal page to only a few stocks.
+            if market == "saudi":
+                _load_saudi_symbols()
             tickers = []
             with ThreadPoolExecutor(max_workers=8) as pool:
                 for future in as_completed([pool.submit(fetch_yahoo_quote, symbol) for symbol in YAHOO_MARKETS[market]]):
