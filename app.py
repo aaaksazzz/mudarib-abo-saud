@@ -7,7 +7,7 @@ import urllib.request
 import urllib.error
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from fastapi import FastAPI, Query, Depends
+from fastapi import FastAPI, Query, Depends, Request
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -254,11 +254,54 @@ def home():
 @app.get("/news", response_class=HTMLResponse)
 @app.get("/account", response_class=HTMLResponse)
 @app.get("/admin", response_class=HTMLResponse)
-def section_page():
+def section_page(request: Request):
     page = BASE / "static" / "index.html"
     html = page.read_text(encoding="utf-8")
     if 'src="/static/technical.js"' not in html:
         html = html.replace("</body>", '<script src="/static/technical.js?v=2.1"></script></body>')
+
+    # Give each shareable section its own canonical URL and search snippet.
+    # The SPA shell is shared, but search engines must not see every section as "/".
+    section_seo = {
+        "/analysis": ("مناهج التحليل الفني | التداول الذكي PRO", "مكتبة مناهج التحليل الفني: حركة السعر، SMC، ICT، السيولة، النماذج، وإدارة المخاطر."),
+        "/markets/spot": ("سوق السبوت | التداول الذكي PRO", "متابعة أسعار Binance Spot وفرص السوق حسب الفريم، مع توضيح أن الإشارات آلية أولية وليست ضمانًا للربح."),
+        "/markets/futures": ("سوق الفيوتشر | التداول الذكي PRO", "متابعة أسعار Binance Futures وفرص العقود ببيانات السوق العامة، مع إدارة المخاطر ووقف الخسارة."),
+        "/markets/contracts": ("العقود الأمريكية | التداول الذكي PRO", "متابعة العقود الأمريكية مثل S&P 500 وناسداك والذهب والنفط من أسعار عامة قد تكون متأخرة."),
+        "/markets/us-stocks": ("الأسهم الأمريكية | التداول الذكي PRO", "متابعة مجموعة من الأسهم الأمريكية وأسعارها العامة؛ قد تكون البيانات متأخرة وليست أسعار تنفيذ."),
+        "/markets/saudi": ("السوق السعودي | التداول الذكي PRO", "متابعة مجموعة من الأسهم السعودية وأسعارها العامة مع تنبيه إلى توقيت البيانات ومخاطر التداول."),
+        "/markets/forex-gold": ("الفوركس والذهب | التداول الذكي PRO", "متابعة أزواج الفوركس والذهب والفضة من أسعار عامة قد تكون متأخرة."),
+        "/markets/alpha": ("سوق Binance Alpha | التداول الذكي PRO", "حالة تغطية سوق Binance Alpha ومصادر البيانات المتاحة؛ لا تعرض المنصة أسعارًا غير متصلة أو تقديرية."),
+        "/radar": ("رادار الأسواق | التداول الذكي PRO", "رصد الأسواق وفرص التحليل الفني عبر صفحات مستقلة، مع بيانات عامة وحدود واضحة لدقة الإشارات."),
+        "/gold": ("الصفقات الذهبية | التداول الذكي PRO", "صفقات مرتبة وفق معايير الفحص المتاحة، مع الدخول والأهداف ووقف الخسارة عند توفر إشارة صالحة."),
+        "/results": ("نتائج الإشارات | التداول الذكي PRO", "متابعة سجل نتائج الإشارات التي رصدتها الخدمة؛ النتائج السابقة لا تضمن الأداء المستقبلي."),
+        "/news": ("أخبار الأسواق | التداول الذكي PRO", "متابعة أخبار الأسواق ومعلوماتها العامة لدعم فهم السياق، وليست الأخبار وحدها توصية تداول."),
+        "/account": ("الحساب | التداول الذكي PRO", "صفحة الحساب في التداول الذكي PRO. قد لا تكون حسابات العملاء مفعلة في النسخة الحالية.")
+    }
+    path = request.url.path.rstrip("/") or "/"
+    title, description = section_seo.get(path, ("التداول الذكي PRO | رادار وفرص الأسواق", "منصة عربية لمتابعة الأسواق والتحليل والنتائج والأخبار والمدونة التعليمية."))
+    canonical = SEO_BASE_URL + path
+    html = html.replace(
+        '<title>التداول الذكي PRO | رادار وفرص الأسواق</title>',
+        '<title>' + _seo_escape(title) + '</title>'
+    )
+    html = html.replace(
+        '<meta name="description" content="منصة عربية لمتابعة فرص الأسواق وتحليلها حسب الفريم، مع صفقات وأهداف ووقف خسارة ونتائج وأخبار ومدونة تعليمية.">',
+        '<meta name="description" content="' + _seo_escape(description) + '">'
+    )
+    html = html.replace(
+        '<link rel="canonical" href="' + SEO_BASE_URL + '/">',
+        '<link rel="canonical" href="' + _seo_escape(canonical) + '">'
+    )
+    html = html.replace(
+        '<meta property="og:title" content="التداول الذكي PRO">',
+        '<meta property="og:title" content="' + _seo_escape(title) + '">'
+    )
+    html = html.replace(
+        '<meta property="og:description" content="رادار الأسواق والفرص الفنية والتحليل والنتائج والأخبار.">',
+        '<meta property="og:description" content="' + _seo_escape(description) + '">'
+    )
+    if 'property="og:url"' not in html:
+        html = html.replace("</head>", '<meta property="og:url" content="' + _seo_escape(canonical) + '"></head>')
     return HTMLResponse(html)
 
 
