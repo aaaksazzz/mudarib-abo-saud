@@ -761,7 +761,7 @@ def method_signal(candles, ticker, method_key):
 @app.get("/api/methods/{market}")
 def method_filter(market: str, method: str = Query(...), interval: str = Query("15m"), limit: int = Query(40, ge=1, le=100)):
     market = market.lower()
-    if market not in BINANCE:
+    if market not in BINANCE and market not in YAHOO_MARKETS:
         return JSONResponse({"ok": False, "live": False, "items": [], "message": "مصدر هذا السوق غير مربوط حاليًا."})
     if interval not in INTERVALS:
         return JSONResponse({"ok": False, "live": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
@@ -769,7 +769,19 @@ def method_filter(market: str, method: str = Query(...), interval: str = Query("
     if not method_key:
         return JSONResponse({"ok": False, "live": False, "items": [], "message": "المنهج غير معروف."}, status_code=422)
     try:
-        tickers = market_tickers(market)[:limit]
+        if market in BINANCE:
+            tickers = market_tickers(market)[:limit]
+        else:
+            symbols = YAHOO_MARKETS[market]
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                quotes = [future.result() for future in as_completed(
+                    [pool.submit(fetch_yahoo_quote, symbol) for symbol in symbols]
+                )]
+            tickers = [q for q in quotes if q]
+            tickers.sort(key=lambda x: x.get("change_pct", 0), reverse=True)
+            tickers = tickers[:limit]
+            for ticker in tickers:
+                ticker.setdefault("quote_volume", 0)
     except (urllib.error.URLError, TimeoutError, ValueError, OSError):
         return JSONResponse({"ok": False, "live": False, "items": [], "message": "تعذر جلب بيانات السوق المباشرة."}, status_code=503)
     def analyze(ticker):
@@ -784,7 +796,7 @@ def method_filter(market: str, method: str = Query(...), interval: str = Query("
             item = future.result()
             if item:
                 found.append(item)
-    found.sort(key=lambda x: x["quote_volume"], reverse=True)
+    found.sort(key=lambda x: (x.get("score", 0), x.get("quote_volume", 0), abs(x.get("change_pct", 0))), reverse=True)
     return {"ok": True, "live": True, "market": market, "method": method, "interval": interval,
             "scanned": len(tickers), "analyzed": len(tickers), "count": len(found),
             "updated_at": int(time.time()), "items": found,
