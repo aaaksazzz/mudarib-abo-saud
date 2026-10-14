@@ -116,3 +116,44 @@ def test_multilingual_blog_publishes_200_localized_articles():
     assert '<html lang="zh" dir="ltr">' in chinese.text
     assert arabic.status_code == 200
     assert '<html lang="ar" dir="rtl">' in arabic.text
+
+def test_open_signals_expire_at_their_own_timeframe(tmp_path, monkeypatch):
+    import json
+
+    results_path = tmp_path / "results.json"
+    monkeypatch.setattr("app.RESULTS_PATH", results_path)
+    now = 2_000_000_000
+    monkeypatch.setattr("app.time.time", lambda: now)
+    write_json_file(results_path, [
+        {"id": "expired-15m", "market": "spot", "symbol": "AAAUSDT", "interval": "15m",
+         "created_at": now - 901, "result": "مفتوحة"},
+        {"id": "active-weekly", "market": "spot", "symbol": "BBBUSDT", "interval": "1w",
+         "created_at": now - 2 * 86400, "expires_at": now + 5 * 86400, "result": "مفتوحة"},
+        {"id": "closed-old", "created_at": now - 3 * 86400, "closed_at": now - 2 * 86400,
+         "result": "TP1"},
+    ])
+
+    items = prune_results()
+    by_id = {item["id"]: item for item in items}
+    assert by_id["expired-15m"]["result"] == "انتهت المدة"
+    assert by_id["expired-15m"]["expires_at"] == now - 901 + 15 * 60
+    assert by_id["active-weekly"]["result"] == "مفتوحة"
+    assert by_id["active-weekly"]["expires_at"] == now + 5 * 86400
+    assert "closed-old" not in by_id
+
+    saved = json.loads(results_path.read_text(encoding="utf-8"))
+    assert next(x for x in saved if x["id"] == "expired-15m")["result"] == "انتهت المدة"
+
+
+def test_signal_timeframe_durations_are_defined():
+    from app import INTERVAL_SECONDS
+
+    assert INTERVAL_SECONDS == {
+        "15m": 900,
+        "1h": 3600,
+        "4h": 14400,
+        "1d": 86400,
+        "1w": 604800,
+        "1M": 2592000,
+    }
+
