@@ -1870,6 +1870,7 @@ def prune_results(max_age_seconds=86400):
     now = int(time.time())
     items = read_json_file(RESULTS_PATH, [])
     fresh = []
+    changed = False
     for item in items:
         if not isinstance(item, dict) or not isinstance(item.get("created_at"), (int, float)):
             continue
@@ -1882,9 +1883,11 @@ def prune_results(max_age_seconds=86400):
             if not isinstance(expires_at, (int, float)):
                 expires_at = created_at + duration
                 item["expires_at"] = int(expires_at)
+                changed = True
             expires_at = int(expires_at)
             if now >= expires_at:
                 item["result"] = "انتهت المدة"
+                changed = True
                 item["closed_at"] = expires_at
                 item["expiry_reason"] = "انتهت مدة الفريم"
                 item["pnl_pct"] = item.get("pnl_pct", 0.0)
@@ -1897,7 +1900,9 @@ def prune_results(max_age_seconds=86400):
         retention_anchor = int(closed_at) if isinstance(closed_at, (int, float)) else created_at
         if 0 <= now - retention_anchor <= max_age_seconds:
             fresh.append(item)
-    if fresh != items:
+    if len(fresh) != len(items):
+        changed = True
+    if changed:
         write_json_file(RESULTS_PATH, fresh[-1000:])
     return fresh[-1000:]
 
