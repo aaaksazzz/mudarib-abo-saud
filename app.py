@@ -767,7 +767,7 @@ def tasi_index_analysis(interval: str = Query("1d")):
     if interval not in INTERVALS:
         return JSONResponse({"ok": False, "message": "الفريم غير مدعوم."}, status_code=422)
     try:
-        candles = candle_data("tasi_index", "^TASI", interval)
+        candles = candle_data("tasi_index", "^TASI.SR", interval)
     except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError):
         candles = []
     if len(candles) < 2:
@@ -789,7 +789,7 @@ def tasi_index_analysis(interval: str = Query("1d")):
         trend = "هابط"
     else:
         trend = "عرضي / مختلط"
-    return {"ok": True, "live": True, "symbol": "^TASI", "name": "المؤشر العام للسوق السعودي — تاسي",
+    return {"ok": True, "live": True, "symbol": "^TASI.SR", "name": "المؤشر العام للسوق السعودي — تاسي",
             "provider": "Yahoo Finance", "delayed": True, "interval": interval,
             "price": round(last["close"], 2), "change_pct": round(change, 2),
             "trend": trend, "open": round(last["open"], 2), "high": round(last["high"], 2),
