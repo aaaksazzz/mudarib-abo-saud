@@ -55,6 +55,9 @@ TECH_CACHE = {}
 TECH_CACHE_TTL = 90
 STABLES = {"USDC", "USDT", "BUSD", "FDUSD", "TUSD", "DAI", "USDP", "USDE", "USD1", "USDD", "USTC", "EUR", "EURC"}
 INTERVALS = {"15m", "1h", "4h", "1d", "1w", "1M"}
+# A signal remains active only for its own chart timeframe.
+INTERVAL_SECONDS = {"15m": 15 * 60, "1h": 60 * 60, "4h": 4 * 60 * 60,
+                    "1d": 24 * 60 * 60, "1w": 7 * 24 * 60 * 60, "1M": 30 * 24 * 60 * 60}
 HIGHER_INTERVAL = {"15m": "1h", "1h": "4h", "4h": "1d", "1d": "1w", "1w": "1M", "1M": "1M"}
 
 
@@ -1791,7 +1794,6 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         item["rank"] = i + 1
         item["medal"] = medals[i] if i < 3 else "standard"
     history = prune_results()
-    active_keys = {(x.get("market"), x.get("interval"), x.get("symbol")) for x in history if x.get("result") == "مفتوحة"}
     ticker_prices = {x["symbol"]: x["price"] for x in tickers}
     for record in history:
         if record.get("result") != "مفتوحة" or record.get("market") != market or record.get("interval") != interval:
@@ -1817,11 +1819,28 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         if hit:
             record["result"] = hit
             record["closed_at"] = int(now)
+        elif int(now) >= int(record.get("expires_at") or (record.get("created_at", int(now)) + INTERVAL_SECONDS.get(record.get("interval"), 86400))):
+            record["result"] = "انتهت المدة"
+            record["closed_at"] = int(record.get("expires_at") or now)
+            record["expiry_reason"] = "انتهت مدة الفريم"
+    active_map = {
+        (x.get("market"), x.get("interval"), x.get("symbol")): x
+        for x in history if x.get("result") == "مفتوحة"
+    }
+    active_keys = set(active_map)
     for item in found:
         ident = (market, interval, item["symbol"])
-        if ident in active_keys:
+        existing = active_map.get(ident)
+        if existing:
+            # Preserve original expiry; rescanning must not extend a signal lifetime.
+            item["id"] = existing.get("id")
+            item["created_at"] = existing.get("created_at")
+            item["expires_at"] = existing.get("expires_at")
             continue
-        history.append({**item, "id": str(int(now*1000)) + "-" + item["symbol"], "created_at": int(now),
+        created_at = int(now)
+        item["created_at"] = created_at
+        item["expires_at"] = created_at + INTERVAL_SECONDS[interval]
+        history.append({**item, "id": str(int(now*1000)) + "-" + item["symbol"],
                         "last_price": ticker_prices.get(item["symbol"], item["entry"]), "result": "مفتوحة",
                         "reached": None, "pnl_pct": 0.0})
         active_keys.add(ident)
@@ -1847,16 +1866,43 @@ def write_json_file(path, data):
 
 
 def prune_results(max_age_seconds=86400):
-    """Keep the visible results window to the latest 24 hours."""
+    """Keep open signals for their timeframe; retain closed results for 24 hours."""
     now = int(time.time())
     items = read_json_file(RESULTS_PATH, [])
-    fresh = [
-        item for item in items
-        if isinstance(item, dict)
-        and isinstance(item.get("created_at"), (int, float))
-        and 0 <= now - int(item["created_at"]) <= max_age_seconds
-    ]
+    fresh = []
+    changed = False
+    for item in items:
+        if not isinstance(item, dict) or not isinstance(item.get("created_at"), (int, float)):
+            continue
+        created_at = int(item["created_at"])
+        if created_at > now:
+            continue
+        if item.get("result") == "مفتوحة":
+            duration = INTERVAL_SECONDS.get(item.get("interval"), max_age_seconds)
+            expires_at = item.get("expires_at")
+            if not isinstance(expires_at, (int, float)):
+                expires_at = created_at + duration
+                item["expires_at"] = int(expires_at)
+                changed = True
+            expires_at = int(expires_at)
+            if now >= expires_at:
+                item["result"] = "انتهت المدة"
+                changed = True
+                item["closed_at"] = expires_at
+                item["expiry_reason"] = "انتهت مدة الفريم"
+                item["pnl_pct"] = item.get("pnl_pct", 0.0)
+                if now - expires_at <= max_age_seconds:
+                    fresh.append(item)
+            else:
+                fresh.append(item)
+            continue
+        closed_at = item.get("closed_at")
+        retention_anchor = int(closed_at) if isinstance(closed_at, (int, float)) else created_at
+        if 0 <= now - retention_anchor <= max_age_seconds:
+            fresh.append(item)
     if len(fresh) != len(items):
+        changed = True
+    if changed:
         write_json_file(RESULTS_PATH, fresh[-1000:])
     return fresh[-1000:]
 
