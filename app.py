@@ -348,8 +348,13 @@ def fetch_yahoo_quote(symbol: str):
 
 
 @app.get("/api/market/{market}")
-def market_data(market: str, limit: int = Query(40, ge=1, le=100)):
+def market_data(market: str, limit: int = Query(40, ge=1, le=500)):
     market = market.lower()
+    if market == "saudi":
+        old_symbols = len(YAHOO_MARKETS["saudi"])
+        _load_saudi_symbols()
+        if len(YAHOO_MARKETS["saudi"]) != old_symbols:
+            YAHOO_CACHE.pop("saudi", None)
     if market in YAHOO_MARKETS:
         now = time.time()
         cached = YAHOO_CACHE.get(market)
@@ -999,6 +1004,9 @@ def _load_saudi_symbols():
             data = fetch_json("https://api.sahmk.sa/api/v1/companies/?market=" + market_code + "&limit=500&offset=0", timeout=5)
             rows = data.get("results", []) if isinstance(data, dict) else []
             for row in rows:
+                security_type = str(row.get("security_type") or row.get("type") or "").strip().lower()
+                if security_type and not any(tag in security_type for tag in ("equity", "stock", "share", "سهم")):
+                    continue
                 raw_symbol = str(row.get("symbol") or row.get("ticker") or "").strip()
                 if not raw_symbol:
                     continue
