@@ -1183,7 +1183,7 @@ def method_signal(candles, ticker, method_key):
             loc=(price-lows[-1])/candle_range
             if loc>0.75 and bullish: side="BUY"
             elif loc<0.25 and bearish: side="SELL"
-    elif method_key in ("schaff_cycle","adaptive_ma","mcginley","donchian_midline","vol_adjusted_momentum"):
+    elif method_key in ("schaff_cycle","adaptive_ma","mcginley","donchian_midline","vol_adjusted_momentum","volatility_adjusted_momentum"):
         if price>e20 and e20>e50 and bullish: side="BUY"
         elif price<e20 and e20<e50 and bearish: side="SELL"
     elif method_key in ("hurst_filter","hurst_cycle"):
@@ -1246,6 +1246,11 @@ def method_signal(candles, ticker, method_key):
         cmf=mfv/max(sum(volumes[-20:]),1e-12)
         if cmf>0.15 and bullish: side="BUY"
         elif cmf< -0.15 and bearish: side="SELL"
+    elif method_key == "ad_divergence":
+        signed_now=volumes[-1]*(1 if closes[-1]>closes[-2] else -1 if closes[-1]<closes[-2] else 0)
+        signed_prev=volumes[-6]*(1 if closes[-6]>closes[-7] else -1 if closes[-6]<closes[-7] else 0)
+        if price>closes[-6] and signed_now>signed_prev and bullish: side="BUY"
+        elif price<closes[-6] and signed_now<signed_prev and bearish: side="SELL"
     elif method_key == "force_index":
         force=(closes[-1]-closes[-2])*volumes[-1]
         if force>0 and volumes[-1]>=avg_vol and bullish: side="BUY"
