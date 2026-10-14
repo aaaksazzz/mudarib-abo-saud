@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from fastapi import FastAPI, Query, Depends, Request
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE = Path(__file__).resolve().parent
@@ -342,6 +342,24 @@ def home():
 # Serve the same app shell at stable, section-specific URLs so each page can be bookmarked/shared.
 @app.get("/analysis", response_class=HTMLResponse)
 @app.get("/tasi-analysis", response_class=HTMLResponse)
+@app.get("/market/{market_slug}", include_in_schema=False)
+def legacy_market_redirect(market_slug: str):
+    """Keep old singular market URLs working after the site moved to /markets/."""
+    destinations = {
+        "spot": "/markets/spot",
+        "futures": "/markets/futures",
+        "contracts": "/markets/contracts",
+        "us-stocks": "/markets/us-stocks",
+        "saudi": "/markets/saudi",
+        "forex-gold": "/markets/forex-gold",
+        "alpha": "/markets/alpha",
+    }
+    target = destinations.get(market_slug.lower())
+    if target is None:
+        return JSONResponse({"ok": False, "message": "صفحة السوق غير موجودة."}, status_code=404)
+    return RedirectResponse(url=target, status_code=308)
+
+
 @app.get("/markets/spot", response_class=HTMLResponse)
 @app.get("/markets/futures", response_class=HTMLResponse)
 @app.get("/markets/contracts", response_class=HTMLResponse)
