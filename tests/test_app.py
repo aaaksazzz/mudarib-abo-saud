@@ -1,6 +1,8 @@
+import time
+
 from fastapi.testclient import TestClient
 
-from app import app
+from app import app, prune_results, write_json_file
 
 client = TestClient(app)
 
@@ -58,3 +60,17 @@ def test_robots_and_sitemap_are_served():
     assert "<urlset" in sitemap.text
     assert "/markets/spot" in sitemap.text
     assert "/blog/risk-management-stop-loss" in sitemap.text
+
+
+
+def test_result_history_expires_after_24_hours(tmp_path, monkeypatch):
+    results_path = tmp_path / "results.json"
+    monkeypatch.setattr("app.RESULTS_PATH", results_path)
+    now = int(time.time())
+    write_json_file(results_path, [
+        {"id": "old", "created_at": now - 86401, "result": "TP1"},
+        {"id": "fresh", "created_at": now - 3600, "result": "مفتوحة"},
+    ])
+    items = prune_results()
+    assert [item["id"] for item in items] == ["fresh"]
+    assert [item["id"] for item in __import__("json").loads(results_path.read_text(encoding="utf-8"))] == ["fresh"]
