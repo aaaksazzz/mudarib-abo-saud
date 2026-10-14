@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from fastapi import FastAPI, Query, Depends, Request
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 BASE = Path(__file__).resolve().parent
@@ -342,6 +342,24 @@ def home():
 # Serve the same app shell at stable, section-specific URLs so each page can be bookmarked/shared.
 @app.get("/analysis", response_class=HTMLResponse)
 @app.get("/tasi-analysis", response_class=HTMLResponse)
+@app.get("/market/{market_slug}", include_in_schema=False)
+def legacy_market_redirect(market_slug: str):
+    """Keep old singular market URLs working after the site moved to /markets/."""
+    destinations = {
+        "spot": "/markets/spot",
+        "futures": "/markets/futures",
+        "contracts": "/markets/contracts",
+        "us-stocks": "/markets/us-stocks",
+        "saudi": "/markets/saudi",
+        "forex-gold": "/markets/forex-gold",
+        "alpha": "/markets/alpha",
+    }
+    target = destinations.get(market_slug.lower())
+    if target is None:
+        return JSONResponse({"ok": False, "message": "صفحة السوق غير موجودة."}, status_code=404)
+    return RedirectResponse(url=target, status_code=308)
+
+
 @app.get("/markets/spot", response_class=HTMLResponse)
 @app.get("/markets/futures", response_class=HTMLResponse)
 @app.get("/markets/contracts", response_class=HTMLResponse)
@@ -1738,6 +1756,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         if market in BINANCE:
             tickers = market_tickers(market)[:max(40, limit * 3)]
         else:
+            # Load the full TASI equity directory before building Saudi signals; otherwise
+            # the fallback list silently limits the signal page to only a few stocks.
+            if market == "saudi":
+                _load_saudi_symbols()
             tickers = []
             with ThreadPoolExecutor(max_workers=8) as pool:
                 for future in as_completed([pool.submit(fetch_yahoo_quote, symbol) for symbol in YAHOO_MARKETS[market]]):
