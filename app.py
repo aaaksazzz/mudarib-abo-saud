@@ -1,6 +1,9 @@
 import json
 import os
 import time
+import math
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import secrets
 import xml.etree.ElementTree as ET
 import urllib.request
@@ -667,15 +670,24 @@ METHOD_RULES = {
 
 
 def method_signal(candles, ticker, method_key):
-    """Evaluate method-specific OHLCV setups; label approximations honestly."""
-    if len(candles) < 30:
+    """Evaluate method-specific OHLCV setups; unavailable auxiliary data must not be fabricated."""
+    if not isinstance(candles, list) or len(candles) < 30:
         return None
     c = candles
-    closes = [float(x["close"]) for x in c]
-    highs = [float(x["high"]) for x in c]
-    lows = [float(x["low"]) for x in c]
-    opens = [float(x["open"]) for x in c]
-    volumes = [max(0.0, float(x.get("volume", 0) or 0)) for x in c]
+    try:
+        closes = [float(x["close"]) for x in c]
+        highs = [float(x["high"]) for x in c]
+        lows = [float(x["low"]) for x in c]
+        opens = [float(x["open"]) for x in c]
+        volumes = [max(0.0, float(x.get("volume", 0) or 0)) for x in c]
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return None
+    # Reject malformed OHLCV instead of allowing bad prices to create a signal.
+    for o, h, l, close, volume in zip(opens, highs, lows, closes, volumes):
+        if not all(math.isfinite(v) for v in (o, h, l, close, volume)):
+            return None
+        if min(o, h, l, close) <= 0 or h < max(o, l, close) or l > min(o, h, close):
+            return None
     last, prev = c[-1], c[-2]
     price = closes[-1]
     if price <= 0:
@@ -1152,8 +1164,20 @@ def method_signal(candles, ticker, method_key):
             if buy_zone and bullish and price>e20: side="BUY"
             elif sell_zone and bearish and price<e20: side="SELL"
     elif method_key == "ict_kill_zone":
-        # Candle timestamps/session timezone are not passed into this evaluator; avoid fabricating a session signal.
-        side=None
+        # ICT kill zones in New York local time; zone conversion accounts for daylight saving.
+        stamp = last.get("time", last.get("timestamp"))
+        if stamp is not None:
+            try:
+                stamp = float(stamp)
+                if stamp > 1e12:
+                    stamp /= 1000.0
+                local_time = datetime.fromtimestamp(stamp, timezone.utc).astimezone(ZoneInfo("America/New_York"))
+                minute = local_time.hour * 60 + local_time.minute
+                in_kill_zone = (120 <= minute < 300) or (420 <= minute < 600)
+                if in_kill_zone and bullish and price > e20 and abs(body) >= atr * 0.5: side = "BUY"
+                elif in_kill_zone and bearish and price < e20 and abs(body) >= atr * 0.5: side = "SELL"
+            except (ValueError, TypeError, OverflowError):
+                side = None
     elif method_key in ("gartley","bat_pattern","butterfly_pattern","crab_pattern","shark_pattern"):
         # Approximate harmonic completion from recent swing ratios; requires independent validation before production use.
         swings=(recent_sl[-2][1],recent_sh[-2][1],recent_sl[-1][1],recent_sh[-1][1]) if len(recent_sl)>=2 and len(recent_sh)>=2 else None
@@ -1386,6 +1410,30 @@ def method_filter(market: str, method: str = Query(...), interval: str = Query("
 
 
 
+@app.get("/api/risk/position-size")
+def risk_position_size(
+    equity: float = Query(..., gt=0),
+    risk_pct: float = Query(1.0, gt=0, le=5),
+    entry: float = Query(..., gt=0),
+    stop: float = Query(..., gt=0),
+):
+    """Position sizing from supplied equity and stop; excludes costs and leverage constraints."""
+    if not all(math.isfinite(v) for v in (equity, risk_pct, entry, stop)) or entry == stop:
+        return JSONResponse({"ok": False, "message": "تحقق من رأس المال وسعر الدخول والوقف؛ يجب أن يختلف الوقف عن الدخول."}, status_code=422)
+    distance = abs(entry - stop)
+    risk_amount = equity * (risk_pct / 100.0)
+    quantity = risk_amount / distance
+    notional = quantity * entry
+    return {
+        "ok": True, "equity": equity, "risk_pct": risk_pct,
+        "risk_amount": round(risk_amount, 8), "entry": entry, "stop": stop,
+        "stop_distance_pct": round(distance / entry * 100.0, 6),
+        "quantity_before_costs": round(quantity, 8),
+        "notional_before_leverage": round(notional, 8),
+        "disclaimer": "حساب نظري قبل الرسوم والانزلاق والتمويل وحدود المنصة؛ لا يضمن الخسارة القصوى الفعلية."
+    }
+
+
 SIGNAL_CACHE = {}
 SIGNAL_CACHE_TTL = 75
 
@@ -1395,7 +1443,7 @@ def candle_data(market: str, symbol: str, interval: str):
     if market in BINANCE:
         url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 220})
         raw = fetch_json(url, timeout=8)
-        return [{"open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
+        return [{"time": int(k[0]) // 1000, "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
                 for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
     if market not in YAHOO_MARKETS and market != "tasi_index":
         return []
