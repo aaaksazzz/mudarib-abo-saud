@@ -772,6 +772,8 @@ def method_filter(market: str, method: str = Query(...), interval: str = Query("
         if market in BINANCE:
             tickers = market_tickers(market)[:limit]
         else:
+            if market == "saudi":
+                _load_saudi_symbols()
             symbols = YAHOO_MARKETS[market]
             with ThreadPoolExecutor(max_workers=8) as pool:
                 quotes = [future.result() for future in as_completed(
