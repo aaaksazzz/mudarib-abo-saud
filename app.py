@@ -758,6 +758,47 @@ def method_signal(candles, ticker, method_key):
             "status": "إشارة اجتازت شرط المنهج — تحقق آلي أولي", "change_pct": ticker["change_pct"]}
 
 
+
+@app.get("/api/tasi/analysis")
+def tasi_index_analysis(interval: str = Query("1d")):
+    """Broad analysis of the TASI benchmark index, not an individual Saudi stock."""
+    if interval not in INTERVALS:
+        return JSONResponse({"ok": False, "message": "الفريم غير مدعوم."}, status_code=422)
+    try:
+        candles = candle_data("tasi_index", "^TASI", interval)
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError):
+        candles = []
+    if len(candles) < 2:
+        return JSONResponse({"ok": False, "live": False, "items": [],
+                             "message": "تعذر جلب بيانات مؤشر تاسي من المصدر العام الآن؛ لم نعرض تحليلًا تقديريًا."}, status_code=503)
+    closes = [float(c["close"]) for c in candles]
+    last, prev = candles[-1], candles[-2]
+    def sma(n):
+        vals = closes[-n:]
+        return round(sum(vals) / len(vals), 2) if len(vals) >= n else None
+    change = ((last["close"] - prev["close"]) / prev["close"] * 100) if prev["close"] else 0
+    window = candles[-20:]
+    support = min(c["low"] for c in window)
+    resistance = max(c["high"] for c in window)
+    s20, s50, s200 = sma(20), sma(50), sma(200)
+    if s20 is not None and s50 is not None and last["close"] > s20 > s50:
+        trend = "صاعد"
+    elif s20 is not None and s50 is not None and last["close"] < s20 < s50:
+        trend = "هابط"
+    else:
+        trend = "عرضي / مختلط"
+    return {"ok": True, "live": True, "symbol": "^TASI", "name": "المؤشر العام للسوق السعودي — تاسي",
+            "provider": "Yahoo Finance", "delayed": True, "interval": interval,
+            "price": round(last["close"], 2), "change_pct": round(change, 2),
+            "trend": trend, "open": round(last["open"], 2), "high": round(last["high"], 2),
+            "low": round(last["low"], 2), "close": round(last["close"], 2),
+            "support": round(support, 2), "resistance": round(resistance, 2),
+            "sma20": s20, "sma50": s50, "sma200": s200,
+            "candles": [{"time": c.get("time"), "open": round(c["open"], 2), "high": round(c["high"], 2),
+                         "low": round(c["low"], 2), "close": round(c["close"], 2), "volume": c.get("volume", 0)}
+                        for c in candles[-60:]],
+            "message": "تحليل فني للمؤشر العام، وليس توصية على سهم منفرد. بيانات Yahoo قد تكون متأخرة."}
+
 @app.get("/api/methods/{market}")
 def method_filter(market: str, method: str = Query(...), interval: str = Query("15m"), limit: int = Query(40, ge=1, le=100)):
     market = market.lower()
@@ -817,7 +858,7 @@ def candle_data(market: str, symbol: str, interval: str):
         raw = fetch_json(url, timeout=8)
         return [{"open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
                 for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
-    if market not in YAHOO_MARKETS:
+    if market not in YAHOO_MARKETS and market != "tasi_index":
         return []
     yahoo_interval = {"15m":"15m", "1h":"60m", "4h":"60m", "1d":"1d", "1w":"1wk", "1M":"1mo"}.get(interval)
     yahoo_range = {"15m":"60d", "1h":"730d", "4h":"730d", "1d":"5y", "1w":"10y", "1M":"max"}.get(interval)
