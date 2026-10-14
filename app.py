@@ -1365,7 +1365,8 @@ def method_signal(candles, ticker, method_key):
     evidence+=int(avg_vol>0 and volumes[-1]>=avg_vol*1.5)
     evidence+=int(rsi_now is not None and ((side=="BUY" and rsi_now>=50) or (side=="SELL" and rsi_now<=50)))
     score=min(90,58+8*evidence)
-    return {**ticker,"side":side,"method":method_key,"entry":entry,"stop":stop,
+    return {**ticker,"side":side,"method":method_key,"score_type":"rule_evidence_not_probability",
+            "score_label":"قوة الشواهد وليست احتمال ربح","entry":entry,"stop":stop,
             "tp1":tp1,"tp2":tp2,"tp3":tp3,
             "stop_pct":abs(entry-stop)/entry*100,"tp1_pct":abs(tp1-entry)/entry*100,
             "score":score,
@@ -1413,6 +1414,60 @@ def tasi_index_analysis(interval: str = Query("1d")):
                          "low": round(c["low"], 2), "close": round(c["close"], 2), "volume": c.get("volume", 0)}
                         for c in candles[-60:]],
             "message": "تحليل فني للمؤشر العام، وليس توصية على سهم منفرد. بيانات Yahoo قد تكون متأخرة."}
+
+# Method audit endpoint: exposes implementation/data limits instead of implying every catalogue entry is fully validated.
+METHOD_AUXILIARY_DATA_REQUIRED = {
+    "smt_divergence": "مقارنة أصلين مترابطين على الأقل",
+    "pairs_trading": "سلسلة أسعار أصلين",
+    "stat_arb": "سلاسل أسعار متعددة واختبار إحصائي",
+    "cointegration": "سلاسل أسعار متعددة واختبار تكامل مشترك",
+    "cross_market": "بيانات سوق/أصل مقارن",
+    "oi_funding": "بيانات الفائدة المفتوحة والتمويل",
+}
+METHOD_RISK_ONLY_KEYS = {"risk_management"}
+METHOD_PROXY_KEYS = {
+    key for label, key in METHOD_RULES.items()
+    if "proxy" in label.lower() or "approximation" in label.lower()
+} | {
+    "cvd_proxy", "footprint_proxy", "market_profile", "anchored_vwap", "absorption",
+    "parabolic_sar", "connors_rsi", "fisher_transform", "chaikin_oscillator",
+    "triple_screen", "alligator", "hurst_cycle", "mcginley", "failed_auction",
+}
+
+
+@app.get("/api/methods/catalog")
+def method_catalog():
+    items = []
+    for label, key in METHOD_RULES.items():
+        if key in METHOD_RISK_ONLY_KEYS:
+            status = "risk_tool"
+            signal_capable = False
+            note = "أداة لإدارة المخاطر وليست مولّد إشارة دخول."
+        elif key in METHOD_AUXILIARY_DATA_REQUIRED:
+            status = "needs_auxiliary_data"
+            signal_capable = False
+            note = METHOD_AUXILIARY_DATA_REQUIRED[key]
+        elif key in METHOD_PROXY_KEYS:
+            status = "approximation"
+            signal_capable = True
+            note = "تقريب مبني على OHLCV؛ لا يعادل بيانات الأوامر/الجلسات الأصلية ولا يُعد مثبت الربحية."
+        else:
+            status = "ohlcv_rule_unvalidated"
+            signal_capable = True
+            note = "قاعدة شموع/سعر/حجم؛ يلزم اختبار تاريخي مستقل قبل اعتمادها."
+        items.append({
+            "name": label, "key": key, "status": status,
+            "signal_capable": signal_capable, "note": note,
+            "score_is_probability": False,
+        })
+    counts = {}
+    for item in items:
+        counts[item["status"]] = counts.get(item["status"], 0) + 1
+    return {
+        "ok": True, "count": len(items), "counts": counts, "items": items,
+        "message": "وجود المنهج في القائمة لا يعني اجتيازه اختبار ربحية. score يقيس شواهد القاعدة فقط، وليس احتمال الربح.",
+    }
+
 
 @app.get("/api/methods/{market}")
 def method_filter(market: str, method: str = Query(...), interval: str = Query("15m"), limit: int = Query(40, ge=1, le=100)):
