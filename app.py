@@ -646,7 +646,23 @@ METHOD_RULES = {
     "Fibonacci Extension": "fib_extension", "Classic Pivot Breakout": "pivot_breakout",
     "Fair Value Gap Retest": "fvg_retest", "Equal Highs / Lows": "equal_highs_lows",
     "Premium / Discount Zones": "premium_discount", "Session Range Breakout": "session_range",
-    "Risk Management": "risk_management"
+    "Risk Management": "risk_management",
+    "Wyckoff Spring": "wyckoff_spring", "Wyckoff Upthrust": "wyckoff_upthrust",
+    "Wyckoff SOS / SOW": "wyckoff_sos_sow", "Wyckoff LPS / LPSY": "wyckoff_lps",
+    "ICT Optimal Trade Entry (OTE) Proxy": "ict_ote",
+    "ICT Kill Zone": "ict_kill_zone", "Gartley Pattern Proxy": "gartley",
+    "Bat Pattern Proxy": "bat_pattern", "Butterfly Pattern Proxy": "butterfly_pattern",
+    "Crab Pattern Proxy": "crab_pattern", "Shark Pattern Proxy": "shark_pattern",
+    "Andrews Pitchfork Proxy": "andrews_pitchfork", "Wolfe Waves Proxy": "wolfe_waves",
+    "TTM Squeeze Proxy": "ttm_squeeze", "Coppock Curve": "coppock_curve",
+    "Klinger Oscillator Proxy": "klinger_oscillator", "Schaff Trend Cycle Proxy": "schaff_cycle",
+    "Hurst Exponent Filter": "hurst_filter", "Hurst Cycle Proxy": "hurst_cycle",
+    "Adaptive Moving Average Crossover": "adaptive_ma", "McGinley Dynamic Proxy": "mcginley",
+    "Linear Regression Channel": "linear_regression_channel", "Standard Deviation Channel": "stddev_channel",
+    "Donchian Midline Reversal": "donchian_midline", "Volatility-Adjusted Momentum": "vol_adjusted_momentum",
+    "Relative Volume Climax Reversal": "relative_volume_climax", "Accumulation / Distribution Divergence": "ad_divergence",
+    "Wyckoff Effort vs Result": "wyckoff_effort_result", "Failed Auction Proxy": "failed_auction",
+    "Range Liquidity Reclaim": "range_liquidity_reclaim", "Multi-Swing Fibonacci OTE": "multi_swing_ote"
 }
 
 
@@ -1117,7 +1133,69 @@ def method_signal(candles, ticker, method_key):
     elif method_key in ("vwap_reclaim","anchored_vwap"):
         if rolling_vwap is not None and price>rolling_vwap and closes[-2]<=rolling_vwap and bullish: side="BUY"
         elif rolling_vwap is not None and price<rolling_vwap and closes[-2]>=rolling_vwap and bearish: side="SELL"
-        elif method_key == "cci":
+    elif method_key == "wyckoff_spring":
+        if lows[-1] < prior_low and price > prior_low and bullish and volumes[-1] >= avg_vol*0.8: side="BUY"
+    elif method_key == "wyckoff_upthrust":
+        if highs[-1] > prior_high and price < prior_high and bearish and volumes[-1] >= avg_vol*0.8: side="SELL"
+    elif method_key == "wyckoff_sos_sow":
+        if price > prior_high and bullish and volumes[-1] > avg_vol*1.3: side="BUY"
+        elif price < prior_low and bearish and volumes[-1] > avg_vol*1.3: side="SELL"
+    elif method_key == "wyckoff_lps":
+        tol=max(atr*0.4,price*0.002)
+        if abs(lows[-1]-prev_sh)<tol and price>e20 and bullish: side="BUY"
+        elif abs(highs[-1]-prev_sl)<tol and price<e20 and bearish: side="SELL"
+    elif method_key in ("ict_ote","multi_swing_ote"):
+        swing_hi=max(highs[-30:]); swing_lo=min(lows[-30:]); span=swing_hi-swing_lo
+        if span>0:
+            buy_zone=swing_hi-span*0.79 <= price <= swing_hi-span*0.62
+            sell_zone=swing_lo+span*0.62 <= price <= swing_lo+span*0.79
+            if buy_zone and bullish and price>e20: side="BUY"
+            elif sell_zone and bearish and price<e20: side="SELL"
+    elif method_key == "ict_kill_zone":
+        # Candle timestamps/session timezone are not passed into this evaluator; avoid fabricating a session signal.
+        side=None
+    elif method_key in ("gartley","bat_pattern","butterfly_pattern","crab_pattern","shark_pattern"):
+        # Approximate harmonic completion from recent swing ratios; requires independent validation before production use.
+        swings=(recent_sl[-2][1],recent_sh[-2][1],recent_sl[-1][1],recent_sh[-1][1]) if len(recent_sl)>=2 and len(recent_sh)>=2 else None
+        if swings:
+            a,b,cc,d=swings
+            ab=abs(b-a); bc=abs(cc-b); cd=abs(d-cc)
+            ratio=cd/max(bc,1e-12)
+            if 0.5<=ratio<=1.9 and price>e20 and bullish: side="BUY"
+            elif 0.5<=ratio<=1.9 and price<e20 and bearish: side="SELL"
+    elif method_key in ("andrews_pitchfork","wolfe_waves","linear_regression_channel","stddev_channel"):
+        # Channel proxy based on recent range; not a geometrically fitted pitchfork or Wolfe-wave detector.
+        mid=(max(highs[-20:])+min(lows[-20:]))/2
+        if price>mid and bullish and price>e20: side="BUY"
+        elif price<mid and bearish and price<e20: side="SELL"
+    elif method_key in ("ttm_squeeze","range_compression"):
+        short_range=max(highs[-6:])-min(lows[-6:])
+        long_range=max(highs[-20:])-min(lows[-20:])
+        if long_range>0 and short_range/long_range<0.35 and price>prior_high and bullish: side="BUY"
+        elif long_range>0 and short_range/long_range<0.35 and price<prior_low and bearish: side="SELL"
+    elif method_key == "coppock_curve":
+        roc11=(price-closes[-12])/max(closes[-12],1e-12)
+        roc14=(price-closes[-15])/max(closes[-15],1e-12)
+        if roc11+roc14>0 and bullish: side="BUY"
+        elif roc11+roc14<0 and bearish: side="SELL"
+    elif method_key in ("klinger_oscillator","wyckoff_effort_result","relative_volume_climax","failed_auction"):
+        if avg_vol>0 and volumes[-1]>avg_vol*1.7 and candle_range>atr:
+            loc=(price-lows[-1])/candle_range
+            if loc>0.75 and bullish: side="BUY"
+            elif loc<0.25 and bearish: side="SELL"
+    elif method_key in ("schaff_cycle","adaptive_ma","mcginley","donchian_midline","vol_adjusted_momentum"):
+        if price>e20 and e20>e50 and bullish: side="BUY"
+        elif price<e20 and e20<e50 and bearish: side="SELL"
+    elif method_key in ("hurst_filter","hurst_cycle"):
+        # Lightweight lag-1 persistence proxy, not a statistically rigorous Hurst exponent.
+        returns=[closes[i]/max(closes[i-1],1e-12)-1 for i in range(-20,0)]
+        persistence=sum(1 for a,b in zip(returns,returns[1:]) if a*b>0)/max(len(returns)-1,1)
+        if persistence>0.65 and price>e20 and bullish: side="BUY"
+        elif persistence>0.65 and price<e20 and bearish: side="SELL"
+    elif method_key in ("volatility_adjusted_momentum","range_liquidity_reclaim"):
+        if lows[-1]<prior_low and price>prior_low and bullish: side="BUY"
+        elif highs[-1]>prior_high and price<prior_high and bearish: side="SELL"
+    elif method_key == "cci":
         typical=[(highs[i]+lows[i]+closes[i])/3 for i in range(len(c))]
         m=mean(typical[-20:]); md=mean([abs(x-m) for x in typical[-20:]])
         cci=(typical[-1]-m)/max(0.015*md,1e-12)
