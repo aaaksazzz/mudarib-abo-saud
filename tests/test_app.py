@@ -74,3 +74,20 @@ def test_result_history_expires_after_24_hours(tmp_path, monkeypatch):
     items = prune_results()
     assert [item["id"] for item in items] == ["fresh"]
     assert [item["id"] for item in __import__("json").loads(results_path.read_text(encoding="utf-8"))] == ["fresh"]
+
+def test_multilingual_blog_publishes_200_localized_articles():
+    blog = client.get("/blog")
+    assert blog.status_code == 200
+    assert "200 مقال" in blog.text
+    assert 'id="blogLang"' in blog.text
+    assert blog.text.count('class="post"') == 200
+    english = client.get("/blog/en-stop-loss")
+    chinese = client.get("/blog/zh-stop-loss")
+    arabic = client.get("/blog/ar-stop-loss")
+    assert english.status_code == 200
+    assert '<html lang="en" dir="ltr">' in english.text
+    assert 'hreflang="ar-SA"' in english.text
+    assert chinese.status_code == 200
+    assert '<html lang="zh" dir="ltr">' in chinese.text
+    assert arabic.status_code == 200
+    assert '<html lang="ar" dir="rtl">' in arabic.text
