@@ -432,11 +432,17 @@ def fetch_yahoo_quote(symbol: str):
             return None
         price = float(price)
         previous = float(previous) if previous is not None else price
+        quote_rows = (item.get("indicators", {}).get("quote") or [{}])[0]
+        volumes = quote_rows.get("volume") or []
+        valid_volumes = [v for v in volumes if v is not None]
+        daily_volume = int(valid_volumes[-1]) if valid_volumes else int(meta.get("regularMarketVolume") or 0)
+        dollar_volume = price * daily_volume
         return {
             "symbol": symbol, "name": YAHOO_LABELS.get(symbol, symbol.replace(".SR", "")),
             "price": price,
             "change_pct": ((price - previous) / previous * 100) if previous else 0.0,
-            "quote_volume": 0, "currency": meta.get("currency", ""),
+            "volume": daily_volume, "quote_volume": dollar_volume, "dollar_volume": dollar_volume,
+            "currency": meta.get("currency", ""),
             "exchange": meta.get("fullExchangeName") or meta.get("exchangeName") or "Yahoo Finance",
             "quote_time": meta.get("regularMarketTime"), "delayed": True,
         }
@@ -474,6 +480,14 @@ def market_data(market: str, limit: int = Query(40, ge=1, le=500)):
                     "ok": False, "market": market, "live": False, "items": [],
                     "message": "تعذر جلب الأسعار من مزود السوق الآن. جرّب التحديث لاحقًا."
                 }, status_code=503)
+            # Apply the $1M daily dollar-turnover rule to US equities only.
+            # Saudi equities are intentionally exempt; keep every listed TASI/NOMU stock.
+            if market == "us":
+                data = [item for item in data if item.get("dollar_volume", 0) >= 1_000_000]
+                if not data:
+                    return {"ok": True, "market": market, "live": True, "provider": "Yahoo Finance",
+                            "delayed": True, "updated_at": int(now), "items": [],
+                            "message": "لا توجد أسهم أمريكية مستوفية لسيولة مليون دولار يوميًا في البيانات المتاحة."}
             data.sort(key=lambda x: x["change_pct"], reverse=True)
             YAHOO_CACHE[market] = (now, data)
         return {"ok": True, "market": market, "live": True, "provider": "Yahoo Finance",
