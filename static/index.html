@@ -191,4 +191,21 @@ window.addEventListener("popstate",restoreLocation);
 window.__sectionsReady.then(restoreLocation);
 </script>
 <script src="/static/technical.js?v=2.1"></script>
+<script>
+/* Keep market pages on automatic refresh; remove manual rescan controls across every market view. */
+(function removeManualRescanControls(){
+  const labels = /^(?:↻\s*)?(?:إعادة الفحص|إعادة البحث|إعادة التحديث|فحص من جديد|تحديث السوق)$/;
+  function clean(root){
+    const scope = root && root.querySelectorAll ? root : document;
+    scope.querySelectorAll('button,a,[role="button"],input[type="button"],input[type="submit"]').forEach(el=>{
+      const text = (el.innerText || el.value || el.getAttribute('aria-label') || el.title || '').replace(/\s+/g,' ').trim();
+      if (labels.test(text) || /(?:إعادة الفحص|إعادة البحث)/.test(text)) el.remove();
+    });
+  }
+  clean(document);
+  new MutationObserver(records=>records.forEach(record=>record.addedNodes.forEach(node=>{
+    if(node.nodeType===1){clean(node);if(node.matches && node.matches('button,a,[role="button"],input[type="button"],input[type="submit"]')){const text=(node.innerText||node.value||node.getAttribute('aria-label')||node.title||'').replace(/\s+/g,' ').trim();if(labels.test(text)||/(?:إعادة الفحص|إعادة البحث)/.test(text))node.remove();}}
+  }))).observe(document.documentElement,{childList:true,subtree:true});
+})();
+</script>
 </body></html>
