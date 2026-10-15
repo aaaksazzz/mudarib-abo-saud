@@ -1867,9 +1867,24 @@ def read_json_file(path, default):
 
 
 def write_json_file(path, data):
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    """Atomically persist JSON using a unique temp file for concurrent requests."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # A shared fixed .tmp filename races when multiple signal endpoints save together.
+    # Unique names prevent one request from deleting another request's pending file.
+    tmp = path.with_name(
+        f".{path.name}.{os.getpid()}.{secrets.token_hex(8)}.tmp"
+    )
+    try:
+        with tmp.open("w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def prune_results(max_age_seconds=86400):
