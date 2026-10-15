@@ -27,8 +27,6 @@ def test_market_sections_have_unique_canonical_and_metadata():
         "/markets/futures": "سوق الفيوتشر",
         "/markets/saudi": "السوق السعودي",
         "/markets/us-stocks": "الأسهم الأمريكية",
-        "/radar": "رادار الأسواق",
-        "/gold": "الصفقات الذهبية",
         "/results": "نتائج الإشارات",
     }
     for path, expected_title in paths.items():
@@ -49,6 +47,9 @@ def test_legacy_singular_market_urls_redirect_to_canonical_market_pages():
         "/market/contracts": "/markets/contracts",
         "/market/forex-gold": "/markets/forex-gold",
         "/market/alpha": "/markets/alpha",
+        "/radar": "/markets/spot",
+        "/gold": "/markets/spot",
+        "/trades": "/markets/spot",
     }
     for path, destination in paths.items():
         response = client.get(path, follow_redirects=False)
