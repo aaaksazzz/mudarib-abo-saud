@@ -850,7 +850,9 @@ METHOD_RULES = {
 
 def method_signal(candles, ticker, method_key):
     """Evaluate method-specific OHLCV setups; unavailable auxiliary data must not be fabricated."""
-    if not isinstance(candles, list) or len(candles) < 30:
+    if not isinstance(candles, list) or len(candles) < 30 or not isinstance(ticker, dict):
+        return None
+    if method_key not in set(METHOD_RULES.values()):
         return None
     c = candles
     try:
@@ -924,558 +926,564 @@ def method_signal(candles, ticker, method_key):
     broke_up, broke_down = price > prev_sh and bullish, price < prev_sl and bearish
     rsi_now = rsi(closes)
 
-    if method_key == "price_action":
-        if bullish and price > closes[-2] and body / candle_range >= 0.35: side = "BUY"
-        elif bearish and price < closes[-2] and -body / candle_range >= 0.35: side = "SELL"
-    elif method_key == "smc":
-        swept_low = min(lows[-5:-1]) < prev_sl and price > prev_sl
-        swept_high = max(highs[-5:-1]) > prev_sh and price < prev_sh
-        if (broke_up and bullish_structure) or (swept_low and bullish and price > closes[-2]): side = "BUY"
-        elif (broke_down and bearish_structure) or (swept_high and bearish and price < closes[-2]): side = "SELL"
-    elif method_key == "ict":
-        bull_fvg = highs[-3] < lows[-1]
-        bear_fvg = lows[-3] > highs[-1]
-        displacement = abs(body) >= atr * 0.8
-        if bull_fvg and bullish and displacement and (e50 is None or price >= e50): side = "BUY"
-        elif bear_fvg and bearish and displacement and (e50 is None or price <= e50): side = "SELL"
-    elif method_key == "order_flow":
-        # OHLCV cannot provide true bid/ask aggressor flow; this is a volume-pressure proxy only.
-        close_location = (price-lows[-1])/candle_range
-        if avg_vol > 0 and volumes[-1] >= avg_vol*1.5:
-            if bullish and close_location >= 0.75: side = "BUY"
-            elif bearish and close_location <= 0.25: side = "SELL"
-    elif method_key == "bos_choch":
-        if broke_up and not bearish_structure: side = "BUY"
-        elif broke_down and not bullish_structure: side = "SELL"
-    elif method_key == "liquidity_sweep":
-        if lows[-1] < prev_sl and price > prev_sl and bullish: side = "BUY"
-        elif highs[-1] > prev_sh and price < prev_sh and bearish: side = "SELL"
-    elif method_key == "fvg":
-        if highs[-3] < lows[-1] and bullish and price > closes[-2]: side = "BUY"
-        elif lows[-3] > highs[-1] and bearish and price < closes[-2]: side = "SELL"
-    elif method_key == "retest":
-        tol = max(atr*0.25, price*0.001)
-        if abs(lows[-1]-prev_sh) <= tol and price > prev_sh and bullish: side = "BUY"
-        elif abs(highs[-1]-prev_sl) <= tol and price < prev_sl and bearish: side = "SELL"
-    elif method_key == "vsa":
-        avg_range = mean([highs[i]-lows[i] for i in range(max(0,len(c)-16),len(c)-1)])
-        loc = (price-lows[-1])/candle_range
-        if avg_vol > 0 and avg_range > 0 and volumes[-1] >= avg_vol*1.5 and candle_range < avg_range*0.8:
-            if loc >= 0.7 and bullish: side = "BUY"
-            elif loc <= 0.3 and bearish: side = "SELL"
-    elif method_key == "regime":
-        recent_vol = mean([highs[i]-lows[i] for i in range(len(c)-20,len(c))])/price
-        if e20 is not None and e50 is not None and abs(e20-e50)/price > max(0.001,recent_vol*0.08):
-            if e20 > e50 and price > e20: side = "BUY"
-            elif e20 < e50 and price < e20: side = "SELL"
-    elif method_key == "dow_mtf":
-        # This is swing-structure confirmation on one timeframe; true MTF needs multiple timeframe data.
-        if bullish_structure and price > e50: side = "BUY"
-        elif bearish_structure and price < e50: side = "SELL"
-    elif method_key == "support_resistance":
-        tol = max(atr*0.4, price*0.002)
-        if abs(lows[-1]-prev_sl) <= tol and bullish and price > closes[-2]: side = "BUY"
-        elif abs(highs[-1]-prev_sh) <= tol and bearish and price < closes[-2]: side = "SELL"
-    elif method_key == "momentum":
-        move = (price-closes[-6])/max(closes[-6],1e-12)
-        if move >= 0.004 and bullish: side = "BUY"
-        elif move <= -0.004 and bearish: side = "SELL"
-    elif method_key == "candlestick":
-        prev_body = abs(closes[-2]-opens[-2])
-        body_size = abs(body)
-        lower_wick = min(price,opens[-1])-lows[-1]
-        upper_wick = highs[-1]-max(price,opens[-1])
-        if bullish and closes[-2] < opens[-2] and price >= opens[-2] and opens[-1] <= closes[-2] and body_size >= prev_body*0.8:
-            side = "BUY"
-        elif bearish and closes[-2] > opens[-2] and price <= opens[-2] and opens[-1] >= closes[-2] and body_size >= prev_body*0.8:
-            side = "SELL"
-        elif bullish and lower_wick >= body_size*2 and upper_wick <= max(body_size,atr*0.1) and price > closes[-2]:
-            side = "BUY"
-        elif bearish and upper_wick >= body_size*2 and lower_wick <= max(body_size,atr*0.1) and price < closes[-2]:
-            side = "SELL"
-    elif method_key == "chart_patterns":
-        hs, ls = swing_highs[-4:], swing_lows[-4:]
-        tol = max(atr*0.5,price*0.003)
-        if len(hs)>=2 and abs(hs[-1][1]-hs[-2][1])<=tol and ls and price<ls[-1][1] and bearish: side="SELL"
-        elif len(ls)>=2 and abs(ls[-1][1]-ls[-2][1])<=tol and hs and price>hs[-1][1] and bullish: side="BUY"
-    elif method_key == "classical":
-        if broke_up: side="BUY"
-        elif broke_down: side="SELL"
-        elif abs(price-prev_sl)<=max(atr*0.35,price*0.0015) and bullish: side="BUY"
-        elif abs(price-prev_sh)<=max(atr*0.35,price*0.0015) and bearish: side="SELL"
-    elif method_key == "order_blocks":
-        for i in range(max(1,len(c)-6),len(c)-1):
-            if broke_up and closes[i]<opens[i] and price>highs[i] and price-closes[i]>=atr:
-                side="BUY"; break
-            if broke_down and closes[i]>opens[i] and price<lows[i] and closes[i]-price>=atr:
-                side="SELL"; break
-    elif method_key == "breakout":
-        if price>max(highs[-21:-1]) and bullish and body>=atr*0.15: side="BUY"
-        elif price<min(lows[-21:-1]) and bearish and -body>=atr*0.15: side="SELL"
-    elif method_key == "trend_following":
-        if e20 is not None and e50 is not None and e200 is not None:
-            if price>e20>e50>e200 and bullish_structure: side="BUY"
-            elif price<e20<e50<e200 and bearish_structure: side="SELL"
-    elif method_key == "mean_reversion":
-        mean20=mean(closes[-20:])
-        deviation=(price-mean20)/max(mean20,1e-12)
-        if deviation<=-0.02 and (bullish or (rsi_now is not None and rsi_now<30)): side="BUY"
-        elif deviation>=0.02 and (bearish or (rsi_now is not None and rsi_now>70)): side="SELL"
-    elif method_key == "range_trading":
-        rh,rl=max(highs[-20:]),min(lows[-20:])
-        size=rh-rl
-        if size>0 and size/price<0.08:
-            if price<=rl+size*0.15 and bullish: side="BUY"
-            elif price>=rh-size*0.15 and bearish: side="SELL"
-    elif method_key == "volume_profile":
-        # Candle-volume histogram proxy; no trade-level volume-at-price data is available.
-        sample=c[-50:]
-        p_lo=min(x["low"] for x in sample); p_hi=max(x["high"] for x in sample)
-        if p_hi>p_lo and sum(volumes[-len(sample):])>0:
-            bins=[0.0]*24
-            for x in sample:
-                typical=(x["high"]+x["low"]+x["close"])/3.0
-                idx=min(23,max(0,int((typical-p_lo)/(p_hi-p_lo)*24)))
-                bins[idx]+=max(0.0,x.get("volume",0) or 0)
-            poc=p_lo+(max(range(24),key=lambda i:bins[i]+0.0)+0.5)*(p_hi-p_lo)/24
-            if price>poc and bullish and price>closes[-2]: side="BUY"
-            elif price<poc and bearish and price<closes[-2]: side="SELL"
-    elif method_key == "vwap":
-        if rolling_vwap is not None:
-            if price>rolling_vwap and closes[-2]<=rolling_vwap and bullish: side="BUY"
-            elif price<rolling_vwap and closes[-2]>=rolling_vwap and bearish: side="SELL"
-    elif method_key == "indicators":
-        if e20 is not None and e50 is not None and rsi_now is not None:
-            if price>e20>e50 and rsi_now>=52: side="BUY"
-            elif price<e20<e50 and rsi_now<=48: side="SELL"
-    elif method_key == "divergence":
-        # Price pivot vs RSI at that pivot; confirmed pivots avoid using unconfirmed latest turns.
-        rsi_by_idx={}
-        for end in range(15,len(closes)+1):
-            value=rsi(closes[:end])
-            if value is not None: rsi_by_idx[end-1]=value
-        pl=[p for p in swing_lows if p[0] in rsi_by_idx][-2:]
-        ph=[p for p in swing_highs if p[0] in rsi_by_idx][-2:]
-        if len(pl)==2 and pl[1][1]<pl[0][1] and rsi_by_idx[pl[1][0]]>rsi_by_idx[pl[0][0]] and bullish:
-            side="BUY"
-        elif len(ph)==2 and ph[1][1]>ph[0][1] and rsi_by_idx[ph[1][0]]<rsi_by_idx[ph[0][0]] and bearish:
-            side="SELL"
-    elif method_key == "fibonacci":
-        if recent_sh and recent_sl:
-            sh,sl=recent_sh[-1],recent_sl[-1]
-            if sl[0]<sh[0] and sh[1]>sl[1]:
-                impulse=sh[1]-sl[1]; retr=(sh[1]-price)/max(impulse,1e-12)
-                if 0.5<=retr<=0.618 and bullish and price>sl[1]: side="BUY"
-            elif sh[0]<sl[0] and sh[1]>sl[1]:
-                impulse=sh[1]-sl[1]; retr=(price-sl[1])/max(impulse,1e-12)
-                if 0.5<=retr<=0.618 and bearish and price<sh[1]: side="SELL"
-    elif method_key == "ichimoku":
-        if len(c)>=52:
-            tenkan=(max(highs[-9:])+min(lows[-9:]))/2
-            kijun=(max(highs[-26:])+min(lows[-26:]))/2
-            span_a=(tenkan+kijun)/2
-            span_b=(max(highs[-52:])+min(lows[-52:]))/2
-            cloud_top,cloud_bottom=max(span_a,span_b),min(span_a,span_b)
-            if price>cloud_top and tenkan>kijun: side="BUY"
-            elif price<cloud_bottom and tenkan<kijun: side="SELL"
-    elif method_key == "wyckoff":
-        if avg_vol>0 and volumes[-1]>=avg_vol*1.3:
-            loc=(price-lows[-1])/candle_range
-            if lows[-1]<prior_low and price>prior_low and loc>0.6: side="BUY"
-            elif highs[-1]>prior_high and price<prior_high and loc<0.4: side="SELL"
-    elif method_key == "elliott":
-        # A swing-structure approximation only; automatic OHLCV cannot reliably certify discretionary wave counts.
-        swings=sorted(recent_sh+recent_sl,key=lambda p:p[0])[-5:]
-        if len(swings)==5:
-            hs=[v for i,v in swings if any(i==p[0] for p in swing_highs)]
-            ls=[v for i,v in swings if any(i==p[0] for p in swing_lows)]
-            if len(hs)>=2 and len(ls)>=2 and all(hs[i]<hs[i+1] for i in range(len(hs)-1)) and all(ls[i]<ls[i+1] for i in range(len(ls)-1)) and bullish:
+    try:
+        if method_key == "price_action":
+            if bullish and price > closes[-2] and body / candle_range >= 0.35: side = "BUY"
+            elif bearish and price < closes[-2] and -body / candle_range >= 0.35: side = "SELL"
+        elif method_key == "smc":
+            swept_low = min(lows[-5:-1]) < prev_sl and price > prev_sl
+            swept_high = max(highs[-5:-1]) > prev_sh and price < prev_sh
+            if (broke_up and bullish_structure) or (swept_low and bullish and price > closes[-2]): side = "BUY"
+            elif (broke_down and bearish_structure) or (swept_high and bearish and price < closes[-2]): side = "SELL"
+        elif method_key == "ict":
+            bull_fvg = highs[-3] < lows[-1]
+            bear_fvg = lows[-3] > highs[-1]
+            displacement = abs(body) >= atr * 0.8
+            if bull_fvg and bullish and displacement and (e50 is None or price >= e50): side = "BUY"
+            elif bear_fvg and bearish and displacement and (e50 is None or price <= e50): side = "SELL"
+        elif method_key == "order_flow":
+            # OHLCV cannot provide true bid/ask aggressor flow; this is a volume-pressure proxy only.
+            close_location = (price-lows[-1])/candle_range
+            if avg_vol > 0 and volumes[-1] >= avg_vol*1.5:
+                if bullish and close_location >= 0.75: side = "BUY"
+                elif bearish and close_location <= 0.25: side = "SELL"
+        elif method_key == "bos_choch":
+            if broke_up and not bearish_structure: side = "BUY"
+            elif broke_down and not bullish_structure: side = "SELL"
+        elif method_key == "liquidity_sweep":
+            if lows[-1] < prev_sl and price > prev_sl and bullish: side = "BUY"
+            elif highs[-1] > prev_sh and price < prev_sh and bearish: side = "SELL"
+        elif method_key == "fvg":
+            if highs[-3] < lows[-1] and bullish and price > closes[-2]: side = "BUY"
+            elif lows[-3] > highs[-1] and bearish and price < closes[-2]: side = "SELL"
+        elif method_key == "retest":
+            tol = max(atr*0.25, price*0.001)
+            if abs(lows[-1]-prev_sh) <= tol and price > prev_sh and bullish: side = "BUY"
+            elif abs(highs[-1]-prev_sl) <= tol and price < prev_sl and bearish: side = "SELL"
+        elif method_key == "vsa":
+            avg_range = mean([highs[i]-lows[i] for i in range(max(0,len(c)-16),len(c)-1)])
+            loc = (price-lows[-1])/candle_range
+            if avg_vol > 0 and avg_range > 0 and volumes[-1] >= avg_vol*1.5 and candle_range < avg_range*0.8:
+                if loc >= 0.7 and bullish: side = "BUY"
+                elif loc <= 0.3 and bearish: side = "SELL"
+        elif method_key == "regime":
+            recent_vol = mean([highs[i]-lows[i] for i in range(len(c)-20,len(c))])/price
+            if e20 is not None and e50 is not None and abs(e20-e50)/price > max(0.001,recent_vol*0.08):
+                if e20 > e50 and price > e20: side = "BUY"
+                elif e20 < e50 and price < e20: side = "SELL"
+        elif method_key == "dow_mtf":
+            # This is swing-structure confirmation on one timeframe; true MTF needs multiple timeframe data.
+            if bullish_structure and price > e50: side = "BUY"
+            elif bearish_structure and price < e50: side = "SELL"
+        elif method_key == "support_resistance":
+            tol = max(atr*0.4, price*0.002)
+            if abs(lows[-1]-prev_sl) <= tol and bullish and price > closes[-2]: side = "BUY"
+            elif abs(highs[-1]-prev_sh) <= tol and bearish and price < closes[-2]: side = "SELL"
+        elif method_key == "momentum":
+            move = (price-closes[-6])/max(closes[-6],1e-12)
+            if move >= 0.004 and bullish: side = "BUY"
+            elif move <= -0.004 and bearish: side = "SELL"
+        elif method_key == "candlestick":
+            prev_body = abs(closes[-2]-opens[-2])
+            body_size = abs(body)
+            lower_wick = min(price,opens[-1])-lows[-1]
+            upper_wick = highs[-1]-max(price,opens[-1])
+            if bullish and closes[-2] < opens[-2] and price >= opens[-2] and opens[-1] <= closes[-2] and body_size >= prev_body*0.8:
+                side = "BUY"
+            elif bearish and closes[-2] > opens[-2] and price <= opens[-2] and opens[-1] >= closes[-2] and body_size >= prev_body*0.8:
+                side = "SELL"
+            elif bullish and lower_wick >= body_size*2 and upper_wick <= max(body_size,atr*0.1) and price > closes[-2]:
+                side = "BUY"
+            elif bearish and upper_wick >= body_size*2 and lower_wick <= max(body_size,atr*0.1) and price < closes[-2]:
+                side = "SELL"
+        elif method_key == "chart_patterns":
+            hs, ls = swing_highs[-4:], swing_lows[-4:]
+            tol = max(atr*0.5,price*0.003)
+            if len(hs)>=2 and abs(hs[-1][1]-hs[-2][1])<=tol and ls and price<ls[-1][1] and bearish: side="SELL"
+            elif len(ls)>=2 and abs(ls[-1][1]-ls[-2][1])<=tol and hs and price>hs[-1][1] and bullish: side="BUY"
+        elif method_key == "classical":
+            if broke_up: side="BUY"
+            elif broke_down: side="SELL"
+            elif abs(price-prev_sl)<=max(atr*0.35,price*0.0015) and bullish: side="BUY"
+            elif abs(price-prev_sh)<=max(atr*0.35,price*0.0015) and bearish: side="SELL"
+        elif method_key == "order_blocks":
+            for i in range(max(1,len(c)-6),len(c)-1):
+                if broke_up and closes[i]<opens[i] and price>highs[i] and price-closes[i]>=atr:
+                    side="BUY"; break
+                if broke_down and closes[i]>opens[i] and price<lows[i] and closes[i]-price>=atr:
+                    side="SELL"; break
+        elif method_key == "breakout":
+            if price>max(highs[-21:-1]) and bullish and body>=atr*0.15: side="BUY"
+            elif price<min(lows[-21:-1]) and bearish and -body>=atr*0.15: side="SELL"
+        elif method_key == "trend_following":
+            if e20 is not None and e50 is not None and e200 is not None:
+                if price>e20>e50>e200 and bullish_structure: side="BUY"
+                elif price<e20<e50<e200 and bearish_structure: side="SELL"
+        elif method_key == "mean_reversion":
+            mean20=mean(closes[-20:])
+            deviation=(price-mean20)/max(mean20,1e-12)
+            if deviation<=-0.02 and (bullish or (rsi_now is not None and rsi_now<30)): side="BUY"
+            elif deviation>=0.02 and (bearish or (rsi_now is not None and rsi_now>70)): side="SELL"
+        elif method_key == "range_trading":
+            rh,rl=max(highs[-20:]),min(lows[-20:])
+            size=rh-rl
+            if size>0 and size/price<0.08:
+                if price<=rl+size*0.15 and bullish: side="BUY"
+                elif price>=rh-size*0.15 and bearish: side="SELL"
+        elif method_key == "volume_profile":
+            # Candle-volume histogram proxy; no trade-level volume-at-price data is available.
+            sample=c[-50:]
+            p_lo=min(x["low"] for x in sample); p_hi=max(x["high"] for x in sample)
+            if p_hi>p_lo and sum(volumes[-len(sample):])>0:
+                bins=[0.0]*24
+                for x in sample:
+                    typical=(x["high"]+x["low"]+x["close"])/3.0
+                    idx=min(23,max(0,int((typical-p_lo)/(p_hi-p_lo)*24)))
+                    bins[idx]+=max(0.0,x.get("volume",0) or 0)
+                poc=p_lo+(max(range(24),key=lambda i:bins[i]+0.0)+0.5)*(p_hi-p_lo)/24
+                if price>poc and bullish and price>closes[-2]: side="BUY"
+                elif price<poc and bearish and price<closes[-2]: side="SELL"
+        elif method_key == "vwap":
+            if rolling_vwap is not None:
+                if price>rolling_vwap and closes[-2]<=rolling_vwap and bullish: side="BUY"
+                elif price<rolling_vwap and closes[-2]>=rolling_vwap and bearish: side="SELL"
+        elif method_key == "indicators":
+            if e20 is not None and e50 is not None and rsi_now is not None:
+                if price>e20>e50 and rsi_now>=52: side="BUY"
+                elif price<e20<e50 and rsi_now<=48: side="SELL"
+        elif method_key == "divergence":
+            # Price pivot vs RSI at that pivot; confirmed pivots avoid using unconfirmed latest turns.
+            rsi_by_idx={}
+            for end in range(15,len(closes)+1):
+                value=rsi(closes[:end])
+                if value is not None: rsi_by_idx[end-1]=value
+            pl=[p for p in swing_lows if p[0] in rsi_by_idx][-2:]
+            ph=[p for p in swing_highs if p[0] in rsi_by_idx][-2:]
+            if len(pl)==2 and pl[1][1]<pl[0][1] and rsi_by_idx[pl[1][0]]>rsi_by_idx[pl[0][0]] and bullish:
                 side="BUY"
-            elif len(hs)>=2 and len(ls)>=2 and all(hs[i]>hs[i+1] for i in range(len(hs)-1)) and all(ls[i]>ls[i+1] for i in range(len(ls)-1)) and bearish:
+            elif len(ph)==2 and ph[1][1]>ph[0][1] and rsi_by_idx[ph[1][0]]<rsi_by_idx[ph[0][0]] and bearish:
                 side="SELL"
-    elif method_key == "harmonic":
-        swings=sorted((pivots(highs,True)+pivots(lows,False)),key=lambda p:p[0])[-5:]
-        if len(swings)==5:
-            x,a,b,cc,d=[p[1] for p in swings]
-            xa,ab,bc,cd=abs(a-x),abs(b-a),abs(cc-b),abs(d-cc)
-            if min(xa,ab,bc)>0:
-                rab,rbc,rcd=ab/xa,bc/ab,cd/bc
-                if 0.55<=rab<=0.72 and 0.35<=rbc<=0.90 and 1.1<=rcd<=1.8:
-                    if bullish and d<=min(x,b,cc): side="BUY"
-                    elif bearish and d>=max(x,b,cc): side="SELL"
-    elif method_key == "channels":
-        if len(c)>=12:
-            hi_slope=(mean(highs[-5:])-mean(highs[-10:-5]))/5
-            lo_slope=(mean(lows[-5:])-mean(lows[-10:-5]))/5
-            if hi_slope>0 and lo_slope>0 and abs(hi_slope-lo_slope)<=atr*0.35 and bullish: side="BUY"
-            elif hi_slope<0 and lo_slope<0 and abs(hi_slope-lo_slope)<=atr*0.35 and bearish: side="SELL"
-    elif method_key == "quant":
-        returns=[closes[i]/closes[i-1]-1 for i in range(max(1,len(closes)-20),len(closes))]
-        avg_ret=mean(returns)
-        vol_ret=mean([(x-avg_ret)**2 for x in returns])**0.5 if returns else 0
-        zscore=(price-mean(closes[-20:]))/max(mean(closes[-20:])*vol_ret*(20**0.5),1e-12)
-        if zscore>0.5 and avg_ret>0: side="BUY"
-        elif zscore< -0.5 and avg_ret<0: side="SELL"
-    elif method_key == "gann":
-        # ATR-normalized slope proxy; true Gann angles require a defined chart scale/anchor.
-        move=(price-closes[-10])/max(atr*9,1e-12)
-        if move>=1.0 and bullish: side="BUY"
-        elif move<=-1.0 and bearish: side="SELL"
+        elif method_key == "fibonacci":
+            if recent_sh and recent_sl:
+                sh,sl=recent_sh[-1],recent_sl[-1]
+                if sl[0]<sh[0] and sh[1]>sl[1]:
+                    impulse=sh[1]-sl[1]; retr=(sh[1]-price)/max(impulse,1e-12)
+                    if 0.5<=retr<=0.618 and bullish and price>sl[1]: side="BUY"
+                elif sh[0]<sl[0] and sh[1]>sl[1]:
+                    impulse=sh[1]-sl[1]; retr=(price-sl[1])/max(impulse,1e-12)
+                    if 0.5<=retr<=0.618 and bearish and price<sh[1]: side="SELL"
+        elif method_key == "ichimoku":
+            if len(c)>=52:
+                tenkan=(max(highs[-9:])+min(lows[-9:]))/2
+                kijun=(max(highs[-26:])+min(lows[-26:]))/2
+                span_a=(tenkan+kijun)/2
+                span_b=(max(highs[-52:])+min(lows[-52:]))/2
+                cloud_top,cloud_bottom=max(span_a,span_b),min(span_a,span_b)
+                if price>cloud_top and tenkan>kijun: side="BUY"
+                elif price<cloud_bottom and tenkan<kijun: side="SELL"
+        elif method_key == "wyckoff":
+            if avg_vol>0 and volumes[-1]>=avg_vol*1.3:
+                loc=(price-lows[-1])/candle_range
+                if lows[-1]<prior_low and price>prior_low and loc>0.6: side="BUY"
+                elif highs[-1]>prior_high and price<prior_high and loc<0.4: side="SELL"
+        elif method_key == "elliott":
+            # A swing-structure approximation only; automatic OHLCV cannot reliably certify discretionary wave counts.
+            swings=sorted(recent_sh+recent_sl,key=lambda p:p[0])[-5:]
+            if len(swings)==5:
+                hs=[v for i,v in swings if any(i==p[0] for p in swing_highs)]
+                ls=[v for i,v in swings if any(i==p[0] for p in swing_lows)]
+                if len(hs)>=2 and len(ls)>=2 and all(hs[i]<hs[i+1] for i in range(len(hs)-1)) and all(ls[i]<ls[i+1] for i in range(len(ls)-1)) and bullish:
+                    side="BUY"
+                elif len(hs)>=2 and len(ls)>=2 and all(hs[i]>hs[i+1] for i in range(len(hs)-1)) and all(ls[i]>ls[i+1] for i in range(len(ls)-1)) and bearish:
+                    side="SELL"
+        elif method_key == "harmonic":
+            swings=sorted((pivots(highs,True)+pivots(lows,False)),key=lambda p:p[0])[-5:]
+            if len(swings)==5:
+                x,a,b,cc,d=[p[1] for p in swings]
+                xa,ab,bc,cd=abs(a-x),abs(b-a),abs(cc-b),abs(d-cc)
+                if min(xa,ab,bc)>0:
+                    rab,rbc,rcd=ab/xa,bc/ab,cd/bc
+                    if 0.55<=rab<=0.72 and 0.35<=rbc<=0.90 and 1.1<=rcd<=1.8:
+                        if bullish and d<=min(x,b,cc): side="BUY"
+                        elif bearish and d>=max(x,b,cc): side="SELL"
+        elif method_key == "channels":
+            if len(c)>=12:
+                hi_slope=(mean(highs[-5:])-mean(highs[-10:-5]))/5
+                lo_slope=(mean(lows[-5:])-mean(lows[-10:-5]))/5
+                if hi_slope>0 and lo_slope>0 and abs(hi_slope-lo_slope)<=atr*0.35 and bullish: side="BUY"
+                elif hi_slope<0 and lo_slope<0 and abs(hi_slope-lo_slope)<=atr*0.35 and bearish: side="SELL"
+        elif method_key == "quant":
+            returns=[closes[i]/closes[i-1]-1 for i in range(max(1,len(closes)-20),len(closes))]
+            avg_ret=mean(returns)
+            vol_ret=mean([(x-avg_ret)**2 for x in returns])**0.5 if returns else 0
+            zscore=(price-mean(closes[-20:]))/max(mean(closes[-20:])*vol_ret*(20**0.5),1e-12)
+            if zscore>0.5 and avg_ret>0: side="BUY"
+            elif zscore< -0.5 and avg_ret<0: side="SELL"
+        elif method_key == "gann":
+            # ATR-normalized slope proxy; true Gann angles require a defined chart scale/anchor.
+            move=(price-closes[-10])/max(atr*9,1e-12)
+            if move>=1.0 and bullish: side="BUY"
+            elif move<=-1.0 and bearish: side="SELL"
 
-    # Extended OHLCV rule set. Methods needing unavailable tick/order-book/cross-asset data are marked proxies or return no signal.
-    elif method_key in ("donchian", "turtle_trading"):
-        upper=max(highs[-21:-1]); lower=min(lows[-21:-1])
-        if price>upper and bullish: side="BUY"
-        elif price<lower and bearish: side="SELL"
-    elif method_key == "keltner":
-        mid=ema(closes,20); width=atr*2
-        if mid is not None and price>mid+width and bullish: side="BUY"
-        elif mid is not None and price<mid-width and bearish: side="SELL"
-    elif method_key in ("heikin_ashi","renko","point_figure"):
-        up=sum(closes[i]>opens[i] for i in range(-4,0))
-        down=sum(closes[i]<opens[i] for i in range(-4,0))
-        if up>=3 and price>e20: side="BUY"
-        elif down>=3 and price<e20: side="SELL"
-    elif method_key in ("orb","session_range"):
-        # Session timestamps are not supplied; uses the recent candle range as an explicitly labeled proxy.
-        if price>prior_high and bullish: side="BUY"
-        elif price<prior_low and bearish: side="SELL"
-    elif method_key == "inside_bar":
-        if highs[-2]<highs[-3] and lows[-2]>lows[-3]:
-            if price>highs[-2] and bullish: side="BUY"
-            elif price<lows[-2] and bearish: side="SELL"
-    elif method_key == "outside_bar":
-        if highs[-1]>highs[-2] and lows[-1]<lows[-2]:
-            if bullish and price>closes[-2]: side="BUY"
-            elif bearish and price<closes[-2]: side="SELL"
-    elif method_key == "three_bar_reversal":
-        if closes[-3]<opens[-3] and closes[-2]<opens[-2] and bullish and price>highs[-2]: side="BUY"
-        elif closes[-3]>opens[-3] and closes[-2]>opens[-2] and bearish and price<lows[-2]: side="SELL"
-    elif method_key == "gap_trading":
-        gap=(opens[-1]-closes[-2])/max(closes[-2],1e-12)
-        if gap>0.005 and bullish: side="BUY"
-        elif gap< -0.005 and bearish: side="SELL"
-    elif method_key in ("smt_divergence","pairs_trading","stat_arb","cointegration","cross_market","oi_funding"):
-        # Requires a second symbol, confirmed funding/OI, or paired series not present in this function.
-        side=None
-    elif method_key in ("power_of_three","judas_swing","turtle_soup","unicorn_model","breaker_blocks","mitigation_blocks","liquidity_void","fvg_retest","equal_highs_lows","premium_discount"):
-        if lows[-1]<prior_low and price>prior_low and bullish and price>closes[-2]: side="BUY"
-        elif highs[-1]>prior_high and price<prior_high and bearish and price<closes[-2]: side="SELL"
-        elif method_key in ("breaker_blocks","mitigation_blocks","unicorn_model") and broke_up and bullish_structure: side="BUY"
-        elif method_key in ("breaker_blocks","mitigation_blocks","unicorn_model") and broke_down and bearish_structure: side="SELL"
-    elif method_key in ("cvd_proxy","footprint_proxy","volume_imbalance","absorption","market_profile","anchored_vwap","obv_trend","accumulation_distribution"):
-        # OHLCV-only volume proxy; not true bid/ask delta, footprint, TPO, or anchored VWAP.
-        loc=(price-lows[-1])/candle_range
-        if avg_vol>0 and volumes[-1]>=avg_vol*1.4 and bullish and loc>=0.7: side="BUY"
-        elif avg_vol>0 and volumes[-1]>=avg_vol*1.4 and bearish and loc<=0.3: side="SELL"
-    elif method_key in ("zscore_reversion","mean_reversion"):
-        m=mean(closes[-20:]); sd=mean([(x-m)**2 for x in closes[-20:]])**0.5
-        z=(price-m)/max(sd,1e-12)
-        if z<=-1.5 and (bullish or (rsi_now is not None and rsi_now<35)): side="BUY"
-        elif z>=1.5 and (bearish or (rsi_now is not None and rsi_now>65)): side="SELL"
-    elif method_key in ("relative_strength","dual_momentum","momentum"):
-        move=(price-closes[-10])/max(closes[-10],1e-12)
-        if move>0.015 and bullish and (e20 is None or price>e20): side="BUY"
-        elif move< -0.015 and bearish and (e20 is None or price<e20): side="SELL"
-    elif method_key == "seasonality":
-        # Calendar seasonality requires reliable timestamps and a historical seasonal sample; no unsupported signal.
-        side=None
-    elif method_key in ("volatility_breakout","atr_breakout"):
-        if price>prior_high and bullish and body>=atr*0.2: side="BUY"
-        elif price<prior_low and bearish and -body>=atr*0.2: side="SELL"
-    elif method_key == "supertrend":
-        if e20 is not None and price>e20+atr*1.5 and bullish: side="BUY"
-        elif e20 is not None and price<e20-atr*1.5 and bearish: side="SELL"
-    elif method_key == "pivot_points":
-        pp=(highs[-2]+lows[-2]+closes[-2])/3
-        if price>pp and closes[-2]<=pp and bullish: side="BUY"
-        elif price<pp and closes[-2]>=pp and bearish: side="SELL"
-    elif method_key in ("parabolic_sar","chandelier_exit"):
-        trail_high=max(highs[-22:-1])-atr*3
-        trail_low=min(lows[-22:-1])+atr*3
-        if price>trail_high and bullish: side="BUY"
-        elif price<trail_low and bearish: side="SELL"
-    elif method_key == "bollinger_bands":
-        m=mean(closes[-20:]); sd=mean([(x-m)**2 for x in closes[-20:]])**0.5
-        if price<m-2*sd and bullish: side="BUY"
-        elif price>m+2*sd and bearish: side="SELL"
-    elif method_key == "macd":
-        fast=ema(closes,12); slow=ema(closes,26)
-        prev_fast=ema(closes[:-1],12); prev_slow=ema(closes[:-1],26)
-        if fast is not None and slow is not None and prev_fast is not None and prev_slow is not None:
-            if fast>slow and prev_fast<=prev_slow: side="BUY"
-            elif fast<slow and prev_fast>=prev_slow: side="SELL"
-    elif method_key == "rsi_reversal":
-        if rsi_now is not None and rsi_now<30 and bullish: side="BUY"
-        elif rsi_now is not None and rsi_now>70 and bearish: side="SELL"
-    elif method_key == "stochastic":
-        lo=min(lows[-14:]); hi=max(highs[-14:]); k=100*(price-lo)/max(hi-lo,1e-12)
-        prev_k=100*(closes[-2]-min(lows[-14:-1]))/max(max(highs[-14:-1])-min(lows[-14:-1]),1e-12)
-        if k>20 and prev_k<=20 and bullish: side="BUY"
-        elif k<80 and prev_k>=80 and bearish: side="SELL"
-    elif method_key == "fisher_transform":
-        changes=[closes[i]-closes[i-1] for i in range(1,len(closes))]
-        z=changes[-5:]
-        if mean(z)>0 and bullish and price>e20: side="BUY"
-        elif mean(z)<0 and bearish and price<e20: side="SELL"
-    elif method_key == "aroon":
-        window_high=highs[-25:]; window_low=lows[-25:]
-        up=100*(window_high.index(max(window_high)))/24
-        down=100*(window_low.index(min(window_low)))/24
-        if up>=70 and down<=30 and bullish: side="BUY"
-        elif down>=70 and up<=30 and bearish: side="SELL"
-    elif method_key == "vortex":
-        vp=sum(abs(highs[i]-lows[i-1]) for i in range(-14,0))
-        vm=sum(abs(lows[i]-highs[i-1]) for i in range(-14,0))
-        if vp>vm*1.1 and bullish: side="BUY"
-        elif vm>vp*1.1 and bearish: side="SELL"
-    elif method_key == "choppiness":
-        trsum=sum(true_ranges[-14:])
-        choppy=100*__import__("math").log10(max(trsum/max(max(highs[-14:])-min(lows[-14:]),1e-12),1e-12))/__import__("math").log10(14)
-        if choppy<45 and price>e20 and bullish: side="BUY"
-        elif choppy<45 and price<e20 and bearish: side="SELL"
-    elif method_key == "ultimate_oscillator":
-        bp=[]; tr=[]
-        for i in range(-28,0):
-            prev_close=closes[i-1]
-            bp.append(closes[i]-min(lows[i],prev_close))
-            tr.append(max(highs[i],prev_close)-min(lows[i],prev_close))
-        uo=100*(4*sum(bp[-7:])/max(sum(tr[-7:]),1e-12)+2*sum(bp[-14:])/max(sum(tr[-14:]),1e-12)+sum(bp[-28:])/max(sum(tr[-28:]),1e-12))/7
-        if uo>55 and bullish: side="BUY"
-        elif uo<45 and bearish: side="SELL"
-    elif method_key == "rvi":
-        numerator=mean([closes[i]-opens[i] for i in range(-10,0)])
-        denominator=mean([highs[i]-lows[i] for i in range(-10,0)])
-        rvi=numerator/max(denominator,1e-12)
-        if rvi>0.15 and bullish: side="BUY"
-        elif rvi< -0.15 and bearish: side="SELL"
-    elif method_key == "tsi":
-        mom=[closes[i]-closes[i-1] for i in range(1,len(closes))]
-        fast=ema(mom,13); slow=ema(mom,25)
-        tsi=fast/max(abs(slow or 0),1e-12) if fast is not None else 0
-        if tsi>0.1 and bullish and price>e20: side="BUY"
-        elif tsi< -0.1 and bearish and price<e20: side="SELL"
-    elif method_key == "ppo":
-        e12,e26=ema(closes,12),ema(closes,26)
-        ppo=100*(e12-e26)/max(abs(e26 or price),1e-12) if e12 is not None and e26 is not None else 0
-        if ppo>0 and bullish: side="BUY"
-        elif ppo<0 and bearish: side="SELL"
-    elif method_key == "dpo":
-        shift=10
-        dpo=price-mean(closes[-21:-11])
-        if dpo>0 and bullish: side="BUY"
-        elif dpo<0 and bearish: side="SELL"
-    elif method_key == "price_channel":
-        if price>prior_high and bullish: side="BUY"
-        elif price<prior_low and bearish: side="SELL"
-    elif method_key == "connors_rsi":
-        short_rsi=rsi(closes,3)
-        if short_rsi is not None and short_rsi<10 and price>e200 and bullish: side="BUY"
-        elif short_rsi is not None and short_rsi>90 and price<e200 and bearish: side="SELL"
-    elif method_key == "elder_impulse":
-        if e20 is not None and e50 is not None and price>e20>e50 and bullish: side="BUY"
-        elif e20 is not None and e50 is not None and price<e20<e50 and bearish: side="SELL"
-    elif method_key in ("three_line_strike","marubozu","doji_reversal","star_pattern","piercing_dark_cloud","tweezer"):
-        prev_body=abs(closes[-2]-opens[-2]); prev_prev_body=abs(closes[-3]-opens[-3])
-        upper=highs[-1]-max(opens[-1],closes[-1]); lower=min(opens[-1],closes[-1])-lows[-1]
-        if method_key=="marubozu" and bullish and upper<candle_range*0.08 and lower<candle_range*0.08: side="BUY"
-        elif method_key=="marubozu" and bearish and upper<candle_range*0.08 and lower<candle_range*0.08: side="SELL"
-        elif method_key=="doji_reversal" and abs(body)<=candle_range*0.1 and lower>upper*1.8 and price>closes[-2]: side="BUY"
-        elif method_key=="doji_reversal" and abs(body)<=candle_range*0.1 and upper>lower*1.8 and price<closes[-2]: side="SELL"
-        elif method_key=="three_line_strike" and bullish and all(closes[i]>opens[i] for i in range(-4,-1)) and price<opens[-4] and price>closes[-4]: side="BUY"
-        elif method_key in ("star_pattern","piercing_dark_cloud","tweezer") and bullish and price>closes[-2] and lower>prev_body*0.7: side="BUY"
-        elif method_key in ("star_pattern","piercing_dark_cloud","tweezer") and bearish and price<closes[-2] and upper>prev_body*0.7: side="SELL"
-    elif method_key in ("gap_go","gap_reversal","gap_trading"):
-        gap=(opens[-1]-closes[-2])/max(closes[-2],1e-12)
-        if gap>0.005 and price>opens[-1] and bullish: side="BUY"
-        elif gap< -0.005 and price<opens[-1] and bearish: side="SELL"
-        elif method_key=="gap_reversal" and gap>0.01 and price<opens[-1] and bearish: side="SELL"
-        elif method_key=="gap_reversal" and gap< -0.01 and price>opens[-1] and bullish: side="BUY"
-    elif method_key in ("failed_breakout","liquidity_reclaim"):
-        if highs[-1]>prior_high and price<prior_high and bearish: side="SELL"
-        elif lows[-1]<prior_low and price>prior_low and bullish: side="BUY"
-    elif method_key in ("range_expansion","range_compression","relative_volume_breakout"):
-        avg_range=mean([highs[i]-lows[i] for i in range(-20,-1)])
-        if method_key=="range_expansion" and candle_range>avg_range*1.5 and bullish and price>closes[-2]: side="BUY"
-        elif method_key=="range_expansion" and candle_range>avg_range*1.5 and bearish and price<closes[-2]: side="SELL"
-        elif method_key=="range_compression" and candle_range<avg_range*0.6 and price>prior_high and bullish: side="BUY"
-        elif method_key=="range_compression" and candle_range<avg_range*0.6 and price<prior_low and bearish: side="SELL"
-        elif method_key=="relative_volume_breakout" and volumes[-1]>avg_vol*1.5 and price>prior_high and bullish: side="BUY"
-        elif method_key=="relative_volume_breakout" and volumes[-1]>avg_vol*1.5 and price<prior_low and bearish: side="SELL"
-    elif method_key in ("atr_trailing","volatility_stop"):
-        stop=price-atr*3
-        if price>stop and price>e20 and bullish: side="BUY"
-        elif price<e20 and bearish: side="SELL"
-    elif method_key in ("pivot_reversal","pivot_breakout"):
-        pivot=(highs[-2]+lows[-2]+closes[-2])/3
-        if price>pivot and bullish: side="BUY"
-        elif price<pivot and bearish: side="SELL"
-    elif method_key in ("fib_confluence","trendline_retest","channel_breakout"):
-        mid=(max(highs[-20:])+min(lows[-20:]))/2
-        if price>mid and bullish and price>e20: side="BUY"
-        elif price<mid and bearish and price<e20: side="SELL"
-    elif method_key in ("pvt","chaikin_oscillator","ease_movement","volume_climax"):
-        signed_volume=volumes[-1]*(1 if price>closes[-2] else -1 if price<closes[-2] else 0)
-        if method_key=="volume_climax" and volumes[-1]>avg_vol*2 and candle_range>atr*1.5:
-            if bullish: side="BUY"
-            elif bearish: side="SELL"
-        elif signed_volume>0 and bullish and price>e20: side="BUY"
-        elif signed_volume<0 and bearish and price<e20: side="SELL"
-    elif method_key in ("vwap_reclaim","anchored_vwap"):
-        if rolling_vwap is not None and price>rolling_vwap and closes[-2]<=rolling_vwap and bullish: side="BUY"
-        elif rolling_vwap is not None and price<rolling_vwap and closes[-2]>=rolling_vwap and bearish: side="SELL"
-    elif method_key == "wyckoff_spring":
-        if lows[-1] < prior_low and price > prior_low and bullish and volumes[-1] >= avg_vol*0.8: side="BUY"
-    elif method_key == "wyckoff_upthrust":
-        if highs[-1] > prior_high and price < prior_high and bearish and volumes[-1] >= avg_vol*0.8: side="SELL"
-    elif method_key == "wyckoff_sos_sow":
-        if price > prior_high and bullish and volumes[-1] > avg_vol*1.3: side="BUY"
-        elif price < prior_low and bearish and volumes[-1] > avg_vol*1.3: side="SELL"
-    elif method_key == "wyckoff_lps":
-        tol=max(atr*0.4,price*0.002)
-        if abs(lows[-1]-prev_sh)<tol and price>e20 and bullish: side="BUY"
-        elif abs(highs[-1]-prev_sl)<tol and price<e20 and bearish: side="SELL"
-    elif method_key in ("ict_ote","multi_swing_ote"):
-        swing_hi=max(highs[-30:]); swing_lo=min(lows[-30:]); span=swing_hi-swing_lo
-        if span>0:
-            buy_zone=swing_hi-span*0.79 <= price <= swing_hi-span*0.62
-            sell_zone=swing_lo+span*0.62 <= price <= swing_lo+span*0.79
-            if buy_zone and bullish and price>e20: side="BUY"
-            elif sell_zone and bearish and price<e20: side="SELL"
-    elif method_key == "ict_kill_zone":
-        # ICT kill zones in New York local time; zone conversion accounts for daylight saving.
-        stamp = last.get("time", last.get("timestamp"))
-        if stamp is not None:
-            try:
-                stamp = float(stamp)
-                if stamp > 1e12:
-                    stamp /= 1000.0
-                local_time = datetime.fromtimestamp(stamp, timezone.utc).astimezone(ZoneInfo("America/New_York"))
-                minute = local_time.hour * 60 + local_time.minute
-                in_kill_zone = (120 <= minute < 300) or (420 <= minute < 600)
-                if in_kill_zone and bullish and price > e20 and abs(body) >= atr * 0.5: side = "BUY"
-                elif in_kill_zone and bearish and price < e20 and abs(body) >= atr * 0.5: side = "SELL"
-            except (ValueError, TypeError, OverflowError):
-                side = None
-    elif method_key in ("gartley","bat_pattern","butterfly_pattern","crab_pattern","shark_pattern"):
-        # Approximate harmonic completion from recent swing ratios; requires independent validation before production use.
-        swings=(recent_sl[-2][1],recent_sh[-2][1],recent_sl[-1][1],recent_sh[-1][1]) if len(recent_sl)>=2 and len(recent_sh)>=2 else None
-        if swings:
-            a,b,cc,d=swings
-            ab=abs(b-a); bc=abs(cc-b); cd=abs(d-cc)
-            ratio=cd/max(bc,1e-12)
-            if 0.5<=ratio<=1.9 and price>e20 and bullish: side="BUY"
-            elif 0.5<=ratio<=1.9 and price<e20 and bearish: side="SELL"
-    elif method_key in ("andrews_pitchfork","wolfe_waves","linear_regression_channel","stddev_channel"):
-        # Channel proxy based on recent range; not a geometrically fitted pitchfork or Wolfe-wave detector.
-        mid=(max(highs[-20:])+min(lows[-20:]))/2
-        if price>mid and bullish and price>e20: side="BUY"
-        elif price<mid and bearish and price<e20: side="SELL"
-    elif method_key in ("ttm_squeeze","range_compression"):
-        short_range=max(highs[-6:])-min(lows[-6:])
-        long_range=max(highs[-20:])-min(lows[-20:])
-        if long_range>0 and short_range/long_range<0.35 and price>prior_high and bullish: side="BUY"
-        elif long_range>0 and short_range/long_range<0.35 and price<prior_low and bearish: side="SELL"
-    elif method_key == "coppock_curve":
-        roc11=(price-closes[-12])/max(closes[-12],1e-12)
-        roc14=(price-closes[-15])/max(closes[-15],1e-12)
-        if roc11+roc14>0 and bullish: side="BUY"
-        elif roc11+roc14<0 and bearish: side="SELL"
-    elif method_key in ("klinger_oscillator","wyckoff_effort_result","relative_volume_climax","failed_auction"):
-        if avg_vol>0 and volumes[-1]>avg_vol*1.7 and candle_range>atr:
+        # Extended OHLCV rule set. Methods needing unavailable tick/order-book/cross-asset data are marked proxies or return no signal.
+        elif method_key in ("donchian", "turtle_trading"):
+            upper=max(highs[-21:-1]); lower=min(lows[-21:-1])
+            if price>upper and bullish: side="BUY"
+            elif price<lower and bearish: side="SELL"
+        elif method_key == "keltner":
+            mid=ema(closes,20); width=atr*2
+            if mid is not None and price>mid+width and bullish: side="BUY"
+            elif mid is not None and price<mid-width and bearish: side="SELL"
+        elif method_key in ("heikin_ashi","renko","point_figure"):
+            up=sum(closes[i]>opens[i] for i in range(-4,0))
+            down=sum(closes[i]<opens[i] for i in range(-4,0))
+            if up>=3 and price>e20: side="BUY"
+            elif down>=3 and price<e20: side="SELL"
+        elif method_key in ("orb","session_range"):
+            # Session timestamps are not supplied; uses the recent candle range as an explicitly labeled proxy.
+            if price>prior_high and bullish: side="BUY"
+            elif price<prior_low and bearish: side="SELL"
+        elif method_key == "inside_bar":
+            if highs[-2]<highs[-3] and lows[-2]>lows[-3]:
+                if price>highs[-2] and bullish: side="BUY"
+                elif price<lows[-2] and bearish: side="SELL"
+        elif method_key == "outside_bar":
+            if highs[-1]>highs[-2] and lows[-1]<lows[-2]:
+                if bullish and price>closes[-2]: side="BUY"
+                elif bearish and price<closes[-2]: side="SELL"
+        elif method_key == "three_bar_reversal":
+            if closes[-3]<opens[-3] and closes[-2]<opens[-2] and bullish and price>highs[-2]: side="BUY"
+            elif closes[-3]>opens[-3] and closes[-2]>opens[-2] and bearish and price<lows[-2]: side="SELL"
+        elif method_key == "gap_trading":
+            gap=(opens[-1]-closes[-2])/max(closes[-2],1e-12)
+            if gap>0.005 and bullish: side="BUY"
+            elif gap< -0.005 and bearish: side="SELL"
+        elif method_key in ("smt_divergence","pairs_trading","stat_arb","cointegration","cross_market","oi_funding"):
+            # Requires a second symbol, confirmed funding/OI, or paired series not present in this function.
+            side=None
+        elif method_key in ("power_of_three","judas_swing","turtle_soup","unicorn_model","breaker_blocks","mitigation_blocks","liquidity_void","fvg_retest","equal_highs_lows","premium_discount"):
+            if lows[-1]<prior_low and price>prior_low and bullish and price>closes[-2]: side="BUY"
+            elif highs[-1]>prior_high and price<prior_high and bearish and price<closes[-2]: side="SELL"
+            elif method_key in ("breaker_blocks","mitigation_blocks","unicorn_model") and broke_up and bullish_structure: side="BUY"
+            elif method_key in ("breaker_blocks","mitigation_blocks","unicorn_model") and broke_down and bearish_structure: side="SELL"
+        elif method_key in ("cvd_proxy","footprint_proxy","volume_imbalance","absorption","market_profile","anchored_vwap","obv_trend","accumulation_distribution"):
+            # OHLCV-only volume proxy; not true bid/ask delta, footprint, TPO, or anchored VWAP.
             loc=(price-lows[-1])/candle_range
-            if loc>0.75 and bullish: side="BUY"
-            elif loc<0.25 and bearish: side="SELL"
-    elif method_key in ("schaff_cycle","adaptive_ma","mcginley","donchian_midline","vol_adjusted_momentum","volatility_adjusted_momentum"):
-        if price>e20 and e20>e50 and bullish: side="BUY"
-        elif price<e20 and e20<e50 and bearish: side="SELL"
-    elif method_key in ("hurst_filter","hurst_cycle"):
-        # Lightweight lag-1 persistence proxy, not a statistically rigorous Hurst exponent.
-        returns=[closes[i]/max(closes[i-1],1e-12)-1 for i in range(-20,0)]
-        persistence=sum(1 for a,b in zip(returns,returns[1:]) if a*b>0)/max(len(returns)-1,1)
-        if persistence>0.65 and price>e20 and bullish: side="BUY"
-        elif persistence>0.65 and price<e20 and bearish: side="SELL"
-    elif method_key in ("volatility_adjusted_momentum","range_liquidity_reclaim"):
-        if lows[-1]<prior_low and price>prior_low and bullish: side="BUY"
-        elif highs[-1]>prior_high and price<prior_high and bearish: side="SELL"
-    elif method_key == "cci":
-        typical=[(highs[i]+lows[i]+closes[i])/3 for i in range(len(c))]
-        m=mean(typical[-20:]); md=mean([abs(x-m) for x in typical[-20:]])
-        cci=(typical[-1]-m)/max(0.015*md,1e-12)
-        if cci>100 and bullish: side="BUY"
-        elif cci< -100 and bearish: side="SELL"
-    elif method_key == "williams_r":
-        hh=max(highs[-14:]); ll=min(lows[-14:]); wr=-100*(hh-price)/max(hh-ll,1e-12)
-        if wr>-80 and rsi_now is not None and rsi_now<40 and bullish: side="BUY"
-        elif wr< -20 and rsi_now is not None and rsi_now>60 and bearish: side="SELL"
-    elif method_key == "mfi":
-        pos=neg=0.0
-        for i in range(-14,0):
-            flow=((highs[i]+lows[i]+closes[i])/3)*volumes[i]
-            prevtyp=(highs[i-1]+lows[i-1]+closes[i-1])/3
-            if (highs[i]+lows[i]+closes[i])/3>prevtyp: pos+=flow
-            else: neg+=flow
-        mfi=100-100/(1+pos/max(neg,1e-12))
-        if mfi<20 and bullish: side="BUY"
-        elif mfi>80 and bearish: side="SELL"
-    elif method_key == "roc":
-        roc=(price-closes[-11])/max(closes[-11],1e-12)
-        if roc>0.02 and bullish: side="BUY"
-        elif roc< -0.02 and bearish: side="SELL"
-    elif method_key == "trix":
-        e1=[ema(closes[:i],15) for i in range(1,len(closes)+1)]
-        e1=[x for x in e1 if x is not None]
-        e2=[ema(e1[:i],15) for i in range(1,len(e1)+1)]
-        e2=[x for x in e2 if x is not None]
-        e3=[ema(e2[:i],15) for i in range(1,len(e2)+1)]
-        if len(e3)>1:
-            if e3[-1]>e3[-2] and bullish: side="BUY"
-            elif e3[-1]<e3[-2] and bearish: side="SELL"
-    elif method_key == "dmi":
-        plus=sum(max(highs[i]-highs[i-1],0) for i in range(-14,0))
-        minus=sum(max(lows[i-1]-lows[i],0) for i in range(-14,0))
-        if plus>minus*1.25 and bullish: side="BUY"
-        elif minus>plus*1.25 and bearish: side="SELL"
-    elif method_key == "elder_ray":
-        bull=highs[-1]-(e20 or price); bear=lows[-1]-(e20 or price)
-        if bull>0 and bear<0 and bullish: side="BUY"
-        elif bear<0 and bull<0 and bearish: side="SELL"
-    elif method_key in ("kama","tema","alligator","triple_screen"):
-        # Smoothing/screening approximations; not a substitute for full platform-specific indicator calculation.
-        if e20 is not None and e50 is not None and price>e20>e50 and bullish: side="BUY"
-        elif e20 is not None and e50 is not None and price<e20<e50 and bearish: side="SELL"
-    elif method_key == "chaikin_money_flow":
-        mfv=sum((((closes[i]-lows[i])-(highs[i]-closes[i]))/max(highs[i]-lows[i],1e-12))*volumes[i] for i in range(-20,0))
-        cmf=mfv/max(sum(volumes[-20:]),1e-12)
-        if cmf>0.15 and bullish: side="BUY"
-        elif cmf< -0.15 and bearish: side="SELL"
-    elif method_key == "ad_divergence":
-        signed_now=volumes[-1]*(1 if closes[-1]>closes[-2] else -1 if closes[-1]<closes[-2] else 0)
-        signed_prev=volumes[-6]*(1 if closes[-6]>closes[-7] else -1 if closes[-6]<closes[-7] else 0)
-        if price>closes[-6] and signed_now>signed_prev and bullish: side="BUY"
-        elif price<closes[-6] and signed_now<signed_prev and bearish: side="SELL"
-    elif method_key == "force_index":
-        force=(closes[-1]-closes[-2])*volumes[-1]
-        if force>0 and volumes[-1]>=avg_vol and bullish: side="BUY"
-        elif force<0 and volumes[-1]>=avg_vol and bearish: side="SELL"
-    elif method_key == "ulcer_filter":
-        peak=max(closes[-14:]); drawdown=(price-peak)/max(peak,1e-12)
-        if drawdown> -0.02 and price>e20 and bullish: side="BUY"
-        elif drawdown< -0.08 and price<e20 and bearish: side="SELL"
-    elif method_key in ("triple_top_bottom","head_shoulders","inverse_head_shoulders","wedge","flag","pennant","cup_handle","rectangle","rounding_pattern","three_drives","key_reversal","nr7","vcp","darvas_box","fractal_breakout","pivot_breakout","kumo_breakout","fib_extension"):
-        # Pattern-family proxy using confirmed swing structure and compression/breakout; full discretionary geometry is not claimed.
-        recent_range=max(highs[-10:])-min(lows[-10:])
-        earlier_range=max(highs[-20:-10])-min(lows[-20:-10])
-        compressed=earlier_range>0 and recent_range<earlier_range*0.75
-        if (method_key in ("flag","pennant","vcp","nr7","darvas_box","rectangle","fractal_breakout","pivot_breakout","kumo_breakout") or compressed) and price>prior_high and bullish: side="BUY"
-        elif (method_key in ("flag","pennant","vcp","nr7","darvas_box","rectangle","fractal_breakout","pivot_breakout","kumo_breakout") or compressed) and price<prior_low and bearish: side="SELL"
-        elif method_key in ("triple_top_bottom","head_shoulders") and bearish_structure and price<prev_sl and bearish: side="SELL"
-        elif method_key in ("triple_top_bottom","inverse_head_shoulders") and bullish_structure and price>prev_sh and bullish: side="BUY"
-    elif method_key == "adx_trend":
-        if e20 is not None and e50 is not None and abs(e20-e50)/price>0.003:
-            if e20>e50 and price>e20 and bullish: side="BUY"
-            elif e20<e50 and price<e20 and bearish: side="SELL"
-    
+            if avg_vol>0 and volumes[-1]>=avg_vol*1.4 and bullish and loc>=0.7: side="BUY"
+            elif avg_vol>0 and volumes[-1]>=avg_vol*1.4 and bearish and loc<=0.3: side="SELL"
+        elif method_key == "zscore_reversion":
+            m=mean(closes[-20:]); sd=mean([(x-m)**2 for x in closes[-20:]])**0.5
+            z=(price-m)/max(sd,1e-12)
+            if z<=-1.5 and (bullish or (rsi_now is not None and rsi_now<35)): side="BUY"
+            elif z>=1.5 and (bearish or (rsi_now is not None and rsi_now>65)): side="SELL"
+        elif method_key in ("relative_strength","dual_momentum"):
+            move=(price-closes[-10])/max(closes[-10],1e-12)
+            if move>0.015 and bullish and (e20 is None or price>e20): side="BUY"
+            elif move< -0.015 and bearish and (e20 is None or price<e20): side="SELL"
+        elif method_key == "seasonality":
+            # Calendar seasonality requires reliable timestamps and a historical seasonal sample; no unsupported signal.
+            side=None
+        elif method_key in ("volatility_breakout","atr_breakout"):
+            if price>prior_high and bullish and body>=atr*0.2: side="BUY"
+            elif price<prior_low and bearish and -body>=atr*0.2: side="SELL"
+        elif method_key == "supertrend":
+            if e20 is not None and price>e20+atr*1.5 and bullish: side="BUY"
+            elif e20 is not None and price<e20-atr*1.5 and bearish: side="SELL"
+        elif method_key == "pivot_points":
+            pp=(highs[-2]+lows[-2]+closes[-2])/3
+            if price>pp and closes[-2]<=pp and bullish: side="BUY"
+            elif price<pp and closes[-2]>=pp and bearish: side="SELL"
+        elif method_key in ("parabolic_sar","chandelier_exit"):
+            trail_high=max(highs[-22:-1])-atr*3
+            trail_low=min(lows[-22:-1])+atr*3
+            if price>trail_high and bullish: side="BUY"
+            elif price<trail_low and bearish: side="SELL"
+        elif method_key == "bollinger_bands":
+            m=mean(closes[-20:]); sd=mean([(x-m)**2 for x in closes[-20:]])**0.5
+            if price<m-2*sd and bullish: side="BUY"
+            elif price>m+2*sd and bearish: side="SELL"
+        elif method_key == "macd":
+            fast=ema(closes,12); slow=ema(closes,26)
+            prev_fast=ema(closes[:-1],12); prev_slow=ema(closes[:-1],26)
+            if fast is not None and slow is not None and prev_fast is not None and prev_slow is not None:
+                if fast>slow and prev_fast<=prev_slow: side="BUY"
+                elif fast<slow and prev_fast>=prev_slow: side="SELL"
+        elif method_key == "rsi_reversal":
+            if rsi_now is not None and rsi_now<30 and bullish: side="BUY"
+            elif rsi_now is not None and rsi_now>70 and bearish: side="SELL"
+        elif method_key == "stochastic":
+            lo=min(lows[-14:]); hi=max(highs[-14:]); k=100*(price-lo)/max(hi-lo,1e-12)
+            prev_k=100*(closes[-2]-min(lows[-14:-1]))/max(max(highs[-14:-1])-min(lows[-14:-1]),1e-12)
+            if k>20 and prev_k<=20 and bullish: side="BUY"
+            elif k<80 and prev_k>=80 and bearish: side="SELL"
+        elif method_key == "fisher_transform":
+            changes=[closes[i]-closes[i-1] for i in range(1,len(closes))]
+            z=changes[-5:]
+            if mean(z)>0 and bullish and price>e20: side="BUY"
+            elif mean(z)<0 and bearish and price<e20: side="SELL"
+        elif method_key == "aroon":
+            window_high=highs[-25:]; window_low=lows[-25:]
+            up=100*(window_high.index(max(window_high)))/24
+            down=100*(window_low.index(min(window_low)))/24
+            if up>=70 and down<=30 and bullish: side="BUY"
+            elif down>=70 and up<=30 and bearish: side="SELL"
+        elif method_key == "vortex":
+            vp=sum(abs(highs[i]-lows[i-1]) for i in range(-14,0))
+            vm=sum(abs(lows[i]-highs[i-1]) for i in range(-14,0))
+            if vp>vm*1.1 and bullish: side="BUY"
+            elif vm>vp*1.1 and bearish: side="SELL"
+        elif method_key == "choppiness":
+            trsum=sum(true_ranges[-14:])
+            choppy=100*__import__("math").log10(max(trsum/max(max(highs[-14:])-min(lows[-14:]),1e-12),1e-12))/__import__("math").log10(14)
+            if choppy<45 and price>e20 and bullish: side="BUY"
+            elif choppy<45 and price<e20 and bearish: side="SELL"
+        elif method_key == "ultimate_oscillator":
+            bp=[]; tr=[]
+            for i in range(-28,0):
+                prev_close=closes[i-1]
+                bp.append(closes[i]-min(lows[i],prev_close))
+                tr.append(max(highs[i],prev_close)-min(lows[i],prev_close))
+            uo=100*(4*sum(bp[-7:])/max(sum(tr[-7:]),1e-12)+2*sum(bp[-14:])/max(sum(tr[-14:]),1e-12)+sum(bp[-28:])/max(sum(tr[-28:]),1e-12))/7
+            if uo>55 and bullish: side="BUY"
+            elif uo<45 and bearish: side="SELL"
+        elif method_key == "rvi":
+            numerator=mean([closes[i]-opens[i] for i in range(-10,0)])
+            denominator=mean([highs[i]-lows[i] for i in range(-10,0)])
+            rvi=numerator/max(denominator,1e-12)
+            if rvi>0.15 and bullish: side="BUY"
+            elif rvi< -0.15 and bearish: side="SELL"
+        elif method_key == "tsi":
+            mom=[closes[i]-closes[i-1] for i in range(1,len(closes))]
+            fast=ema(mom,13); slow=ema(mom,25)
+            tsi=fast/max(abs(slow or 0),1e-12) if fast is not None else 0
+            if tsi>0.1 and bullish and price>e20: side="BUY"
+            elif tsi< -0.1 and bearish and price<e20: side="SELL"
+        elif method_key == "ppo":
+            e12,e26=ema(closes,12),ema(closes,26)
+            ppo=100*(e12-e26)/max(abs(e26 or price),1e-12) if e12 is not None and e26 is not None else 0
+            if ppo>0 and bullish: side="BUY"
+            elif ppo<0 and bearish: side="SELL"
+        elif method_key == "dpo":
+            shift=10
+            dpo=price-mean(closes[-21:-11])
+            if dpo>0 and bullish: side="BUY"
+            elif dpo<0 and bearish: side="SELL"
+        elif method_key == "price_channel":
+            if price>prior_high and bullish: side="BUY"
+            elif price<prior_low and bearish: side="SELL"
+        elif method_key == "connors_rsi":
+            short_rsi=rsi(closes,3)
+            if short_rsi is not None and short_rsi<10 and price>e200 and bullish: side="BUY"
+            elif short_rsi is not None and short_rsi>90 and price<e200 and bearish: side="SELL"
+        elif method_key == "elder_impulse":
+            if e20 is not None and e50 is not None and price>e20>e50 and bullish: side="BUY"
+            elif e20 is not None and e50 is not None and price<e20<e50 and bearish: side="SELL"
+        elif method_key in ("three_line_strike","marubozu","doji_reversal","star_pattern","piercing_dark_cloud","tweezer"):
+            prev_body=abs(closes[-2]-opens[-2]); prev_prev_body=abs(closes[-3]-opens[-3])
+            upper=highs[-1]-max(opens[-1],closes[-1]); lower=min(opens[-1],closes[-1])-lows[-1]
+            if method_key=="marubozu" and bullish and upper<candle_range*0.08 and lower<candle_range*0.08: side="BUY"
+            elif method_key=="marubozu" and bearish and upper<candle_range*0.08 and lower<candle_range*0.08: side="SELL"
+            elif method_key=="doji_reversal" and abs(body)<=candle_range*0.1 and lower>upper*1.8 and price>closes[-2]: side="BUY"
+            elif method_key=="doji_reversal" and abs(body)<=candle_range*0.1 and upper>lower*1.8 and price<closes[-2]: side="SELL"
+            elif method_key=="three_line_strike" and bullish and all(closes[i]>opens[i] for i in range(-4,-1)) and price<opens[-4] and price>closes[-4]: side="BUY"
+            elif method_key in ("star_pattern","piercing_dark_cloud","tweezer") and bullish and price>closes[-2] and lower>prev_body*0.7: side="BUY"
+            elif method_key in ("star_pattern","piercing_dark_cloud","tweezer") and bearish and price<closes[-2] and upper>prev_body*0.7: side="SELL"
+        elif method_key in ("gap_go","gap_reversal"):
+            gap=(opens[-1]-closes[-2])/max(closes[-2],1e-12)
+            if gap>0.005 and price>opens[-1] and bullish: side="BUY"
+            elif gap< -0.005 and price<opens[-1] and bearish: side="SELL"
+            elif method_key=="gap_reversal" and gap>0.01 and price<opens[-1] and bearish: side="SELL"
+            elif method_key=="gap_reversal" and gap< -0.01 and price>opens[-1] and bullish: side="BUY"
+        elif method_key in ("failed_breakout","liquidity_reclaim"):
+            if highs[-1]>prior_high and price<prior_high and bearish: side="SELL"
+            elif lows[-1]<prior_low and price>prior_low and bullish: side="BUY"
+        elif method_key in ("range_expansion","range_compression","relative_volume_breakout"):
+            avg_range=mean([highs[i]-lows[i] for i in range(-20,-1)])
+            if method_key=="range_expansion" and candle_range>avg_range*1.5 and bullish and price>closes[-2]: side="BUY"
+            elif method_key=="range_expansion" and candle_range>avg_range*1.5 and bearish and price<closes[-2]: side="SELL"
+            elif method_key=="range_compression" and candle_range<avg_range*0.6 and price>prior_high and bullish: side="BUY"
+            elif method_key=="range_compression" and candle_range<avg_range*0.6 and price<prior_low and bearish: side="SELL"
+            elif method_key=="relative_volume_breakout" and volumes[-1]>avg_vol*1.5 and price>prior_high and bullish: side="BUY"
+            elif method_key=="relative_volume_breakout" and volumes[-1]>avg_vol*1.5 and price<prior_low and bearish: side="SELL"
+        elif method_key in ("atr_trailing","volatility_stop"):
+            # A trailing stop must be crossed; a stop below price is not a signal by itself.
+            trail_long=max(closes[-20:])-atr*3
+            trail_short=min(closes[-20:])+atr*3
+            if closes[-2] <= trail_long < price and bullish: side="BUY"
+            elif closes[-2] >= trail_short > price and bearish: side="SELL"
+        elif method_key in ("pivot_reversal","pivot_breakout"):
+            pivot=(highs[-2]+lows[-2]+closes[-2])/3
+            if price>pivot and bullish: side="BUY"
+            elif price<pivot and bearish: side="SELL"
+        elif method_key in ("fib_confluence","trendline_retest","channel_breakout"):
+            mid=(max(highs[-20:])+min(lows[-20:]))/2
+            if price>mid and bullish and price>e20: side="BUY"
+            elif price<mid and bearish and price<e20: side="SELL"
+        elif method_key in ("pvt","chaikin_oscillator","ease_movement","volume_climax"):
+            signed_volume=volumes[-1]*(1 if price>closes[-2] else -1 if price<closes[-2] else 0)
+            if method_key=="volume_climax" and volumes[-1]>avg_vol*2 and candle_range>atr*1.5:
+                if bullish: side="BUY"
+                elif bearish: side="SELL"
+            elif signed_volume>0 and bullish and price>e20: side="BUY"
+            elif signed_volume<0 and bearish and price<e20: side="SELL"
+        elif method_key == "vwap_reclaim":
+            if rolling_vwap is not None and price>rolling_vwap and closes[-2]<=rolling_vwap and bullish: side="BUY"
+            elif rolling_vwap is not None and price<rolling_vwap and closes[-2]>=rolling_vwap and bearish: side="SELL"
+        elif method_key == "wyckoff_spring":
+            if lows[-1] < prior_low and price > prior_low and bullish and volumes[-1] >= avg_vol*0.8: side="BUY"
+        elif method_key == "wyckoff_upthrust":
+            if highs[-1] > prior_high and price < prior_high and bearish and volumes[-1] >= avg_vol*0.8: side="SELL"
+        elif method_key == "wyckoff_sos_sow":
+            if price > prior_high and bullish and volumes[-1] > avg_vol*1.3: side="BUY"
+            elif price < prior_low and bearish and volumes[-1] > avg_vol*1.3: side="SELL"
+        elif method_key == "wyckoff_lps":
+            tol=max(atr*0.4,price*0.002)
+            if abs(lows[-1]-prev_sh)<tol and price>e20 and bullish: side="BUY"
+            elif abs(highs[-1]-prev_sl)<tol and price<e20 and bearish: side="SELL"
+        elif method_key in ("ict_ote","multi_swing_ote"):
+            swing_hi=max(highs[-30:]); swing_lo=min(lows[-30:]); span=swing_hi-swing_lo
+            if span>0:
+                buy_zone=swing_hi-span*0.79 <= price <= swing_hi-span*0.62
+                sell_zone=swing_lo+span*0.62 <= price <= swing_lo+span*0.79
+                if buy_zone and bullish and price>e20: side="BUY"
+                elif sell_zone and bearish and price<e20: side="SELL"
+        elif method_key == "ict_kill_zone":
+            # ICT kill zones in New York local time; zone conversion accounts for daylight saving.
+            stamp = last.get("time", last.get("timestamp"))
+            if stamp is not None:
+                try:
+                    stamp = float(stamp)
+                    if stamp > 1e12:
+                        stamp /= 1000.0
+                    local_time = datetime.fromtimestamp(stamp, timezone.utc).astimezone(ZoneInfo("America/New_York"))
+                    minute = local_time.hour * 60 + local_time.minute
+                    in_kill_zone = (120 <= minute < 300) or (420 <= minute < 600)
+                    if in_kill_zone and bullish and price > e20 and abs(body) >= atr * 0.5: side = "BUY"
+                    elif in_kill_zone and bearish and price < e20 and abs(body) >= atr * 0.5: side = "SELL"
+                except (ValueError, TypeError, OverflowError):
+                    side = None
+        elif method_key in ("gartley","bat_pattern","butterfly_pattern","crab_pattern","shark_pattern"):
+            # Approximate harmonic completion from recent swing ratios; requires independent validation before production use.
+            swings=(recent_sl[-2][1],recent_sh[-2][1],recent_sl[-1][1],recent_sh[-1][1]) if len(recent_sl)>=2 and len(recent_sh)>=2 else None
+            if swings:
+                a,b,cc,d=swings
+                ab=abs(b-a); bc=abs(cc-b); cd=abs(d-cc)
+                ratio=cd/max(bc,1e-12)
+                if 0.5<=ratio<=1.9 and price>e20 and bullish: side="BUY"
+                elif 0.5<=ratio<=1.9 and price<e20 and bearish: side="SELL"
+        elif method_key in ("andrews_pitchfork","wolfe_waves","linear_regression_channel","stddev_channel"):
+            # Channel proxy based on recent range; not a geometrically fitted pitchfork or Wolfe-wave detector.
+            mid=(max(highs[-20:])+min(lows[-20:]))/2
+            if price>mid and bullish and price>e20: side="BUY"
+            elif price<mid and bearish and price<e20: side="SELL"
+        elif method_key == "ttm_squeeze":
+            short_range=max(highs[-6:])-min(lows[-6:])
+            long_range=max(highs[-20:])-min(lows[-20:])
+            if long_range>0 and short_range/long_range<0.35 and price>prior_high and bullish: side="BUY"
+            elif long_range>0 and short_range/long_range<0.35 and price<prior_low and bearish: side="SELL"
+        elif method_key == "coppock_curve":
+            roc11=(price-closes[-12])/max(closes[-12],1e-12)
+            roc14=(price-closes[-15])/max(closes[-15],1e-12)
+            if roc11+roc14>0 and bullish: side="BUY"
+            elif roc11+roc14<0 and bearish: side="SELL"
+        elif method_key in ("klinger_oscillator","wyckoff_effort_result","relative_volume_climax","failed_auction"):
+            if avg_vol>0 and volumes[-1]>avg_vol*1.7 and candle_range>atr:
+                loc=(price-lows[-1])/candle_range
+                if loc>0.75 and bullish: side="BUY"
+                elif loc<0.25 and bearish: side="SELL"
+        elif method_key in ("schaff_cycle","adaptive_ma","mcginley","donchian_midline","vol_adjusted_momentum","volatility_adjusted_momentum"):
+            if price>e20 and e20>e50 and bullish: side="BUY"
+            elif price<e20 and e20<e50 and bearish: side="SELL"
+        elif method_key in ("hurst_filter","hurst_cycle"):
+            # Lightweight lag-1 persistence proxy, not a statistically rigorous Hurst exponent.
+            returns=[closes[i]/max(closes[i-1],1e-12)-1 for i in range(-20,0)]
+            persistence=sum(1 for a,b in zip(returns,returns[1:]) if a*b>0)/max(len(returns)-1,1)
+            if persistence>0.65 and price>e20 and bullish: side="BUY"
+            elif persistence>0.65 and price<e20 and bearish: side="SELL"
+        elif method_key == "range_liquidity_reclaim":
+            if lows[-1]<prior_low and price>prior_low and bullish: side="BUY"
+            elif highs[-1]>prior_high and price<prior_high and bearish: side="SELL"
+        elif method_key == "cci":
+            typical=[(highs[i]+lows[i]+closes[i])/3 for i in range(len(c))]
+            m=mean(typical[-20:]); md=mean([abs(x-m) for x in typical[-20:]])
+            cci=(typical[-1]-m)/max(0.015*md,1e-12)
+            if cci>100 and bullish: side="BUY"
+            elif cci< -100 and bearish: side="SELL"
+        elif method_key == "williams_r":
+            hh=max(highs[-14:]); ll=min(lows[-14:]); wr=-100*(hh-price)/max(hh-ll,1e-12)
+            if wr>-80 and rsi_now is not None and rsi_now<40 and bullish: side="BUY"
+            elif wr< -20 and rsi_now is not None and rsi_now>60 and bearish: side="SELL"
+        elif method_key == "mfi":
+            pos=neg=0.0
+            for i in range(-14,0):
+                flow=((highs[i]+lows[i]+closes[i])/3)*volumes[i]
+                prevtyp=(highs[i-1]+lows[i-1]+closes[i-1])/3
+                if (highs[i]+lows[i]+closes[i])/3>prevtyp: pos+=flow
+                else: neg+=flow
+            mfi=100-100/(1+pos/max(neg,1e-12))
+            if mfi<20 and bullish: side="BUY"
+            elif mfi>80 and bearish: side="SELL"
+        elif method_key == "roc":
+            roc=(price-closes[-11])/max(closes[-11],1e-12)
+            if roc>0.02 and bullish: side="BUY"
+            elif roc< -0.02 and bearish: side="SELL"
+        elif method_key == "trix":
+            e1=[ema(closes[:i],15) for i in range(1,len(closes)+1)]
+            e1=[x for x in e1 if x is not None]
+            e2=[ema(e1[:i],15) for i in range(1,len(e1)+1)]
+            e2=[x for x in e2 if x is not None]
+            e3=[ema(e2[:i],15) for i in range(1,len(e2)+1)]
+            if len(e3)>1:
+                if e3[-1]>e3[-2] and bullish: side="BUY"
+                elif e3[-1]<e3[-2] and bearish: side="SELL"
+        elif method_key == "dmi":
+            plus=sum(max(highs[i]-highs[i-1],0) for i in range(-14,0))
+            minus=sum(max(lows[i-1]-lows[i],0) for i in range(-14,0))
+            if plus>minus*1.25 and bullish: side="BUY"
+            elif minus>plus*1.25 and bearish: side="SELL"
+        elif method_key == "elder_ray":
+            bull=highs[-1]-(e20 or price); bear=lows[-1]-(e20 or price)
+            if bull>0 and bear<0 and bullish: side="BUY"
+            elif bear<0 and bull<0 and bearish: side="SELL"
+        elif method_key in ("kama","tema","alligator","triple_screen"):
+            # Smoothing/screening approximations; not a substitute for full platform-specific indicator calculation.
+            if e20 is not None and e50 is not None and price>e20>e50 and bullish: side="BUY"
+            elif e20 is not None and e50 is not None and price<e20<e50 and bearish: side="SELL"
+        elif method_key == "chaikin_money_flow":
+            mfv=sum((((closes[i]-lows[i])-(highs[i]-closes[i]))/max(highs[i]-lows[i],1e-12))*volumes[i] for i in range(-20,0))
+            cmf=mfv/max(sum(volumes[-20:]),1e-12)
+            if cmf>0.15 and bullish: side="BUY"
+            elif cmf< -0.15 and bearish: side="SELL"
+        elif method_key == "ad_divergence":
+            signed_now=volumes[-1]*(1 if closes[-1]>closes[-2] else -1 if closes[-1]<closes[-2] else 0)
+            signed_prev=volumes[-6]*(1 if closes[-6]>closes[-7] else -1 if closes[-6]<closes[-7] else 0)
+            if price>closes[-6] and signed_now>signed_prev and bullish: side="BUY"
+            elif price<closes[-6] and signed_now<signed_prev and bearish: side="SELL"
+        elif method_key == "force_index":
+            force=(closes[-1]-closes[-2])*volumes[-1]
+            if force>0 and volumes[-1]>=avg_vol and bullish: side="BUY"
+            elif force<0 and volumes[-1]>=avg_vol and bearish: side="SELL"
+        elif method_key == "ulcer_filter":
+            peak=max(closes[-14:]); drawdown=(price-peak)/max(peak,1e-12)
+            if drawdown> -0.02 and price>e20 and bullish: side="BUY"
+            elif drawdown< -0.08 and price<e20 and bearish: side="SELL"
+        elif method_key in ("triple_top_bottom","head_shoulders","inverse_head_shoulders","wedge","flag","pennant","cup_handle","rectangle","rounding_pattern","three_drives","key_reversal","nr7","vcp","darvas_box","fractal_breakout","kumo_breakout","fib_extension"):
+            # Pattern-family proxy using confirmed swing structure and compression/breakout; full discretionary geometry is not claimed.
+            recent_range=max(highs[-10:])-min(lows[-10:])
+            earlier_range=max(highs[-20:-10])-min(lows[-20:-10])
+            compressed=earlier_range>0 and recent_range<earlier_range*0.75
+            if (method_key in ("flag","pennant","vcp","nr7","darvas_box","rectangle","fractal_breakout","pivot_breakout","kumo_breakout") or compressed) and price>prior_high and bullish: side="BUY"
+            elif (method_key in ("flag","pennant","vcp","nr7","darvas_box","rectangle","fractal_breakout","pivot_breakout","kumo_breakout") or compressed) and price<prior_low and bearish: side="SELL"
+            elif method_key in ("triple_top_bottom","head_shoulders") and bearish_structure and price<prev_sl and bearish: side="SELL"
+            elif method_key in ("triple_top_bottom","inverse_head_shoulders") and bullish_structure and price>prev_sh and bullish: side="BUY"
+        elif method_key == "adx_trend":
+            if e20 is not None and e50 is not None and abs(e20-e50)/price>0.003:
+                if e20>e50 and price>e20 and bullish: side="BUY"
+                elif e20<e50 and price<e20 and bearish: side="SELL"
+        
+
+    except (TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError, KeyError):
+        return None
     if side is None or method_key == "risk_management":
         return None
     entry=price
