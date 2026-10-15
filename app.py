@@ -5,6 +5,8 @@ import math
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import secrets
+import hashlib
+import hmac
 import threading
 import xml.etree.ElementTree as ET
 import urllib.request
@@ -20,23 +22,73 @@ BASE = Path(__file__).resolve().parent
 app = FastAPI(title="التداول الذكي PRO", version="2.1.3")
 security = HTTPBasic(auto_error=False)
 
+LOGIN_HTML = """<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>دخول | التداول الذكي PRO</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#080d18;color:#f8fafc;font-family:Tahoma,Arial,sans-serif;padding:20px}
+.card{width:min(100%,390px);padding:30px 24px;border:1px solid #26344a;border-radius:22px;background:#111a2a;box-shadow:0 22px 70px #0008}
+.logo{font-size:25px;font-weight:800;margin-bottom:8px}.logo span{color:#e8b84b}.sub{color:#a8b4c7;font-size:14px;margin-bottom:25px}
+label{display:block;font-size:14px;margin-bottom:9px}input{width:100%;height:52px;border:1px solid #34445d;border-radius:12px;background:#080f1d;color:white;padding:0 15px;font-size:20px;letter-spacing:5px;outline:none}
+input:focus{border-color:#e8b84b}button{width:100%;height:50px;margin-top:16px;border:0;border-radius:12px;background:#e8b84b;color:#17130a;font-size:16px;font-weight:800;cursor:pointer}
+#error{min-height:22px;margin-top:13px;color:#ff8b8b;font-size:13px}.hint{font-size:12px;color:#77869e;margin-top:12px}
+</style></head><body><main class="card"><div class="logo">التداول الذكي <span>PRO</span></div>
+<div class="sub">أدخل الرقم السري للمتابعة</div><form id="login"><label for="pin">الرقم السري</label>
+<input id="pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" required autofocus>
+<button type="submit">دخول</button><div id="error" role="alert"></div></form><div class="hint">صفحة دخول محمية</div></main>
+<script>
+document.getElementById('login').addEventListener('submit',async function(e){e.preventDefault();const pin=document.getElementById('pin').value;const err=document.getElementById('error');err.textContent='';
+try{const r=await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})});if(r.ok){location.reload();return}err.textContent='الرقم السري غير صحيح';document.getElementById('pin').select()}catch(_){err.textContent='تعذر الاتصال، حاول مرة أخرى'}});
+</script></body></html>"""
+
+def _site_session_token(expiry):
+    secret = os.getenv("SITE_PASSWORD", "2341").encode("utf-8")
+    msg = str(expiry).encode("ascii")
+    sig = hmac.new(secret, msg, hashlib.sha256).hexdigest()
+    return str(expiry) + "." + sig
+
+def _valid_site_session(token):
+    try:
+        expiry_text, supplied = token.split(".", 1)
+        expiry = int(expiry_text)
+        if expiry < int(time.time()):
+            return False
+        expected = _site_session_token(expiry).split(".", 1)[1]
+        return secrets.compare_digest(supplied, expected)
+    except (ValueError, TypeError):
+        return False
 
 @app.middleware("http")
 async def site_password_gate(request: Request, call_next):
-    # Keep health checks available to the deployment platform.
-    if request.url.path == "/health":
+    path = request.url.path
+    if path in ("/health", "/login"):
+        if path == "/login" and request.method == "POST":
+            try:
+                payload = await request.json()
+                pin = str(payload.get("pin", "")) if isinstance(payload, dict) else ""
+            except Exception:
+                pin = ""
+            expected_password = os.getenv("SITE_PASSWORD", "2341")
+            if not secrets.compare_digest(pin, expected_password):
+                return JSONResponse({"detail": "الرقم السري غير صحيح"}, status_code=401)
+            response = JSONResponse({"ok": True})
+            response.set_cookie("site_session", _site_session_token(int(time.time()) + 60 * 60 * 24 * 7),
+                                httponly=True, secure=True, samesite="lax", path="/", max_age=60 * 60 * 24 * 7)
+            return response
         return await call_next(request)
-    credentials = await security(request)
-    expected_password = os.getenv("SITE_PASSWORD", "2341")
-    username_ok = bool(credentials and secrets.compare_digest(credentials.username, "admin"))
-    password_ok = bool(credentials and secrets.compare_digest(credentials.password, expected_password))
-    if not (username_ok and password_ok):
-        return JSONResponse(
-            {"detail": "الموقع محمي برقم سري."},
-            status_code=401,
-            headers={"WWW-Authenticate": 'Basic realm="SMART TRADING PRO", charset="UTF-8"'},
-        )
-    return await call_next(request)
+
+    token = request.cookies.get("site_session", "")
+    if _valid_site_session(token):
+        return await call_next(request)
+
+    # Allow static assets needed by public login page, but never serve static HTML without a session.
+    if path.startswith("/static/") and not path.lower().endswith((".html", ".htm")):
+        return await call_next(request)
+
+    if path.startswith("/api/") or request.method not in ("GET", "HEAD"):
+        return JSONResponse({"detail": "يلزم إدخال الرقم السري"}, status_code=401)
+
+    return HTMLResponse(LOGIN_HTML, status_code=200)
 # Persist results/articles on a mounted Northflank volume. Configure a persistent volume at /data.
 # DATA_DIR may override this path for local development or another persistent mount.
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data/smart-trading-pro-data"))
