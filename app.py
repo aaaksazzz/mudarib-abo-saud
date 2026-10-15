@@ -1914,7 +1914,7 @@ def build_signal(market: str, ticker: dict, interval: str):
     }
 
 @app.get("/api/signals/{market}")
-def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(25, ge=1, le=25)):
+def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20)):
     market = market.lower()
     enforce_section_access(market)
     if market not in BINANCE and market not in YAHOO_MARKETS:
