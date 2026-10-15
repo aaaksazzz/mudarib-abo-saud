@@ -1940,7 +1940,24 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     now = time.time()
     cached = SIGNAL_CACHE.get(key)
     if cached and now - cached[0] < SIGNAL_CACHE_TTL:
-        return cached[1]
+        cached_result = dict(cached[1])
+        cached_items = cached_result.get("items", [])
+        active_items = []
+        for item in cached_items if isinstance(cached_items, list) else []:
+            if not isinstance(item, dict):
+                continue
+            created_at = int(item.get("created_at") or now)
+            expiry = item.get("expires_at")
+            if not isinstance(expiry, (int, float)):
+                expiry = created_at + INTERVAL_SECONDS.get(item.get("interval"), 86400)
+            if int(expiry) > int(now):
+                active_items.append(item)
+        cached_result["items"] = active_items
+        cached_result["count"] = len(active_items)
+        if active_items:
+            return cached_result
+        # Never serve expired saved trades from the short in-memory cache.
+        SIGNAL_CACHE.pop(key, None)
     # Reuse a recent scan persisted on the mounted data volume after page reloads
     # or process restarts; do not make every visitor rescan the whole market.
     with RESULTS_LOCK:
@@ -1950,18 +1967,32 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         cached_at = int(persisted.get("_cached_at") or 0)
         cached_result = persisted.get("result")
         if cached_at and now - cached_at < 180 and isinstance(cached_result, dict):
-            # Reuse even an empty completed scan briefly; otherwise an empty result
-            # triggers another expensive full scan on every refresh.
+            # Reuse a recent completed scan, but never show an expired saved trade.
             restored = dict(cached_result)
+            cached_items = restored.get("items", [])
+            active_items = []
+            for item in cached_items if isinstance(cached_items, list) else []:
+                if not isinstance(item, dict):
+                    continue
+                created_at = int(item.get("created_at") or now)
+                expiry = item.get("expires_at")
+                if not isinstance(expiry, (int, float)):
+                    expiry = created_at + INTERVAL_SECONDS.get(item.get("interval"), 86400)
+                if int(expiry) > int(now):
+                    active_items.append(item)
+            restored["items"] = active_items
+            restored["count"] = len(active_items)
             restored["cached"] = True
             restored["live"] = False
             restored["stale"] = True
-            if restored.get("items") or restored.get("watch_items"):
-                restored["message"] = "نعرض آخر فحص محفوظ لتجنب إعادة البحث المتكرر؛ قد تتأخر الأسعار حتى اكتمال التحديث التالي."
+            if active_items or restored.get("watch_items"):
+                restored["message"] = "نعرض آخر فحص محفوظًا؛ أزيلت أي صفقة انتهت مدة فريمها."
             else:
-                restored["message"] = "آخر فحص مكتمل لم يجد فرصًا مستوفية؛ نعيد الفحص بعد انتهاء التخزين المؤقت بدل تكرار الطلبات."
-            SIGNAL_CACHE[key] = (now, restored)
-            return restored
+                # Do not return an empty or expired cached scan; continue with a fresh scan.
+                restored = None
+            if restored is not None:
+                SIGNAL_CACHE[key] = (now, restored)
+                return restored
     try:
         if market in BINANCE:
             # Inspect a larger liquidity-ranked batch before selecting eligible signals.
