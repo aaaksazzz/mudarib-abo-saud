@@ -2007,12 +2007,26 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                     found.append(item)
             except (urllib.error.URLError, TimeoutError, ValueError, OSError, IndexError, TypeError, ZeroDivisionError):
                 continue
-    # Use a balanced eligibility gate so the board does not stay empty when
-    # strict high-confluence thresholds reject every otherwise valid candidate.
-    # Still require multiple independent method families and directional confirmation.
-    found = [x for x in found if x.get("score", 0) >= 50 and x.get("method_count", 0) >= 2 and x.get("confirmations", 0) >= 4]
+    # Three quality levels: publish only actionable "good/strong" trades;
+    # weaker but directionally valid candidates are returned separately as watch-only.
+    candidates = [x for x in found if x.get("score", 0) >= 35
+                  and x.get("method_count", 0) >= 1 and x.get("confirmations", 0) >= 3]
+    for item in candidates:
+        if item.get("score", 0) >= 70 and item.get("method_count", 0) >= 4 and item.get("confirmations", 0) >= 5:
+            item["signal_tier"] = "قوية"
+            item["importance"] = "فرصة قوية"
+        elif item.get("score", 0) >= 45:
+            item["signal_tier"] = "جيدة"
+            item["importance"] = "فرصة جيدة"
+        else:
+            item["signal_tier"] = "مراقبة"
+            item["importance"] = "مراقبة فقط — لا تُعامل كصفقة"
+    watch_found = [x for x in candidates if x.get("signal_tier") == "مراقبة"]
+    found = [x for x in candidates if x.get("signal_tier") in ("قوية", "جيدة")]
     found.sort(key=lambda x: (x.get("score", 0), x.get("method_count", 0), x["confirmations"], x["quote_volume"]), reverse=True)
+    watch_found.sort(key=lambda x: (x.get("score", 0), x.get("method_count", 0), x["confirmations"], x["quote_volume"]), reverse=True)
     found = found[:limit]
+    watch_found = watch_found[:min(8, limit)]
     medals = ["gold", "silver", "bronze"]
     for i, item in enumerate(found):
         item["rank"] = i + 1
@@ -2096,7 +2110,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         item["medal"] = medals[i] if i < len(medals) else None
     result = {"ok": True, "live": True, "market": market, "interval": interval,
               "scanned": len(tickers), "count": len(display_items[:limit]), "updated_at": int(now),
-              "items": display_items[:limit], "message": "الصفقات المفتوحة محفوظة لكل فريم حتى انتهاء مدته. قد تتأخر الأسعار المعروضة إذا تعذر تحديث مصدر السوق؛ لا توجد نسبة ربح تاريخية موثقة."}
+              "items": display_items[:limit],
+              "watch_items": [{**item, "watch_reason": "التوافق أقل من حد نشر الصفقة؛ راقب فقط ولا تعتبرها توصية دخول."}
+                              for item in watch_found if item.get("symbol") not in {x.get("symbol") for x in display_items[:limit]}],
+              "message": "تُعرض الصفقات الجيدة والقوية كصفقات محفوظة حتى انتهاء مدة الفريم، وتظهر الإشارات الأضعف في قسم مراقبة منفصل بلا دخول فعلي. لا توجد نسبة ربح تاريخية موثقة."}
     SIGNAL_CACHE[key] = (now, result)
     with RESULTS_LOCK:
         persisted_scans = read_json_file(SIGNALS_CACHE_PATH, {})
