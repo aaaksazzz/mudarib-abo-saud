@@ -1914,7 +1914,8 @@ def build_signal(market: str, ticker: dict, interval: str):
         "status": "عدد المناهج المتوافقة يرفع ترتيب الإشارة؛ الإشارة الأولية تحتاج تحققًا إضافيًا"
     }
 
-def _compute_signal_cards(market: str, interval: str = "15m", limit: int = 20):
+@app.get("/api/signals/{market}")
+def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20)):
     market = market.lower()
     enforce_section_access(market)
     if market not in BINANCE and market not in YAHOO_MARKETS:
@@ -2140,84 +2141,6 @@ def _compute_signal_cards(market: str, interval: str = "15m", limit: int = 20):
             )[:100])
         write_json_file(SIGNALS_CACHE_PATH, persisted_scans)
     return result
-
-
-# Signal scans can involve hundreds of upstream requests. Run them in the background so
-# the HTTP request never waits for a complete market scan and trips the proxy's 45s limit.
-SIGNAL_SCAN_EXECUTOR = ThreadPoolExecutor(max_workers=2)
-SIGNAL_SCAN_LOCK = threading.Lock()
-SIGNAL_SCAN_JOBS = set()
-
-@app.get("/api/signals/{market}")
-def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20)):
-    market = market.lower()
-    enforce_section_access(market)
-    if market not in BINANCE and market not in YAHOO_MARKETS:
-        return JSONResponse({"ok": False, "live": False, "items": [],
-                             "message": "مصدر هذا السوق غير مربوط؛ لا يمكن إنشاء صفقات فعلية."})
-    if interval not in INTERVALS:
-        return JSONResponse({"ok": False, "live": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
-
-    key = (market, interval, limit)
-    now = time.time()
-    cached = SIGNAL_CACHE.get(key)
-    if cached and now - cached[0] < SIGNAL_CACHE_TTL:
-        return cached[1]
-
-    cache_key = "|".join((market, interval, str(limit)))
-    with RESULTS_LOCK:
-        persisted_scans = read_json_file(SIGNALS_CACHE_PATH, {})
-    persisted = persisted_scans.get(cache_key) if isinstance(persisted_scans, dict) else None
-    cached_at = int(persisted.get("_cached_at") or 0) if isinstance(persisted, dict) else 0
-    cached_result = persisted.get("result") if isinstance(persisted, dict) else None
-    if cached_at and isinstance(cached_result, dict):
-        age = now - cached_at
-        restored = dict(cached_result)
-        restored["cached"] = True
-        restored["live"] = age < 60
-        restored["stale"] = age >= 60
-        if age >= 60:
-            restored["message"] = "نعرض آخر نتيجة محفوظة بينما يجري تحديث السوق بالخلفية."
-        # Do not put an expired result in the short in-memory cache; the worker must
-        # be allowed past both cache layers to perform a real refresh.
-        if age < 180:
-            SIGNAL_CACHE[key] = (now, restored)
-        # Return cached data immediately, and refresh it in the background when the
-        # persisted result is old enough that the worker will actually rescan.
-        if age >= 180:
-            with SIGNAL_SCAN_LOCK:
-                if cache_key not in SIGNAL_SCAN_JOBS:
-                    SIGNAL_SCAN_JOBS.add(cache_key)
-                    def refresh_scan():
-                        try:
-                            _compute_signal_cards(market, interval, limit)
-                        except Exception:
-                            pass
-                        finally:
-                            with SIGNAL_SCAN_LOCK:
-                                SIGNAL_SCAN_JOBS.discard(cache_key)
-                    SIGNAL_SCAN_EXECUTOR.submit(refresh_scan)
-        return restored
-
-    # No previous result exists: start one scan and return immediately instead of
-    # holding the browser connection open until every symbol has been analyzed.
-    with SIGNAL_SCAN_LOCK:
-        if cache_key not in SIGNAL_SCAN_JOBS:
-            SIGNAL_SCAN_JOBS.add(cache_key)
-            def first_scan():
-                try:
-                    _compute_signal_cards(market, interval, limit)
-                except Exception:
-                    pass
-                finally:
-                    with SIGNAL_SCAN_LOCK:
-                        SIGNAL_SCAN_JOBS.discard(cache_key)
-            SIGNAL_SCAN_EXECUTOR.submit(first_scan)
-    return {
-        "ok": True, "live": False, "pending": True, "market": market, "interval": interval,
-        "scanned": 0, "count": 0, "items": [], "watch_items": [], "updated_at": int(now),
-        "message": "بدأ فحص السوق بالخلفية؛ أعد التحديث بعد عدة ثوانٍ لعرض النتيجة. لن نعرض توصيات غير متحققة."
-    }
 
 
 def read_json_file(path, default):
