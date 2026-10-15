@@ -1933,6 +1933,43 @@ def build_signal(market: str, ticker: dict, interval: str):
         "status": "عدد المناهج المتوافقة يرفع ترتيب الإشارة؛ الإشارة الأولية تحتاج تحققًا إضافيًا"
     }
 
+@app.get("/api/saved-signals/{market}")
+def saved_signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20)):
+    """Return persisted open trades immediately, without waiting for a new market scan."""
+    market = market.lower()
+    enforce_section_access(market)
+    if market not in BINANCE and market not in YAHOO_MARKETS:
+        return JSONResponse({"ok": False, "market": market, "interval": interval, "items": [],
+                             "message": "مصدر هذا السوق غير مربوط."})
+    if interval not in INTERVALS:
+        return JSONResponse({"ok": False, "market": market, "interval": interval, "items": [],
+                             "message": "الفريم غير مدعوم."}, status_code=422)
+    now = int(time.time())
+    with RESULTS_LOCK:
+        history = prune_results()
+        items = [
+            dict(record) for record in history
+            if isinstance(record, dict)
+            and record.get("result") == "مفتوحة"
+            and record.get("market") == market
+            and record.get("interval") == interval
+            and int(record.get("expires_at") or (
+                int(record.get("created_at") or now) + INTERVAL_SECONDS.get(interval, 86400)
+            )) > now
+        ]
+    items.sort(key=lambda item: (
+        item.get("score", 0), item.get("method_count", 0),
+        item.get("confirmations", 0), item.get("quote_volume", 0)
+    ), reverse=True)
+    medals = ["gold", "silver", "bronze"]
+    for index, item in enumerate(items):
+        item["rank"] = index + 1
+        item["medal"] = medals[index] if index < len(medals) else None
+    return {"ok": True, "live": False, "saved": True, "market": market,
+            "interval": interval, "count": len(items[:limit]), "items": items[:limit],
+            "updated_at": now, "message": "صفقات محفوظة للفريم المحدد؛ يجري تحديث فرص جديدة بالخلفية."}
+
+
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20)):
     market = market.lower()
