@@ -1166,7 +1166,7 @@ def method_signal(candles, ticker, method_key):
             elif highs[-1]>prior_high and price<prior_high and bearish and price<closes[-2]: side="SELL"
             elif method_key in ("breaker_blocks","mitigation_blocks","unicorn_model") and broke_up and bullish_structure: side="BUY"
             elif method_key in ("breaker_blocks","mitigation_blocks","unicorn_model") and broke_down and bearish_structure: side="SELL"
-        elif method_key in ("cvd_proxy","footprint_proxy","volume_imbalance","absorption","market_profile","obv_trend","accumulation_distribution"):
+        elif method_key in ("cvd_proxy","footprint_proxy","volume_imbalance","absorption","market_profile","anchored_vwap","obv_trend","accumulation_distribution"):
             # OHLCV-only volume proxy; not true bid/ask delta, footprint, TPO, or anchored VWAP.
             loc=(price-lows[-1])/candle_range
             if avg_vol>0 and volumes[-1]>=avg_vol*1.4 and bullish and loc>=0.7: side="BUY"
@@ -1311,7 +1311,7 @@ def method_signal(candles, ticker, method_key):
             trail_short=min(closes[-20:])+atr*3
             if closes[-2] <= trail_long < price and bullish: side="BUY"
             elif closes[-2] >= trail_short > price and bearish: side="SELL"
-        elif method_key == "pivot_reversal":
+        elif method_key in ("pivot_reversal","pivot_breakout"):
             pivot=(highs[-2]+lows[-2]+closes[-2])/3
             if price>pivot and bullish: side="BUY"
             elif price<pivot and bearish: side="SELL"
@@ -1391,7 +1391,7 @@ def method_signal(candles, ticker, method_key):
                 loc=(price-lows[-1])/candle_range
                 if loc>0.75 and bullish: side="BUY"
                 elif loc<0.25 and bearish: side="SELL"
-        elif method_key in ("schaff_cycle","adaptive_ma","mcginley","donchian_midline","vol_adjusted_momentum"):
+        elif method_key in ("schaff_cycle","adaptive_ma","mcginley","donchian_midline","vol_adjusted_momentum","volatility_adjusted_momentum"):
             if price>e20 and e20>e50 and bullish: side="BUY"
             elif price<e20 and e20<e50 and bearish: side="SELL"
         elif method_key in ("hurst_filter","hurst_cycle"):
@@ -1400,13 +1400,6 @@ def method_signal(candles, ticker, method_key):
             persistence=sum(1 for a,b in zip(returns,returns[1:]) if a*b>0)/max(len(returns)-1,1)
             if persistence>0.65 and price>e20 and bullish: side="BUY"
             elif persistence>0.65 and price<e20 and bearish: side="SELL"
-        elif method_key == "volatility_adjusted_momentum":
-            returns=[closes[i]/max(closes[i-1],1e-12)-1 for i in range(max(1,len(closes)-20),len(closes))]
-            mean_return=mean(returns)
-            volatility=(mean([(x-mean_return)**2 for x in returns])**0.5) if returns else 0.0
-            normalized_momentum=mean_return/max(volatility,1e-12)
-            if normalized_momentum>0.35 and bullish and price>e20: side="BUY"
-            elif normalized_momentum< -0.35 and bearish and price<e20: side="SELL"
         elif method_key == "range_liquidity_reclaim":
             if lows[-1]<prior_low and price>prior_low and bullish: side="BUY"
             elif highs[-1]>prior_high and price<prior_high and bearish: side="SELL"
@@ -1474,7 +1467,7 @@ def method_signal(candles, ticker, method_key):
             peak=max(closes[-14:]); drawdown=(price-peak)/max(peak,1e-12)
             if drawdown> -0.02 and price>e20 and bullish: side="BUY"
             elif drawdown< -0.08 and price<e20 and bearish: side="SELL"
-        elif method_key in ("triple_top_bottom","head_shoulders","inverse_head_shoulders","wedge","flag","pennant","cup_handle","rectangle","rounding_pattern","three_drives","key_reversal","nr7","vcp","darvas_box","fractal_breakout","pivot_breakout","kumo_breakout","fib_extension"):
+        elif method_key in ("triple_top_bottom","head_shoulders","inverse_head_shoulders","wedge","flag","pennant","cup_handle","rectangle","rounding_pattern","three_drives","key_reversal","nr7","vcp","darvas_box","fractal_breakout","kumo_breakout","fib_extension"):
             # Pattern-family proxy using confirmed swing structure and compression/breakout; full discretionary geometry is not claimed.
             recent_range=max(highs[-10:])-min(lows[-10:])
             earlier_range=max(highs[-20:-10])-min(lows[-20:-10])
