@@ -2036,7 +2036,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                         tickers.append(quote_item)
             tickers.sort(key=lambda x: x.get("change_pct", 0), reverse=True)
             # Keep every Yahoo-backed signal scan bounded; full quote lists remain on market pages.
-            tickers = tickers[:max(12, min(limit, 16))]
+            tickers = tickers[:batch_size]
     except (urllib.error.URLError, TimeoutError, ValueError, OSError):
         # If a provider is temporarily unavailable, keep showing unexpired signals
         # already saved for this exact market/timeframe instead of blanking the page.
