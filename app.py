@@ -1965,7 +1965,9 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     try:
         if market in BINANCE:
             # Inspect a larger liquidity-ranked batch before selecting eligible signals.
-            tickers = market_tickers(market)[:max(100, limit * 10)]
+            # Keep each request bounded: each ticker runs a multi-method OHLCV analysis.
+            # Scanning hundreds of symbols can exceed the frontend 45-second request deadline.
+            tickers = market_tickers(market)[:max(30, limit * 2)]
         else:
             # Load the full TASI equity directory before building Saudi signals; otherwise
             # the fallback list silently limits the signal page to only a few stocks.
