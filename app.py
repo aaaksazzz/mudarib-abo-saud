@@ -282,7 +282,7 @@ def robots_txt():
 @app.get("/sitemap.xml", response_class=HTMLResponse)
 def sitemap_xml():
     from xml.sax.saxutils import escape as xml_escape
-    urls = [(SEO_BASE_URL + "/", "daily", "1.0"), (SEO_BASE_URL + "/blog", "weekly", "0.9")] + [(SEO_BASE_URL + p, "daily", "0.8") for p in ["/markets/spot", "/markets/futures", "/markets/contracts", "/markets/us-stocks", "/markets/saudi", "/markets/forex-gold", "/markets/alpha", "/radar", "/gold", "/analysis", "/results", "/news"]]
+    urls = [(SEO_BASE_URL + "/", "daily", "1.0"), (SEO_BASE_URL + "/blog", "weekly", "0.9")] + [(SEO_BASE_URL + p, "daily", "0.8") for p in ["/markets/spot", "/markets/futures", "/markets/contracts", "/markets/us-stocks", "/markets/saudi", "/markets/forex-gold", "/markets/alpha", "/tasi-analysis", "/analysis", "/results", "/news"]]
     urls.extend((SEO_BASE_URL + "/blog/" + p["slug"], "monthly", "0.7") for p in SEO_POSTS)
     urls.extend((SEO_BASE_URL + "/blog/" + slug, "monthly", "0.6") for slug in ["risk-management-stop-loss", "ema50-ema200-trend-filter", "breakout-retest-price-action", "liquidity-sweep-vs-market-structure", "risk-reward-win-rate", "backtest-trading-strategy"])
     urls.extend((SEO_BASE_URL + "/blog/" + str(p.get("slug") or p.get("id")), "monthly", "0.6") for p in read_json_file(ARTICLES_PATH, []) if p.get("slug") or p.get("id"))
