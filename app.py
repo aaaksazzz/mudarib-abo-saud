@@ -160,7 +160,9 @@ def fetch_json(url: str, timeout: int = 8):
         "query3.finance.yahoo.com": ["query1.finance.yahoo.com", "query2.finance.yahoo.com", "query4.finance.yahoo.com"],
         "query4.finance.yahoo.com": ["query1.finance.yahoo.com", "query2.finance.yahoo.com", "query3.finance.yahoo.com"],
     }
-    hosts = [host] + fallback_hosts.get(host, [])
+    hosts = ([host] + fallback_hosts.get(host, []))[:2]
+    # Keep each provider attempt short so a blocked host cannot stall signal scans.
+    timeout = min(timeout, 4)
     last_error = None
     for candidate in hosts:
         candidate_url = urlunsplit((parsed.scheme, candidate, parsed.path, parsed.query, parsed.fragment))
@@ -1920,7 +1922,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         return cached[1]
     try:
         if market in BINANCE:
-            tickers = market_tickers(market)[:max(80, limit * 8)]
+            tickers = market_tickers(market)[:max(24, limit * 2)]
         else:
             # Load the full TASI equity directory before building Saudi signals; otherwise
             # the fallback list silently limits the signal page to only a few stocks.
