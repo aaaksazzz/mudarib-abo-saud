@@ -117,6 +117,8 @@ BINANCE = {
     "spot": "https://api.binance.com/api/v3/ticker/24hr",
     "futures": "https://fapi.binance.com/fapi/v1/ticker/24hr",
 }
+ALPHA_BASE = "https://www.binance.com/bapi/defi/v1/public/alpha-trade"
+ALPHA_EXCHANGE_INFO_URL = ALPHA_BASE + "/get-exchange-info"
 KLINES = {
     "spot": "https://api.binance.com/api/v3/klines",
     "futures": "https://fapi.binance.com/fapi/v1/klines",
@@ -145,6 +147,8 @@ YAHOO_LABELS = {
 }
 YAHOO_CACHE = {}
 YAHOO_CACHE_TTL = 45
+ALPHA_CACHE = {"at": 0, "items": []}
+ALPHA_CACHE_TTL = 90
 CACHE = {}
 CACHE_TTL = 20
 TECH_CACHE = {}
@@ -208,7 +212,56 @@ def ema(values, period):
     return value
 
 
+def alpha_market_tickers():
+    """Fetch real Binance Alpha tickers through the documented public API."""
+    now = time.time()
+    if ALPHA_CACHE["items"] and now - ALPHA_CACHE["at"] < ALPHA_CACHE_TTL:
+        return [dict(item) for item in ALPHA_CACHE["items"]]
+    payload = fetch_json(ALPHA_EXCHANGE_INFO_URL, timeout=8)
+    info = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(info, dict) or payload.get("success") is False:
+        raise ValueError("Binance Alpha exchange info unavailable")
+    symbols = [
+        item.get("symbol") for item in info.get("symbols", [])
+        if isinstance(item, dict) and item.get("status") == "TRADING"
+        and item.get("quoteAsset") in ("USDT", "USDC") and item.get("symbol")
+    ]
+    # Bound outbound calls on the small service; the result is cached and ranked by turnover.
+    symbols = list(dict.fromkeys(symbols))[:40]
+    def fetch_ticker(symbol):
+        from urllib.parse import urlencode
+        data = fetch_json(ALPHA_BASE + "/ticker?" + urlencode({"symbol": symbol}), timeout=7)
+        row = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(row, dict) or data.get("success") is False:
+            return None
+        try:
+            price = float(row.get("lastPrice") or 0)
+            change = float(row.get("priceChangePercent") or 0)
+            quote_volume = float(row.get("quoteVolume") or 0)
+        except (TypeError, ValueError):
+            return None
+        if price <= 0:
+            return None
+        return {"symbol": symbol, "price": price, "change_pct": change, "quote_volume": quote_volume}
+    rows = []
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for future in as_completed([pool.submit(fetch_ticker, symbol) for symbol in symbols]):
+            try:
+                item = future.result()
+            except Exception:
+                item = None
+            if item:
+                rows.append(item)
+    if not rows:
+        raise ValueError("No Binance Alpha tickers returned")
+    rows.sort(key=lambda x: x["quote_volume"], reverse=True)
+    ALPHA_CACHE.update({"at": now, "items": rows})
+    return [dict(item) for item in rows]
+
+
 def market_tickers(market):
+    if market == "alpha":
+        return alpha_market_tickers()
     raw = fetch_json(BINANCE[market])
     rows = []
     for item in raw:
@@ -233,8 +286,15 @@ def market_tickers(market):
 
 def candle_closes(market, symbol, interval):
     from urllib.parse import urlencode
-    url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 220})
-    candles = fetch_json(url, timeout=7)
+    if market == "alpha":
+        url = ALPHA_BASE + "/klines?" + urlencode({"symbol": symbol, "interval": interval, "limit": 220})
+        payload = fetch_json(url, timeout=8)
+        candles = payload.get("data", []) if isinstance(payload, dict) else []
+    elif market in BINANCE:
+        url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 220})
+        candles = fetch_json(url, timeout=7)
+    else:
+        return []
     return [float(candle[4]) for candle in candles if len(candle) > 6 and int(candle[6]) < int(time.time() * 1000)]
 
 
@@ -623,7 +683,7 @@ def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
         return {"ok": True, "market": market, "live": True, "provider": "Yahoo Finance",
                 "delayed": True, "updated_at": int(now), "items": data[:limit],
                 "message": "آخر أسعار متاحة من Yahoo Finance؛ قد تكون متأخرة وليست تنفيذًا لحظيًا مضمونًا."}
-    if market not in BINANCE:
+    if market not in BINANCE and market != "alpha":
         return JSONResponse({
             "ok": True, "market": market, "live": False, "items": [],
             "message": "هذا السوق غير مربوط بمصدر بيانات حاليًا؛ لم نعرض أسعارًا تقديرية."
@@ -648,8 +708,8 @@ def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
 @app.get("/api/technical/{market}")
 def technical_filter(market: str, interval: str = Query("15m"), limit: int = Query(40, ge=1, le=60)):
     market = market.lower()
-    if market not in BINANCE:
-        return JSONResponse({"ok": False, "live": False, "items": [], "message": "الفلتر الفني متاح حاليًا لسبوت وفيوتشر Binance فقط."})
+    if market not in BINANCE and market != "alpha":
+        return JSONResponse({"ok": False, "live": False, "items": [], "message": "الفلتر الفني متاح حاليًا لسبوت وفيوتشر وBinance Alpha."})
     if interval not in INTERVALS:
         return JSONResponse({"ok": False, "live": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
     cache_key = (market, interval, limit)
@@ -1719,7 +1779,7 @@ def method_catalog():
 def method_filter(market: str, method: str = Query(...), interval: str = Query("15m"), limit: int = Query(40, ge=1, le=100)):
     market = market.lower()
     enforce_section_access(market)
-    if market not in BINANCE and market not in YAHOO_MARKETS:
+    if market not in BINANCE and market != "alpha" and market not in YAHOO_MARKETS:
         return JSONResponse({"ok": False, "live": False, "items": [], "message": "مصدر هذا السوق غير مربوط حاليًا."})
     if interval not in INTERVALS:
         return JSONResponse({"ok": False, "live": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
@@ -1727,7 +1787,7 @@ def method_filter(market: str, method: str = Query(...), interval: str = Query("
     if not method_key:
         return JSONResponse({"ok": False, "live": False, "items": [], "message": "المنهج غير معروف."}, status_code=422)
     try:
-        if market in BINANCE:
+        if market in BINANCE or market == "alpha":
             tickers = market_tickers(market)[:limit]
         else:
             if market == "saudi":
@@ -1794,6 +1854,14 @@ SIGNAL_CACHE_TTL = 20
 
 def candle_data(market: str, symbol: str, interval: str):
     from urllib.parse import urlencode, quote
+    if market == "alpha":
+        url = ALPHA_BASE + "/klines?" + urlencode({"symbol": symbol, "interval": interval, "limit": 220})
+        payload = fetch_json(url, timeout=8)
+        raw = payload.get("data", []) if isinstance(payload, dict) else []
+        if isinstance(payload, dict) and payload.get("success") is False:
+            raise ValueError("Binance Alpha klines unavailable")
+        return [{"time": int(k[0]) // 1000, "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
+                for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
     if market in BINANCE:
         url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 220})
         raw = fetch_json(url, timeout=8)
@@ -2026,7 +2094,7 @@ def saved_signal_cards(market: str, interval: str = Query("15m"), limit: int = Q
     """Return persisted open trades immediately, without waiting for a new market scan."""
     market = market.lower()
     enforce_section_access(market)
-    if market not in BINANCE and market not in YAHOO_MARKETS:
+    if market not in BINANCE and market != "alpha" and market not in YAHOO_MARKETS:
         return JSONResponse({"ok": False, "market": market, "interval": interval, "items": [],
                              "message": "مصدر هذا السوق غير مربوط."})
     if interval not in INTERVALS:
@@ -2062,7 +2130,7 @@ def saved_signal_cards(market: str, interval: str = Query("15m"), limit: int = Q
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20)):
     market = market.lower()
     enforce_section_access(market)
-    if market not in BINANCE and market not in YAHOO_MARKETS:
+    if market not in BINANCE and market != "alpha" and market not in YAHOO_MARKETS:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "مصدر هذا السوق غير مربوط؛ لا يمكن إنشاء صفقات فعلية."})
     if interval not in INTERVALS:
@@ -2125,7 +2193,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 SIGNAL_CACHE[key] = (now, restored)
                 return restored
     try:
-        if market in BINANCE:
+        if market in BINANCE or market == "alpha":
             # Keep each interactive request bounded, but rotate through the full eligible
             # Binance universe so symbols beyond the first batch are not permanently skipped.
             # market_tickers filters USDT pairs to >= $1M 24h quote volume and sorts by volume.
@@ -2808,7 +2876,7 @@ def status():
         "ok": True, "site": "ready",
         "markets": {
             "spot": "live_binance", "futures": "live_binance",
-            "alpha": "not_connected",
+            "alpha": "live_binance_alpha",
             "contracts": "public_quotes_may_be_delayed",
             "us": "public_quotes_may_be_delayed",
             "saudi": "public_quotes_may_be_delayed",
