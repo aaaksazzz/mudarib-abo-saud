@@ -363,6 +363,12 @@ def legacy_market_redirect(market_slug: str):
     return RedirectResponse(url=target, status_code=308)
 
 
+@app.get("/trades", include_in_schema=False)
+def legacy_trades_redirect():
+    """Keep the old trades URL working; the current public trade board is /gold."""
+    return RedirectResponse(url="/gold", status_code=308)
+
+
 @app.get("/markets/spot", response_class=HTMLResponse)
 @app.get("/markets/futures", response_class=HTMLResponse)
 @app.get("/markets/contracts", response_class=HTMLResponse)
