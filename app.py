@@ -745,7 +745,14 @@ METHOD_FAMILY_OVERRIDES = {
     "rounding_pattern": "chart_patterns", "three_drives": "chart_patterns", "wolfe_waves": "chart_patterns",
     "andrews_pitchfork": "channels_trendlines", "channels": "channels_trendlines",
     "linear_regression_channel": "channels_trendlines", "stddev_channel": "channels_trendlines",
-    "range_trading": "range_context", "regime": "range_context", "choppiness": "range_context",
+    "range_trading": "range_context", "regime": "range_context", "choppiness": "range_context",,
+    "pin_bar": "candlestick", "engulfing": "candlestick", "harami": "candlestick",
+    "soldiers_crows": "candlestick", "fakey": "breakout_channel",
+    "mss": "structure_smc_ict", "inducement": "liquidity_reversal", "trendline_sweep": "liquidity_reversal",
+    "momentum_divergence": "trend_momentum", "double_top_bottom": "chart_patterns",
+    "rounding_breakout": "chart_patterns", "impulse_pullback": "trend_momentum",
+    "high_tight_flag": "chart_patterns", "volume_dryup": "breakout_channel",
+    "nr4": "breakout_channel", "three_candle_continuation": "candlestick",
 }
 def method_family(method_key):
     return METHOD_FAMILY_OVERRIDES.get(method_key, method_key)
@@ -843,6 +850,14 @@ METHOD_RULES = {
     "Relative Volume Climax Reversal": "relative_volume_climax", "Accumulation / Distribution Divergence": "ad_divergence",
     "Wyckoff Effort vs Result": "wyckoff_effort_result", "Failed Auction Proxy": "failed_auction",
     "Range Liquidity Reclaim": "range_liquidity_reclaim", "Multi-Swing Fibonacci OTE": "multi_swing_ote"
+    "Pin Bar Reversal": "pin_bar", "Engulfing Pattern": "engulfing",
+    "Harami Pattern": "harami", "Three White Soldiers / Black Crows": "soldiers_crows",
+    "Fakey Pattern": "fakey", "Market Structure Shift (MSS)": "mss",
+    "Inducement Sweep": "inducement", "Trendline Liquidity Sweep": "trendline_sweep",
+    "Momentum Divergence": "momentum_divergence", "Double Top / Double Bottom": "double_top_bottom",
+    "Rounding Breakout": "rounding_breakout", "Impulse-Pullback-Continuation": "impulse_pullback",
+    "High Tight Flag": "high_tight_flag", "Volume Dry-Up Breakout": "volume_dryup",
+    "NR4 Compression": "nr4", "Three-Candle Continuation": "three_candle_continuation",
 }
 
 
@@ -1480,6 +1495,79 @@ def method_signal(candles, ticker, method_key):
                 elif e20<e50 and price<e20 and bearish: side="SELL"
         
 
+        elif method_key == "pin_bar":
+            lower_wick = min(opens[-1], price) - lows[-1]
+            upper_wick = highs[-1] - max(opens[-1], price)
+            if lower_wick >= max(body, candle_range*0.08)*2 and price >= lows[-1]+candle_range*0.65 and price < closes[-4]: side = "BUY"
+            elif upper_wick >= max(body, candle_range*0.08)*2 and price <= lows[-1]+candle_range*0.35 and price > closes[-4]: side = "SELL"
+        elif method_key == "engulfing":
+            prev_body_high, prev_body_low = max(opens[-2], closes[-2]), min(opens[-2], closes[-2])
+            curr_body_high, curr_body_low = max(opens[-1], price), min(opens[-1], price)
+            if bearish and closes[-2] < opens[-2] and curr_body_high >= prev_body_high and curr_body_low <= prev_body_low: side = "BUY"
+            elif bullish and closes[-2] > opens[-2] and curr_body_high >= prev_body_high and curr_body_low <= prev_body_low: side = "SELL"
+        elif method_key == "harami":
+            prev_hi, prev_lo = max(opens[-2], closes[-2]), min(opens[-2], closes[-2])
+            curr_hi, curr_lo = max(opens[-1], price), min(opens[-1], price)
+            if closes[-2] < opens[-2] and bullish and curr_hi < prev_hi and curr_lo > prev_lo and price < closes[-3]: side = "BUY"
+            elif closes[-2] > opens[-2] and bearish and curr_hi < prev_hi and curr_lo > prev_lo and price > closes[-3]: side = "SELL"
+        elif method_key == "soldiers_crows":
+            if all(closes[i] > opens[i] and closes[i] > closes[i-1] for i in (-3,-2,-1)) and all((closes[i]-opens[i])/max(highs[i]-lows[i],1e-12) > 0.35 for i in (-3,-2,-1)): side = "BUY"
+            elif all(closes[i] < opens[i] and closes[i] < closes[i-1] for i in (-3,-2,-1)) and all((opens[i]-closes[i])/max(highs[i]-lows[i],1e-12) > 0.35 for i in (-3,-2,-1)): side = "SELL"
+        elif method_key == "fakey":
+            inside = highs[-3] < highs[-4] and lows[-3] > lows[-4]
+            if inside and lows[-2] < lows[-3] and price > highs[-3] and bullish: side = "BUY"
+            elif inside and highs[-2] > highs[-3] and price < lows[-3] and bearish: side = "SELL"
+        elif method_key == "mss":
+            if broke_up and bullish and price > e20: side = "BUY"
+            elif broke_down and bearish and price < e20: side = "SELL"
+        elif method_key == "inducement":
+            minor_low, minor_high = min(lows[-4:-1]), max(highs[-4:-1])
+            if lows[-1] < minor_low and price > minor_low and bullish: side = "BUY"
+            elif highs[-1] > minor_high and price < minor_high and bearish: side = "SELL"
+        elif method_key == "trendline_sweep":
+            if recent_sl and lows[-1] < recent_sl[-1][1] and price > recent_sl[-1][1] and bullish: side = "BUY"
+            elif recent_sh and highs[-1] > recent_sh[-1][1] and price < recent_sh[-1][1] and bearish: side = "SELL"
+        elif method_key == "momentum_divergence":
+            prior_rsi = rsi(closes[:-4])
+            if price < closes[-4] and rsi_now is not None and prior_rsi is not None and rsi_now > prior_rsi+5 and bullish: side = "BUY"
+            elif price > closes[-4] and rsi_now is not None and prior_rsi is not None and rsi_now < prior_rsi-5 and bearish: side = "SELL"
+        elif method_key == "double_top_bottom":
+            window_highs, window_lows = highs[-30:-3], lows[-30:-3]
+            if len(window_highs) >= 10:
+                top, bottom = max(window_highs), min(window_lows)
+                near_top = sum(abs(v-top)/max(top,1e-12) < 0.004 for v in window_highs) >= 2
+                near_bottom = sum(abs(v-bottom)/max(bottom,1e-12) < 0.004 for v in window_lows) >= 2
+                if near_bottom and price > max(highs[-10:-1]) and bullish: side = "BUY"
+                elif near_top and price < min(lows[-10:-1]) and bearish: side = "SELL"
+        elif method_key == "rounding_breakout":
+            old_mid = mean(closes[-20:-10])
+            new_mid = mean(closes[-10:-2])
+            if new_mid > old_mid*1.01 and price > prior_high and bullish: side = "BUY"
+            elif new_mid < old_mid*0.99 and price < prior_low and bearish: side = "SELL"
+        elif method_key == "impulse_pullback":
+            impulse = closes[-5] - closes[-9]
+            pullback = min(closes[-4:-1]) > closes[-5] and price > closes[-2]
+            pullback_down = max(closes[-4:-1]) < closes[-5] and price < closes[-2]
+            if impulse > atr*2 and pullback and bullish: side = "BUY"
+            elif impulse < -atr*2 and pullback_down and bearish: side = "SELL"
+        elif method_key == "high_tight_flag":
+            prior_move = (closes[-6]-closes[-16])/max(closes[-16],1e-12)
+            flag_range = max(highs[-5:])-min(lows[-5:])
+            if prior_move >= 0.08 and flag_range/max(closes[-6],1e-12) < 0.04 and price > max(highs[-6:-1]) and bullish: side = "BUY"
+            elif prior_move <= -0.08 and flag_range/max(closes[-6],1e-12) < 0.04 and price < min(lows[-6:-1]) and bearish: side = "SELL"
+        elif method_key == "volume_dryup":
+            dry_vol = mean(volumes[-6:-1])
+            prior_vol = mean(volumes[-21:-6])
+            if prior_vol > 0 and dry_vol < prior_vol*0.7 and volumes[-1] > dry_vol*1.5 and price > prior_high and bullish: side = "BUY"
+            elif prior_vol > 0 and dry_vol < prior_vol*0.7 and volumes[-1] > dry_vol*1.5 and price < prior_low and bearish: side = "SELL"
+        elif method_key == "nr4":
+            prev_ranges = [highs[i]-lows[i] for i in range(-5,-1)]
+            prev_nr4 = (highs[-2]-lows[-2]) <= min(prev_ranges)
+            if prev_nr4 and price > highs[-2] and bullish: side = "BUY"
+            elif prev_nr4 and price < lows[-2] and bearish: side = "SELL"
+        elif method_key == "three_candle_continuation":
+            if closes[-3] > opens[-3] and closes[-2] > opens[-2] and bullish and lows[-2] >= lows[-3] and price > highs[-2]: side = "BUY"
+            elif closes[-3] < opens[-3] and closes[-2] < opens[-2] and bearish and highs[-2] <= highs[-3] and price < lows[-2]: side = "SELL"
     except (TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError, KeyError):
         return None
     if side is None or method_key == "risk_management":
