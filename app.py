@@ -2083,10 +2083,9 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
     if not refresh and cached and now - cached["at"] < 300:
         return {"ok": True, "live": True, "items": cached["items"][:limit], "cached": True, "market": market,
                 "message": "اختر السوق من القائمة لتغيير نوع الأخبار؛ راجع الخبر الأصلي قبل اتخاذ القرار."}
-    try:
-        assets, coins, counts = _news_universe()
-    except Exception:
-        # News should never take the whole page down when a market directory is unavailable.
+    if NEWS_UNIVERSE_CACHE["assets"] and now - NEWS_UNIVERSE_CACHE["at"] < 600:
+        assets, coins, counts = NEWS_UNIVERSE_CACHE["assets"], NEWS_UNIVERSE_CACHE["coins"], NEWS_UNIVERSE_CACHE["counts"]
+    else:
         assets, coins, counts = [], {}, {}
     if market == "crypto":
         allowed_assets = [a for a in assets if a["kind"] == "عملة رقمية"]
