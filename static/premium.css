@@ -69,3 +69,30 @@ body{background:radial-gradient(ellipse at 70% -18%,#1c3853 0,transparent 38%),l
   .sidebar.open{transform:translateX(0)}
   .sidebar-backdrop.visible{position:fixed;inset:0;background:#02060bb8;z-index:9}
 }
+
+
+/* Cross-device compatibility: small screens, touch, safe areas and accessibility */
+html{min-width:320px;width:100%;-webkit-text-size-adjust:100%;text-size-adjust:100%;scroll-padding-top:12px}
+body{min-width:320px;width:100%;overflow-wrap:anywhere}
+img,svg,video,canvas,iframe{max-width:100%}
+img,video{height:auto}
+button,input,select,textarea{max-width:100%;font:inherit;touch-action:manipulation}
+button{min-height:40px}
+input,select,textarea{font-size:16px}
+.layout,.main,.sidebar,.panel,.section,.signal-card,.market-card,.article-card,.content-card{min-width:0;max-width:100%}
+.table-wrap{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+table{max-width:100%}
+.sidebar{padding-bottom:max(12px,env(safe-area-inset-bottom))}
+@media(max-width:380px){
+ .main{padding-left:8px;padding-right:8px}
+ .stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+ .stat{padding:9px}
+ .market-cards,.methods,.signal-grid,.content-grid{grid-template-columns:minmax(0,1fr)}
+ .topbar{flex-wrap:wrap}
+ .top-actions{max-width:100%}
+ .panel{padding:10px}
+}
+@media(max-width:900px) and (orientation:landscape){.sidebar{overflow-y:auto;overscroll-behavior:contain}}
+@media(hover:none) and (pointer:coarse){button,a{min-height:42px}.market-card:hover,.method:hover,.btn.primary:hover{transform:none}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+@media(forced-colors:active){.btn,.panel,.market-card,.signal-card,.method,.article-card,.content-card{border:1px solid ButtonText}:focus-visible{outline:2px solid Highlight}}
