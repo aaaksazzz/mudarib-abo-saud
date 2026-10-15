@@ -11,6 +11,25 @@ main{max-width:1120px;margin:auto;padding:20px 14px 48px}.top{display:flex;align
 .controls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.controls label{display:grid;gap:6px;color:var(--muted);font-size:12px}.controls select,.btn{min-height:42px;padding:10px;border:1px solid var(--line);border-radius:10px;background:#0a1321;color:var(--text);font:inherit}.btn{cursor:pointer;font-weight:800}.btn.primary{background:var(--green);color:#061a17;border-color:var(--green)}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.notice{background:#0b1727;border:1px solid #29415b;border-right:3px solid #4b9bd5;border-radius:10px;padding:12px;margin:12px 0;color:#b9cbe0;font-size:12px}
 .cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.trade{border:1px solid var(--line);border-radius:14px;background:linear-gradient(145deg,#142238,#0c1523);padding:14px;min-width:0}.tradehead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}.symbol{direction:ltr;font-weight:900;font-size:16px}.side{border-radius:8px;padding:4px 8px;font-size:11px;font-weight:900}.buy{background:#10372d;color:var(--green)}.sell{background:#3a202b;color:var(--red)}.levels{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.level{background:#09121f;border:1px solid #203149;border-radius:9px;padding:9px;min-width:0}.level small{display:block;color:var(--muted);font-size:10px}.level strong{display:block;direction:ltr;text-align:right;overflow-wrap:anywhere;font-size:13px}.stop strong{color:var(--red)}.target strong{color:var(--green)}.meta{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;color:var(--muted);font-size:11px;margin-top:10px}.empty{padding:26px 12px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:12px;line-height:1.9}
 @media(max-width:650px){main{padding:13px 10px 30px}.controls,.cards{grid-template-columns:1fr}.panel{padding:12px}.top{align-items:flex-start}.levels{gap:6px}}
+
+/* Cross-device and cross-browser compatibility layer */
+html{width:100%;min-width:320px;-webkit-text-size-adjust:100%;text-size-adjust:100%;scroll-padding-top:12px}
+body{width:100%;min-width:320px;overflow-wrap:anywhere}
+img,svg,video,canvas,iframe{max-width:100%}
+img,video{height:auto}
+button,input,select,textarea{max-width:100%;touch-action:manipulation}
+button,input,select,textarea{-webkit-appearance:none;appearance:none}
+button{min-height:40px}
+input,select,textarea{font-size:16px}
+main,header,section,article,.container,.wrap,.content{min-width:0;max-width:100%}
+table{display:block;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+pre,code{white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:680px){.container,.wrap,.content,main{width:100%;padding-left:10px;padding-right:10px}.grid,.cards,.signals{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:380px){h1{font-size:clamp(20px,6vw,28px)}button{max-width:100%}}
+@media(hover:none) and (pointer:coarse){button,a{min-height:42px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+@media(forced-colors:active){button,a{border:1px solid ButtonText}:focus-visible{outline:2px solid Highlight}}
+
 </style><link rel="stylesheet" href="/static/premium.css?v=20261013-pro1">
 </head>
 <body><main>
