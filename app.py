@@ -2001,9 +2001,18 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 return restored
     try:
         if market in BINANCE:
-            # Bound each interactive scan so the page responds before the client deadline.
-            # market_tickers is already ranked by 24h quote volume; a later refresh can use cache.
-            tickers = market_tickers(market)[:max(24, min(limit * 2, 30))]
+            # Keep each interactive request bounded, but rotate through the full eligible
+            # Binance universe so symbols beyond the first batch are not permanently skipped.
+            # market_tickers filters USDT pairs to >= $1M 24h quote volume and sorts by volume.
+            eligible_tickers = market_tickers(market)
+            batch_size = max(24, min(limit * 2, 30))
+            if len(eligible_tickers) > batch_size:
+                # Advance to the next circular batch every 5 minutes. Repeated requests
+                # in the same window share a batch; later windows cover the rest of the universe.
+                offset = (int(now // 300) * batch_size) % len(eligible_tickers)
+                tickers = (eligible_tickers[offset:] + eligible_tickers[:offset])[:batch_size]
+            else:
+                tickers = eligible_tickers[:]
         else:
             # Load the full TASI equity directory before building Saudi signals; otherwise
             # the fallback list silently limits the signal page to only a few stocks.
