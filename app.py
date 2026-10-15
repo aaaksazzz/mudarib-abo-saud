@@ -1663,7 +1663,7 @@ def method_filter(market: str, method: str = Query(...), interval: str = Query("
         except (urllib.error.URLError, TimeoutError, ValueError, OSError, IndexError, TypeError, ZeroDivisionError):
             return None
     found = []
-    with ThreadPoolExecutor(max_workers=12) as pool:
+    with ThreadPoolExecutor(max_workers=16) as pool:
         for future in as_completed([pool.submit(analyze, t) for t in tickers]):
             item = future.result()
             if item:
@@ -2003,7 +2003,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         if market in BINANCE:
             # Bound each interactive scan so the page responds before the client deadline.
             # market_tickers is already ranked by 24h quote volume; a later refresh can use cache.
-            tickers = market_tickers(market)[:max(12, min(limit, 16))]
+            tickers = market_tickers(market)[:max(24, min(limit * 2, 30))]
         else:
             # Load the full TASI equity directory before building Saudi signals; otherwise
             # the fallback list silently limits the signal page to only a few stocks.
@@ -2012,7 +2012,19 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             tickers = []
             # Signal scans are interactive: quote the first bounded symbol batch here.
             # Full market listings remain available through /api/market/{market}.
-            signal_symbols = YAHOO_MARKETS[market][:max(12, min(limit, 16))]
+            signal_universe = YAHOO_MARKETS[market]
+            batch_size = max(24, min(limit * 2, 30))
+            if market == "saudi":
+                # Rotate through the full TASI directory so the first alphabetic batch
+                # does not permanently exclude most listed companies from signal scans.
+                signal_universe = _load_saudi_symbols()
+                if len(signal_universe) > batch_size:
+                    offset = (int(now // 300) * batch_size) % len(signal_universe)
+                    signal_symbols = (signal_universe[offset:] + signal_universe[:offset])[:batch_size]
+                else:
+                    signal_symbols = signal_universe[:]
+            else:
+                signal_symbols = signal_universe[:batch_size]
             with ThreadPoolExecutor(max_workers=16) as pool:
                 for future in as_completed([pool.submit(fetch_yahoo_quote, symbol) for symbol in signal_symbols]):
                     try:
@@ -2055,7 +2067,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         if item.get("score", 0) >= 70 and item.get("method_count", 0) >= 4 and item.get("confirmations", 0) >= 5:
             item["signal_tier"] = "قوية"
             item["importance"] = "فرصة قوية"
-        elif item.get("score", 0) >= 45:
+        elif item.get("score", 0) >= 40:
             item["signal_tier"] = "جيدة"
             item["importance"] = "فرصة جيدة"
         else:
