@@ -112,15 +112,22 @@ KLINES = {
 YAHOO_MARKETS = {
     "us": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "BRK-B", "JPM", "LLY", "WMT", "XOM", "AMD", "NFLX", "COST", "ORCL", "PLTR", "COIN", "INTC"],
     "saudi": ["2222.SR", "1120.SR", "2010.SR", "1180.SR", "7010.SR", "1211.SR", "2380.SR", "1150.SR", "2280.SR", "4001.SR", "2082.SR", "2223.SR", "4200.SR", "7203.SR"],
-    "contracts": ["ES=F", "NQ=F", "YM=F", "RTY=F", "GC=F", "SI=F", "CL=F", "NG=F"],
-    "forex": ["EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X", "USDCHF=X", "NZDUSD=X", "EURGBP=X", "XAUUSD=X", "XAGUSD=X"],
+    "contracts": ["ES=F", "NQ=F", "YM=F", "RTY=F", "EMD=F", "M2K=F", "GC=F", "SI=F", "HG=F", "PL=F", "PA=F", "CL=F", "BZ=F", "NG=F", "RB=F", "HO=F", "ZC=F", "ZW=F", "ZS=F", "ZM=F", "ZL=F", "KC=F", "SB=F", "CT=F", "CC=F", "LE=F", "HE=F", "6E=F", "6B=F", "6J=F", "6A=F", "6C=F", "6S=F", "6N=F", "ZB=F", "ZN=F", "ZF=F", "ZT=F"],
+    "forex": ["EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X", "USDCHF=X", "NZDUSD=X", "EURGBP=X", "EURJPY=X", "GBPJPY=X", "AUDJPY=X", "NZDJPY=X", "CADJPY=X", "CHFJPY=X", "EURCHF=X", "GBPCHF=X", "AUDCHF=X", "NZDCHF=X", "EURCAD=X", "GBPCAD=X", "AUDCAD=X", "NZDCAD=X", "EURAUD=X", "GBPAUD=X", "EURNZD=X", "GBPNZD=X", "AUDNZD=X", "USDMXN=X", "USDZAR=X", "USDTRY=X", "USDSEK=X", "USDNOK=X", "USDSGD=X", "USDHKD=X", "USDINR=X", "USDPLN=X", "USDCNH=X", "XAUUSD=X", "XAGUSD=X"],
 }
 YAHOO_LABELS = {
     "ES=F": "S&P 500 Futures", "NQ=F": "Nasdaq 100 Futures", "YM=F": "Dow Futures", "RTY=F": "Russell 2000 Futures",
     "GC=F": "Gold Futures", "SI=F": "Silver Futures", "CL=F": "WTI Crude Oil Futures", "NG=F": "Natural Gas Futures",
     "EURUSD=X": "EUR/USD", "GBPUSD=X": "GBP/USD", "USDJPY=X": "USD/JPY", "AUDUSD=X": "AUD/USD",
     "USDCAD=X": "USD/CAD", "USDCHF=X": "USD/CHF", "NZDUSD=X": "NZD/USD", "EURGBP=X": "EUR/GBP",
-    "XAUUSD=X": "Gold Spot", "XAGUSD=X": "Silver Spot",
+    "XAUUSD=X": "Gold Spot", "XAGUSD=X": "Silver Spot", "HG=F": "Copper Futures", "PL=F": "Platinum Futures", "PA=F": "Palladium Futures",
+    "BZ=F": "Brent Crude Futures", "RB=F": "RBOB Gasoline Futures", "HO=F": "Heating Oil Futures", "ZC=F": "Corn Futures",
+    "ZW=F": "Wheat Futures", "ZS=F": "Soybean Futures", "ZM=F": "Soybean Meal Futures", "ZL=F": "Soybean Oil Futures",
+    "KC=F": "Coffee Futures", "SB=F": "Sugar Futures", "CT=F": "Cotton Futures", "CC=F": "Cocoa Futures",
+    "LE=F": "Live Cattle Futures", "HE=F": "Lean Hogs Futures", "6E=F": "Euro FX Futures", "6B=F": "British Pound Futures",
+    "6J=F": "Japanese Yen Futures", "6A=F": "Australian Dollar Futures", "6C=F": "Canadian Dollar Futures",
+    "6S=F": "Swiss Franc Futures", "6N=F": "New Zealand Dollar Futures", "ZB=F": "30-Year Treasury Bond Futures",
+    "ZN=F": "10-Year Treasury Note Futures", "ZF=F": "5-Year Treasury Note Futures", "ZT=F": "2-Year Treasury Note Futures",
 }
 YAHOO_CACHE = {}
 YAHOO_CACHE_TTL = 45
