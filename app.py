@@ -2178,9 +2178,13 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         restored["stale"] = age >= 60
         if age >= 60:
             restored["message"] = "نعرض آخر نتيجة محفوظة بينما يجري تحديث السوق بالخلفية."
-        SIGNAL_CACHE[key] = (now, restored)
-        # Return cached data immediately, and refresh it in the background if older than 60s.
-        if age >= 60:
+        # Do not put an expired result in the short in-memory cache; the worker must
+        # be allowed past both cache layers to perform a real refresh.
+        if age < 180:
+            SIGNAL_CACHE[key] = (now, restored)
+        # Return cached data immediately, and refresh it in the background when the
+        # persisted result is old enough that the worker will actually rescan.
+        if age >= 180:
             with SIGNAL_SCAN_LOCK:
                 if cache_key not in SIGNAL_SCAN_JOBS:
                     SIGNAL_SCAN_JOBS.add(cache_key)
