@@ -2153,16 +2153,81 @@ def blog_articles():
     return {"ok": True, "items": read_json_file(ARTICLES_PATH, [])}
 
 
+def refresh_open_result_prices(items):
+    """Refresh open trade P&L and TP/SL outcomes when the results page is opened."""
+    open_items = [x for x in items if x.get("result") == "مفتوحة"]
+    if not open_items:
+        return items
+
+    prices = {}
+    markets = {x.get("market") for x in open_items}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        jobs = {}
+        for market in markets:
+            if market in BINANCE:
+                jobs[pool.submit(market_tickers, market)] = ("binance", market)
+        for record in open_items:
+            market, symbol = record.get("market"), record.get("symbol")
+            if market in YAHOO_MARKETS and symbol:
+                jobs[pool.submit(fetch_yahoo_quote, symbol)] = ("yahoo", symbol)
+        for future in as_completed(jobs):
+            kind, key = jobs[future]
+            try:
+                value = future.result()
+            except Exception:
+                continue
+            if kind == "binance":
+                for ticker in value:
+                    prices[(key, ticker.get("symbol"))] = ticker.get("price")
+            elif value:
+                prices[(next((x.get("market") for x in open_items if x.get("symbol") == key and x.get("market") in YAHOO_MARKETS), ""), key)] = value.get("price")
+
+    now = int(time.time())
+    changed = False
+    for record in open_items:
+        price = prices.get((record.get("market"), record.get("symbol")))
+        if not isinstance(price, (int, float)) or price <= 0:
+            continue
+        entry = record.get("entry")
+        if not isinstance(entry, (int, float)) or entry <= 0:
+            continue
+        record["last_price"] = float(price)
+        direction = 1 if record.get("side") == "BUY" else -1
+        record["pnl_pct"] = round((price - entry) / entry * 100 * direction, 4)
+        side = record.get("side")
+        stop, tp1, tp2, tp3 = (record.get(k) for k in ("stop", "tp1", "tp2", "tp3"))
+        hit = None
+        if side == "BUY":
+            if isinstance(stop, (int, float)) and price <= stop: hit = "SL"
+            elif isinstance(tp3, (int, float)) and price >= tp3: hit = "TP3"
+            elif isinstance(tp2, (int, float)) and price >= tp2: record["reached"] = "TP2"
+            elif isinstance(tp1, (int, float)) and price >= tp1: record["reached"] = "TP1"
+        else:
+            if isinstance(stop, (int, float)) and price >= stop: hit = "SL"
+            elif isinstance(tp3, (int, float)) and price <= tp3: hit = "TP3"
+            elif isinstance(tp2, (int, float)) and price <= tp2: record["reached"] = "TP2"
+            elif isinstance(tp1, (int, float)) and price <= tp1: record["reached"] = "TP1"
+        if hit:
+            record["result"] = hit
+            record["closed_at"] = now
+        changed = True
+    if changed:
+        write_json_file(RESULTS_PATH, items[-1000:])
+    return items
+
+
 @app.get("/api/results")
 def signal_results(limit: int = Query(100, ge=1, le=500)):
-    items = prune_results()
-    items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
-    closed = [x for x in items if x.get("result") in ("TP1", "TP2", "TP3", "SL")]
-    wins = [x for x in closed if x.get("result") in ("TP1", "TP2", "TP3")]
-    return {"ok": True, "items": items[:limit], "total": len(items), "closed": len(closed),
-            "wins": len(wins), "losses": len(closed)-len(wins),
-            "win_rate": round(len(wins)*100/len(closed), 1) if closed else None,
-            "message": "النتائج تسجل من وقت اكتشاف الإشارة داخل الخدمة؛ إعادة تشغيل الخدمة قد تفقد السجل ما لم يُضبط DATA_DIR على تخزين دائم."}
+    with RESULTS_LOCK:
+        items = prune_results()
+        items = refresh_open_result_prices(items)
+        items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
+        closed = [x for x in items if x.get("result") in ("TP1", "TP2", "TP3", "SL")]
+        wins = [x for x in closed if x.get("result") in ("TP1", "TP2", "TP3")]
+        return {"ok": True, "items": items[:limit], "total": len(items), "closed": len(closed),
+                "wins": len(wins), "losses": len(closed)-len(wins),
+                "win_rate": round(len(wins)*100/len(closed), 1) if closed else None,
+                "message": "الأداء يتحدث من آخر سعر متاح عند فتح النتائج؛ قد تتأخر أسعار Yahoo، وإعادة تشغيل الخدمة قد تفقد السجل ما لم يُضبط DATA_DIR على تخزين دائم."}
 
 
 @app.get("/api/admin/status")
