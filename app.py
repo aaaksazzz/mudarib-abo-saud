@@ -1834,6 +1834,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
                 record["result"] = "انتهت المدة"
                 record["closed_at"] = int(record.get("expires_at") or now)
                 record["expiry_reason"] = "انتهت مدة الفريم"
+        # Expired open signals are deleted after their own timeframe, not kept as stale cards.
+        history = [record for record in history if record.get("result") != "انتهت المدة"]
         active_map = {
             (x.get("market"), x.get("interval"), x.get("symbol")): x
             for x in history if x.get("result") == "مفتوحة"
@@ -1913,15 +1915,13 @@ def prune_results(max_age_seconds=86400):
                     changed = True
                 expires_at = int(expires_at)
                 if now >= expires_at:
-                    item["result"] = "انتهت المدة"
+                    # Timeframe expiry means remove this signal completely.
                     changed = True
-                    item["closed_at"] = expires_at
-                    item["expiry_reason"] = "انتهت مدة الفريم"
-                    item["pnl_pct"] = item.get("pnl_pct", 0.0)
-                    if now - expires_at <= max_age_seconds:
-                        fresh.append(item)
                 else:
                     fresh.append(item)
+                continue
+            if item.get("result") == "انتهت المدة":
+                changed = True
                 continue
             closed_at = item.get("closed_at")
             retention_anchor = int(closed_at) if isinstance(closed_at, (int, float)) else created_at
