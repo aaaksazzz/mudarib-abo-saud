@@ -745,7 +745,7 @@ METHOD_FAMILY_OVERRIDES = {
     "rounding_pattern": "chart_patterns", "three_drives": "chart_patterns", "wolfe_waves": "chart_patterns",
     "andrews_pitchfork": "channels_trendlines", "channels": "channels_trendlines",
     "linear_regression_channel": "channels_trendlines", "stddev_channel": "channels_trendlines",
-    "range_trading": "range_context", "regime": "range_context", "choppiness": "range_context",,
+    "range_trading": "range_context", "regime": "range_context", "choppiness": "range_context",
     "pin_bar": "candlestick", "engulfing": "candlestick", "harami": "candlestick",
     "soldiers_crows": "candlestick", "fakey": "breakout_channel",
     "mss": "structure_smc_ict", "inducement": "liquidity_reversal", "trendline_sweep": "liquidity_reversal",
