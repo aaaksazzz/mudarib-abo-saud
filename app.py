@@ -1946,7 +1946,9 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
                         quote_item["quote_volume"] = 0
                         tickers.append(quote_item)
             tickers.sort(key=lambda x: x.get("change_pct", 0), reverse=True)
-            tickers = tickers[:max(20, limit)]
+            # Scan the full configured futures and forex universes; keep other large markets bounded for responsiveness.
+            if market not in ("contracts", "forex"):
+                tickers = tickers[:max(20, limit)]
     except (urllib.error.URLError, TimeoutError, ValueError, OSError):
         return JSONResponse({"ok": False, "live": False, "items": [], "message": "تعذر جلب أسعار السوق الآن."}, status_code=503)
 
