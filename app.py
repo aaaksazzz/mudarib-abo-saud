@@ -1503,8 +1503,8 @@ def method_signal(candles, ticker, method_key):
         elif method_key == "engulfing":
             prev_body_high, prev_body_low = max(opens[-2], closes[-2]), min(opens[-2], closes[-2])
             curr_body_high, curr_body_low = max(opens[-1], price), min(opens[-1], price)
-            if bearish and closes[-2] < opens[-2] and curr_body_high >= prev_body_high and curr_body_low <= prev_body_low: side = "BUY"
-            elif bullish and closes[-2] > opens[-2] and curr_body_high >= prev_body_high and curr_body_low <= prev_body_low: side = "SELL"
+            if bullish and closes[-2] < opens[-2] and curr_body_high >= prev_body_high and curr_body_low <= prev_body_low: side = "BUY"
+            elif bearish and closes[-2] > opens[-2] and curr_body_high >= prev_body_high and curr_body_low <= prev_body_low: side = "SELL"
         elif method_key == "harami":
             prev_hi, prev_lo = max(opens[-2], closes[-2]), min(opens[-2], closes[-2])
             curr_hi, curr_lo = max(opens[-1], price), min(opens[-1], price)
