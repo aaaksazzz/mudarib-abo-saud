@@ -367,9 +367,11 @@ def legacy_market_redirect(market_slug: str):
 
 
 @app.get("/trades", include_in_schema=False)
-def legacy_trades_redirect():
-    """Keep the old trades URL working; the current public trade board is /gold."""
-    return RedirectResponse(url="/gold", status_code=308)
+@app.get("/radar", include_in_schema=False)
+@app.get("/gold", include_in_schema=False)
+def retired_trade_boards_redirect():
+    """Retired duplicate trade boards now return users to the dedicated market list."""
+    return RedirectResponse(url="/markets/spot", status_code=308)
 
 
 @app.get("/markets/spot", response_class=HTMLResponse)
@@ -379,8 +381,6 @@ def legacy_trades_redirect():
 @app.get("/markets/saudi", response_class=HTMLResponse)
 @app.get("/markets/forex-gold", response_class=HTMLResponse)
 @app.get("/markets/alpha", response_class=HTMLResponse)
-@app.get("/radar", response_class=HTMLResponse)
-@app.get("/gold", response_class=HTMLResponse)
 @app.get("/results", response_class=HTMLResponse)
 @app.get("/news", response_class=HTMLResponse)
 @app.get("/account", response_class=HTMLResponse)
@@ -1427,19 +1427,43 @@ def tasi_index_analysis(interval: str = Query("1d")):
     support = min(c["low"] for c in window)
     resistance = max(c["high"] for c in window)
     s20, s50, s200 = sma(20), sma(50), sma(200)
+    # ATR-based scenario levels are calculated from this exact timeframe's candles.
+    ranges = []
+    for i, candle in enumerate(candles[-15:]):
+        prev_close = candles[-16 + i]["close"] if len(candles) >= 16 and i >= 0 else candle["close"]
+        ranges.append(max(candle["high"] - candle["low"], abs(candle["high"] - prev_close), abs(candle["low"] - prev_close)))
+    atr = sum(ranges) / len(ranges) if ranges else max(last["high"] - last["low"], last["close"] * 0.01)
     if s20 is not None and s50 is not None and last["close"] > s20 > s50:
         trend = "صاعد"
+        side = "سيناريو صاعد"
+        entry = last["close"]
+        stop = min(support, entry - 1.5 * atr)
+        risk = max(entry - stop, atr)
+        targets = [entry + risk * multiple for multiple in (1, 2, 3)]
     elif s20 is not None and s50 is not None and last["close"] < s20 < s50:
         trend = "هابط"
+        side = "سيناريو هابط"
+        entry = last["close"]
+        stop = max(resistance, entry + 1.5 * atr)
+        risk = max(stop - entry, atr)
+        targets = [entry - risk * multiple for multiple in (1, 2, 3)]
     else:
         trend = "عرضي / مختلط"
+        side = "سيناريو مشروط"
+        entry = last["close"]
+        bullish = last["close"] >= (s20 if s20 is not None else last["close"])
+        stop = min(support, entry - 1.5 * atr) if bullish else max(resistance, entry + 1.5 * atr)
+        risk = max(abs(entry - stop), atr)
+        targets = [entry + risk * n if bullish else entry - risk * n for n in (1, 2, 3)]
     return {"ok": True, "live": True, "symbol": "^TASI.SR", "name": "المؤشر العام للسوق السعودي — تاسي",
             "provider": "Yahoo Finance", "delayed": True, "interval": interval,
             "price": round(last["close"], 2), "change_pct": round(change, 2),
             "trend": trend, "open": round(last["open"], 2), "high": round(last["high"], 2),
             "low": round(last["low"], 2), "close": round(last["close"], 2),
             "support": round(support, 2), "resistance": round(resistance, 2),
-            "sma20": s20, "sma50": s50, "sma200": s200,
+            "atr": round(atr, 2), "scenario": side, "entry": round(entry, 2),
+            "stop_loss": round(stop, 2), "tp1": round(targets[0], 2), "tp2": round(targets[1], 2), "tp3": round(targets[2], 2),
+            "risk_reward": "1:1 / 1:2 / 1:3", "sma20": s20, "sma50": s50, "sma200": s200,
             "candles": [{"time": c.get("time"), "open": round(c["open"], 2), "high": round(c["high"], 2),
                          "low": round(c["low"], 2), "close": round(c["close"], 2), "volume": c.get("volume", 0)}
                         for c in candles[-60:]],
@@ -2059,7 +2083,11 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
     if not refresh and cached and now - cached["at"] < 300:
         return {"ok": True, "live": True, "items": cached["items"][:limit], "cached": True, "market": market,
                 "message": "اختر السوق من القائمة لتغيير نوع الأخبار؛ راجع الخبر الأصلي قبل اتخاذ القرار."}
-    assets, coins, counts = _news_universe()
+    try:
+        assets, coins, counts = _news_universe()
+    except Exception:
+        # News should never take the whole page down when a market directory is unavailable.
+        assets, coins, counts = [], {}, {}
     if market == "crypto":
         allowed_assets = [a for a in assets if a["kind"] == "عملة رقمية"]
         queries = [("العملات الرقمية", "cryptocurrency OR Bitcoin OR Ethereum OR crypto market")]
@@ -2091,19 +2119,21 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
             ("السوق السعودي", "أسهم السوق السعودي تداول شركات السعودية تاسي نمو"),
             ("الفوركس والذهب", "forex OR gold OR dollar currency market"),
             ("العقود الأمريكية", "S&P 500 futures Nasdaq futures Dow futures gold oil futures")]
-        for start in range(0, len(coins), 25):
-            queries.append(("العملات الرقمية", " OR ".join(sorted(coins)[start:start+25]) + " cryptocurrency crypto"))
-        for group_market, label in (("us", "الأسهم الأمريكية"), ("saudi", "السوق السعودي")):
-            group_symbols = [s.replace(".SR", "") for s in YAHOO_MARKETS[group_market]]
-            for start in range(0, len(group_symbols), 20):
-                queries.append((label, " OR ".join(group_symbols[start:start+20]) + " stock shares"))
+        # Small curated query set keeps the endpoint fast and prevents upstream feed storms.
+        queries.extend([
+            ("العملات الرقمية", "Bitcoin Ethereum Solana cryptocurrency market"),
+            ("الأسهم الأمريكية", "Nasdaq S&P 500 US stocks earnings"),
+            ("السوق السعودي", "السوق السعودي تاسي تداول الشركات نتائج"),
+            ("الفوركس والذهب", "forex gold XAUUSD dollar market"),
+            ("العقود الأمريكية", "S&P 500 futures Nasdaq futures gold oil")
+        ])
     def read_feed(entry):
         label, query = entry
         url = "https://news.google.com/rss/search?" + urlencode({"q": query, "hl": "ar", "gl": "SA", "ceid": "SA:ar"})
         found = []
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "SmartTradingPro/2.4"})
-            with urllib.request.urlopen(req, timeout=4) as response:
+            with urllib.request.urlopen(req, timeout=2.5) as response:
                 root = ET.fromstring(response.read())
             for node in root.findall("./channel/item"):
                 title = (node.findtext("title") or "").strip()
@@ -2116,8 +2146,8 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
             pass
         return found
     items, seen = [], set()
-    with ThreadPoolExecutor(max_workers=10) as pool:
-        futures = [pool.submit(read_feed, query) for query in queries]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(read_feed, query) for query in queries[:8]]
         for future in as_completed(futures):
             try:
                 rows = future.result()
