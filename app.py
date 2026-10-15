@@ -1652,6 +1652,56 @@ def candle_data(market: str, symbol: str, interval: str):
     return out[-500:]
 
 
+def telegram_send_signal(signal: dict) -> bool:
+    """Send a newly created high-confluence signal to the configured Telegram channel."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    if not token or not chat_id:
+        return False
+    import html
+    medal_labels = {"gold": "🥇 ذهبي", "silver": "🥈 فضي", "bronze": "🥉 برونزي"}
+    medal = medal_labels.get(signal.get("medal"), "📌 توصية")
+    side = "شراء 🟢" if signal.get("side") == "BUY" else "بيع 🔴"
+    market_labels = {"spot": "سبوت", "futures": "فيوتشر", "contracts": "العقود الأمريكية",
+                     "us": "الأسهم الأمريكية", "saudi": "السوق السعودي", "forex": "الفوركس والذهب"}
+    symbol = html.escape(str(signal.get("symbol", "")))
+    market = html.escape(market_labels.get(signal.get("market"), str(signal.get("market", ""))))
+    interval = html.escape(str(signal.get("interval", "")))
+    def price(key):
+        try:
+            return f"{float(signal[key]):.8f}".rstrip("0").rstrip(".")
+        except (KeyError, TypeError, ValueError):
+            return "—"
+    message = (
+        f"<b>{medal} | التداول الذكي PRO</b>\n"
+        f"<b>الأصل:</b> <code>{symbol}</code>\n"
+        f"<b>السوق:</b> {market} | <b>الفريم:</b> {interval}\n"
+        f"<b>الاتجاه:</b> {side}\n"
+        f"<b>الدخول:</b> <code>{price('entry')}</code>\n"
+        f"<b>TP1:</b> <code>{price('tp1')}</code> | <b>TP2:</b> <code>{price('tp2')}</code> | <b>TP3:</b> <code>{price('tp3')}</code>\n"
+        f"<b>وقف الخسارة:</b> <code>{price('stop')}</code>\n"
+        f"<b>قوة الإشارة:</b> {int(signal.get('score', 0) or 0)}% | <b>توافق العائلات:</b> {signal.get('method_count', 0)}\n"
+        f"<i>إشارة آلية وليست ضمانًا للربح. تحقق من السعر قبل الدخول.</i>"
+    )
+    from urllib.parse import urlencode
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    data = urlencode({"chat_id": chat_id, "text": message, "parse_mode": "HTML", "disable_web_page_preview": "true"}).encode("utf-8")
+    request = urllib.request.Request(url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
+    try:
+        with urllib.request.urlopen(request, timeout=8) as response:
+            return bool(json.loads(response.read().decode("utf-8")).get("ok"))
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+        return False
+
+
+@app.get("/api/telegram/status")
+def telegram_status():
+    """Report configuration presence only; never expose the bot token."""
+    configured = bool(os.getenv("TELEGRAM_BOT_TOKEN", "").strip() and os.getenv("TELEGRAM_CHAT_ID", "").strip())
+    return {"configured": configured, "destination": "Telegram channel" if configured else None,
+            "message": "Telegram notification settings are configured." if configured else "Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in the service environment."}
+
+
 def build_signal(market: str, ticker: dict, interval: str):
     candles = candle_data(market, ticker["symbol"], interval)
     if len(candles) < 205:
@@ -1837,6 +1887,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
     for i, item in enumerate(found):
         item["rank"] = i + 1
         item["medal"] = medals[i]
+    new_telegram_signals = []
     with RESULTS_LOCK:
         history = prune_results()
         ticker_prices = {x["symbol"]: x["price"] for x in tickers}
@@ -1887,11 +1938,16 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
             created_at = int(now)
             item["created_at"] = created_at
             item["expires_at"] = created_at + INTERVAL_SECONDS[interval]
-            history.append({**item, "id": str(int(now*1000)) + "-" + item["symbol"],
-                            "last_price": ticker_prices.get(item["symbol"], item["entry"]), "result": "مفتوحة",
-                            "reached": None, "pnl_pct": 0.0})
+            record = {**item, "id": str(int(now*1000)) + "-" + item["symbol"],
+                      "last_price": ticker_prices.get(item["symbol"], item["entry"]), "result": "مفتوحة",
+                      "reached": None, "pnl_pct": 0.0}
+            history.append(record)
+            new_telegram_signals.append(dict(item))
             active_keys.add(ident)
         write_json_file(RESULTS_PATH, history[-1000:])
+    # Notify only when a new signal is first saved; rescans do not resend active signals.
+    for telegram_signal in new_telegram_signals:
+        telegram_send_signal(telegram_signal)
     result = {"ok": True, "live": True, "market": market, "interval": interval,
               "scanned": len(tickers), "count": len(found), "updated_at": int(now),
               "items": found[:limit], "message": "الدخول والوقف والأهداف محسوبة من شموع Binance وATR. سجل النتائج يعتمد على السعر المرصود عند تحديث الخدمة، وليس سجل تداول لحظي كاملًا؛ لا توجد نسبة ربح تاريخية موثقة."}
