@@ -2003,18 +2003,20 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 return restored
     try:
         if market in BINANCE:
-            # Inspect a larger liquidity-ranked batch before selecting eligible signals.
-            # Keep each request bounded: each ticker runs a multi-method OHLCV analysis.
-            # Scanning hundreds of symbols can exceed the frontend 45-second request deadline.
-            tickers = market_tickers(market)[:max(30, limit * 2)]
+            # Bound each interactive scan so the page responds before the client deadline.
+            # market_tickers is already ranked by 24h quote volume; a later refresh can use cache.
+            tickers = market_tickers(market)[:max(12, min(limit, 16))]
         else:
             # Load the full TASI equity directory before building Saudi signals; otherwise
             # the fallback list silently limits the signal page to only a few stocks.
             if market == "saudi":
                 _load_saudi_symbols()
             tickers = []
-            with ThreadPoolExecutor(max_workers=8) as pool:
-                for future in as_completed([pool.submit(fetch_yahoo_quote, symbol) for symbol in YAHOO_MARKETS[market]]):
+            # Signal scans are interactive: quote the first bounded symbol batch here.
+            # Full market listings remain available through /api/market/{market}.
+            signal_symbols = YAHOO_MARKETS[market][:max(12, min(limit, 16))]
+            with ThreadPoolExecutor(max_workers=16) as pool:
+                for future in as_completed([pool.submit(fetch_yahoo_quote, symbol) for symbol in signal_symbols]):
                     try:
                         quote_item = future.result()
                     except Exception:
@@ -2023,9 +2025,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                         quote_item["quote_volume"] = 0
                         tickers.append(quote_item)
             tickers.sort(key=lambda x: x.get("change_pct", 0), reverse=True)
-            # Scan the full configured futures and forex universes; keep other large markets bounded for responsiveness.
-            if market not in ("contracts", "forex"):
-                tickers = tickers[:max(20, limit)]
+            # Keep every Yahoo-backed signal scan bounded; full quote lists remain on market pages.
+            tickers = tickers[:max(12, min(limit, 16))]
     except (urllib.error.URLError, TimeoutError, ValueError, OSError):
         # If a provider is temporarily unavailable, keep showing unexpired signals
         # already saved for this exact market/timeframe instead of blanking the page.
@@ -2039,7 +2040,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                              "message": "تعذر تحديث السعر الحالي؛ أخفينا الصفقات القديمة مؤقتًا حتى يتوفر سعر حديث. أعد الفحص بعد قليل."})
 
     found = []
-    with ThreadPoolExecutor(max_workers=12) as pool:
+    with ThreadPoolExecutor(max_workers=16) as pool:
         jobs = [pool.submit(build_signal, market, ticker, interval) for ticker in tickers]
         for job in as_completed(jobs):
             try:
