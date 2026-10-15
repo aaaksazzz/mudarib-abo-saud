@@ -36,7 +36,7 @@ def test_method_catalog_covers_every_registered_method_and_discloses_limits():
     assert response.status_code == 200
     payload = response.json()
     assert payload["ok"] is True
-    assert payload["count"] == len(app.METHOD_RULES) == 184
+    assert payload["count"] == len(app.METHOD_RULES) == 200
     assert {item["name"] for item in payload["items"]} == set(app.METHOD_RULES)
     assert all(item["score_is_probability"] is False for item in payload["items"])
     assert payload["counts"]["needs_auxiliary_data"] == len(app.METHOD_AUXILIARY_DATA_REQUIRED)
