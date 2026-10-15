@@ -1914,7 +1914,7 @@ def build_signal(market: str, ticker: dict, interval: str):
     }
 
 @app.get("/api/signals/{market}")
-def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(12, ge=1, le=20)):
+def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(100, ge=1, le=200)):
     market = market.lower()
     enforce_section_access(market)
     if market not in BINANCE and market not in YAHOO_MARKETS:
@@ -1929,7 +1929,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         return cached[1]
     try:
         if market in BINANCE:
-            tickers = market_tickers(market)[:max(24, limit * 2)]
+            # Inspect a larger liquidity-ranked batch before selecting eligible signals.
+            tickers = market_tickers(market)[:max(100, limit * 10)]
         else:
             # Load the full TASI equity directory before building Saudi signals; otherwise
             # the fallback list silently limits the signal page to only a few stocks.
