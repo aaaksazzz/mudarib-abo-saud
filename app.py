@@ -1710,7 +1710,7 @@ def risk_position_size(
 
 
 SIGNAL_CACHE = {}
-SIGNAL_CACHE_TTL = 75
+SIGNAL_CACHE_TTL = 20
 
 
 def candle_data(market: str, symbol: str, interval: str):
@@ -2115,7 +2115,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                     # hitting TP/SL, retire that entry instead of showing a stale setup.
                     drift_limit = max(abs(entry - stop) * 0.5, entry * 0.001)
                     if abs(price_now - entry) >= drift_limit:
-                        record["result"] = "انتهяла صلاحية الدخول"
+                        record["result"] = "انتهت صلاحية الدخول"
                         record["closed_at"] = int(now)
                         record["expiry_reason"] = "تحرك السعر بعيدًا عن سعر الدخول؛ يلزم فحص جديد"
                 if record.get("result") == "مفتوحة" and int(now) >= int(record.get("expires_at") or (record.get("created_at", int(now)) + INTERVAL_SECONDS.get(record.get("interval"), 86400))):
