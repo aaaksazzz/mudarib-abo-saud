@@ -294,6 +294,7 @@ def sitemap_xml():
 
 @app.get("/blog", response_class=HTMLResponse)
 def seo_blog_index():
+    enforce_section_access("blog")
     from html import escape
     posts = list(SEO_POSTS)
     dynamic = read_json_file(ARTICLES_PATH, [])
@@ -314,6 +315,7 @@ def seo_blog_index():
 
 @app.get("/blog/{slug}", response_class=HTMLResponse)
 def seo_blog_article(slug: str):
+    enforce_section_access("blog")
     from html import escape
     post = _seo_post(slug)
     if not post:
@@ -2128,6 +2130,7 @@ def _news_direction(title):
 
 @app.get("/api/news")
 def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all"), refresh: bool = Query(False)):
+    enforce_section_access("news")
     from urllib.parse import urlencode
     market = market.lower().strip()
     if market not in {"all", "crypto", "us", "saudi", "forex", "contracts"}:
