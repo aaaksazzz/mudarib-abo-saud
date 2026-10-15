@@ -1927,32 +1927,52 @@ NEWS_UNIVERSE_CACHE = {"at": 0, "assets": [], "coins": {}, "counts": {}}
 SAUDI_SYMBOL_CACHE = {"at": 0, "symbols": []}
 
 def _load_saudi_symbols():
+    """Load the complete TASI listed-equity universe, paging until the directory ends."""
     now = time.time()
     if SAUDI_SYMBOL_CACHE["symbols"] and now - SAUDI_SYMBOL_CACHE["at"] < 21600:
         return SAUDI_SYMBOL_CACHE["symbols"]
+
     loaded = {}
-    for market_code in ("TASI",):
+    # Keep paging: a single page can silently omit listed companies when the directory grows.
+    page_size = 200
+    for offset in range(0, 2000, page_size):
         try:
-            data = fetch_json("https://api.sahmk.sa/api/v1/companies/?market=" + market_code + "&limit=500&offset=0", timeout=5)
+            url = (
+                "https://api.sahmk.sa/api/v1/companies/?market=TASI"
+                f"&limit={page_size}&offset={offset}"
+            )
+            data = fetch_json(url, timeout=8)
             rows = data.get("results", []) if isinstance(data, dict) else []
+            if not rows:
+                break
+
             for row in rows:
+                if not isinstance(row, dict):
+                    continue
                 security_type = str(row.get("security_type") or row.get("type") or "").strip().lower()
+                # This directory is filtered to TASI; when a type is provided, retain equities only.
                 if security_type and not any(tag in security_type for tag in ("equity", "stock", "share", "سهم")):
                     continue
                 raw_symbol = str(row.get("symbol") or row.get("ticker") or "").strip()
-                if not raw_symbol:
-                    continue
                 digits = raw_symbol.split(".")[0].strip()
                 if not digits.isdigit():
                     continue
                 yahoo_symbol = digits.zfill(4) + ".SR"
-                loaded[yahoo_symbol] = str(row.get("name_ar") or row.get("name_en") or row.get("name") or digits)
+                loaded[yahoo_symbol] = str(
+                    row.get("name_ar") or row.get("name_en") or row.get("name") or digits
+                )
+
+            if len(rows) < page_size:
+                break
         except (urllib.error.URLError, TimeoutError, OSError, ValueError, TypeError):
-            continue
+            # Preserve any symbols collected from earlier pages and use the existing fallback if none loaded.
+            break
+
     if loaded:
-        YAHOO_MARKETS["saudi"] = sorted(loaded.keys())
+        symbols = sorted(loaded.keys())
+        YAHOO_MARKETS["saudi"] = symbols
         YAHOO_LABELS.update(loaded)
-        SAUDI_SYMBOL_CACHE.update({"symbols": list(loaded.keys()), "at": now})
+        SAUDI_SYMBOL_CACHE.update({"symbols": symbols, "at": now})
     return SAUDI_SYMBOL_CACHE["symbols"] or YAHOO_MARKETS["saudi"]
 
 def _news_universe():
