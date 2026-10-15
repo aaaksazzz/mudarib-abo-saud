@@ -1829,11 +1829,14 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
                     found.append(item)
             except (urllib.error.URLError, TimeoutError, ValueError, OSError, IndexError, TypeError, ZeroDivisionError):
                 continue
-    found.sort(key=lambda x: (x.get("method_count", 0), x["score"], x["quote_volume"]), reverse=True)
+    # Publish only genuinely strong candidates; never pad the board with weak signals.
+    found = [x for x in found if x.get("score", 0) >= 60 and x.get("method_count", 0) >= 4 and x.get("confirmations", 0) >= 6]
+    found.sort(key=lambda x: (x.get("method_count", 0), x["score"], x["confirmations"], x["quote_volume"]), reverse=True)
+    found = found[:3]
     medals = ["gold", "silver", "bronze"]
     for i, item in enumerate(found):
         item["rank"] = i + 1
-        item["medal"] = medals[i] if i < 3 else "standard"
+        item["medal"] = medals[i]
     with RESULTS_LOCK:
         history = prune_results()
         ticker_prices = {x["symbol"]: x["price"] for x in tickers}
