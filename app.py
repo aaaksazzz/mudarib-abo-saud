@@ -19,6 +19,24 @@ from fastapi.staticfiles import StaticFiles
 BASE = Path(__file__).resolve().parent
 app = FastAPI(title="التداول الذكي PRO", version="2.1.3")
 security = HTTPBasic(auto_error=False)
+
+
+@app.middleware("http")
+async def site_password_gate(request: Request, call_next):
+    # Keep health checks available to the deployment platform.
+    if request.url.path == "/health":
+        return await call_next(request)
+    credentials = await security(request)
+    expected_password = os.getenv("SITE_PASSWORD", "2341")
+    username_ok = bool(credentials and secrets.compare_digest(credentials.username, "admin"))
+    password_ok = bool(credentials and secrets.compare_digest(credentials.password, expected_password))
+    if not (username_ok and password_ok):
+        return JSONResponse(
+            {"detail": "الموقع محمي برقم سري."},
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="SMART TRADING PRO", charset="UTF-8"'},
+        )
+    return await call_next(request)
 # Persist results/articles on a mounted Northflank volume. Configure a persistent volume at /data.
 # DATA_DIR may override this path for local development or another persistent mount.
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data/smart-trading-pro-data"))
