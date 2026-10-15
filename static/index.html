@@ -41,6 +41,58 @@ button,.btn,.market-tile,.nav>a,.nav button{transition:background-color .18s eas
 @media(prefers-reduced-motion:reduce){
  *,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}
 }
+
+/* Cross-device and cross-browser compatibility layer */
+html{width:100%;min-width:320px;-webkit-text-size-adjust:100%;text-size-adjust:100%;scroll-padding-top:12px}
+body{width:100%;min-width:320px;overflow-wrap:anywhere}
+img,svg,video,canvas,iframe{max-width:100%}
+img,video{height:auto}
+button,input,select,textarea{max-width:100%;touch-action:manipulation}
+button,a,input,select,textarea{-webkit-appearance:none;appearance:none}
+button{min-height:40px}
+input,select,textarea{font-size:16px}
+.app{width:100%;min-width:0;padding-left: max(10px, env(safe-area-inset-left));padding-right:max(10px, env(safe-area-inset-right))}
+.main,#view,.panel,.hero,.signal,.article,.row-card{min-width:0;max-width:100%}
+p,h1,h2,h3,h4,small,strong,td,th{overflow-wrap:anywhere}
+.table-wrap{-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+.side{height:calc(100vh - 24px);height:calc(100dvh - 24px);padding-bottom:max(12px,env(safe-area-inset-bottom))}
+.drawer-backdrop{-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+@supports not (height:100dvh){.side{height:calc(100vh - 24px)}}
+@media(max-width:380px){
+ .app{padding:8px}
+ .top{align-items:center;flex-wrap:wrap}
+ .top-actions{flex-direction:row;align-items:center;flex-wrap:wrap}
+ .brand{flex:1 1 180px}
+ .live{white-space:normal}
+ .hero h2{font-size:22px}
+ .stats{gap:6px}
+ .stat{padding:9px}
+ .stat strong{font-size:19px}
+ .panel{padding:9px}
+ .filters{align-items:stretch}
+ .filters>*{min-width:0}
+ .entry strong{font-size:17px}
+ .level strong{font-size:11px}
+ .nav{grid-template-columns:1fr}
+}
+@media(max-width:680px) and (orientation:landscape){
+ .top{align-items:center}
+ .side{overflow-y:auto;overscroll-behavior:contain}
+ .nav{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(hover:none) and (pointer:coarse){
+ .signal:hover{transform:none}
+ .btn,.market-tile,.nav button,.nav>a{min-height:42px}
+}
+@media(prefers-reduced-motion:reduce){
+ html{scroll-behavior:auto}
+ *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+}
+@media(forced-colors:active){
+ .btn,.frame,.market-tile,.nav button,.nav>a,.panel,.hero,.signal,.article,.row-card{border:1px solid ButtonText}
+ :focus-visible{outline:2px solid Highlight}
+}
+
 </style>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"التداول الذكي PRO","url":"https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/","inLanguage":"ar-SA","description":"منصة عربية لمتابعة الأسواق وتحليل الفرص الفنية والنتائج والأخبار والمقالات التعليمية.","potentialAction":{"@type":"SearchAction","target":"https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/?q={search_term_string}","query-input":"required name=search_term_string"}}</script>
 </head>
