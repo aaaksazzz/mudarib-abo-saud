@@ -1951,7 +1951,34 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             if market not in ("contracts", "forex"):
                 tickers = tickers[:max(20, limit)]
     except (urllib.error.URLError, TimeoutError, ValueError, OSError):
-        return JSONResponse({"ok": False, "live": False, "items": [], "message": "تعذر جلب أسعار السوق الآن."}, status_code=503)
+        # If a provider is temporarily unavailable, keep showing unexpired signals
+        # already saved for this exact market/timeframe instead of blanking the page.
+        with RESULTS_LOCK:
+            saved_history = read_json_file(RESULTS_PATH, [])
+        saved_items = [
+            dict(item) for item in saved_history
+            if isinstance(item, dict)
+            and item.get("result") == "مفتوحة"
+            and item.get("market") == market
+            and item.get("interval") == interval
+            and int(item.get("expires_at") or 0) > int(now)
+        ]
+        saved_items.sort(key=lambda x: (x.get("score", 0), x.get("method_count", 0),
+                                        x.get("confirmations", 0), x.get("quote_volume", 0)), reverse=True)
+        if saved_items:
+            medals = ["gold", "silver", "bronze"]
+            for i, item in enumerate(saved_items[:limit]):
+                item["rank"] = i + 1
+                item["medal"] = medals[i] if i < len(medals) else None
+            result = {
+                "ok": True, "live": False, "stale": True, "market": market, "interval": interval,
+                "scanned": 0, "count": len(saved_items[:limit]), "updated_at": int(now),
+                "items": saved_items[:limit],
+                "message": "تعذر تحديث الأسعار مؤقتًا؛ نعرض الصفقات المحفوظة غير المنتهية حتى يعود المصدر."
+            }
+            SIGNAL_CACHE[key] = (now, result)
+            return result
+        return JSONResponse({"ok": False, "live": False, "items": [], "message": "تعذر جلب أسعار السوق الآن ولا توجد صفقات محفوظة صالحة."}, status_code=503)
 
     found = []
     with ThreadPoolExecutor(max_workers=12) as pool:
@@ -2034,9 +2061,25 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     # Notify only when a new signal is first saved; rescans do not resend active signals.
     for telegram_signal in new_telegram_signals:
         telegram_send_signal(telegram_signal)
+    # Return all still-open saved signals for this timeframe, not just candidates
+    # rediscovered in this scan. This prevents valid saved cards from disappearing.
+    with RESULTS_LOCK:
+        display_items = [
+            dict(record) for record in history
+            if record.get("result") == "مفتوحة"
+            and record.get("market") == market
+            and record.get("interval") == interval
+            and int(record.get("expires_at") or 0) > int(now)
+        ]
+    display_items.sort(key=lambda x: (x.get("score", 0), x.get("method_count", 0),
+                                      x.get("confirmations", 0), x.get("quote_volume", 0)), reverse=True)
+    medals = ["gold", "silver", "bronze"]
+    for i, item in enumerate(display_items[:limit]):
+        item["rank"] = i + 1
+        item["medal"] = medals[i] if i < len(medals) else None
     result = {"ok": True, "live": True, "market": market, "interval": interval,
-              "scanned": len(tickers), "count": len(found), "updated_at": int(now),
-              "items": found[:limit], "message": "الدخول والوقف والأهداف محسوبة من شموع Binance وATR. سجل النتائج يعتمد على السعر المرصود عند تحديث الخدمة، وليس سجل تداول لحظي كاملًا؛ لا توجد نسبة ربح تاريخية موثقة."}
+              "scanned": len(tickers), "count": len(display_items[:limit]), "updated_at": int(now),
+              "items": display_items[:limit], "message": "الصفقات المفتوحة محفوظة لكل فريم حتى انتهاء مدته. قد تتأخر الأسعار المعروضة إذا تعذر تحديث مصدر السوق؛ لا توجد نسبة ربح تاريخية موثقة."}
     SIGNAL_CACHE[key] = (now, result)
     return result
 
