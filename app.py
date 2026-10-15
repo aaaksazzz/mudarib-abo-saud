@@ -1407,6 +1407,7 @@ def method_signal(candles, ticker, method_key):
 
 @app.get("/api/tasi/analysis")
 def tasi_index_analysis(interval: str = Query("1d")):
+    enforce_section_access("tasi")
     """Broad analysis of the TASI benchmark index, not an individual Saudi stock."""
     if interval not in INTERVALS:
         return JSONResponse({"ok": False, "message": "الفريم غير مدعوم."}, status_code=422)
@@ -1526,6 +1527,7 @@ def method_catalog():
 @app.get("/api/methods/{market}")
 def method_filter(market: str, method: str = Query(...), interval: str = Query("15m"), limit: int = Query(40, ge=1, le=100)):
     market = market.lower()
+    enforce_section_access(market)
     if market not in BINANCE and market not in YAHOO_MARKETS:
         return JSONResponse({"ok": False, "live": False, "items": [], "message": "مصدر هذا السوق غير مربوط حاليًا."})
     if interval not in INTERVALS:
@@ -1779,6 +1781,7 @@ def build_signal(market: str, ticker: dict, interval: str):
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(12, ge=1, le=20)):
     market = market.lower()
+    enforce_section_access(market)
     if market not in BINANCE and market not in YAHOO_MARKETS:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "مصدر هذا السوق غير مربوط؛ لا يمكن إنشاء صفقات فعلية."})
@@ -1957,6 +1960,57 @@ def prune_results(max_age_seconds=86400):
             write_json_file(RESULTS_PATH, fresh[-1000:])
         return fresh[-1000:]
 
+
+
+SECTION_CATALOG = [{"id":"spot","label":"سبوت"},{"id":"futures","label":"فيوتشر"},{"id":"contracts","label":"العقود الأمريكية"},{"id":"us","label":"الأسهم الأمريكية"},{"id":"saudi","label":"السوق السعودي"},{"id":"forex","label":"الفوركس والذهب"},{"id":"alpha","label":"Binance Alpha"},{"id":"analysis","label":"مناهج التحليل"},{"id":"tasi","label":"تحليل تاسي العام"},{"id":"results","label":"النتائج"},{"id":"news","label":"الأخبار"},{"id":"blog","label":"المدونة"},{"id":"account","label":"الحساب والاشتراك"}]
+SECTION_SETTINGS_PATH = DATA_DIR / "section_settings.json"
+SECTION_SETTINGS_LOCK = threading.RLock()
+
+def read_section_settings():
+    with SECTION_SETTINGS_LOCK:
+        raw = read_json_file(SECTION_SETTINGS_PATH, {})
+        allowed = {item["id"] for item in SECTION_CATALOG}
+        return {key: value for key, value in raw.items() if key in allowed and value in ("public", "subscription", "closed")}
+
+def section_mode(section_id):
+    return read_section_settings().get(section_id, "public")
+
+def enforce_section_access(section_id):
+    mode = section_mode(section_id)
+    if mode == "closed":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=423, detail="هذا القسم مغلق مؤقتًا من إدارة المنصة.")
+    if mode == "subscription":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="هذا القسم يتطلب اشتراكًا. نظام التحقق من اشتراكات الأعضاء غير مفعّل بعد.")
+
+@app.get("/api/site/sections")
+def public_section_settings():
+    settings = read_section_settings()
+    return {"ok": True, "sections": settings, "catalog": SECTION_CATALOG}
+
+@app.get("/api/admin/sections")
+def admin_get_section_settings(credentials: HTTPBasicCredentials = Depends(security)):
+    require_admin(credentials)
+    return {"ok": True, "sections": read_section_settings(), "catalog": SECTION_CATALOG}
+
+@app.post("/api/admin/sections")
+def admin_save_section_settings(payload: dict, credentials: HTTPBasicCredentials = Depends(security)):
+    require_admin(credentials)
+    submitted = payload.get("sections", {})
+    if not isinstance(submitted, dict):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail="صيغة إعدادات الأقسام غير صحيحة.")
+    allowed = {item["id"] for item in SECTION_CATALOG}
+    normalized = {}
+    for key, value in submitted.items():
+        if key not in allowed or value not in ("public", "subscription", "closed"):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=422, detail="يوجد قسم أو وضع وصول غير صالح.")
+        normalized[key] = value
+    with SECTION_SETTINGS_LOCK:
+        write_json_file(SECTION_SETTINGS_PATH, normalized)
+    return {"ok": True, "sections": normalized}
 
 def require_admin(credentials: HTTPBasicCredentials = None):
     username = os.getenv("ADMIN_USERNAME", "")
@@ -2182,6 +2236,7 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
 
 @app.get("/api/blog")
 def blog_articles():
+    enforce_section_access("blog")
     return {"ok": True, "items": read_json_file(ARTICLES_PATH, [])}
 
 
@@ -2250,6 +2305,7 @@ def refresh_open_result_prices(items):
 
 @app.get("/api/results")
 def signal_results(limit: int = Query(100, ge=1, le=500)):
+    enforce_section_access("results")
     with RESULTS_LOCK:
         items = prune_results()
         items = refresh_open_result_prices(items)
