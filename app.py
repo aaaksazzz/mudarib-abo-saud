@@ -94,6 +94,7 @@ async def site_password_gate(request: Request, call_next):
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data/smart-trading-pro-data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 RESULTS_PATH = DATA_DIR / "results.json"
+SIGNALS_CACHE_PATH = DATA_DIR / "signals-cache.json"
 # Protect the complete read-modify-write transaction across all market endpoints.
 RESULTS_LOCK = threading.RLock()
 ARTICLES_PATH = DATA_DIR / "articles.json"
@@ -1927,6 +1928,22 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     cached = SIGNAL_CACHE.get(key)
     if cached and now - cached[0] < SIGNAL_CACHE_TTL:
         return cached[1]
+    # Reuse a recent scan persisted on the mounted data volume after page reloads
+    # or process restarts; do not make every visitor rescan the whole market.
+    with RESULTS_LOCK:
+        persisted_scans = read_json_file(SIGNALS_CACHE_PATH, {})
+    persisted = persisted_scans.get("|".join((market, interval, str(limit)))) if isinstance(persisted_scans, dict) else None
+    if isinstance(persisted, dict):
+        cached_at = int(persisted.get("_cached_at") or 0)
+        cached_result = persisted.get("result")
+        if cached_at and now - cached_at < 180 and isinstance(cached_result, dict):
+            restored = dict(cached_result)
+            restored["cached"] = True
+            restored["live"] = False
+            restored["stale"] = True
+            restored["message"] = "نعرض آخر فحص محفوظ لتجنب إعادة البحث المتكرر؛ قد تتأخر الأسعار حتى اكتمال التحديث التالي."
+            SIGNAL_CACHE[key] = (now, restored)
+            return restored
     try:
         if market in BINANCE:
             # Inspect a larger liquidity-ranked batch before selecting eligible signals.
@@ -2081,6 +2098,21 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
               "scanned": len(tickers), "count": len(display_items[:limit]), "updated_at": int(now),
               "items": display_items[:limit], "message": "الصفقات المفتوحة محفوظة لكل فريم حتى انتهاء مدته. قد تتأخر الأسعار المعروضة إذا تعذر تحديث مصدر السوق؛ لا توجد نسبة ربح تاريخية موثقة."}
     SIGNAL_CACHE[key] = (now, result)
+    with RESULTS_LOCK:
+        persisted_scans = read_json_file(SIGNALS_CACHE_PATH, {})
+        if not isinstance(persisted_scans, dict):
+            persisted_scans = {}
+        persisted_scans["|".join((market, interval, str(limit)))] = {
+            "_cached_at": int(now), "result": result
+        }
+        # Bound the cache file; keep only the latest 100 market/timeframe combinations.
+        if len(persisted_scans) > 100:
+            persisted_scans = dict(sorted(
+                persisted_scans.items(),
+                key=lambda pair: int(pair[1].get("_cached_at") or 0) if isinstance(pair[1], dict) else 0,
+                reverse=True
+            )[:100])
+        write_json_file(SIGNALS_CACHE_PATH, persisted_scans)
     return result
 
 
