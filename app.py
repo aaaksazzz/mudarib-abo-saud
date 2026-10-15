@@ -1936,7 +1936,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     if isinstance(persisted, dict):
         cached_at = int(persisted.get("_cached_at") or 0)
         cached_result = persisted.get("result")
-        if cached_at and now - cached_at < 180 and isinstance(cached_result, dict):
+        if cached_at and now - cached_at < 180 and isinstance(cached_result, dict) and cached_result.get("items"):
             restored = dict(cached_result)
             restored["cached"] = True
             restored["live"] = False
