@@ -562,7 +562,7 @@ def fetch_yahoo_quote(symbol: str):
 
 
 @app.get("/api/market/{market}")
-def market_data(market: str, limit: int = Query(40, ge=1, le=500)):
+def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
     market = market.lower()
     if market == "saudi":
         old_symbols = len(YAHOO_MARKETS["saudi"])
