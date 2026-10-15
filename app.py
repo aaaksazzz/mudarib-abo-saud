@@ -2005,6 +2005,12 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             # Binance universe so symbols beyond the first batch are not permanently skipped.
             # market_tickers filters USDT pairs to >= $1M 24h quote volume and sorts by volume.
             eligible_tickers = market_tickers(market)
+            # Prioritize liquid, fast-moving coins for signal discovery. This changes
+            # scan order only; it does not change any entry, target, stop, or strategy rule.
+            eligible_tickers.sort(
+                key=lambda item: (abs(item.get("change_pct", 0)), item.get("quote_volume", 0)),
+                reverse=True,
+            )
             batch_size = max(24, min(limit * 2, 30))
             if len(eligible_tickers) > batch_size:
                 # Advance to the next circular batch every 5 minutes. Repeated requests
