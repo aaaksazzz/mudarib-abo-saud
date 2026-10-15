@@ -58,8 +58,14 @@ def _valid_site_session(token):
     except (ValueError, TypeError):
         return False
 
+# Public market pages and SEO routes are open by default. Enable the optional site-wide PIN gate only deliberately.
+SITE_PASSWORD_GATE = os.getenv("SITE_PASSWORD_GATE", "false").strip().lower() in {"1", "true", "yes", "on"}
+
 @app.middleware("http")
 async def site_password_gate(request: Request, call_next):
+    if not SITE_PASSWORD_GATE:
+        return await call_next(request)
+
     path = request.url.path
     if path in ("/health", "/login"):
         if path == "/login" and request.method == "POST":
@@ -68,7 +74,9 @@ async def site_password_gate(request: Request, call_next):
                 pin = str(payload.get("pin", "")) if isinstance(payload, dict) else ""
             except Exception:
                 pin = ""
-            expected_password = os.getenv("SITE_PASSWORD", "2341")
+            expected_password = os.getenv("SITE_PASSWORD", "")
+            if not expected_password:
+                return JSONResponse({"detail": "بوابة الموقع مفعلة لكن SITE_PASSWORD غير مضبوط في إعدادات الخدمة."}, status_code=503)
             if not secrets.compare_digest(pin, expected_password):
                 return JSONResponse({"detail": "الرقم السري غير صحيح"}, status_code=401)
             response = JSONResponse({"ok": True})
@@ -81,7 +89,6 @@ async def site_password_gate(request: Request, call_next):
     if _valid_site_session(token):
         return await call_next(request)
 
-    # Allow static assets needed by public login page, but never serve static HTML without a session.
     if path.startswith("/static/") and not path.lower().endswith((".html", ".htm")):
         return await call_next(request)
 
@@ -2178,7 +2185,7 @@ def write_json_file(path, data):
 
 
 def prune_results(max_age_seconds=86400):
-    """Keep open signals for their timeframe; retain closed results for 24 hours."""
+    """Keep open signals for their timeframe; retain closed/expired results for 24 hours."""
     with RESULTS_LOCK:
         now = int(time.time())
         items = read_json_file(RESULTS_PATH, [])
@@ -2199,24 +2206,32 @@ def prune_results(max_age_seconds=86400):
                     changed = True
                 expires_at = int(expires_at)
                 if now >= expires_at:
-                    # Timeframe expiry means remove this signal completely.
+                    item["result"] = "انتهت المدة"
+                    item["closed_at"] = expires_at
                     changed = True
+                    if 0 <= now - expires_at <= max_age_seconds:
+                        fresh.append(item)
                 else:
                     fresh.append(item)
                 continue
             if item.get("result") == "انتهت المدة":
-                changed = True
+                expiry_anchor = item.get("closed_at", item.get("expires_at", created_at))
+                if isinstance(expiry_anchor, (int, float)) and 0 <= now - int(expiry_anchor) <= max_age_seconds:
+                    fresh.append(item)
+                else:
+                    changed = True
                 continue
             closed_at = item.get("closed_at")
             retention_anchor = int(closed_at) if isinstance(closed_at, (int, float)) else created_at
             if 0 <= now - retention_anchor <= max_age_seconds:
                 fresh.append(item)
+            else:
+                changed = True
         if len(fresh) != len(items):
             changed = True
         if changed:
             write_json_file(RESULTS_PATH, fresh[-1000:])
         return fresh[-1000:]
-
 
 
 SECTION_CATALOG = [{"id":"spot","label":"سبوت"},{"id":"futures","label":"فيوتشر"},{"id":"contracts","label":"العقود الأمريكية"},{"id":"us","label":"الأسهم الأمريكية"},{"id":"saudi","label":"السوق السعودي"},{"id":"forex","label":"الفوركس والذهب"},{"id":"alpha","label":"Binance Alpha"},{"id":"analysis","label":"مناهج التحليل"},{"id":"tasi","label":"تحليل تاسي العام"},{"id":"results","label":"النتائج"},{"id":"news","label":"الأخبار"},{"id":"blog","label":"المدونة"},{"id":"account","label":"الحساب والاشتراك"}]
