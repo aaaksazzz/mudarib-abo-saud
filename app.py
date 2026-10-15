@@ -1981,7 +1981,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     if isinstance(persisted, dict):
         cached_at = int(persisted.get("_cached_at") or 0)
         cached_result = persisted.get("result")
-        if cached_at and now - cached_at < 180 and isinstance(cached_result, dict):
+        if cached_at and now - cached_at < SIGNAL_CACHE_TTL and isinstance(cached_result, dict):
             # Reuse a recent completed scan, but never show an expired saved trade.
             restored = dict(cached_result)
             cached_items = restored.get("items", [])
@@ -2038,35 +2038,12 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         # already saved for this exact market/timeframe instead of blanking the page.
         with RESULTS_LOCK:
             saved_history = read_json_file(RESULTS_PATH, [])
-        saved_items = [
-            dict(item) for item in saved_history
-            if isinstance(item, dict)
-            and item.get("result") == "مفتوحة"
-            and item.get("market") == market
-            and item.get("interval") == interval
-            and int(item.get("expires_at") or 0) > int(now)
-        ]
-        saved_items.sort(key=lambda x: (x.get("score", 0), x.get("method_count", 0),
-                                        x.get("confirmations", 0), x.get("quote_volume", 0)), reverse=True)
-        if saved_items:
-            medals = ["gold", "silver", "bronze"]
-            for i, item in enumerate(saved_items[:limit]):
-                item["rank"] = i + 1
-                item["medal"] = medals[i] if i < len(medals) else None
-            result = {
-                "ok": True, "live": False, "stale": True, "market": market, "interval": interval,
-                "scanned": 0, "count": len(saved_items[:limit]), "updated_at": int(now),
-                "items": saved_items[:limit],
-                "message": "تعذر تحديث الأسعار مؤقتًا؛ نعرض الصفقات المحفوظة غير المنتهية حتى يعود المصدر."
-            }
-            SIGNAL_CACHE[key] = (now, result)
-            return result
-        # If the provider is down and no active trade exists, return a controlled
-        # empty response instead of HTTP 503; the UI can explain that data is unavailable.
+        # Never present saved entries as actionable when a fresh quote scan failed.
+        # Old entry/TP/SL levels can mislead users after the market has moved.
         return JSONResponse({"ok": True, "live": False, "stale": True, "market": market,
                              "interval": interval, "scanned": 0, "count": 0, "items": [],
                              "watch_items": [], "updated_at": int(now),
-                             "message": "مصدر الأسعار متعذر مؤقتًا ولا توجد صفقات محفوظة صالحة. لم ننشئ توصيات وهمية؛ أعد الفحص بعد قليل."})
+                             "message": "تعذر تحديث السعر الحالي؛ أخفينا الصفقات القديمة مؤقتًا حتى يتوفر سعر حديث. أعد الفحص بعد قليل."})
 
     found = []
     with ThreadPoolExecutor(max_workers=12) as pool:
@@ -2130,10 +2107,21 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             if hit:
                 record["result"] = hit
                 record["closed_at"] = int(now)
-            elif int(now) >= int(record.get("expires_at") or (record.get("created_at", int(now)) + INTERVAL_SECONDS.get(record.get("interval"), 86400))):
-                record["result"] = "انتهت المدة"
-                record["closed_at"] = int(record.get("expires_at") or now)
-                record["expiry_reason"] = "انتهت مدة الفريم"
+            else:
+                entry = record.get("entry")
+                stop = record.get("stop")
+                if isinstance(entry, (int, float)) and entry > 0 and isinstance(stop, (int, float)):
+                    # If price has drifted materially away from the saved entry without
+                    # hitting TP/SL, retire that entry instead of showing a stale setup.
+                    drift_limit = max(abs(entry - stop) * 0.5, entry * 0.001)
+                    if abs(price_now - entry) >= drift_limit:
+                        record["result"] = "انتهяла صلاحية الدخول"
+                        record["closed_at"] = int(now)
+                        record["expiry_reason"] = "تحرك السعر بعيدًا عن سعر الدخول؛ يلزم فحص جديد"
+                if record.get("result") == "مفتوحة" and int(now) >= int(record.get("expires_at") or (record.get("created_at", int(now)) + INTERVAL_SECONDS.get(record.get("interval"), 86400))):
+                    record["result"] = "انتهت المدة"
+                    record["closed_at"] = int(record.get("expires_at") or now)
+                    record["expiry_reason"] = "انتهت مدة الفريم"
         # Expired open signals are deleted after their own timeframe, not kept as stale cards.
         history = [record for record in history if record.get("result") != "انتهت المدة"]
         active_map = {
