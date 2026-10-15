@@ -1735,6 +1735,7 @@ def build_signal(market: str, ticker: dict, interval: str):
     active = list(dict.fromkeys(directional + method_hits))
     return {
         "symbol": ticker["symbol"], "side": side, "market": market, "interval": interval,
+        "leverage": "1x" if market == "futures" else None,
         "entry": entry, "stop": stop, "tp1": t1, "tp2": t2, "tp3": t3,
         "stop_pct": abs(entry-stop)/entry*100, "tp1_pct": abs(t1-entry)/entry*100,
         "tp2_pct": abs(t2-entry)/entry*100, "tp3_pct": abs(t3-entry)/entry*100,
