@@ -1848,7 +1848,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         return cached[1]
     try:
         if market in BINANCE:
-            tickers = market_tickers(market)[:max(40, limit * 3)]
+            tickers = market_tickers(market)[:max(24, limit * 2)]
         else:
             # Load the full TASI equity directory before building Saudi signals; otherwise
             # the fallback list silently limits the signal page to only a few stocks.
@@ -1870,7 +1870,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         return JSONResponse({"ok": False, "live": False, "items": [], "message": "تعذر جلب أسعار السوق الآن."}, status_code=503)
 
     found = []
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    with ThreadPoolExecutor(max_workers=12) as pool:
         jobs = [pool.submit(build_signal, market, ticker, interval) for ticker in tickers]
         for job in as_completed(jobs):
             try:
