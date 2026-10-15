@@ -19,7 +19,9 @@ from fastapi.staticfiles import StaticFiles
 BASE = Path(__file__).resolve().parent
 app = FastAPI(title="التداول الذكي PRO", version="2.1.3")
 security = HTTPBasic(auto_error=False)
-DATA_DIR = Path(os.getenv("DATA_DIR", "/tmp/smart-trading-pro-data"))
+# Persist results/articles on a mounted Northflank volume. Configure a persistent volume at /data.
+# DATA_DIR may override this path for local development or another persistent mount.
+DATA_DIR = Path(os.getenv("DATA_DIR", "/data/smart-trading-pro-data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 RESULTS_PATH = DATA_DIR / "results.json"
 # Protect the complete read-modify-write transaction across all market endpoints.
