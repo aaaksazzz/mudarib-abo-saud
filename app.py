@@ -1879,9 +1879,11 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
                     found.append(item)
             except (urllib.error.URLError, TimeoutError, ValueError, OSError, IndexError, TypeError, ZeroDivisionError):
                 continue
-    # Publish only genuinely strong candidates; never pad the board with weak signals.
-    found = [x for x in found if x.get("score", 0) >= 60 and x.get("method_count", 0) >= 4 and x.get("confirmations", 0) >= 6]
-    found.sort(key=lambda x: (x.get("method_count", 0), x["score"], x["confirmations"], x["quote_volume"]), reverse=True)
+    # Use a balanced eligibility gate so the board does not stay empty when
+    # strict high-confluence thresholds reject every otherwise valid candidate.
+    # Still require multiple independent method families and directional confirmation.
+    found = [x for x in found if x.get("score", 0) >= 50 and x.get("method_count", 0) >= 2 and x.get("confirmations", 0) >= 4]
+    found.sort(key=lambda x: (x.get("score", 0), x.get("method_count", 0), x["confirmations"], x["quote_volume"]), reverse=True)
     found = found[:3]
     medals = ["gold", "silver", "bronze"]
     for i, item in enumerate(found):
