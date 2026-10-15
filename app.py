@@ -1958,11 +1958,11 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
     # Still require multiple independent method families and directional confirmation.
     found = [x for x in found if x.get("score", 0) >= 50 and x.get("method_count", 0) >= 2 and x.get("confirmations", 0) >= 4]
     found.sort(key=lambda x: (x.get("score", 0), x.get("method_count", 0), x["confirmations"], x["quote_volume"]), reverse=True)
-    found = found[:3]
+    found = found[:limit]
     medals = ["gold", "silver", "bronze"]
     for i, item in enumerate(found):
         item["rank"] = i + 1
-        item["medal"] = medals[i]
+        item["medal"] = medals[i] if i < len(medals) else None
     new_telegram_signals = []
     with RESULTS_LOCK:
         history = prune_results()
