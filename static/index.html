@@ -124,6 +124,77 @@ p,h1,h2,h3,h4,small,strong,td,th{overflow-wrap:anywhere}
 
 /* Official channel links on homepage */
 .home-channel-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.home-channel-card{border:1px solid #2b4055;background:linear-gradient(145deg,#142238,#0d1624);border-radius:14px;padding:14px;display:grid;gap:12px}.home-channel-card>strong{font-size:14px}.home-channel-links{display:flex;gap:8px;flex-wrap:wrap}.home-channel-links a{display:inline-flex;align-items:center;justify-content:center;border:1px solid #365578;background:#192c45;border-radius:9px;padding:8px 12px;font-size:12px;font-weight:800}.home-channel-links a:hover{border-color:#6ba5ef;background:#203b5d}@media(max-width:680px){.home-channel-grid{grid-template-columns:1fr}.home-channel-card{padding:12px}}
+
+/* 2026 polish pass: presentation and usability only; trading logic is untouched */
+:root{
+ --panel-edge:#2a3b53;
+ --surface-raised:#152238;
+ --focus-ring:#f6d27c;
+}
+body{background-image:radial-gradient(ellipse at 88% -18%,#23477a55 0,transparent 36%),radial-gradient(ellipse at 0% 42%,#102a3a33 0,transparent 32%),linear-gradient(180deg,#080d18,#090f1b 65%,#080d18)}
+.top{padding:5px 0 12px;border-bottom:1px solid #1d2b3e}
+.brand .logo{box-shadow:0 0 0 1px #9bd8ff33,0 8px 28px #1b6bb344}
+.brand h1{letter-spacing:-.025em}
+.live{display:inline-flex;align-items:center;gap:7px}
+.live:before{content:"";width:7px;height:7px;flex:0 0 7px;border-radius:50%;background:#55e6ad;box-shadow:0 0 0 4px #55e6ad1b}
+.hero{position:relative;overflow:hidden;border-color:#30445f;box-shadow:0 18px 46px #0002}
+.hero:after{content:"";position:absolute;left:-65px;bottom:-120px;width:230px;height:230px;border:1px solid #4779ad20;border-radius:50%;box-shadow:0 0 0 28px #4779ad0a,0 0 0 58px #4779ad08;pointer-events:none}
+.hero h2{letter-spacing:-.035em}
+.panel{border-color:#27384e;box-shadow:0 12px 30px #00000016}
+.panel-head{gap:10px}
+.panel-head h2{letter-spacing:-.015em}
+.market-only-page>.panel-head:first-child{padding-bottom:12px;border-bottom:1px solid #25354a}
+.market-only-page .frames{padding:5px;background:#0a1320;border:1px solid #202f43;border-radius:13px}
+.market-only-page .frame{flex:0 0 auto;min-width:58px;font-weight:750}
+.frame{transition:background .16s ease,border-color .16s ease,color .16s ease}
+.frame:hover{border-color:#628bc1;color:#fff}
+.frame.active{box-shadow:inset 0 0 0 1px #8bb9ff22,0 3px 12px #2866b022}
+.home-market-row,.home-section-row{box-shadow:inset 0 1px #ffffff05;transition:transform .16s ease,border-color .16s ease,background .16s ease}
+.home-market-row:hover,.home-section-row:hover{transform:translateX(-2px);border-color:#5279a5;box-shadow:0 8px 20px #0002}
+.home-market-row .tile-icon,.home-section-row .tile-icon{box-shadow:inset 0 1px #ffffff08}
+.signal{border-color:#2b3b52;box-shadow:0 10px 26px #0002}
+.signal .sig-head{align-items:center}
+.signal .symbol{font-variant-numeric:tabular-nums;letter-spacing:.015em}
+.signal .entry{background:linear-gradient(115deg,#0a1422,#101c2d)}
+.signal .entry strong,.signal .level strong{font-variant-numeric:tabular-nums}
+.signal .level{border:1px solid #25354a;background:linear-gradient(145deg,#121e2e,#0e1725)}
+.signal .level.sl{border-color:#4c2937}
+.signal .level.tp{border-color:#21483e}
+.signal .meta b{color:#e6efff}
+.signal .score{background:#1a2a40}
+.signal .status,.signal .meta span:last-child{line-height:1.45}
+.tag,.badge{font-weight:750;letter-spacing:.005em}
+.empty{border-color:#354963;background:linear-gradient(145deg,#101c2c,#0b1421);box-shadow:inset 0 1px #ffffff05}
+.empty strong{font-size:14px}
+.empty:has(strong):has(+ .empty){margin-bottom:8px}
+.filters select,.filters input,.method-layout select,.panel select{outline-offset:2px}
+.filters select:focus-visible,.filters input:focus-visible,.panel select:focus-visible{border-color:#7caeff}
+.table-wrap table tbody tr:hover{background:#142238}
+th{white-space:nowrap}
+.footer{border-top:1px solid #1c2a3d;margin-top:10px}
+.side{border-color:#34465f;background:linear-gradient(165deg,#111c2d,#0a111d);box-shadow:0 24px 80px #000b}
+.side .side-title{font-size:10px;letter-spacing:.09em}
+.side .nav button:focus-visible,.side .nav>a:focus-visible{outline-offset:1px}
+:where(button,a,input,select,textarea){scroll-margin:12px}
+@media(max-width:680px){
+ .top{padding-bottom:10px}
+ .hero:after{width:150px;height:150px;bottom:-90px;left:-60px}
+ .market-only-page .frames{gap:5px}
+ .market-only-page .frame{flex:1 1 auto;min-width:0;padding:8px 7px;font-size:11px}
+ .signal{padding:12px;border-radius:15px}
+ .signal .sig-head{gap:6px;margin-bottom:10px;padding-bottom:9px}
+ .signal .entry strong{font-size:18px}
+ .signal .level{padding:8px 7px}
+ .signal .meta{font-size:10px}
+ .home-market-row,.home-section-row{min-height:66px;padding:10px}
+ .home-market-row:hover,.home-section-row:hover{transform:none}
+ .panel-head h2{font-size:15px}
+}
+@media(prefers-reduced-motion:reduce){
+ .home-market-row,.home-section-row,.frame{transition:none}
+ .home-market-row:hover,.home-section-row:hover{transform:none}
+}
+
 </style>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"التداول الذكي PRO","url":"https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/","inLanguage":"ar-SA","description":"منصة عربية لمتابعة الأسواق وتحليل الفرص الفنية والنتائج والأخبار والمقالات التعليمية.","potentialAction":{"@type":"SearchAction","target":"https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/?q={search_term_string}","query-input":"required name=search_term_string"}}</script>
 </head>
