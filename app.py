@@ -443,8 +443,6 @@ def home():
 
 
 # Serve the same app shell at stable, section-specific URLs so each page can be bookmarked/shared.
-@app.get("/analysis", response_class=HTMLResponse)
-@app.get("/tasi-analysis", response_class=HTMLResponse)
 @app.get("/market/{market_slug}", include_in_schema=False)
 def legacy_market_redirect(market_slug: str):
     """Keep old singular market URLs working after the site moved to /markets/."""
