@@ -849,7 +849,7 @@ METHOD_RULES = {
     "Donchian Midline Reversal": "donchian_midline", "Volatility-Adjusted Momentum": "vol_adjusted_momentum",
     "Relative Volume Climax Reversal": "relative_volume_climax", "Accumulation / Distribution Divergence": "ad_divergence",
     "Wyckoff Effort vs Result": "wyckoff_effort_result", "Failed Auction Proxy": "failed_auction",
-    "Range Liquidity Reclaim": "range_liquidity_reclaim", "Multi-Swing Fibonacci OTE": "multi_swing_ote"
+    "Range Liquidity Reclaim": "range_liquidity_reclaim", "Multi-Swing Fibonacci OTE": "multi_swing_ote",
     "Pin Bar Reversal": "pin_bar", "Engulfing Pattern": "engulfing",
     "Harami Pattern": "harami", "Three White Soldiers / Black Crows": "soldiers_crows",
     "Fakey Pattern": "fakey", "Market Structure Shift (MSS)": "mss",
