@@ -5,6 +5,7 @@ import math
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import secrets
+import threading
 import xml.etree.ElementTree as ET
 import urllib.request
 import urllib.error
@@ -21,6 +22,8 @@ security = HTTPBasic(auto_error=False)
 DATA_DIR = Path(os.getenv("DATA_DIR", "/tmp/smart-trading-pro-data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 RESULTS_PATH = DATA_DIR / "results.json"
+# Protect the complete read-modify-write transaction across all market endpoints.
+RESULTS_LOCK = threading.RLock()
 ARTICLES_PATH = DATA_DIR / "articles.json"
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
@@ -1800,58 +1803,59 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
     for i, item in enumerate(found):
         item["rank"] = i + 1
         item["medal"] = medals[i] if i < 3 else "standard"
-    history = prune_results()
-    ticker_prices = {x["symbol"]: x["price"] for x in tickers}
-    for record in history:
-        if record.get("result") != "مفتوحة" or record.get("market") != market or record.get("interval") != interval:
-            continue
-        price_now = ticker_prices.get(record.get("symbol"))
-        if not price_now:
-            continue
-        record["last_price"] = price_now
-        side = record.get("side")
-        direction = 1 if side == "BUY" else -1
-        record["pnl_pct"] = round((price_now - record["entry"]) / record["entry"] * 100 * direction, 4)
-        hit = None
-        if side == "BUY":
-            if price_now <= record["stop"]: hit = "SL"
-            elif price_now >= record["tp3"]: hit = "TP3"
-            elif price_now >= record["tp2"]: record["reached"] = "TP2"
-            elif price_now >= record["tp1"]: record["reached"] = "TP1"
-        else:
-            if price_now >= record["stop"]: hit = "SL"
-            elif price_now <= record["tp3"]: hit = "TP3"
-            elif price_now <= record["tp2"]: record["reached"] = "TP2"
-            elif price_now <= record["tp1"]: record["reached"] = "TP1"
-        if hit:
-            record["result"] = hit
-            record["closed_at"] = int(now)
-        elif int(now) >= int(record.get("expires_at") or (record.get("created_at", int(now)) + INTERVAL_SECONDS.get(record.get("interval"), 86400))):
-            record["result"] = "انتهت المدة"
-            record["closed_at"] = int(record.get("expires_at") or now)
-            record["expiry_reason"] = "انتهت مدة الفريم"
-    active_map = {
-        (x.get("market"), x.get("interval"), x.get("symbol")): x
-        for x in history if x.get("result") == "مفتوحة"
-    }
-    active_keys = set(active_map)
-    for item in found:
-        ident = (market, interval, item["symbol"])
-        existing = active_map.get(ident)
-        if existing:
-            # Preserve original expiry; rescanning must not extend a signal lifetime.
-            item["id"] = existing.get("id")
-            item["created_at"] = existing.get("created_at")
-            item["expires_at"] = existing.get("expires_at")
-            continue
-        created_at = int(now)
-        item["created_at"] = created_at
-        item["expires_at"] = created_at + INTERVAL_SECONDS[interval]
-        history.append({**item, "id": str(int(now*1000)) + "-" + item["symbol"],
-                        "last_price": ticker_prices.get(item["symbol"], item["entry"]), "result": "مفتوحة",
-                        "reached": None, "pnl_pct": 0.0})
-        active_keys.add(ident)
-    write_json_file(RESULTS_PATH, history[-1000:])
+    with RESULTS_LOCK:
+        history = prune_results()
+        ticker_prices = {x["symbol"]: x["price"] for x in tickers}
+        for record in history:
+            if record.get("result") != "مفتوحة" or record.get("market") != market or record.get("interval") != interval:
+                continue
+            price_now = ticker_prices.get(record.get("symbol"))
+            if not price_now:
+                continue
+            record["last_price"] = price_now
+            side = record.get("side")
+            direction = 1 if side == "BUY" else -1
+            record["pnl_pct"] = round((price_now - record["entry"]) / record["entry"] * 100 * direction, 4)
+            hit = None
+            if side == "BUY":
+                if price_now <= record["stop"]: hit = "SL"
+                elif price_now >= record["tp3"]: hit = "TP3"
+                elif price_now >= record["tp2"]: record["reached"] = "TP2"
+                elif price_now >= record["tp1"]: record["reached"] = "TP1"
+            else:
+                if price_now >= record["stop"]: hit = "SL"
+                elif price_now <= record["tp3"]: hit = "TP3"
+                elif price_now <= record["tp2"]: record["reached"] = "TP2"
+                elif price_now <= record["tp1"]: record["reached"] = "TP1"
+            if hit:
+                record["result"] = hit
+                record["closed_at"] = int(now)
+            elif int(now) >= int(record.get("expires_at") or (record.get("created_at", int(now)) + INTERVAL_SECONDS.get(record.get("interval"), 86400))):
+                record["result"] = "انتهت المدة"
+                record["closed_at"] = int(record.get("expires_at") or now)
+                record["expiry_reason"] = "انتهت مدة الفريم"
+        active_map = {
+            (x.get("market"), x.get("interval"), x.get("symbol")): x
+            for x in history if x.get("result") == "مفتوحة"
+        }
+        active_keys = set(active_map)
+        for item in found:
+            ident = (market, interval, item["symbol"])
+            existing = active_map.get(ident)
+            if existing:
+                # Preserve original expiry; rescanning must not extend a signal lifetime.
+                item["id"] = existing.get("id")
+                item["created_at"] = existing.get("created_at")
+                item["expires_at"] = existing.get("expires_at")
+                continue
+            created_at = int(now)
+            item["created_at"] = created_at
+            item["expires_at"] = created_at + INTERVAL_SECONDS[interval]
+            history.append({**item, "id": str(int(now*1000)) + "-" + item["symbol"],
+                            "last_price": ticker_prices.get(item["symbol"], item["entry"]), "result": "مفتوحة",
+                            "reached": None, "pnl_pct": 0.0})
+            active_keys.add(ident)
+        write_json_file(RESULTS_PATH, history[-1000:])
     result = {"ok": True, "live": True, "market": market, "interval": interval,
               "scanned": len(tickers), "count": len(found), "updated_at": int(now),
               "items": found[:limit], "message": "الدخول والوقف والأهداف محسوبة من شموع Binance وATR. سجل النتائج يعتمد على السعر المرصود عند تحديث الخدمة، وليس سجل تداول لحظي كاملًا؛ لا توجد نسبة ربح تاريخية موثقة."}
@@ -1889,44 +1893,45 @@ def write_json_file(path, data):
 
 def prune_results(max_age_seconds=86400):
     """Keep open signals for their timeframe; retain closed results for 24 hours."""
-    now = int(time.time())
-    items = read_json_file(RESULTS_PATH, [])
-    fresh = []
-    changed = False
-    for item in items:
-        if not isinstance(item, dict) or not isinstance(item.get("created_at"), (int, float)):
-            continue
-        created_at = int(item["created_at"])
-        if created_at > now:
-            continue
-        if item.get("result") == "مفتوحة":
-            duration = INTERVAL_SECONDS.get(item.get("interval"), max_age_seconds)
-            expires_at = item.get("expires_at")
-            if not isinstance(expires_at, (int, float)):
-                expires_at = created_at + duration
-                item["expires_at"] = int(expires_at)
-                changed = True
-            expires_at = int(expires_at)
-            if now >= expires_at:
-                item["result"] = "انتهت المدة"
-                changed = True
-                item["closed_at"] = expires_at
-                item["expiry_reason"] = "انتهت مدة الفريم"
-                item["pnl_pct"] = item.get("pnl_pct", 0.0)
-                if now - expires_at <= max_age_seconds:
+    with RESULTS_LOCK:
+        now = int(time.time())
+        items = read_json_file(RESULTS_PATH, [])
+        fresh = []
+        changed = False
+        for item in items:
+            if not isinstance(item, dict) or not isinstance(item.get("created_at"), (int, float)):
+                continue
+            created_at = int(item["created_at"])
+            if created_at > now:
+                continue
+            if item.get("result") == "مفتوحة":
+                duration = INTERVAL_SECONDS.get(item.get("interval"), max_age_seconds)
+                expires_at = item.get("expires_at")
+                if not isinstance(expires_at, (int, float)):
+                    expires_at = created_at + duration
+                    item["expires_at"] = int(expires_at)
+                    changed = True
+                expires_at = int(expires_at)
+                if now >= expires_at:
+                    item["result"] = "انتهت المدة"
+                    changed = True
+                    item["closed_at"] = expires_at
+                    item["expiry_reason"] = "انتهت مدة الفريم"
+                    item["pnl_pct"] = item.get("pnl_pct", 0.0)
+                    if now - expires_at <= max_age_seconds:
+                        fresh.append(item)
+                else:
                     fresh.append(item)
-            else:
+                continue
+            closed_at = item.get("closed_at")
+            retention_anchor = int(closed_at) if isinstance(closed_at, (int, float)) else created_at
+            if 0 <= now - retention_anchor <= max_age_seconds:
                 fresh.append(item)
-            continue
-        closed_at = item.get("closed_at")
-        retention_anchor = int(closed_at) if isinstance(closed_at, (int, float)) else created_at
-        if 0 <= now - retention_anchor <= max_age_seconds:
-            fresh.append(item)
-    if len(fresh) != len(items):
-        changed = True
-    if changed:
-        write_json_file(RESULTS_PATH, fresh[-1000:])
-    return fresh[-1000:]
+        if len(fresh) != len(items):
+            changed = True
+        if changed:
+            write_json_file(RESULTS_PATH, fresh[-1000:])
+        return fresh[-1000:]
 
 
 def require_admin(credentials: HTTPBasicCredentials = None):
