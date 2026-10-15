@@ -1936,12 +1936,17 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     if isinstance(persisted, dict):
         cached_at = int(persisted.get("_cached_at") or 0)
         cached_result = persisted.get("result")
-        if cached_at and now - cached_at < 180 and isinstance(cached_result, dict) and cached_result.get("items"):
+        if cached_at and now - cached_at < 180 and isinstance(cached_result, dict):
+            # Reuse even an empty completed scan briefly; otherwise an empty result
+            # triggers another expensive full scan on every refresh.
             restored = dict(cached_result)
             restored["cached"] = True
             restored["live"] = False
             restored["stale"] = True
-            restored["message"] = "نعرض آخر فحص محفوظ لتجنب إعادة البحث المتكرر؛ قد تتأخر الأسعار حتى اكتمال التحديث التالي."
+            if restored.get("items") or restored.get("watch_items"):
+                restored["message"] = "نعرض آخر فحص محفوظ لتجنب إعادة البحث المتكرر؛ قد تتأخر الأسعار حتى اكتمال التحديث التالي."
+            else:
+                restored["message"] = "آخر فحص مكتمل لم يجد فرصًا مستوفية؛ نعيد الفحص بعد انتهاء التخزين المؤقت بدل تكرار الطلبات."
             SIGNAL_CACHE[key] = (now, restored)
             return restored
     try:
@@ -1995,7 +2000,12 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             }
             SIGNAL_CACHE[key] = (now, result)
             return result
-        return JSONResponse({"ok": False, "live": False, "items": [], "message": "تعذر جلب أسعار السوق الآن ولا توجد صفقات محفوظة صالحة."}, status_code=503)
+        # If the provider is down and no active trade exists, return a controlled
+        # empty response instead of HTTP 503; the UI can explain that data is unavailable.
+        return JSONResponse({"ok": True, "live": False, "stale": True, "market": market,
+                             "interval": interval, "scanned": 0, "count": 0, "items": [],
+                             "watch_items": [], "updated_at": int(now),
+                             "message": "مصدر الأسعار متعذر مؤقتًا ولا توجد صفقات محفوظة صالحة. لم ننشئ توصيات وهمية؛ أعد الفحص بعد قليل."})
 
     found = []
     with ThreadPoolExecutor(max_workers=12) as pool:
