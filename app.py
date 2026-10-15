@@ -1723,7 +1723,9 @@ def candle_data(market: str, symbol: str, interval: str):
 
 
 def telegram_send_signal(signal: dict) -> bool:
-    """Send a newly created high-confluence signal to the configured Telegram channel."""
+    """Telegram notifications stay disabled unless explicitly enabled in service settings."""
+    if os.getenv("ENABLE_TELEGRAM_SIGNALS", "false").strip().lower() not in ("1", "true", "yes", "on"):
+        return False
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
     if not token or not chat_id:
@@ -1918,7 +1920,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         return cached[1]
     try:
         if market in BINANCE:
-            tickers = market_tickers(market)[:max(24, limit * 2)]
+            tickers = market_tickers(market)[:max(80, limit * 8)]
         else:
             # Load the full TASI equity directory before building Saudi signals; otherwise
             # the fallback list silently limits the signal page to only a few stocks.
