@@ -272,7 +272,7 @@ FUTURES_CRYPTO_UNIVERSE_CACHE = {"at": 0, "symbols": None}
 
 
 def futures_crypto_symbols():
-    """Return only live USDT crypto perpetuals, excluding Binance TradFi/equity contracts."""
+    """Return all live USDT perpetual symbols from Binance without filtering by underlyingType."""
     now = time.time()
     cached = FUTURES_CRYPTO_UNIVERSE_CACHE
     if cached["symbols"] is not None and now - cached["at"] < 900:
@@ -287,15 +287,14 @@ def futures_crypto_symbols():
             if (item.get("status") == "TRADING"
                     and item.get("contractType") == "PERPETUAL"
                     and item.get("quoteAsset") == "USDT"
-                    and symbol.endswith("USDT")
-                    and item.get("underlyingType", "COIN") != "EQUITY"):
+                    and symbol.endswith("USDT")):
                 symbols.add(symbol)
         if symbols:
             FUTURES_CRYPTO_UNIVERSE_CACHE.update({"at": now, "symbols": symbols})
             return symbols
     except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError):
         pass
-    # Fail closed: never label an unverified TradFi contract as a crypto perpetual.
+    # If exchange metadata is temporarily unavailable, reuse the last known universe.
     return cached["symbols"] if cached["symbols"] else set()
 
 
