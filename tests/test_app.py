@@ -158,3 +158,17 @@ def test_signal_timeframe_durations_are_defined():
         "1M": 2592000,
     }
 
+def test_crypto_signal_side_matches_market_direction(monkeypatch):
+    import app as app_module
+
+    monkeypatch.setattr(app_module, "market_direction", lambda market: {
+        "direction_source": "prices", "direction": "BULLISH"
+    })
+    app_module._CRYPTO_SIGNAL_BIAS_CACHE.update({"at": 0.0, "side": None})
+    assert app_module.crypto_signal_side() == "BUY"
+
+    monkeypatch.setattr(app_module, "market_direction", lambda market: {
+        "direction_source": "breadth", "direction": "BEARISH"
+    })
+    app_module._CRYPTO_SIGNAL_BIAS_CACHE.update({"at": 0.0, "side": None})
+    assert app_module.crypto_signal_side() == "SELL"
