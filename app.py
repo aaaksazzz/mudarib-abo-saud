@@ -2118,6 +2118,8 @@ def saved_signal_cards(market: str, interval: str = Query("15m"), limit: int = Q
             and record.get("result") == "مفتوحة"
             and record.get("market") == market
             and record.get("interval") == interval
+            and record.get("medal") in ("gold", "silver", "bronze")
+            and record.get("signal_tier") in ("ذهبية", "فضية", "برونزية")
             and int(record.get("expires_at") or (
                 int(record.get("created_at") or now) + INTERVAL_SECONDS.get(interval, 86400)
             )) > now
@@ -2186,10 +2188,13 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 expiry = item.get("expires_at")
                 if not isinstance(expiry, (int, float)):
                     expiry = created_at + INTERVAL_SECONDS.get(item.get("interval"), 86400)
-                if int(expiry) > int(now):
+                if (int(expiry) > int(now)
+                        and item.get("medal") in ("gold", "silver", "bronze")
+                        and item.get("signal_tier") in ("ذهبية", "فضية", "برونزية")):
                     active_items.append(item)
             restored["items"] = active_items
             restored["count"] = len(active_items)
+            restored["watch_items"] = []
             restored["cached"] = True
             restored["live"] = False
             restored["stale"] = True
