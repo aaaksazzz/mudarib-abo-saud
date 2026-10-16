@@ -3091,10 +3091,13 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
                         continue
                 except (TypeError, ValueError, OverflowError):
                     continue
-                # Require publisher metadata and a valid publication date; do not invent a source.
-                if not item.get("source") or not item.get("url") or not item.get("published"):
+                # Strict verification gate: require publisher URL and a substantive RSS summary.
+                # If the feed cannot provide evidence beyond a headline, do not publish the item.
+                if (not item.get("source") or not item.get("url") or not item.get("published")
+                        or not item.get("source_url", "").startswith(("http://", "https://"))
+                        or len(item.get("summary", "")) < 30):
                     continue
-                # A title alone is not enough: use the RSS summary when available.
+                # Classify only after source metadata, date, and article summary are present.
                 item["assets"] = []
                 item["asset_labels"] = [item["category"]]
                 item["source_verified"] = bool(item.get("source_url", "").startswith(("http://", "https://")))
