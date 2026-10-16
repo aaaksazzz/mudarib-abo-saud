@@ -2900,16 +2900,22 @@ def universe_counts():
     return {"ok": True, **counts, "filters": "Binance USDT pairs with 24h quote volume >= $1M; excludes configured stablecoins",
             "stock_symbols": YAHOO_MARKETS["us"] + YAHOO_MARKETS["saudi"]}
 
-def _news_direction(title):
-    t = title.lower()
-    buy_words = ("يرتفع", "ارتفاع", "صعود", "يقفز", "مكاسب", "شراء", "إيجابي", "نمو قوي", "اختراق صاعد", "surge", "rally", "gains", "bullish", "upgrade", "beat estimates", "record high", "jumps", "soars")
-    sell_words = ("يهبط", "هبوط", "تراجع", "انخفاض", "خسائر", "بيع", "سلبي", "انهيار", "هبوط حاد", "falls", "drop", "decline", "losses", "bearish", "downgrade", "misses estimates", "sell-off", "plunges", "slumps")
+def _news_direction(title, summary=""):
+    # Classify the combined headline and RSS summary, not the headline alone.
+    # Conflicting language and speculation remain unclear rather than being forced into BUY/SELL.
+    import re
+    t = re.sub(r"\\s+", " ", f"{title or ''} {summary or ''}".lower()).strip()
+    speculative = ("هل ", "هل يمكن", "قد ", "ربما", "يتوقع", "توقعات", "تساؤلات", "what if", "could ", "may ", "might ", "forecast", "expects", "predicts", "outlook")
+    if any(w in t for w in speculative) and not any(w in t for w in ("أكد", "أكدت", "أعلن", "أعلنت", "ارتفع فعليًا", "انخفض فعليًا")):
+        return {"direction": "UNCLEAR", "direction_ar": "توقع أو سؤال — لا يؤكد حركة السوق"}
+    buy_words = ("يرتفع", "ارتفاع", "صعود", "يقفز", "مكاسب", "شراء", "إيجابي", "نمو قوي", "اختراق صاعد", "تعافى", "يتعافى", "surge", "rally", "gains", "bullish", "upgrade", "beat estimates", "record high", "jumps", "soars", "recovers", "rebound")
+    sell_words = ("يهبط", "هبوط", "تراجع", "انخفاض", "خسائر", "بيع", "سلبي", "انهيار", "هبوط حاد", "يتراجع دون", "falls", "drop", "decline", "losses", "bearish", "downgrade", "misses estimates", "sell-off", "plunges", "slumps", "sinks")
     buy, sell = any(w in t for w in buy_words), any(w in t for w in sell_words)
     if buy and not sell:
-        return {"direction": "BUY", "direction_ar": "توجه صاعد / شراء محتمل"}
+        return {"direction": "BUY", "direction_ar": "أثر إيجابي محتمل — يلزم قراءة الخبر الأصلي"}
     if sell and not buy:
-        return {"direction": "SELL", "direction_ar": "توجه هابط / بيع محتمل"}
-    return {"direction": "UNCLEAR", "direction_ar": "غير واضح — الخبر وحده لا يحدد شراء أو بيع"}
+        return {"direction": "SELL", "direction_ar": "أثر سلبي محتمل — يلزم قراءة الخبر الأصلي"}
+    return {"direction": "UNCLEAR", "direction_ar": "غير واضح أو متعارض — لم يُصنّف"}
 
 @app.get("/api/news")
 def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all"), refresh: bool = Query(False)):
@@ -3037,9 +3043,16 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
                 title = (node.findtext("title") or "").strip()
                 link = (node.findtext("link") or "").strip()
                 pub = (node.findtext("pubDate") or "").strip()
-                source = node.findtext("source") or "Google News"
-                if title and link:
-                    found.append({"title": title, "url": link, "published": pub, "source": source, "category": label})
+                source_node = node.find("source")
+                source = (source_node.text or "").strip() if source_node is not None else ""
+                source_url = (source_node.get("url") or "").strip() if source_node is not None else ""
+                description = (node.findtext("description") or "").strip()
+                # Strip RSS HTML markup before using the summary for validation/classification.
+                description = re.sub(r"<[^>]+>", " ", description)
+                description = re.sub(r"\\s+", " ", description).strip()
+                if title and link and source and source.lower() not in {"google news", "أخبار google"}:
+                    found.append({"title": title, "url": link, "published": pub, "source": source,
+                                  "source_url": source_url, "summary": description, "category": label})
         except (urllib.error.URLError, TimeoutError, OSError, ET.ParseError, ValueError):
             pass
         return found
@@ -3078,14 +3091,30 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
                         continue
                 except (TypeError, ValueError, OverflowError):
                     continue
-                # Only show clearly positive or negative sector headlines.
+                # Require publisher metadata and a valid publication date; do not invent a source.
+                if not item.get("source") or not item.get("url") or not item.get("published"):
+                    continue
+                # A title alone is not enough: use the RSS summary when available.
                 item["assets"] = []
                 item["asset_labels"] = [item["category"]]
-                item.update(_news_direction(item["title"]))
+                item["source_verified"] = bool(item.get("source_url", "").startswith(("http://", "https://")))
+                item["verification_status"] = "publisher_feed_metadata" if item["source_verified"] else "feed_metadata_only"
+                item.update(_news_direction(item["title"], item.get("summary", "")))
+                # Keep the existing positive/negative-only news view; uncertain headlines are rejected.
                 if item["direction"] not in ("BUY", "SELL"):
                     continue
+                item["_published_ts"] = published_dt.timestamp()
                 items.append(item)
-    items.sort(key=lambda x: x["published"], reverse=True)
+    # Deduplicate by normalized headline as well as URL; RSS feeds often repeat the same story.
+    deduped, seen_titles = [], set()
+    for item in sorted(items, key=lambda x: x.get("_published_ts", 0), reverse=True):
+        normalized = re.sub(r"[^a-z0-9\\u0600-\\u06ff]+", "", item["title"].lower())
+        if normalized in seen_titles:
+            continue
+        seen_titles.add(normalized)
+        item.pop("_published_ts", None)
+        deduped.append(item)
+    items = deduped
     if not items and cached and cached.get("items"):
         return {"ok": True, "live": True, "items": cached["items"][:limit], "cached": True, "stale": True, "market": market, "universe": counts,
                 "message": "مصدر الأخبار تأخر؛ نعرض آخر أخبار محفوظة مؤقتًا."}
