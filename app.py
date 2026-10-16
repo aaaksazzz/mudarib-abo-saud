@@ -1853,6 +1853,9 @@ def method_filter(market: str, method: str = Query(...), interval: str = Query("
     def analyze(ticker):
         try:
             candles = candle_data(market, ticker["symbol"], interval)
+            # Each manual method scan also feeds the independent all-method research ledger.
+            if len(candles) >= 30:
+                record_method_candidates(market, ticker, interval, candles)
             return method_signal(candles, ticker, method_key)
         except (urllib.error.URLError, TimeoutError, ValueError, OSError, IndexError, TypeError, ZeroDivisionError):
             return None
