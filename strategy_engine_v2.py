@@ -48,8 +48,8 @@ def evaluate_v2(
         "risk_per_trade_pct": min(max(float(risk_per_trade_pct), 0.1), 0.5),
         "reasons": []
     }
-    if len(candles) < 220 or len(higher_candles) < 220:
-        result["reasons"] = ["بيانات مغلقة غير كافية على الفريمين"]
+    if len(candles) < 220 or len(higher_candles) < 50:
+        result["reasons"] = ["بيانات مغلقة غير كافية: نحتاج 220 شمعة للفريم الحالي و50 للأعلى"]
         return result
     try:
         close = [float(x["close"]) for x in candles]
@@ -71,8 +71,11 @@ def evaluate_v2(
 
     e20, e50, e200 = _ema(close, 20), _ema(close, 50), _ema(close, 200)
     he50, he200 = _ema(hclose, 50), _ema(hclose, 200)
+    # Fall back to a 50-period higher-timeframe trend when 200 candles are unavailable.
+    higher_trend_up = (hclose[-1] > he200[-1] and he50[-1] > he200[-1]) if he200 else hclose[-1] > he50[-1]
+    higher_trend_down = (hclose[-1] < he200[-1] and he50[-1] < he200[-1]) if he200 else hclose[-1] < he50[-1]
     atr = _atr(candles)
-    if not all((e20, e50, e200, he50, he200, atr)):
+    if not all((e20, e50, e200, he50, atr)):
         result["reasons"] = ["تعذر حساب الاتجاه أو التذبذب"]
         return result
 
@@ -89,18 +92,20 @@ def evaluate_v2(
     bullish_reclaim = last_low < prior_low and px > prior_low and px > last_open
     bearish_reclaim = last_high > prior_high and px < prior_high and px < last_open
 
-    long_trend = px > e200[-1] and e50[-1] > e200[-1] and hclose[-1] > he200[-1] and he50[-1] > he200[-1]
-    short_trend = px < e200[-1] and e50[-1] < e200[-1] and hclose[-1] < he200[-1] and he50[-1] < he200[-1]
+    long_trend = px > e200[-1] and e50[-1] > e200[-1] and higher_trend_up
+    short_trend = px < e200[-1] and e50[-1] < e200[-1] and higher_trend_down
     momentum_long = e20[-1] > e50[-1]
     momentum_short = e20[-1] < e50[-1]
 
     candidates = []
-    if long_trend and momentum_long and bullish_reclaim:
+    bullish_breakout = px > prior_high and px > last_open
+    bearish_breakout = px < prior_low and px < last_open
+    if long_trend and momentum_long and (bullish_reclaim or bullish_breakout):
         score = 4 + int(vol_confirm)
-        candidates.append(("BUY", score, ["اتجاه الفريمين صاعد", "سحب سيولة أسفل قاع سابق ثم استعادة المستوى", "زخم السعر مؤيد"] + (["حجم التداول مؤكد"] if vol_confirm else [])))
-    if short_trend and momentum_short and bearish_reclaim:
+        candidates.append(("BUY", score, ["اتجاه الفريمين صاعد", "استعادة قاع سابق" if bullish_reclaim else "اختراق قمة النطاق بإغلاق صاعد", "زخم السعر مؤيد"] + (["حجم التداول مؤكد"] if vol_confirm else [])))
+    if short_trend and momentum_short and (bearish_reclaim or bearish_breakout):
         score = 4 + int(vol_confirm)
-        candidates.append(("SELL", score, ["اتجاه الفريمين هابط", "سحب سيولة أعلى قمة سابقة ثم فقدان المستوى", "زخم السعر مؤيد"] + (["حجم التداول مؤكد"] if vol_confirm else [])))
+        candidates.append(("SELL", score, ["اتجاه الفريمين هابط", "فشل اختراق قمة سابقة" if bearish_reclaim else "كسر قاع النطاق بإغلاق هابط", "زخم السعر مؤيد"] + (["حجم التداول مؤكد"] if vol_confirm else [])))
     if len(candidates) != 1:
         result["reasons"] = ["لا يوجد توافق فريد بين الاتجاه وسحب السيولة والإغلاق؛ انتظار"]
         return result
