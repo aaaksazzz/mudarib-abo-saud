@@ -2176,7 +2176,7 @@ def crypto_signal_side():
             snapshot = market_direction("crypto")
             source = snapshot.get("direction_source")
             direction = snapshot.get("direction")
-            side = ("SELL" if direction == "BULLISH" else "BUY") if source in ("prices", "breadth", "coin_prices", "coin_breadth") and direction in ("BULLISH", "BEARISH") else None
+            side = ("BUY" if direction == "BULLISH" else "SELL") if source in ("prices", "breadth", "coin_prices", "coin_breadth") and direction in ("BULLISH", "BEARISH") else None
         except Exception:
             side = None
         _CRYPTO_SIGNAL_BIAS_CACHE.update({"at": now, "side": side})
