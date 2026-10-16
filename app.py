@@ -2194,11 +2194,6 @@ def saved_signal_cards(market: str, interval: str = Query("15m"), limit: int = Q
     if interval not in INTERVALS:
         return JSONResponse({"ok": False, "market": market, "interval": interval, "items": [],
                              "message": "الفريم غير مدعوم."}, status_code=422)
-    allowed_side = crypto_signal_side() if market in CRYPTO_SIGNAL_MARKETS else None
-    if market in CRYPTO_SIGNAL_MARKETS and allowed_side is None:
-        return {"ok": True, "live": False, "saved": True, "market": market, "interval": interval,
-                "count": 0, "items": [], "updated_at": int(time.time()),
-                "message": "اتجاه العملات الرقمية غير مؤكد من الأسعار حاليًا؛ أُخفيت الصفقات حتى تتوفر بيانات اتجاه موثوقة."}
     now = int(time.time())
     with RESULTS_LOCK:
         history = prune_results()
@@ -2208,7 +2203,6 @@ def saved_signal_cards(market: str, interval: str = Query("15m"), limit: int = Q
             and record.get("result") == "مفتوحة"
             and record.get("market") == market
             and record.get("interval") == interval
-            and (market not in CRYPTO_SIGNAL_MARKETS or record.get("side") == allowed_side)
             and record.get("medal") in ("gold", "silver", "bronze")
             and record.get("signal_tier") in ("ذهبية", "فضية", "برونزية")
             and int(record.get("expires_at") or (
@@ -2316,11 +2310,6 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                              "message": "مصدر هذا السوق غير مربوط؛ لا يمكن إنشاء صفقات فعلية."})
     if interval not in INTERVALS:
         return JSONResponse({"ok": False, "live": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
-    allowed_side = crypto_signal_side() if market in CRYPTO_SIGNAL_MARKETS else None
-    if market in CRYPTO_SIGNAL_MARKETS and allowed_side is None:
-        return {"ok": True, "live": False, "market": market, "interval": interval,
-                "scanned": 0, "count": 0, "items": [], "watch_items": [], "updated_at": int(time.time()),
-                "message": "اتجاه العملات الرقمية غير مؤكد من الأسعار حاليًا؛ لا نعرض شراء أو بيع حتى تتوفر بيانات موثوقة."}
     key = (market, interval, limit)
     now = time.time()
     cached = SIGNAL_CACHE.get(key)
@@ -2337,8 +2326,6 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             if not isinstance(expiry, (int, float)):
                 expiry = created_at + INTERVAL_SECONDS.get(item.get("interval"), 86400)
             if int(expiry) > int(now):
-                if market in CRYPTO_SIGNAL_MARKETS and item.get("side") != allowed_side:
-                    continue
                 if market == "futures" and (not allowed_futures_symbols or item.get("symbol") not in allowed_futures_symbols):
                     continue
                 active_items.append(item)
@@ -2369,7 +2356,6 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 if not isinstance(expiry, (int, float)):
                     expiry = created_at + INTERVAL_SECONDS.get(item.get("interval"), 86400)
                 if (int(expiry) > int(now)
-                        and (market not in CRYPTO_SIGNAL_MARKETS or item.get("side") == allowed_side)
                         and item.get("medal") in ("gold", "silver", "bronze")
                         and item.get("signal_tier") in ("ذهبية", "فضية", "برونزية")):
                     if market == "futures":
@@ -2466,10 +2452,9 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                     found.append(item)
             except (urllib.error.URLError, TimeoutError, ValueError, OSError, IndexError, TypeError, ZeroDivisionError):
                 continue
-    # Broad crypto price/breadth direction is a hard side filter for Spot,
-    # Futures and Alpha. News never overrides this filter.
-    if market in CRYPTO_SIGNAL_MARKETS:
-        found = [item for item in found if item.get("side") == allowed_side]
+    # Broad-market direction is context, not a hard side filter. Each asset must
+    # pass its own trend, structure, risk and quality checks; valid countertrend
+    # setups are not hidden solely because overall market breadth points one way.
     # Publish only high-confluence trades in three quality tiers; discard weak candidates.
     # Historical outcomes adjust ranking, but a medal is awarded only when explicit quality
     # thresholds are met. This is a filter, not a promise of profitability.
@@ -2597,7 +2582,6 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             and record.get("market") == market
             and record.get("interval") == interval
             and int(record.get("expires_at") or 0) > int(now)
-            and (market not in CRYPTO_SIGNAL_MARKETS or record.get("side") == allowed_side)
         ]
     # Only keep saved trades that passed the gold/silver/bronze quality gate.
     display_items = [x for x in display_items if x.get("medal") in ("gold", "silver", "bronze")
@@ -2612,7 +2596,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     result = {"ok": True, "live": True, "market": market, "interval": interval,
               "scanned": len(tickers), "count": len(display_items[:limit]), "updated_at": int(now),
               "items": display_items[:limit], "watch_items": [],
-              "message": ("اتجاه العملات الرقمية صاعد؛ نعرض صفقات الشراء فقط بعد اجتياز شروط الجودة." if market in CRYPTO_SIGNAL_MARKETS and allowed_side == "BUY" else "اتجاه العملات الرقمية هابط؛ نعرض صفقات البيع فقط بعد اجتياز شروط الجودة." if market in CRYPTO_SIGNAL_MARKETS and allowed_side == "SELL" else "تُعرض فقط الصفقات التي اجتازت شروط الذهبي والفضي والبرونزي؛ قد لا تظهر صفقات إذا لم تتحقق الجودة المطلوبة.")}
+              "message": ("كل عملة تُقيّم بشكل مستقل؛ اتجاه السوق العام عامل سياقي وليس منعًا تلقائيًا للشراء أو البيع. تُعرض فقط الصفقات التي اجتازت شروط الجودة." if market in CRYPTO_SIGNAL_MARKETS else "تُعرض فقط الصفقات التي اجتازت شروط الذهبي والفضي والبرونزي؛ قد لا تظهر صفقات إذا لم تتحقق الجودة المطلوبة.")}
     SIGNAL_CACHE[key] = (now, result)
     with RESULTS_LOCK:
         persisted_scans = read_json_file(SIGNALS_CACHE_PATH, {})
