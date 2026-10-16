@@ -118,6 +118,7 @@ if not PERSISTENT_STORAGE_CONFIGURED:
 RESULTS_PATH = DATA_DIR / "results.json"
 SIGNALS_CACHE_PATH = DATA_DIR / "signals-cache.json"
 STRATEGY_LEARNING_PATH = DATA_DIR / "strategy-learning.json"
+METHOD_RESULTS_PATH = DATA_DIR / "method-results.json"
 # Protect the complete read-modify-write transaction across all market endpoints.
 RESULTS_LOCK = threading.RLock()
 ARTICLES_PATH = DATA_DIR / "articles.json"
@@ -2004,8 +2005,174 @@ def telegram_status():
             "message": "Telegram notification settings are configured." if configured else "Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in the service environment."}
 
 
+def record_method_candidates(market: str, ticker: dict, interval: str, candles):
+    """Evaluate and persist each method's independent entry/stop/target setup."""
+    candidates = []
+    if not isinstance(candles, list) or len(candles) < 30:
+        return candidates
+    for method_name, method_key in METHOD_RULES.items():
+        if method_key in METHOD_AUXILIARY_DATA_REQUIRED or method_key in METHOD_RISK_ONLY_KEYS:
+            continue
+        try:
+            candidate = method_signal(candles, ticker, method_key)
+        except (ValueError, TypeError, IndexError, ZeroDivisionError, OverflowError):
+            candidate = None
+        if not isinstance(candidate, dict) or candidate.get("side") not in ("BUY", "SELL"):
+            continue
+        try:
+            entry, stop = float(candidate["entry"]), float(candidate["stop"])
+            targets = [float(candidate[k]) for k in ("tp1", "tp2", "tp3")]
+            if not all(math.isfinite(v) and v > 0 for v in [entry, stop, *targets]) or entry == stop:
+                continue
+            if candidate["side"] == "BUY" and not (stop < entry < targets[0] < targets[1] < targets[2]):
+                continue
+            if candidate["side"] == "SELL" and not (targets[2] < targets[1] < targets[0] < entry < stop):
+                continue
+        except (KeyError, TypeError, ValueError):
+            continue
+        candidates.append((method_name, method_key, candidate))
+    if not candidates:
+        return candidates
+    now = int(time.time())
+    duration = INTERVAL_SECONDS.get(interval, 86400)
+    with RESULTS_LOCK:
+        records = read_json_file(METHOD_RESULTS_PATH, [])
+        if not isinstance(records, list):
+            records = []
+        recent_keys = {
+            (r.get("market"), r.get("interval"), r.get("symbol"), r.get("method_key"))
+            for r in records if isinstance(r, dict)
+            and now - int(r.get("created_at") or 0) < duration
+        }
+        for method_name, method_key, candidate in candidates:
+            ident = (market, interval, ticker.get("symbol"), method_key)
+            if ident in recent_keys:
+                continue
+            entry = float(candidate["entry"])
+            record = {
+                "id": f"{market}|{interval}|{ticker.get('symbol')}|{method_key}|{now}",
+                "record_type": "method_test", "market": market, "interval": interval,
+                "symbol": ticker.get("symbol"), "side": candidate["side"],
+                "method": method_name, "method_key": method_key,
+                "entry": entry, "stop": float(candidate["stop"]),
+                "tp1": float(candidate["tp1"]), "tp2": float(candidate["tp2"]),
+                "tp3": float(candidate["tp3"]), "score": candidate.get("score", 0),
+                "created_at": now, "expires_at": now + duration,
+                "last_price": float(ticker.get("price") or entry),
+                "result": "مفتوحة", "pnl_pct": 0.0,
+                "estimated_round_trip_cost_pct": 0.20,
+                "score_type": "rule_evidence_not_probability",
+            }
+            records.append(record)
+            recent_keys.add(ident)
+        write_json_file(METHOD_RESULTS_PATH, records[-20000:])
+    return candidates
+
+
+def refresh_method_test_results(market: str, interval: str, ticker_prices: dict, now: int):
+    """Update independent method-test outcomes without mixing them into live signal history."""
+    with RESULTS_LOCK:
+        records = read_json_file(METHOD_RESULTS_PATH, [])
+        if not isinstance(records, list):
+            return []
+        changed = False
+        for record in records:
+            if (not isinstance(record, dict) or record.get("result") != "مفتوحة"
+                    or record.get("market") != market or record.get("interval") != interval):
+                continue
+            price_now = ticker_prices.get(record.get("symbol"))
+            if not isinstance(price_now, (int, float)) or price_now <= 0:
+                continue
+            entry, stop = float(record["entry"]), float(record["stop"])
+            side = record.get("side")
+            direction = 1 if side == "BUY" else -1
+            cost = max(0.0, float(record.get("estimated_round_trip_cost_pct") or 0.20))
+            record["last_price"] = float(price_now)
+            record["last_price_updated_at"] = now
+            record["pnl_pct"] = round(((float(price_now) - entry) / entry * 100 * direction) - cost, 4)
+            hit = None
+            if side == "BUY":
+                if price_now <= stop: hit = "SL"
+                elif price_now >= float(record["tp3"]): hit = "TP3"
+                elif price_now >= float(record["tp2"]): hit = "TP2"
+                elif price_now >= float(record["tp1"]): hit = "TP1"
+            else:
+                if price_now >= stop: hit = "SL"
+                elif price_now <= float(record["tp3"]): hit = "TP3"
+                elif price_now <= float(record["tp2"]): hit = "TP2"
+                elif price_now <= float(record["tp1"]): hit = "TP1"
+            if hit:
+                record["result"] = hit
+                record["closed_at"] = now
+                target = stop if hit == "SL" else float(record[hit.lower()])
+                record["pnl_pct"] = round(((target - entry) / entry * 100 * direction) - cost, 4)
+            elif now >= int(record.get("expires_at") or 0):
+                record["result"] = "انتهت المدة"
+                record["closed_at"] = int(record.get("expires_at") or now)
+            changed = True
+        # Keep a bounded long-lived research history; it is separate from 24-hour signal cards.
+        cutoff = now - 180 * 86400
+        trimmed = [r for r in records if isinstance(r, dict) and int(r.get("created_at") or 0) >= cutoff]
+        if len(trimmed) != len(records):
+            changed = True
+        if changed:
+            write_json_file(METHOD_RESULTS_PATH, trimmed[-20000:])
+        return trimmed[-20000:]
+
+
+@app.get("/api/method-performance")
+def method_performance(market: str = Query("all"), interval: str = Query("all"),
+                       limit: int = Query(200, ge=1, le=300)):
+    """Rank independent method tests by net outcomes; small samples remain provisional."""
+    records = read_json_file(METHOD_RESULTS_PATH, [])
+    if not isinstance(records, list):
+        records = []
+    valid_closed = {"TP1", "TP2", "TP3", "SL", "انتهت المدة"}
+    grouped = {}
+    for record in records:
+        if not isinstance(record, dict) or record.get("record_type") != "method_test":
+            continue
+        if market != "all" and record.get("market") != market:
+            continue
+        if interval != "all" and record.get("interval") != interval:
+            continue
+        key = (record.get("method_key"), record.get("method"), record.get("market"), record.get("interval"))
+        item = grouped.setdefault(key, {"method_key": key[0], "method": key[1], "market": key[2],
+                                        "interval": key[3], "trades": 0, "closed": 0,
+                                        "wins": 0, "losses": 0, "net_pnl_pct": 0.0})
+        item["trades"] += 1
+        if record.get("result") not in valid_closed:
+            continue
+        pnl = record.get("pnl_pct")
+        if not isinstance(pnl, (int, float)):
+            continue
+        item["closed"] += 1
+        item["wins"] += int(pnl > 0)
+        item["losses"] += int(pnl < 0)
+        item["net_pnl_pct"] += float(pnl)
+    items = []
+    for item in grouped.values():
+        closed = item["closed"]
+        item["net_pnl_pct"] = round(item["net_pnl_pct"], 4)
+        item["win_rate"] = round(item["wins"] * 100 / closed, 1) if closed else None
+        item["avg_net_pnl_pct"] = round(item["net_pnl_pct"] / closed, 4) if closed else None
+        item["sample_ready"] = closed >= 10
+        item["ranking_status"] = "عينة كافية مبدئيًا" if closed >= 10 else "ترتيب مؤقت — نحتاج 10 نتائج مغلقة"
+        items.append(item)
+    items.sort(key=lambda x: (x["sample_ready"], x["avg_net_pnl_pct"] if x["avg_net_pnl_pct"] is not None else -999,
+                              x["win_rate"] if x["win_rate"] is not None else -1, x["closed"]), reverse=True)
+    for rank, item in enumerate(items, 1):
+        item["rank"] = rank
+    return {"ok": True, "market": market, "interval": interval, "items": items[:limit],
+            "methods_with_observations": len(items),
+            "closed_method_tests": sum(x["closed"] for x in items),
+            "minimum_closed_samples": 10,
+            "message": "الترتيب مبني على اختبارات مستقلة مسجلة في الموقع وصافي نتيجة تقديري بعد تكلفة ذهاب وعودة 0.20%؛ لا توجد بيانات تاريخية مصطنعة. الترتيب مؤقت حتى تتوفر 10 نتائج مغلقة على الأقل لكل منهج."}
+
+
 def build_signal(market: str, ticker: dict, interval: str):
     candles = candle_data(market, ticker["symbol"], interval)
+    method_candidates = record_method_candidates(market, ticker, interval, candles) if len(candles) >= 30 else []
     if len(candles) < 220:
         return None
     # Research-informed confluence gate: higher-timeframe trend + liquidity sweep/reclaim
@@ -2089,14 +2256,8 @@ def build_signal(market: str, ticker: dict, interval: str):
         return None
     original_side = side
     # Evaluate every named-method rule and make method confluence part of eligibility and score.
-    method_hits = []
-    for method_name, method_key in METHOD_RULES.items():
-        try:
-            method_result = method_signal(candles, ticker, method_key)
-            if method_result and method_result.get("side") == original_side:
-                method_hits.append(method_name)
-        except (ValueError, TypeError, IndexError, ZeroDivisionError):
-            continue
+    method_hits = [method_name for method_name, method_key, method_result in method_candidates
+                   if method_result.get("side") == original_side]
     confirmations = bullish_points if original_side == "BUY" else bearish_points
     directional_score = 100 * (bullish_points if original_side == "BUY" else bearish_points) / 10
     method_families = sorted({method_family(METHOD_RULES[name]) for name in method_hits})
@@ -2493,6 +2654,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         # before this scan records its latest available price and P&L.
         history = read_json_file(RESULTS_PATH, [])
         ticker_prices = {x["symbol"]: x["price"] for x in tickers}
+        # Independent method tests are tracked separately from user-facing signal cards.
+        refresh_method_test_results(market, interval, ticker_prices, int(now))
         for record in history:
             if record.get("result") != "مفتوحة" or record.get("market") != market or record.get("interval") != interval:
                 continue
