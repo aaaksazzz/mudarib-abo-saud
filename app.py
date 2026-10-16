@@ -2313,7 +2313,7 @@ def build_signal(market: str, ticker: dict, interval: str):
         higher_candles = candles if higher_interval == interval else candle_data(market, ticker["symbol"], higher_interval)
         strategy_decision = evaluate_v2(
             candles, higher_candles, market=market, timeframe=interval,
-            estimated_round_trip_cost_pct=0.20, risk_per_trade_pct=0.5, min_net_rr=2.0
+            estimated_round_trip_cost_pct=0.20, risk_per_trade_pct=0.5, min_net_rr=1.6
         )
         if strategy_decision.get("action") not in ("BUY", "SELL"):
             return None
@@ -2683,8 +2683,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             item["signal_tier"], item["medal"], item["importance"] = "ذهبية", "gold", "صفقة ذهبية قوية"
         elif score >= 60 and methods >= 3 and confirms >= 4:
             item["signal_tier"], item["medal"], item["importance"] = "فضية", "silver", "صفقة فضية"
-        elif score >= 45 and methods >= 2 and confirms >= 3:
-            item["signal_tier"], item["medal"], item["importance"] = "برونزية", "bronze", "فرصة متوسطة"
+        elif score >= 40 and methods >= 1 and confirms >= 2:
+            item["signal_tier"], item["medal"], item["importance"] = "برونزية", "bronze", "فرصة اجتازت الحد الأدنى للجودة"
         else:
             continue
         candidates.append(item)
