@@ -2132,6 +2132,30 @@ def build_signal(market: str, ticker: dict, interval: str):
         "status": "عدد المناهج المتوافقة يرفع ترتيب الإشارة؛ الإشارة الأولية تحتاج تحققًا إضافيًا"
     }
 
+CRYPTO_SIGNAL_MARKETS = {"spot", "futures", "alpha"}
+_CRYPTO_SIGNAL_BIAS_CACHE = {"at": 0.0, "side": None}
+_CRYPTO_SIGNAL_BIAS_LOCK = threading.Lock()
+
+
+def crypto_signal_side():
+    """Use the same price/breadth-based crypto direction shown in the market panel.
+    Never infer an actionable side from news-only or missing-data fallbacks.
+    """
+    now = time.time()
+    with _CRYPTO_SIGNAL_BIAS_LOCK:
+        if now - _CRYPTO_SIGNAL_BIAS_CACHE["at"] < 45:
+            return _CRYPTO_SIGNAL_BIAS_CACHE["side"]
+        try:
+            snapshot = market_direction("crypto")
+            source = snapshot.get("direction_source")
+            direction = snapshot.get("direction")
+            side = ("BUY" if direction == "BULLISH" else "SELL") if source in ("prices", "breadth") and direction in ("BULLISH", "BEARISH") else None
+        except Exception:
+            side = None
+        _CRYPTO_SIGNAL_BIAS_CACHE.update({"at": now, "side": side})
+        return side
+
+
 @app.get("/api/saved-signals/{market}")
 def saved_signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20)):
     """Return persisted open trades immediately, without waiting for a new market scan."""
@@ -2143,6 +2167,11 @@ def saved_signal_cards(market: str, interval: str = Query("15m"), limit: int = Q
     if interval not in INTERVALS:
         return JSONResponse({"ok": False, "market": market, "interval": interval, "items": [],
                              "message": "الفريم غير مدعوم."}, status_code=422)
+    allowed_side = crypto_signal_side() if market in CRYPTO_SIGNAL_MARKETS else None
+    if market in CRYPTO_SIGNAL_MARKETS and allowed_side is None:
+        return {"ok": True, "live": False, "saved": True, "market": market, "interval": interval,
+                "count": 0, "items": [], "updated_at": int(time.time()),
+                "message": "اتجاه العملات الرقمية غير مؤكد من الأسعار حاليًا؛ أُخفيت الصفقات حتى تتوفر بيانات اتجاه موثوقة."}
     now = int(time.time())
     with RESULTS_LOCK:
         history = prune_results()
@@ -2152,6 +2181,7 @@ def saved_signal_cards(market: str, interval: str = Query("15m"), limit: int = Q
             and record.get("result") == "مفتوحة"
             and record.get("market") == market
             and record.get("interval") == interval
+            and (market not in CRYPTO_SIGNAL_MARKETS or record.get("side") == allowed_side)
             and record.get("medal") in ("gold", "silver", "bronze")
             and record.get("signal_tier") in ("ذهبية", "فضية", "برونزية")
             and int(record.get("expires_at") or (
@@ -2259,6 +2289,11 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                              "message": "مصدر هذا السوق غير مربوط؛ لا يمكن إنشاء صفقات فعلية."})
     if interval not in INTERVALS:
         return JSONResponse({"ok": False, "live": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
+    allowed_side = crypto_signal_side() if market in CRYPTO_SIGNAL_MARKETS else None
+    if market in CRYPTO_SIGNAL_MARKETS and allowed_side is None:
+        return {"ok": True, "live": False, "market": market, "interval": interval,
+                "scanned": 0, "count": 0, "items": [], "watch_items": [], "updated_at": int(time.time()),
+                "message": "اتجاه العملات الرقمية غير مؤكد من الأسعار حاليًا؛ لا نعرض شراء أو بيع حتى تتوفر بيانات موثوقة."}
     key = (market, interval, limit)
     now = time.time()
     cached = SIGNAL_CACHE.get(key)
@@ -2275,6 +2310,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             if not isinstance(expiry, (int, float)):
                 expiry = created_at + INTERVAL_SECONDS.get(item.get("interval"), 86400)
             if int(expiry) > int(now):
+                if market in CRYPTO_SIGNAL_MARKETS and item.get("side") != allowed_side:
+                    continue
                 if market == "futures" and (not allowed_futures_symbols or item.get("symbol") not in allowed_futures_symbols):
                     continue
                 active_items.append(item)
@@ -2305,6 +2342,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 if not isinstance(expiry, (int, float)):
                     expiry = created_at + INTERVAL_SECONDS.get(item.get("interval"), 86400)
                 if (int(expiry) > int(now)
+                        and (market not in CRYPTO_SIGNAL_MARKETS or item.get("side") == allowed_side)
                         and item.get("medal") in ("gold", "silver", "bronze")
                         and item.get("signal_tier") in ("ذهبية", "فضية", "برونزية")):
                     if market == "futures":
@@ -2401,6 +2439,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                     found.append(item)
             except (urllib.error.URLError, TimeoutError, ValueError, OSError, IndexError, TypeError, ZeroDivisionError):
                 continue
+    # Broad crypto price/breadth direction is a hard side filter for Spot,
+    # Futures and Alpha. News never overrides this filter.
+    if market in CRYPTO_SIGNAL_MARKETS:
+        found = [item for item in found if item.get("side") == allowed_side]
     # Publish only high-confluence trades in three quality tiers; discard weak candidates.
     # Historical outcomes adjust ranking, but a medal is awarded only when explicit quality
     # thresholds are met. This is a filter, not a promise of profitability.
@@ -2528,6 +2570,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             and record.get("market") == market
             and record.get("interval") == interval
             and int(record.get("expires_at") or 0) > int(now)
+            and (market not in CRYPTO_SIGNAL_MARKETS or record.get("side") == allowed_side)
         ]
     # Only keep saved trades that passed the gold/silver/bronze quality gate.
     display_items = [x for x in display_items if x.get("medal") in ("gold", "silver", "bronze")
