@@ -2825,16 +2825,16 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
     # Each article still retains the publisher reported in its RSS item.
     source_queries = {
         "crypto": [
-            ("العملات الرقمية", "site:coindesk.com crypto Bitcoin Ethereum"),
-            ("العملات الرقمية", "site:cointelegraph.com cryptocurrency market"),
-            ("العملات الرقمية", "site:decrypt.co crypto market"),
-            ("العملات الرقمية", "site:theblock.co crypto markets"),
-            ("العملات الرقمية", "site:bitcoin.com/news cryptocurrency"),
-            ("العملات الرقمية", "site:finance.yahoo.com cryptocurrency Bitcoin"),
-            ("العملات الرقمية", "site:reuters.com cryptocurrency Bitcoin"),
-            ("العملات الرقمية", "site:bloomberg.com crypto Bitcoin market"),
+            ("العملات الرقمية", "site:coindesk.com crypto market sentiment regulation flows"),
+            ("العملات الرقمية", "site:cointelegraph.com cryptocurrency market sentiment regulation"),
+            ("العملات الرقمية", "site:decrypt.co crypto market sentiment"),
+            ("العملات الرقمية", "site:theblock.co crypto markets regulation flows"),
+            ("العملات الرقمية", "site:bitcoin.com/news cryptocurrency market"),
+            ("العملات الرقمية", "site:finance.yahoo.com cryptocurrency market"),
+            ("العملات الرقمية", "site:reuters.com cryptocurrency market regulation"),
+            ("العملات الرقمية", "site:bloomberg.com crypto market regulation flows"),
             ("العملات الرقمية", "site:investing.com/news cryptocurrency"),
-            ("العملات الرقمية", "site:arabic.cnn.com business cryptocurrency Bitcoin"),
+            ("العملات الرقمية", "site:arabic.cnn.com business cryptocurrency market"),
         ],
         "us": [
             ("الأسهم الأمريكية", "site:reuters.com/markets/us stocks earnings"),
@@ -2885,7 +2885,7 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
             ("العقود الأمريكية", "site:reuters.com/business/energy oil prices"),
         ],
         "all": [
-            ("العملات الرقمية", "site:coindesk.com OR site:cointelegraph.com crypto market"),
+            ("العملات الرقمية", "site:coindesk.com OR site:cointelegraph.com cryptocurrency market sentiment"),
             ("الأسهم الأمريكية", "site:reuters.com OR site:bloomberg.com US stocks markets"),
             ("السوق السعودي", "site:argaam.com OR site:cnbcarabia.com السوق السعودي"),
             ("الفوركس والذهب", "site:kitco.com OR site:fxstreet.com gold forex"),
