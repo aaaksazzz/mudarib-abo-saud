@@ -256,7 +256,7 @@ async function loadMarketSignals(){
  if(["spot","futures","alpha"].includes(requestedMarket)){
    try{
      const direction=await getJson("/api/market-direction?market=crypto");
-     if(["prices","breadth","coin_prices","coin_breadth"].includes(direction.direction_source))allowedCryptoSide=direction.direction==="BULLISH"?"BUY":direction.direction==="BEARISH"?"SELL":null;
+     if(["prices","breadth","coin_prices","coin_breadth"].includes(direction.direction_source))allowedCryptoSide=direction.direction==="BULLISH"?"SELL":direction.direction==="BEARISH"?"BUY":null;
    }catch(_e){}
  }
  const isActive=x=>x&&x.market===requestedMarket&&x.interval===requestedFrame&&Number(x.expires_at||0)>Math.floor(Date.now()/1000)&&(!["spot","futures","alpha"].includes(requestedMarket)||(allowedCryptoSide!==null&&x.side===allowedCryptoSide));
