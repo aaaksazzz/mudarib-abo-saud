@@ -2623,7 +2623,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 key=lambda item: (abs(item.get("change_pct", 0)), item.get("quote_volume", 0)),
                 reverse=True,
             )
-            batch_size = 20
+            batch_size = 8
             if len(eligible_tickers) > batch_size:
                 # Advance to the next circular batch every 5 minutes. Repeated requests
                 # in the same window share a batch; later windows cover the rest of the universe.
@@ -2640,7 +2640,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             # Signal scans are interactive: quote the first bounded symbol batch here.
             # Full market listings remain available through /api/market/{market}.
             signal_universe = YAHOO_MARKETS[market]
-            batch_size = 20
+            batch_size = 8
             if market == "saudi":
                 # Rotate through the full TASI directory so the first alphabetic batch
                 # does not permanently exclude most listed companies from signal scans.
@@ -2652,7 +2652,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                     signal_symbols = signal_universe[:]
             else:
                 signal_symbols = signal_universe[:batch_size]
-            with ThreadPoolExecutor(max_workers=16) as pool:
+            with ThreadPoolExecutor(max_workers=8) as pool:
                 for future in as_completed([pool.submit(fetch_yahoo_quote, symbol) for symbol in signal_symbols]):
                     try:
                         quote_item = future.result()
@@ -2677,7 +2677,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                              "message": "تعذر تحديث السعر الحالي؛ أخفينا الصفقات القديمة مؤقتًا حتى يتوفر سعر حديث. أعد الفحص بعد قليل."})
 
     found = []
-    with ThreadPoolExecutor(max_workers=16) as pool:
+    with ThreadPoolExecutor(max_workers=8) as pool:
         jobs = [pool.submit(build_signal, market, ticker, interval) for ticker in tickers]
         for job in as_completed(jobs):
             try:
