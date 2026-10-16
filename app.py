@@ -116,6 +116,7 @@ if not PERSISTENT_STORAGE_CONFIGURED:
     print("WARNING: /data is not detected as a mounted persistent volume. Configure a Northflank volume mounted at /data or set DATA_DIR to a persistent mount.")
 RESULTS_PATH = DATA_DIR / "results.json"
 SIGNALS_CACHE_PATH = DATA_DIR / "signals-cache.json"
+STRATEGY_LEARNING_PATH = DATA_DIR / "strategy-learning.json"
 # Protect the complete read-modify-write transaction across all market endpoints.
 RESULTS_LOCK = threading.RLock()
 ARTICLES_PATH = DATA_DIR / "articles.json"
@@ -2444,6 +2445,114 @@ def write_json_file(path, data):
             tmp.unlink(missing_ok=True)
         except OSError:
             pass
+
+
+def _outcome_pnl(record):
+    """Return a defensible realized/observed outcome, or None if it cannot be scored."""
+    result = record.get("result")
+    if result == "TP1":
+        return float(record.get("tp1_pct") or record.get("stop_pct") or 0)
+    if result == "TP2":
+        return float(record.get("tp2_pct") or record.get("tp1_pct") or 0)
+    if result == "TP3":
+        return float(record.get("tp3_pct") or record.get("tp2_pct") or 0)
+    if result == "SL":
+        return -abs(float(record.get("stop_pct") or 0))
+    if result == "انتهت المدة":
+        if not isinstance(record.get("last_price"), (int, float)):
+            return None
+        if not isinstance(record.get("pnl_pct"), (int, float)):
+            return None
+        return float(record["pnl_pct"])
+    # Expired entry was never a trade; open trades are not learning outcomes.
+    return None
+
+
+def sync_strategy_learning(items):
+    """Learn from each closed result exactly once, segmented by market, timeframe and method family."""
+    stats = read_json_file(STRATEGY_LEARNING_PATH, {})
+    if not isinstance(stats, dict):
+        stats = {}
+    changed = False
+    valid_results = {"TP1", "TP2", "TP3", "SL", "انتهت المدة"}
+    for record in items:
+        if not isinstance(record, dict) or record.get("result") not in valid_results:
+            continue
+        if record.get("learning_processed"):
+            continue
+        pnl = _outcome_pnl(record)
+        # For time-expired trades, require an observed price update, not the entry
+        # price copied at signal creation.
+        if pnl is None or (record.get("result") == "انتهت المدة"
+                           and record.get("last_price") == record.get("entry")
+                           and not record.get("last_price_updated_at")):
+            continue
+        families = record.get("method_families")
+        if not isinstance(families, list) or not families:
+            families = record.get("method_hits") or record.get("methods") or []
+        families = list(dict.fromkeys(str(x)[:100] for x in families if isinstance(x, str) and x.strip()))
+        if not families:
+            families = ["غير مصنف"]
+        is_win = pnl > 0
+        for family in families:
+            key = "|".join((str(record.get("market") or "unknown"),
+                            str(record.get("interval") or "unknown"),
+                            str(record.get("side") or "unknown"), family))
+            item = stats.get(key)
+            if not isinstance(item, dict):
+                item = {"market": record.get("market"), "interval": record.get("interval"),
+                        "side": record.get("side"), "method": family, "trades": 0,
+                        "wins": 0, "losses": 0, "breakeven": 0, "net_pnl_pct": 0.0}
+            item["trades"] = int(item.get("trades") or 0) + 1
+            item["wins"] = int(item.get("wins") or 0) + int(is_win)
+            item["losses"] = int(item.get("losses") or 0) + int(pnl < 0)
+            item["breakeven"] = int(item.get("breakeven") or 0) + int(pnl == 0)
+            item["net_pnl_pct"] = round(float(item.get("net_pnl_pct") or 0) + pnl, 4)
+            item["win_rate"] = round(item["wins"] * 100 / item["trades"], 1)
+            item["avg_pnl_pct"] = round(item["net_pnl_pct"] / item["trades"], 4)
+            stats[key] = item
+        record["learning_processed"] = True
+        record["learning_pnl_pct"] = round(pnl, 4)
+        changed = True
+    if changed:
+        write_json_file(STRATEGY_LEARNING_PATH, stats)
+        write_json_file(RESULTS_PATH, items[-1000:])
+    return stats
+
+
+def apply_strategy_learning(signals, market, interval):
+    """Adjust ranking conservatively only after a method has enough historical outcomes."""
+    stats = read_json_file(STRATEGY_LEARNING_PATH, {})
+    if not isinstance(stats, dict):
+        stats = {}
+    for signal in signals:
+        families = signal.get("method_families") or []
+        side = signal.get("side") or "unknown"
+        adjustments = []
+        evidence = []
+        for family in dict.fromkeys(str(x) for x in families):
+            key = "|".join((str(market), str(interval), str(side), family))
+            item = stats.get(key)
+            if not isinstance(item, dict) or int(item.get("trades") or 0) < 8:
+                continue
+            # Bayesian shrinkage toward neutral prevents a tiny sample from dominating.
+            n = int(item["trades"])
+            observed = float(item.get("win_rate") or 0)
+            shrunk_win_rate = (observed * n + 50 * 8) / (n + 8)
+            avg_pnl = float(item.get("avg_pnl_pct") or 0)
+            adjustment = max(-8.0, min(8.0, (shrunk_win_rate - 50.0) * 0.16 + max(-2.0, min(2.0, avg_pnl * 0.4))))
+            adjustments.append(adjustment)
+            evidence.append({"method": family, "trades": n, "win_rate": observed,
+                             "avg_pnl_pct": avg_pnl, "adjustment": round(adjustment, 2)})
+        base = float(signal.get("score") or 0)
+        total_adjustment = sum(adjustments) / len(adjustments) if adjustments else 0.0
+        signal["base_score"] = round(base, 2)
+        signal["learning_adjustment"] = round(total_adjustment, 2)
+        signal["learning_samples"] = len(evidence)
+        signal["learning_evidence"] = evidence
+        signal["score"] = max(0, min(98, round(base + total_adjustment)))
+        signal["learning_status"] = ("معدّل بنتائج سابقة" if evidence else "بانتظار 8 نتائج مغلقة لكل منهج")
+    return signals
 
 
 def prune_results(max_age_seconds=86400):
