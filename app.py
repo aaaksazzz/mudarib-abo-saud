@@ -2002,7 +2002,7 @@ def telegram_status():
 
 
 def build_signal(market: str, ticker: dict, interval: str):
-    """Breakout + 50% pullback strategy with structure, divergence, volume and higher-timeframe filters."""
+    """Active strategy: confirmed swing breakout, 50% retracement, structure/RSI-divergence/volume confirmation, higher-timeframe trend, structural stop and 3R final target."""
     candles = candle_data(market, ticker["symbol"], interval)
     if len(candles) < 80:
         return None
