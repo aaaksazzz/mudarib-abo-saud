@@ -2803,45 +2803,24 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
         assets, coins, counts = NEWS_UNIVERSE_CACHE["assets"], NEWS_UNIVERSE_CACHE["coins"], NEWS_UNIVERSE_CACHE["counts"]
     else:
         assets, coins, counts = [], {}, {}
-    if market == "crypto":
-        allowed_assets = [a for a in assets if a["kind"] == "عملة رقمية"]
-        queries = [("العملات الرقمية", "cryptocurrency OR Bitcoin OR Ethereum OR crypto market")]
-        symbols = sorted(coins)
-        for start in range(0, min(len(symbols), 50), 25):
-            queries.append(("العملات الرقمية", " OR ".join(symbols[start:start+25]) + " cryptocurrency crypto"))
-    elif market == "us":
-        allowed_assets = [a for a in assets if a["market"] == "us"]
-        symbols = YAHOO_MARKETS["us"]
-        queries = [("الأسهم الأمريكية", "US stocks Nasdaq S&P 500 earnings shares")]
-        for start in range(0, min(len(symbols), 40), 20):
-            queries.append(("الأسهم الأمريكية", " OR ".join(symbols[start:start+20]) + " stock shares earnings"))
-    elif market == "saudi":
-        allowed_assets = [a for a in assets if a["market"] == "saudi"]
-        symbols = [s.replace(".SR", "") for s in YAHOO_MARKETS["saudi"]]
-        queries = [("السوق السعودي", "أسهم السوق السعودي تداول الشركات السعودية تاسي نمو")]
-        for start in range(0, min(len(symbols), 40), 20):
-            queries.append(("السوق السعودي", " OR ".join(symbols[start:start+20]) + " سهم تداول شركة السعودية"))
-    elif market == "forex":
-        allowed_assets = [a for a in assets if a["market"] == "forex"]
-        queries = [("الفوركس والذهب", "forex EURUSD GBPUSD USDJPY gold XAUUSD dollar currency market")]
-    elif market == "contracts":
-        allowed_assets = [a for a in assets if a["market"] == "contracts"]
-        queries = [("العقود الأمريكية", "S&P 500 futures Nasdaq futures Dow futures gold oil futures ES NQ GC CL")]
-    else:
-        allowed_assets = assets
-        queries = [("العملات الرقمية", "cryptocurrency OR Bitcoin OR Ethereum OR crypto market"),
-            ("الأسهم الأمريكية", "US stocks OR Nasdaq OR S&P 500 earnings shares"),
-            ("السوق السعودي", "أسهم السوق السعودي تداول شركات السعودية تاسي نمو"),
-            ("الفوركس والذهب", "forex OR gold OR dollar currency market"),
-            ("العقود الأمريكية", "S&P 500 futures Nasdaq futures Dow futures gold oil futures")]
-        # Small curated query set keeps the endpoint fast and prevents upstream feed storms.
-        queries.extend([
-            ("العملات الرقمية", "Bitcoin Ethereum Solana cryptocurrency market"),
-            ("الأسهم الأمريكية", "Nasdaq S&P 500 US stocks earnings"),
-            ("السوق السعودي", "السوق السعودي تاسي تداول الشركات نتائج"),
-            ("الفوركس والذهب", "forex gold XAUUSD dollar market"),
-            ("العقود الأمريكية", "S&P 500 futures Nasdaq futures gold oil")
-        ])
+    # Sector-wide news only: do not query or attribute stories to individual tickers.
+    sector_queries = {
+        "crypto": [("العملات الرقمية", "سوق العملات الرقمية إجمالي السوق Bitcoin Ethereum altcoins crypto market sentiment flows regulation")],
+        "us": [("الأسهم الأمريكية", "السوق الأمريكي كامل S&P 500 Nasdaq Dow market breadth earnings Federal Reserve stocks")],
+        "saudi": [("السوق السعودي", "السوق السعودي كامل تاسي مؤشر السوق تداول الاقتصاد السعودي نتائج قطاعية")],
+        "forex": [("الفوركس والذهب", "forex market dollar index currencies gold XAUUSD macro central bank market outlook")],
+        "contracts": [("العقود الأمريكية", "US index futures S&P 500 Nasdaq Dow futures oil gold commodities macro market")],
+        "all": [
+            ("العملات الرقمية", "سوق العملات الرقمية إجمالي السوق crypto market sentiment flows regulation"),
+            ("الأسهم الأمريكية", "السوق الأمريكي كامل S&P 500 Nasdaq Dow market breadth"),
+            ("السوق السعودي", "السوق السعودي كامل تاسي مؤشر السوق تداول الاقتصاد السعودي"),
+            ("الفوركس والذهب", "forex market dollar index currencies gold macro"),
+            ("العقود الأمريكية", "US index futures S&P 500 Nasdaq Dow oil gold macro"),
+            ("الأسواق العالمية", "global financial markets economy central banks inflation rates risk sentiment")
+        ]
+    }
+    allowed_assets = []
+    queries = list(sector_queries[market])
     # Broaden coverage through publisher-targeted Google News RSS searches.
     # Each article still retains the publisher reported in its RSS item.
     source_queries = {
@@ -2952,19 +2931,9 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
                 if item["url"] in seen:
                     continue
                 seen.add(item["url"])
-                title_lower = item["title"].lower()
-                matched = []
-                import re
-                for asset in allowed_assets:
-                    symbol, name = asset["symbol"], asset["name"]
-                    symbol_match = len(symbol) >= 3 and re.search(r"(?<![A-Za-z0-9])" + re.escape(symbol) + r"(?![A-Za-z0-9])", item["title"], re.I)
-                    name_match = len(name) >= 4 and name.lower() in title_lower
-                    if symbol_match or name_match:
-                        matched.append({"symbol": symbol, "name": name, "kind": asset["kind"], "market": asset["market"]})
-                    if len(matched) >= 8:
-                        break
-                item["assets"] = matched
-                item["asset_labels"] = [x["symbol"] for x in matched] or ["لم يُحدد أصل بعينه"]
+                # Display the whole market/sector, never an individual coin or stock.
+                item["assets"] = []
+                item["asset_labels"] = [item["category"]]
                 item.update(_news_direction(item["title"]))
                 items.append(item)
     items.sort(key=lambda x: x["published"], reverse=True)
@@ -2973,7 +2942,7 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
                 "message": "مصدر الأخبار تأخر؛ نعرض آخر أخبار محفوظة مؤقتًا."}
     NEWS_CACHE[market] = {"at": now, "items": items}
     return {"ok": True, "live": bool(items), "items": items[:limit], "cached": False, "market": market, "universe": counts,
-            "message": "الأخبار مفصولة حسب السوق المحدد؛ التوجه تصنيف آلي أولي من العنوان فقط وليس توصية مالية." if items else "ما لقينا أخبار في هذا التصنيف الآن؛ جرّب تحديث البحث لاحقًا."}
+            "message": "الأخبار تخص السوق أو القطاع كاملًا، وليست توصيات على سهم أو عملة بعينها؛ التصنيف الآلي أولي وليس توصية مالية." if items else "ما لقينا أخبار في هذا التصنيف الآن؛ جرّب تحديث البحث لاحقًا."}
 
 
 @app.get("/api/blog")
