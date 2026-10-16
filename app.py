@@ -330,11 +330,11 @@ def market_tickers(market):
 def candle_closes(market, symbol, interval):
     from urllib.parse import urlencode
     if market == "alpha":
-        url = ALPHA_BASE + "/klines?" + urlencode({"symbol": symbol, "interval": interval, "limit": 220})
+        url = ALPHA_BASE + "/klines?" + urlencode({"symbol": symbol, "interval": interval, "limit": 250})
         payload = fetch_json(url, timeout=8)
         candles = payload.get("data", []) if isinstance(payload, dict) else []
     elif market in BINANCE:
-        url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 220})
+        url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 250})
         candles = fetch_json(url, timeout=7)
     else:
         return []
@@ -1900,7 +1900,7 @@ SIGNAL_CACHE_TTL = 20
 def candle_data(market: str, symbol: str, interval: str):
     from urllib.parse import urlencode, quote
     if market == "alpha":
-        url = ALPHA_BASE + "/klines?" + urlencode({"symbol": symbol, "interval": interval, "limit": 220})
+        url = ALPHA_BASE + "/klines?" + urlencode({"symbol": symbol, "interval": interval, "limit": 250})
         payload = fetch_json(url, timeout=8)
         raw = payload.get("data", []) if isinstance(payload, dict) else []
         if isinstance(payload, dict) and payload.get("success") is False:
@@ -1908,7 +1908,7 @@ def candle_data(market: str, symbol: str, interval: str):
         return [{"time": int(k[0]) // 1000, "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
                 for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
     if market in BINANCE:
-        url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 220})
+        url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 250})
         raw = fetch_json(url, timeout=8)
         return [{"time": int(k[0]) // 1000, "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
                 for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
