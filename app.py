@@ -100,7 +100,7 @@ async def site_password_gate(request: Request, call_next):
 # Production results survive restarts only when Northflank mounts a persistent volume at /data.
 # Keep DATA_DIR configurable, but warn loudly when /data is merely container-local storage.
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data/smart-trading-pro-data"))
-PERSISTENT_STORAGE_CONFIGURED = any(os.path.ismount(str(parent)) for parent in (DATA_DIR, *DATA_DIR.parents))
+PERSISTENT_STORAGE_CONFIGURED = any(os.path.ismount(str(parent)) for parent in (DATA_DIR, *DATA_DIR.parents) if str(parent) != os.path.abspath(os.sep))
 try:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     # Verify that the chosen directory can actually be written to before serving requests.
@@ -1988,17 +1988,32 @@ def _fetch_candle_data_uncached(market: str, symbol: str, interval: str):
 
 CANDLE_DATA_CACHE = {}
 CANDLE_DATA_CACHE_TTL = 30
+CANDLE_DATA_CACHE_MAX_ENTRIES = 240
+CANDLE_DATA_CACHE_LOCK = threading.RLock()
 
 
 def candle_data(market: str, symbol: str, interval: str):
     key = (market, symbol, interval)
     now = time.time()
-    cached = CANDLE_DATA_CACHE.get(key)
-    if cached and now - cached[0] < CANDLE_DATA_CACHE_TTL:
-        return [dict(candle) for candle in cached[1]]
+    with CANDLE_DATA_CACHE_LOCK:
+        cached = CANDLE_DATA_CACHE.get(key)
+        if cached and now - cached[0] < CANDLE_DATA_CACHE_TTL:
+            return [dict(candle) for candle in cached[1]]
+        if cached:
+            CANDLE_DATA_CACHE.pop(key, None)
     candles = _fetch_candle_data_uncached(market, symbol, interval)
-    CANDLE_DATA_CACHE[key] = (now, [dict(candle) for candle in candles])
-    return [dict(candle) for candle in candles]
+    cached_at = time.time()
+    copied = [dict(candle) for candle in candles]
+    with CANDLE_DATA_CACHE_LOCK:
+        expired = [cache_key for cache_key, (stamp, _) in CANDLE_DATA_CACHE.items()
+                   if cached_at - stamp >= CANDLE_DATA_CACHE_TTL]
+        for cache_key in expired:
+            CANDLE_DATA_CACHE.pop(cache_key, None)
+        if len(CANDLE_DATA_CACHE) >= CANDLE_DATA_CACHE_MAX_ENTRIES:
+            oldest_key = min(CANDLE_DATA_CACHE, key=lambda cache_key: CANDLE_DATA_CACHE[cache_key][0])
+            CANDLE_DATA_CACHE.pop(oldest_key, None)
+        CANDLE_DATA_CACHE[key] = (cached_at, copied)
+    return [dict(candle) for candle in copied]
 
 
 def telegram_send_signal(signal: dict) -> bool:
@@ -2499,83 +2514,6 @@ def saved_signal_cards(market: str, interval: str = Query("15m"), limit: int = Q
             "updated_at": now, "message": "صفقات محفوظة للفريم المحدد؛ يجري تحديث فرص جديدة بالخلفية."}
 
 
-def latest_strategy_news(market: str):
-    """Return the latest sector-wide headline for a bounded news confirmation layer."""
-    sector = {
-        "spot": "crypto", "futures": "crypto", "alpha": "crypto",
-        "us": "us", "saudi": "saudi", "forex": "forex", "contracts": "contracts",
-    }.get(market)
-    if not sector:
-        return None
-    # Signal generation must not block on a separate news-provider request.
-    # The news page/background refresh may populate NEWS_CACHE independently.
-    cached = NEWS_CACHE.get(sector)
-    if cached and time.time() - float(cached.get("at", 0) or 0) >= 300:
-        cached = None
-    items = (cached or {}).get("items", [])
-    if not items:
-        return None
-    from email.utils import parsedate_to_datetime
-    now = datetime.now(timezone.utc)
-    dated = []
-    for item in items:
-        try:
-            published = parsedate_to_datetime(str(item.get("published") or ""))
-            if published.tzinfo is None:
-                published = published.replace(tzinfo=timezone.utc)
-            age_hours = (now - published.astimezone(timezone.utc)).total_seconds() / 3600
-            # Only attach genuinely recent headlines to trade cards.
-            if age_hours < -1 or age_hours > 24:
-                continue
-            dated.append((published, age_hours, item))
-        except (TypeError, ValueError, OverflowError):
-            continue
-    if not dated:
-        return None
-    published, age_hours, item = max(dated, key=lambda row: row[0])
-    return {
-        "title": str(item.get("title") or "")[:500],
-        "url": str(item.get("url") or ""),
-        "source": str(item.get("source") or "مصدر إخباري"),
-        "published": str(item.get("published") or ""),
-        "direction": item.get("direction") if item.get("direction") in ("BUY", "SELL") else "UNCLEAR",
-        "age_hours": max(0, round(age_hours, 1)),
-    }
-
-
-def apply_news_confirmation(signal: dict, news):
-    """Use fresh sector news as a small ranking adjustment, never as a standalone entry."""
-    if not news:
-        signal.update({
-            "news_title": None, "news_url": None, "news_source": None,
-            "news_published": None, "news_direction": "UNCLEAR",
-            "news_alignment": "UNKNOWN", "news_adjustment": 0,
-            "news_effect": "لا يتوفر خبر حديث مصنف؛ الترتيب فني فقط",
-        })
-        return
-    side = signal.get("side")
-    direction = news.get("direction")
-    fresh = float(news.get("age_hours", 9999)) <= 24
-    aligned = direction == side
-    opposed = direction in ("BUY", "SELL") and direction != side
-    adjustment = (2 if aligned else -3 if opposed else 0) if fresh else 0
-    technical_score = float(signal.get("score", 0) or 0)
-    signal["technical_score"] = round(technical_score)
-    signal["score"] = max(0, min(98, round(technical_score + adjustment)))
-    signal.update({
-        "news_title": news.get("title"), "news_url": news.get("url"),
-        "news_source": news.get("source"), "news_published": news.get("published"),
-        "news_direction": direction,
-        "news_alignment": ("ALIGNED" if aligned else "OPPOSED" if opposed else "UNCLEAR") if fresh else "STALE",
-        "news_adjustment": adjustment,
-        "news_effect": (
-            "الخبر الأحدث يؤيد الاتجاه (+2 للتقييم)" if fresh and aligned else
-            "الخبر الأحدث يعارض الاتجاه (-3 للتقييم؛ انتبه)" if fresh and opposed else
-            "الخبر غير حاسم أو أقدم من 24 ساعة؛ لم يؤثر على التقييم"
-        ),
-    })
-
-
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20)):
     market = market.lower()
@@ -2733,11 +2671,6 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     # Historical outcomes adjust ranking, but a medal is awarded only when explicit quality
     # thresholds are met. This is a filter, not a promise of profitability.
     apply_strategy_learning(found, market, interval)
-    # One sector-wide headline is shared across this scan; news is a small confirmation,
-    # never a substitute for price structure or a claim about the individual ticker.
-    strategy_news = latest_strategy_news(market)
-    for item in found:
-        apply_news_confirmation(item, strategy_news)
     candidates = []
     for item in found:
         score = float(item.get("score", 0) or 0)
