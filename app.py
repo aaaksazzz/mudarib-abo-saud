@@ -2802,6 +2802,15 @@ def refresh_open_result_prices(items):
         record["last_price"] = float(price)
         direction = 1 if record.get("side") == "BUY" else -1
         record["pnl_pct"] = round((price - entry) / entry * 100 * direction, 4)
+        # Once a signal's own timeframe expires, record the latest observed P&L
+        # but do not retroactively count a later quote as a TP/SL hit.
+        expires_at = record.get("expires_at")
+        if isinstance(expires_at, (int, float)) and now >= int(expires_at):
+            record["result"] = "انتهت المدة"
+            record["closed_at"] = int(expires_at)
+            record["expiry_reason"] = "انتهت مدة الفريم"
+            changed = True
+            continue
         side = record.get("side")
         stop, tp1, tp2, tp3 = (record.get(k) for k in ("stop", "tp1", "tp2", "tp3"))
         hit = None
@@ -2828,8 +2837,11 @@ def refresh_open_result_prices(items):
 def signal_results(limit: int = Query(100, ge=1, le=500)):
     enforce_section_access("results")
     with RESULTS_LOCK:
-        items = prune_results()
+        # Refresh still-open records before pruning; otherwise prune_results()
+        # marks expired records first and their final observed P&L stays at 0.00%.
+        items = read_json_file(RESULTS_PATH, [])
         items = refresh_open_result_prices(items)
+        items = prune_results()
         items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
         closed = [x for x in items if x.get("result") in ("TP1", "TP2", "TP3", "SL")]
         wins = [x for x in closed if x.get("result") in ("TP1", "TP2", "TP3")]
