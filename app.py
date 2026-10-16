@@ -1675,6 +1675,7 @@ def method_signal(candles, ticker, method_key):
         return None
     if side is None or method_key == "risk_management":
         return None
+    side = "SELL" if side == "BUY" else "BUY"
     entry=price
     risk=max(atr*1.5,entry*0.002)
     if side=="BUY":
@@ -2070,6 +2071,8 @@ def build_signal(market: str, ticker: dict, interval: str):
     side = "BUY" if bullish_points > bearish_points else "SELL" if bearish_points > bullish_points else None
     if side is None:
         return None
+    original_side = side
+    side = "SELL" if side == "BUY" else "BUY"
     # Evaluate every named-method rule and make method confluence part of eligibility and score.
     method_hits = []
     for method_name, method_key in METHOD_RULES.items():
@@ -2079,7 +2082,7 @@ def build_signal(market: str, ticker: dict, interval: str):
                 method_hits.append(method_name)
         except (ValueError, TypeError, IndexError, ZeroDivisionError):
             continue
-    confirmations = bullish_points if side == "BUY" else bearish_points
+    confirmations = bullish_points if original_side == "BUY" else bearish_points
     directional_score = 100 * max(bullish_points, bearish_points) / 10
     method_families = sorted({method_family(METHOD_RULES[name]) for name in method_hits})
     method_count_raw = len(method_hits)
@@ -2149,7 +2152,7 @@ def crypto_signal_side():
             snapshot = market_direction("crypto")
             source = snapshot.get("direction_source")
             direction = snapshot.get("direction")
-            side = ("BUY" if direction == "BULLISH" else "SELL") if source in ("prices", "breadth", "coin_prices", "coin_breadth") and direction in ("BULLISH", "BEARISH") else None
+            side = ("SELL" if direction == "BULLISH" else "BUY") if source in ("prices", "breadth", "coin_prices", "coin_breadth") and direction in ("BULLISH", "BEARISH") else None
         except Exception:
             side = None
         _CRYPTO_SIGNAL_BIAS_CACHE.update({"at": now, "side": side})
