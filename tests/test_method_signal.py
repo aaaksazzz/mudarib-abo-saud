@@ -91,3 +91,30 @@ def test_data_dependent_methods_are_explicitly_blocked_without_required_inputs()
     ticker = {"symbol": "TESTUSDT", "price": candles[-1]["close"], "change_pct": 0.0, "quote_volume": 1_000_000.0}
     for key in app.METHOD_AUXILIARY_DATA_REQUIRED:
         assert app.method_signal(candles, ticker, key) is None, key
+
+def test_candle_data_fetches_extra_bar_before_filtering_open_candle(monkeypatch):
+    import time
+
+    now_ms = int(time.time() * 1000)
+    raw = []
+    for i in range(250):
+        close_time = now_ms - (250 - i) * 60_000
+        if i == 249:
+            close_time = now_ms + 60_000  # exchange's currently open candle
+        raw.append([
+            1_700_000_000_000 + i * 60_000, "100", "101", "99", "100.5",
+            "1000", close_time, "100000", 10, "500", "50000", "0"
+        ])
+
+    requested = {}
+    def fake_fetch_json(url, timeout=8):
+        requested["url"] = url
+        return raw
+
+    monkeypatch.setattr(app, "fetch_json", fake_fetch_json)
+    candles = app.candle_data("spot", "TESTUSDT", "15m")
+
+    assert "limit=250" in requested["url"]
+    assert len(candles) == 249
+    assert len(candles) >= 220
+
