@@ -2278,6 +2278,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 continue
     # Three quality levels: publish only actionable "good/strong" trades;
     # weaker but directionally valid candidates are returned separately as watch-only.
+    # Historical outcomes feed back into the next ranking pass, segmented by market,
+    # timeframe, direction and each confirmed method family. This is ranking adaptation,
+    # not autonomous strategy deployment or a guarantee of future performance.
+    apply_strategy_learning(found, market, interval)
     candidates = [x for x in found if x.get("score", 0) >= 35
                   and x.get("method_count", 0) >= 1 and x.get("confirmations", 0) >= 3]
     for item in candidates:
@@ -2313,6 +2317,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             if not price_now:
                 continue
             record["last_price"] = price_now
+            record["last_price_updated_at"] = int(now)
             side = record.get("side")
             direction = 1 if side == "BUY" else -1
             record["pnl_pct"] = round((price_now - record["entry"]) / record["entry"] * 100 * direction, 4)
@@ -2348,6 +2353,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                         record["result"] = "انتهت صلاحية الدخول"
                         record["closed_at"] = int(now)
                         record["expiry_reason"] = "تحرك السعر بعيدًا عن سعر الدخول؛ يلزم فحص جديد"
+        # Feed finalized outcomes back into persistent method-level learning before saving.
+        sync_strategy_learning(history)
         # Keep expired outcomes in the 24-hour results history; only open records
         # are eligible to be returned as actionable signals.
         history = [record for record in history if isinstance(record, dict)]
@@ -2923,6 +2930,7 @@ def refresh_open_result_prices(items):
         if not isinstance(entry, (int, float)) or entry <= 0:
             continue
         record["last_price"] = float(price)
+        record["last_price_updated_at"] = now
         direction = 1 if record.get("side") == "BUY" else -1
         record["pnl_pct"] = round((price - entry) / entry * 100 * direction, 4)
         # Once a signal's own timeframe expires, record the latest observed P&L
@@ -2965,6 +2973,7 @@ def signal_results(limit: int = Query(100, ge=1, le=500)):
         items = read_json_file(RESULTS_PATH, [])
         items = refresh_open_result_prices(items)
         items = prune_results()
+        sync_strategy_learning(items)
         items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
         # A signal is an executed outcome unless entry validity expired before entry.
         # Time-expired trades are scored from their last observed P&L; invalid entries
@@ -2989,6 +2998,19 @@ def signal_results(limit: int = Query(100, ge=1, le=500)):
                 "breakeven": len(breakeven), "scored": len(scored),
                 "win_rate": round(len(profitable)*100/len(scored), 1) if scored else None,
                 "message": "نسبة النجاح محسوبة من نتائج الصفقات المنفذة المغلقة حسب الربح والخسارة المرصودة؛ الإشارات التي انتهت صلاحية دخولها مستبعدة. الأسعار العامة قد تتأخر، ويحتاج حفظ السجل بعد إعادة التشغيل إلى تخزين دائم على /data."}
+
+
+@app.get("/api/strategy-learning")
+def strategy_learning_status():
+    """Public read-only summary of learned strategy performance by market/timeframe."""
+    raw = read_json_file(STRATEGY_LEARNING_PATH, {})
+    if not isinstance(raw, dict):
+        raw = {}
+    items = sorted(raw.values(), key=lambda x: (int(x.get("trades") or 0), float(x.get("avg_pnl_pct") or 0)), reverse=True)
+    return {"ok": True, "items": items[:200], "methods_tracked": len(items),
+            "total_method_outcomes": sum(int(x.get("trades") or 0) for x in items),
+            "minimum_samples_for_adjustment": 8,
+            "message": "تتعلم الأوزان من نتائج مغلقة محفوظة؛ لا يُعدّل المنهج إلا بعد 8 نتائج لكل سوق وفريم واتجاه."}
 
 
 @app.get("/api/admin/status")
