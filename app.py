@@ -2267,9 +2267,11 @@ def method_performance(market: str = Query("all"), interval: str = Query("all"),
             item["ranking_status"] = "تحتاج بيانات إضافية قبل الاختبار"
         elif closed >= 10:
             item["ranking_status"] = "عينة كافية مبدئيًا"
-        elif item["evaluations"] == 0:
+        elif item["evaluations"] == 0 and closed == 0:
             item["ranking_status"] = "بانتظار أول فحص"
         else:
+            # Closed method-test outcomes are real observations even if this
+            # method's evaluation counter is absent from an older/corrupt stats file.
             item["ranking_status"] = "ترتيب مؤقت — نحتاج 10 نتائج مغلقة"
         items.append(item)
     items.sort(key=lambda x: (x["sample_ready"], x["avg_net_pnl_pct"] if x["avg_net_pnl_pct"] is not None else -999,
