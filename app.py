@@ -2945,6 +2945,93 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
             "message": "الأخبار تخص السوق أو القطاع كاملًا، وليست توصيات على سهم أو عملة بعينها؛ التصنيف الآلي أولي وليس توصية مالية." if items else "ما لقينا أخبار في هذا التصنيف الآن؛ جرّب تحديث البحث لاحقًا."}
 
 
+@app.get("/api/market-direction")
+def market_direction(market: str = Query("all")):
+    """Estimate broad market bias from benchmark/breadth price changes plus sector-news direction."""
+    market = (market or "all").lower().strip()
+    allowed = {"all", "crypto", "us", "saudi", "forex", "contracts"}
+    if market not in allowed:
+        market = "all"
+    now = time.time()
+    labels = {
+        "crypto": ("العملات الرقمية", ["BTCUSDT", "ETHUSDT"]),
+        "us": ("السوق الأمريكي", ["^GSPC", "^IXIC", "^DJI"]),
+        "saudi": ("السوق السعودي / تاسي", ["^TASI"]),
+        "forex": ("الفوركس والذهب", ["DX-Y.NYB", "XAUUSD=X"]),
+        "contracts": ("العقود الأمريكية", ["ES=F", "NQ=F", "YM=F"]),
+        "all": ("الأسواق العالمية", ["^GSPC", "^TASI", "BTCUSDT"]),
+    }
+    label, benchmarks = labels[market]
+    def _fetch_json_url(url):
+        req = urllib.request.Request(url, headers={"User-Agent": "SmartTradingPro/2.4"})
+        with urllib.request.urlopen(req, timeout=2.0) as response:
+            return json.loads(response.read().decode("utf-8"))
+    changes = []
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        jobs = []
+        for symbol in benchmarks:
+            if symbol.endswith("USDT"):
+                url = "https://api.binance.com/api/v3/ticker/24hr?symbol=" + symbol
+                jobs.append((symbol, pool.submit(_fetch_json_url, url)))
+            else:
+                jobs.append((symbol, pool.submit(fetch_yahoo_quote, symbol)))
+        for symbol, future in jobs:
+            try:
+                value = future.result()
+                if symbol.endswith("USDT"):
+                    pct = float(value.get("priceChangePercent", 0)) if isinstance(value, dict) else 0
+                else:
+                    pct = float(value.get("change_pct", 0)) if value else 0
+                if math.isfinite(pct):
+                    changes.append({"symbol": symbol, "change_pct": round(pct, 3)})
+            except Exception:
+                continue
+    breadth = None
+    breadth_market = {"crypto": "spot", "us": "us", "saudi": "saudi", "forex": "forex", "contracts": "contracts"}.get(market)
+    try:
+        if breadth_market:
+            md = market_data(breadth_market, 500)
+            rows = md.get("items", []) if isinstance(md, dict) else []
+            valid = [float(x.get("change_pct", 0)) for x in rows if isinstance(x, dict) and x.get("change_pct") is not None]
+            if valid:
+                breadth = round(sum(1 for x in valid if x > 0) / len(valid) * 100, 1)
+                if not changes:
+                    changes = [{"symbol": "breadth", "change_pct": round(sum(valid) / len(valid), 3)}]
+    except Exception:
+        pass
+    news_items = (NEWS_CACHE.get(market) or {}).get("items", [])
+    if not news_items:
+        try:
+            news_result = market_news(limit=50, market=market, refresh=False)
+            news_items = news_result.get("items", []) if isinstance(news_result, dict) else []
+        except Exception:
+            news_items = []
+    news_rows = [x for x in news_items if x.get("direction") in ("BUY", "SELL")]
+    positive = sum(1 for x in news_rows if x.get("direction") == "BUY")
+    negative = sum(1 for x in news_rows if x.get("direction") == "SELL")
+    news_score = (positive - negative) / len(news_rows) if news_rows else 0.0
+    price_score = (sum(x["change_pct"] for x in changes) / len(changes)) if changes else None
+    normalized_price = max(-1.0, min(1.0, (price_score or 0.0) / 1.5))
+    score = (normalized_price * 0.6) + (news_score * 0.4 if news_rows else 0.0)
+    if price_score is None and not news_rows:
+        direction, direction_ar = "UNCLEAR", "غير واضح"
+        reason = "لا تتوفر بيانات أسعار وأخبار كافية لتحديد الاتجاه."
+    elif abs(score) < 0.18 or (price_score is not None and news_rows and normalized_price * news_score < -0.05):
+        direction, direction_ar = "MIXED", "مختلط / انتظار"
+        reason = "حركة الأسعار والأخبار ضعيفة أو متعارضة؛ الأفضل انتظار تأكيد."
+    elif score > 0:
+        direction, direction_ar = "BULLISH", "إيجابي مائل للصعود"
+        reason = "المؤشرات المتاحة تميل للإيجابية؛ هذا تقدير للسوق وليس ضمانًا."
+    else:
+        direction, direction_ar = "BEARISH", "سلبي مائل للهبوط"
+        reason = "المؤشرات المتاحة تميل للسلبية؛ هذا تقدير للسوق وليس ضمانًا."
+    return {"ok": True, "market": market, "market_label": label, "direction": direction,
+            "direction_ar": direction_ar, "reason": reason, "price_change_pct": round(price_score, 3) if price_score is not None else None,
+            "price_samples": changes, "breadth_positive_pct": breadth, "news_positive": positive,
+            "news_negative": negative, "news_sample_size": len(news_rows), "updated_at": int(now),
+            "method": "benchmark/breadth price changes + classified sector news; estimates only"}
+
+
 @app.get("/api/blog")
 def blog_articles():
     enforce_section_access("blog")
