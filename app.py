@@ -2703,11 +2703,11 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         score = float(item.get("score", 0) or 0)
         methods = int(item.get("method_count", 0) or 0)
         confirms = int(item.get("confirmations", 0) or 0)
-        if score >= 78 and methods >= 5 and confirms >= 5:
+        if score >= 75 and methods >= 5 and confirms >= 5:
             item["signal_tier"], item["medal"], item["importance"] = "ذهبية", "gold", "صفقة ذهبية قوية"
-        elif score >= 66 and methods >= 3 and confirms >= 4:
+        elif score >= 60 and methods >= 3 and confirms >= 4:
             item["signal_tier"], item["medal"], item["importance"] = "فضية", "silver", "صفقة فضية"
-        elif score >= 55 and methods >= 2 and confirms >= 3:
+        elif score >= 45 and methods >= 2 and confirms >= 3:
             item["signal_tier"], item["medal"], item["importance"] = "برونزية", "bronze", "فرصة متوسطة"
         else:
             continue
