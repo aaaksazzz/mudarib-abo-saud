@@ -3120,32 +3120,46 @@ def market_direction(market: str = Query("all")):
     news_score = (positive - negative) / len(news_rows) if news_rows else 0.0
     price_score = (sum(x["change_pct"] for x in changes) / len(changes)) if changes else None
     normalized_price = max(-1.0, min(1.0, (price_score or 0.0) / 1.5))
-    score = (normalized_price * 0.6) + (news_score * 0.4 if news_rows else 0.0)
-    # Binary market bias only: never emit WAIT, MIXED, or UNCLEAR as a direction.
-    # When evidence conflicts or is weak, use the sign of the combined score and disclose the limitation in reason.
-    if score >= 0:
-        direction, direction_ar = "BULLISH", "صاعد"
-        if price_score is None and not news_rows:
-            reason = "البيانات المتاحة محدودة؛ هذا اتجاه افتراضي مؤقت حتى تتوفر بيانات أحدث."
-        elif news_rows and price_score is not None and normalized_price * news_score < -0.05:
-            reason = "السعر والخبر متعارضان؛ الاتجاه حسب محصلة التقييم، وليس تأكيدًا مستقلًا."
-        elif abs(score) < 0.18:
-            reason = "الإشارات ضعيفة؛ الاتجاه حسب المحصلة الحالية وقد يتغير مع البيانات الجديدة."
-        else:
-            reason = "محصلة الأسعار والأخبار تميل للصعود؛ هذا تقدير للسوق وليس ضمانًا."
+
+    # Keep market direction tied to observed prices/breadth; news is a separate confirmation layer.
+    # This prevents negative headlines from masking a broad price rally (and vice versa).
+    if price_score is not None and abs(price_score) >= 0.02:
+        direction = "BULLISH" if price_score > 0 else "BEARISH"
+        direction_source = "prices"
+    elif breadth is not None and breadth != 50:
+        direction = "BULLISH" if breadth > 50 else "BEARISH"
+        direction_source = "breadth"
+    elif news_rows:
+        direction = "BULLISH" if news_score >= 0 else "BEARISH"
+        direction_source = "news_fallback"
     else:
-        direction, direction_ar = "BEARISH", "هابط"
-        if news_rows and price_score is not None and normalized_price * news_score < -0.05:
-            reason = "السعر والخبر متعارضان؛ الاتجاه حسب محصلة التقييم، وليس تأكيدًا مستقلًا."
-        elif abs(score) < 0.18:
-            reason = "الإشارات ضعيفة؛ الاتجاه حسب المحصلة الحالية وقد يتغير مع البيانات الجديدة."
-        else:
-            reason = "محصلة الأسعار والأخبار تميل للهبوط؛ هذا تقدير للسوق وليس ضمانًا."
+        direction = "BULLISH"
+        direction_source = "fallback"
+    direction_ar = "صاعد" if direction == "BULLISH" else "هابط"
+
+    conflict = bool(news_rows and price_score is not None and abs(price_score) >= 0.02 and
+                    ((price_score > 0 and news_score < 0) or (price_score < 0 and news_score > 0)))
+    if direction_source == "fallback":
+        reason = "لا تتوفر بيانات كافية للأسعار أو الأخبار؛ الاتجاه مؤقت وغير مؤكد."
+    elif direction_source == "news_fallback":
+        reason = "تعذر توفر حركة أسعار كافية؛ الاتجاه مؤقتًا مستنتج من الأخبار فقط."
+    elif conflict:
+        reason = "حركة الأسعار تحدد الاتجاه، لكن الأخبار تعاكسه؛ راجع الخبر كعامل مخاطرة منفصل."
+    elif price_score is not None and abs(price_score) < 0.2:
+        reason = "حركة الأسعار محدودة؛ الاتجاه الحالي قد يتغير مع تحديث البيانات."
+    else:
+        reason = "الاتجاه مبني على حركة الأسعار واتساع السوق؛ الأخبار معروضة كتأكيد منفصل."
+    news_sentiment = ("POSITIVE" if news_score > 0 else "NEGATIVE" if news_score < 0 else "NEUTRAL") if news_rows else "UNAVAILABLE"
+    news_sentiment_ar = {"POSITIVE": "إيجابية", "NEGATIVE": "سلبية", "NEUTRAL": "محايدة", "UNAVAILABLE": "غير متاحة"}[news_sentiment]
+    news_alignment = "متعارضة" if conflict else ("متوافقة" if news_rows and direction_source != "news_fallback" and ((direction == "BULLISH" and news_score > 0) or (direction == "BEARISH" and news_score < 0)) else "غير حاسمة")
     return {"ok": True, "market": market, "market_label": label, "direction": direction,
-            "direction_ar": direction_ar, "reason": reason, "price_change_pct": round(price_score, 3) if price_score is not None else None,
+            "direction_ar": direction_ar, "reason": reason, "direction_source": direction_source,
+            "price_change_pct": round(price_score, 3) if price_score is not None else None,
             "price_samples": changes, "breadth_positive_pct": breadth, "news_positive": positive,
-            "news_negative": negative, "news_sample_size": len(news_rows), "updated_at": int(now),
-            "method": "benchmark/breadth price changes + classified sector news; estimates only"}
+            "news_negative": negative, "news_sample_size": len(news_rows),
+            "news_sentiment": news_sentiment, "news_sentiment_ar": news_sentiment_ar,
+            "news_alignment": news_alignment, "updated_at": int(now),
+            "method": "price trend/breadth sets direction; classified sector news shown separately; estimates only"}
 
 
 @app.get("/api/blog")
