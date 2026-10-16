@@ -2293,7 +2293,9 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         item["medal"] = medals[i] if i < len(medals) else None
     new_telegram_signals = []
     with RESULTS_LOCK:
-        history = prune_results()
+        # Read history directly here so prune_results() cannot expire a trade
+        # before this scan records its latest available price and P&L.
+        history = read_json_file(RESULTS_PATH, [])
         ticker_prices = {x["symbol"]: x["price"] for x in tickers}
         for record in history:
             if record.get("result") != "مفتوحة" or record.get("market") != market or record.get("interval") != interval:
@@ -2334,8 +2336,9 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                     record["result"] = "انتهت المدة"
                     record["closed_at"] = int(record.get("expires_at") or now)
                     record["expiry_reason"] = "انتهت مدة الفريم"
-        # Expired open signals are deleted after their own timeframe, not kept as stale cards.
-        history = [record for record in history if record.get("result") != "انتهت المدة"]
+        # Keep expired outcomes in the 24-hour results history; only open records
+        # are eligible to be returned as actionable signals.
+        history = [record for record in history if isinstance(record, dict)]
         active_map = {
             (x.get("market"), x.get("interval"), x.get("symbol")): x
             for x in history if x.get("result") == "مفتوحة"
@@ -2843,12 +2846,29 @@ def signal_results(limit: int = Query(100, ge=1, le=500)):
         items = refresh_open_result_prices(items)
         items = prune_results()
         items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
-        closed = [x for x in items if x.get("result") in ("TP1", "TP2", "TP3", "SL")]
-        wins = [x for x in closed if x.get("result") in ("TP1", "TP2", "TP3")]
+        # A signal is an executed outcome unless entry validity expired before entry.
+        # Time-expired trades are scored from their last observed P&L; invalid entries
+        # are excluded from performance statistics because they were not actionable.
+        closed = [x for x in items if x.get("result") in ("TP1", "TP2", "TP3", "SL", "انتهت المدة")]
+        target_hits = [x for x in closed if x.get("result") in ("TP1", "TP2", "TP3")]
+        scored = [x for x in closed if isinstance(x.get("pnl_pct"), (int, float)) or x.get("result") in ("TP1", "TP2", "TP3", "SL")]
+        def _pnl_for_stats(item):
+            value = item.get("pnl_pct")
+            if isinstance(value, (int, float)):
+                return float(value)
+            if item.get("result") in ("TP1", "TP2", "TP3"):
+                return 0.000001
+            if item.get("result") == "SL":
+                return -0.000001
+            return None
+        profitable = [x for x in scored if (_pnl_for_stats(x) or 0) > 0]
+        losing = [x for x in scored if (_pnl_for_stats(x) or 0) < 0]
+        breakeven = [x for x in scored if _pnl_for_stats(x) == 0]
         return {"ok": True, "items": items[:limit], "total": len(items), "closed": len(closed),
-                "wins": len(wins), "losses": len(closed)-len(wins),
-                "win_rate": round(len(wins)*100/len(closed), 1) if closed else None,
-                "message": "الأداء يتحدث من آخر سعر متاح عند فتح النتائج؛ قد تتأخر أسعار Yahoo، وإعادة تشغيل الخدمة قد تفقد السجل ما لم يُضبط DATA_DIR على تخزين دائم."}
+                "wins": len(target_hits), "profitable": len(profitable), "losses": len(losing),
+                "breakeven": len(breakeven), "scored": len(scored),
+                "win_rate": round(len(profitable)*100/len(scored), 1) if scored else None,
+                "message": "نسبة النجاح محسوبة من نتائج الصفقات المنفذة المغلقة حسب الربح والخسارة المرصودة؛ الإشارات التي انتهت صلاحية دخولها مستبعدة. الأسعار العامة قد تتأخر، ويحتاج حفظ السجل بعد إعادة التشغيل إلى تخزين دائم على /data."}
 
 
 @app.get("/api/admin/status")
