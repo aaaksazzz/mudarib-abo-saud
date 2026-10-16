@@ -1,4 +1,4 @@
-"""Conservative multi-market strategy candidate: trend + liquidity sweep + reclaim.
+"""Balanced multi-market strategy candidate: trend + breakout/continuation + liquidity reclaim.
 
 Signal generator only; no order execution and no guarantee of profitability.
 Use closed candles, realistic fees/slippage, out-of-sample walk-forward testing.
@@ -37,7 +37,7 @@ def evaluate_v2(
     timeframe: str = "15m",
     estimated_round_trip_cost_pct: float = 0.20,
     risk_per_trade_pct: float = 0.5,
-    min_net_rr: float = 2.0,
+    min_net_rr: float = 1.6,
 ) -> dict[str, Any]:
     """Return BUY/SELL candidate or WAIT. Input candles must already be closed."""
     result: dict[str, Any] = {
@@ -91,7 +91,7 @@ def evaluate_v2(
         return result
 
     px, last_open, last_high, last_low = close[-1], float(candles[-1]["open"]), high[-1], low[-1]
-    if atr <= 0 or abs(px - e20[-1]) > 2.5 * atr:
+    if atr <= 0 or abs(px - e20[-1]) > 3.0 * atr:
         result["reasons"] = ["تذبذب غير مناسب أو السعر ممتد؛ لا نطارد الحركة"]
         return result
 
@@ -103,8 +103,9 @@ def evaluate_v2(
     bullish_reclaim = last_low < prior_low and px > prior_low and px > last_open
     bearish_reclaim = last_high > prior_high and px < prior_high and px < last_open
 
-    long_trend = px > e200[-1] and higher_trend_up
-    short_trend = px < e200[-1] and higher_trend_down
+    # Balanced filter: current timeframe EMA200 is the main guard; higher-timeframe alignment is preferred, not an absolute veto when its EMA50 direction agrees.
+    long_trend = px > e200[-1] and (higher_trend_up or hclose[-1] > he50[-1])
+    short_trend = px < e200[-1] and (higher_trend_down or hclose[-1] < he50[-1])
     momentum_long = e20[-1] > e50[-1]
     momentum_short = e20[-1] < e50[-1]
 
@@ -115,12 +116,12 @@ def evaluate_v2(
     # This avoids requiring a rare liquidity event on every scan while keeping multiple confirmations.
     bullish_continuation = (
         long_trend and momentum_long and px > e20[-1]
-        and close[-1] > close[-2] > close[-3]
+        and close[-1] > close[-2]
         and (vol_confirm or close[-1] > last_open)
     )
     bearish_continuation = (
         short_trend and momentum_short and px < e20[-1]
-        and close[-1] < close[-2] < close[-3]
+        and close[-1] < close[-2]
         and (vol_confirm or close[-1] < last_open)
     )
     if long_trend and (momentum_long or bullish_reclaim) and (bullish_reclaim or bullish_breakout or bullish_continuation):
@@ -143,7 +144,7 @@ def evaluate_v2(
     else:
         stop = max(last_high, max(high[-5:])) + 0.1 * atr
         risk = stop - px
-    if risk <= 0 or risk > 2.5 * atr:
+    if risk <= 0 or risk > 3.0 * atr:
         result["reasons"] = ["وقف الخسارة واسع أو غير منطقي بالنسبة للتذبذب"]
         return result
 

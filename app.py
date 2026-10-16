@@ -2457,9 +2457,7 @@ _CRYPTO_SIGNAL_BIAS_LOCK = threading.Lock()
 
 
 def crypto_signal_side():
-    """Use the same price/breadth-based crypto direction shown in the market panel.
-    Never infer an actionable side from news-only or missing-data fallbacks.
-    """
+    """Use only price/breadth-based crypto direction; missing data never creates a trade side."""
     now = time.time()
     with _CRYPTO_SIGNAL_BIAS_LOCK:
         if now - _CRYPTO_SIGNAL_BIAS_CACHE["at"] < 45:
@@ -2601,7 +2599,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 key=lambda item: (abs(item.get("change_pct", 0)), item.get("quote_volume", 0)),
                 reverse=True,
             )
-            batch_size = 8
+            # Scan 20 liquid crypto symbols per request; keep worker concurrency capped below.
+            batch_size = 20
             if len(eligible_tickers) > batch_size:
                 # Advance to the next circular batch every 5 minutes. Repeated requests
                 # in the same window share a batch; later windows cover the rest of the universe.
@@ -2620,9 +2619,13 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             signal_universe = YAHOO_MARKETS[market]
             batch_size = 8
             if market == "saudi":
-                # Rotate through the full TASI directory so the first alphabetic batch
-                # does not permanently exclude most listed companies from signal scans.
+                # Only TASI: load all listed Saudi main-market equities; never apply the US liquidity rule.
                 signal_universe = _load_saudi_symbols()
+            elif market == "us":
+                # Discover US-listed stocks dynamically; the universe loader keeps only >= $1M daily dollar turnover.
+                signal_universe = _load_us_symbols()
+            if market in ("saudi", "us"):
+                # Rotate through the full eligible universe so stocks beyond the first batch are not skipped forever.
                 if len(signal_universe) > batch_size:
                     offset = (int(now // 300) * batch_size) % len(signal_universe)
                     signal_symbols = (signal_universe[offset:] + signal_universe[:offset])[:batch_size]
@@ -3142,7 +3145,7 @@ def _load_saudi_symbols():
     loaded = {}
     # Keep paging: a single page can silently omit listed companies when the directory grows.
     page_size = 200
-    for offset in range(0, 2000, page_size):
+    for offset in range(0, 10000, page_size):
         try:
             url = (
                 "https://api.sahmk.sa/api/v1/companies/?market=TASI"
@@ -3183,7 +3186,9 @@ def _news_universe():
     now = time.time()
     if NEWS_UNIVERSE_CACHE["assets"] and now - NEWS_UNIVERSE_CACHE["at"] < 60:
         return NEWS_UNIVERSE_CACHE["assets"], NEWS_UNIVERSE_CACHE["coins"], NEWS_UNIVERSE_CACHE["counts"]
+    # Keep public universe counts aligned with the dynamically discovered stock universes.
     _load_saudi_symbols()
+    _load_us_symbols()
     coins, counts = {}, {"spot_pairs": 0, "futures_pairs": 0}
     for market in ("spot", "futures"):
         try:
@@ -3464,7 +3469,7 @@ def market_direction(market: str = Query("all")):
 
 def _build_market_direction(market: str = "all"):
 
-    """Estimate broad market bias from benchmark/breadth price changes plus sector-news direction."""
+    """Estimate broad market bias from observed price changes and market breadth only; news is never used."""
     market = (market or "all").lower().strip()
     allowed = {"all", "crypto", "us", "saudi", "forex", "contracts"}
     if market not in allowed:
@@ -3517,22 +3522,9 @@ def _build_market_direction(market: str = "all"):
                     changes = [{"symbol": "breadth_average", "change_pct": avg_asset_change}]
     except Exception:
         pass
-    news_items = (NEWS_CACHE.get(market) or {}).get("items", [])
-    if not news_items:
-        try:
-            news_result = market_news(limit=50, market=market, refresh=False)
-            news_items = news_result.get("items", []) if isinstance(news_result, dict) else []
-        except Exception:
-            news_items = []
-    news_rows = [x for x in news_items if x.get("direction") in ("BUY", "SELL")]
-    positive = sum(1 for x in news_rows if x.get("direction") == "BUY")
-    negative = sum(1 for x in news_rows if x.get("direction") == "SELL")
-    news_score = (positive - negative) / len(news_rows) if news_rows else 0.0
+    # Strategy direction is calculated only from prices and breadth. Never fetch or score news here.
     price_score = (sum(x["change_pct"] for x in changes) / len(changes)) if changes else None
-    normalized_price = max(-1.0, min(1.0, (price_score or 0.0) / 1.5))
 
-    # Keep market direction tied to observed prices/breadth; news is a separate confirmation layer.
-    # This prevents negative headlines from masking a broad price rally (and vice versa).
     if market == "crypto":
         if asset_count and avg_asset_change is not None and abs(avg_asset_change) >= 0.02:
             direction = "BULLISH" if avg_asset_change > 0 else "BEARISH"
@@ -3549,40 +3541,25 @@ def _build_market_direction(market: str = "all"):
     elif breadth is not None and breadth != 50:
         direction = "BULLISH" if breadth > 50 else "BEARISH"
         direction_source = "breadth"
-    elif news_rows:
-        direction = "BULLISH" if news_score >= 0 else "BEARISH"
-        direction_source = "news_fallback"
     else:
         direction = "NEUTRAL"
         direction_source = "fallback"
     direction_ar = "صاعد" if direction == "BULLISH" else "هابط" if direction == "BEARISH" else "محايد"
 
     direction_price = avg_asset_change if market == "crypto" else price_score
-    conflict = bool(news_rows and direction_price is not None and abs(direction_price) >= 0.02 and
-                    ((direction_price > 0 and news_score < 0) or (direction_price < 0 and news_score > 0)))
     if direction_source in ("fallback", "insufficient_price_signal"):
-        reason = "لا تتوفر حركة أسعار كافية لحسم الاتجاه؛ الأخبار لا تستبدل بيانات الأسعار."
-    elif direction_source == "news_fallback":
-        reason = "تعذر توفر حركة أسعار كافية؛ الاتجاه مؤقتًا مستنتج من الأخبار فقط."
-    elif conflict:
-        reason = "حركة الأسعار تحدد الاتجاه، لكن الأخبار تعاكسه؛ راجع الخبر كعامل مخاطرة منفصل."
+        reason = "لا تتوفر حركة أسعار واتساع سوق كافية لحسم الاتجاه؛ لا تُستنتج إشارة من الأخبار."
     elif direction_price is not None and abs(direction_price) < 0.2:
         reason = "حركة الأسعار محدودة؛ الاتجاه الحالي قد يتغير مع تحديث البيانات."
     else:
-        reason = "الاتجاه مبني على حركة الأسعار واتساع السوق؛ الأخبار معروضة كتأكيد منفصل."
-    news_sentiment = ("POSITIVE" if news_score > 0 else "NEGATIVE" if news_score < 0 else "NEUTRAL") if news_rows else "UNAVAILABLE"
-    news_sentiment_ar = {"POSITIVE": "إيجابية", "NEGATIVE": "سلبية", "NEUTRAL": "محايدة", "UNAVAILABLE": "غير متاحة"}[news_sentiment]
-    news_alignment = "متعارضة" if conflict else ("متوافقة" if news_rows and direction_source != "news_fallback" and ((direction == "BULLISH" and news_score > 0) or (direction == "BEARISH" and news_score < 0)) else "غير حاسمة")
+        reason = "الاتجاه مبني حصريًا على حركة الأسعار واتساع السوق."
     return {"ok": True, "market": market, "market_label": label, "direction": direction,
             "direction_ar": direction_ar, "reason": reason, "direction_source": direction_source,
             "price_change_pct": round(direction_price, 3) if direction_price is not None else None,
             "price_samples": changes, "assets_sampled": asset_count, "assets_up": up_count, "assets_down": down_count,
             "assets_flat": flat_count, "breadth_positive_pct": breadth, "breadth_negative_pct": breadth_negative,
-            "average_coin_change_pct": avg_asset_change, "news_positive": positive,
-            "news_negative": negative, "news_sample_size": len(news_rows),
-            "news_sentiment": news_sentiment, "news_sentiment_ar": news_sentiment_ar,
-            "news_alignment": news_alignment, "updated_at": int(now),
-            "method": "price trend/breadth sets direction; classified sector news shown separately; estimates only"}
+            "average_coin_change_pct": avg_asset_change, "updated_at": int(now),
+            "method": "price trend and market breadth only; news excluded from all strategy decisions"}
 
 
 @app.get("/api/blog")
