@@ -2615,7 +2615,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 key=lambda item: (abs(item.get("change_pct", 0)), item.get("quote_volume", 0)),
                 reverse=True,
             )
-            batch_size = max(24, min(limit * 2, 30))
+            batch_size = 20
             if len(eligible_tickers) > batch_size:
                 # Advance to the next circular batch every 5 minutes. Repeated requests
                 # in the same window share a batch; later windows cover the rest of the universe.
