@@ -2002,134 +2002,185 @@ def telegram_status():
 
 
 def build_signal(market: str, ticker: dict, interval: str):
+    """Breakout + 50% pullback strategy with structure, divergence, volume and higher-timeframe filters."""
     candles = candle_data(market, ticker["symbol"], interval)
-    if len(candles) < 205:
+    if len(candles) < 80:
         return None
-    closes = [k["close"] for k in candles]
-    highs = [k["high"] for k in candles]
-    lows = [k["low"] for k in candles]
-    opens = [k["open"] for k in candles]
-    volumes = [k["volume"] for k in candles]
-    price, prev = closes[-1], closes[-2]
-    e20, e50, e200 = ema(closes, 20), ema(closes, 50), ema(closes, 200)
-    if None in (e20, e50, e200) or price <= 0:
+    closes = [float(k["close"]) for k in candles]
+    highs = [float(k["high"]) for k in candles]
+    lows = [float(k["low"]) for k in candles]
+    opens = [float(k["open"]) for k in candles]
+    volumes = [max(0.0, float(k.get("volume", 0) or 0)) for k in candles]
+    price = closes[-1]
+    if price <= 0:
         return None
-    tr = [max(candles[i]["high"]-candles[i]["low"],
-              abs(candles[i]["high"]-candles[i-1]["close"]),
-              abs(candles[i]["low"]-candles[i-1]["close"])) for i in range(1, len(candles))]
-    atr = sum(tr[-14:]) / min(14, len(tr))
+
+    def mean(values):
+        return sum(values) / len(values) if values else 0.0
+
+    def pivot_points(values, is_high, left=2, right=2):
+        points = []
+        for i in range(left, len(values) - right):
+            segment = values[i-left:i+right+1]
+            if values[i] == (max(segment) if is_high else min(segment)):
+                points.append((i, values[i]))
+        return points
+
+    def calc_rsi(values, period=14):
+        if len(values) < period + 1:
+            return []
+        result = [None] * len(values)
+        for i in range(period, len(values)):
+            changes = [values[j] - values[j-1] for j in range(i-period+1, i+1)]
+            gains = mean([max(x, 0.0) for x in changes])
+            losses = mean([max(-x, 0.0) for x in changes])
+            result[i] = 100.0 if losses == 0 and gains > 0 else 50.0 if losses == 0 else 100.0 - 100.0/(1.0 + gains/losses)
+        return result
+
+    true_ranges = [
+        max(highs[i]-lows[i], abs(highs[i]-closes[i-1]), abs(lows[i]-closes[i-1]))
+        for i in range(1, len(candles))
+    ]
+    atr = mean(true_ranges[-14:])
     if atr <= 0:
         return None
-    prior_high, prior_low = max(highs[-21:-1]), min(lows[-21:-1])
-    avg_vol = sum(volumes[-21:-1]) / max(1, len(volumes[-21:-1]))
-    candle_range = max(highs[-1] - lows[-1], 1e-12)
-    body = abs(closes[-1] - opens[-1])
-    bullish = closes[-1] > opens[-1]
-    bearish = closes[-1] < opens[-1]
-    # Independent rule families: trend, structure, momentum, volume, candle shape and location.
-    tests = {
-        "الاتجاه EMA20/50": e20 > e50,
-        "الاتجاه EMA50/200": e50 > e200,
-        "السعر فوق EMA200": price > e200,
-        "زخم 4 شمعات": price > closes[-5] if len(closes) >= 5 else False,
-        "كسر قمة 20 شمعة": price > prior_high,
-        "كسر قاع 20 شمعة": price < prior_low,
-        "شمعة صاعدة": bullish,
-        "شمعة هابطة": bearish,
-        "حجم تداول مرتفع": avg_vol > 0 and volumes[-1] >= avg_vol * 1.5,
-        "إغلاق قرب القمة": (highs[-1]-price)/candle_range < 0.2,
-        "إغلاق قرب القاع": (price-lows[-1])/candle_range < 0.2,
-        "قوة جسم الشمعة": body/candle_range >= 0.6,
-        "سحب سيولة القاع": lows[-1] < prior_low and price > prior_low,
-        "رفض قمة سابقة": highs[-1] > prior_high and price < prior_high,
-        "قرب مقاومة": abs(price-prior_high)/price < 0.004,
-        "قرب دعم": abs(price-prior_low)/price < 0.004,
-        "فجوة سعرية صاعدة": candles[-3]["high"] < lows[-1],
-        "فجوة سعرية هابطة": candles[-3]["low"] > highs[-1],
-        "تتابع صاعد": closes[-1] > closes[-2] > closes[-3],
-        "تتابع هابط": closes[-1] < closes[-2] < closes[-3],
-        "VWAP تقريبي": price > (sum(closes[-20+i]*volumes[-20+i] for i in range(20))/max(sum(volumes[-20:]),1e-12)),
-        "فوق منتصف النطاق": price > (max(highs[-50:])+min(lows[-50:]))/2,
-        "تذبذب معقول": (highs[-1]-lows[-1])/price < 0.05,
-    }
-    bullish_points = sum([
-        price > e200, e50 > e200, e20 > e50, price > closes[-5],
-        price > prior_high, bullish, (highs[-1]-price)/candle_range < 0.2,
-        lows[-1] < prior_low and price > prior_low,
-        price > (sum(closes[-20+i]*volumes[-20+i] for i in range(20))/max(sum(volumes[-20:]),1e-12)),
-        price > (max(highs[-50:])+min(lows[-50:]))/2,
-    ])
-    bearish_points = sum([
-        price < e200, e50 < e200, e20 < e50, price < closes[-5],
-        price < prior_low, bearish, (price-lows[-1])/candle_range < 0.2,
-        highs[-1] > prior_high and price < prior_high,
-        price < (sum(closes[-20+i]*volumes[-20+i] for i in range(20))/max(sum(volumes[-20:]),1e-12)),
-        price < (max(highs[-50:])+min(lows[-50:]))/2,
-    ])
-    side = "BUY" if bullish_points > bearish_points else "SELL" if bearish_points > bullish_points else None
-    if side is None:
+    avg_vol = mean(volumes[-21:-1])
+    e50, e200 = ema(closes, 50), ema(closes, 200)
+    last_open, last_close = opens[-1], closes[-1]
+    bullish_candle, bearish_candle = last_close > last_open, last_close < last_open
+    high_pivots = [(i, v) for i, v in pivot_points(highs, True) if i < len(candles)-3]
+    low_pivots = [(i, v) for i, v in pivot_points(lows, False) if i < len(candles)-3]
+    if not high_pivots or not low_pivots:
         return None
-    # Evaluate every named-method rule and make method confluence part of eligibility and score.
-    method_hits = []
-    for method_name, method_key in METHOD_RULES.items():
+
+    # Look for a recent confirmed swing break, then a pullback to the 50% midpoint.
+    n = len(candles)
+    candidate = None
+    search_from = max(8, n - 18)
+    for direction in ("BUY", "SELL"):
+        if direction == "BUY":
+            eligible_highs = [(i, v) for i, v in high_pivots if search_from - 14 <= i < n - 5]
+            for hi_idx, swing_high in reversed(eligible_highs):
+                breaks = [j for j in range(hi_idx + 1, n - 2)
+                          if closes[j] > swing_high and closes[j-1] <= swing_high]
+                if not breaks:
+                    continue
+                break_idx = breaks[-1]
+                prior_lows = [(i, v) for i, v in low_pivots if i < break_idx]
+                if not prior_lows:
+                    continue
+                low_idx, swing_low = prior_lows[-1]
+                impulse_high = max(highs[break_idx:n])
+                impulse_low = min(lows[low_idx:break_idx+1])
+                span = impulse_high - impulse_low
+                if span <= atr * 1.2 or impulse_high <= swing_high:
+                    continue
+                entry_zone = impulse_high - span * 0.50
+                tolerance = max(atr * 0.30, price * 0.0015)
+                # Require price to revisit the midpoint and close back above it.
+                if lows[-1] <= entry_zone + tolerance and last_close >= entry_zone and bullish_candle:
+                    candidate = {"side":"BUY","entry_zone":entry_zone,"swing_stop":swing_low,
+                                 "break_level":swing_high,"break_idx":break_idx,
+                                 "impulse_high":impulse_high,"impulse_low":impulse_low}
+                    break
+        else:
+            eligible_lows = [(i, v) for i, v in low_pivots if search_from - 14 <= i < n - 5]
+            for lo_idx, swing_low in reversed(eligible_lows):
+                breaks = [j for j in range(lo_idx + 1, n - 2)
+                          if closes[j] < swing_low and closes[j-1] >= swing_low]
+                if not breaks:
+                    continue
+                break_idx = breaks[-1]
+                prior_highs = [(i, v) for i, v in high_pivots if i < break_idx]
+                if not prior_highs:
+                    continue
+                high_idx, swing_high = prior_highs[-1]
+                impulse_low = min(lows[break_idx:n])
+                impulse_high = max(highs[high_idx:break_idx+1])
+                span = impulse_high - impulse_low
+                if span <= atr * 1.2 or impulse_low >= swing_low:
+                    continue
+                entry_zone = impulse_low + span * 0.50
+                tolerance = max(atr * 0.30, price * 0.0015)
+                if highs[-1] >= entry_zone - tolerance and last_close <= entry_zone and bearish_candle:
+                    candidate = {"side":"SELL","entry_zone":entry_zone,"swing_stop":swing_high,
+                                 "break_level":swing_low,"break_idx":break_idx,
+                                 "impulse_high":impulse_high,"impulse_low":impulse_low}
+                    break
+        if candidate:
+            break
+    if not candidate:
+        return None
+
+    side = candidate["side"]
+    # Confirmed RSI divergence is a bonus, not a mandatory gate, to avoid over-filtering.
+    rsi_values = calc_rsi(closes)
+    rsi_highs = [(i,v) for i,v in high_pivots if i < n-3 and rsi_values[i] is not None]
+    rsi_lows = [(i,v) for i,v in low_pivots if i < n-3 and rsi_values[i] is not None]
+    divergence = False
+    if side == "BUY" and len(rsi_lows) >= 2:
+        (i1,p1),(i2,p2)=rsi_lows[-2:]
+        divergence = p2 < p1 and rsi_values[i2] > rsi_values[i1]
+    elif side == "SELL" and len(rsi_highs) >= 2:
+        (i1,p1),(i2,p2)=rsi_highs[-2:]
+        divergence = p2 > p1 and rsi_values[i2] < rsi_values[i1]
+
+    trend_ok = (e50 is not None and e200 is not None and
+                ((side == "BUY" and price > e200 and e50 > e200) or
+                 (side == "SELL" and price < e200 and e50 < e200)))
+    if not trend_ok:
+        return None
+
+    # Apply the higher-timeframe trend check only after a complete candidate is found.
+    higher_interval = HIGHER_INTERVAL.get(interval, interval)
+    if higher_interval != interval:
         try:
-            method_result = method_signal(candles, ticker, method_key)
-            if method_result and method_result.get("side") == side:
-                method_hits.append(method_name)
-        except (ValueError, TypeError, IndexError, ZeroDivisionError):
-            continue
-    confirmations = bullish_points if side == "BUY" else bearish_points
-    directional_score = 100 * max(bullish_points, bearish_points) / 10
-    method_families = sorted({method_family(METHOD_RULES[name]) for name in method_hits})
-    method_count_raw = len(method_hits)
-    method_count = len(method_families)
-    method_score = min(method_count, 10) * 10
-    # A single valid method may surface a candidate; stronger confluence raises its rank.
-    # Keep a small directional floor so an isolated rule is not presented as a strong trade.
-    score = int(0.65 * directional_score + 0.35 * method_score)
-    if score < 35 or confirmations < 3 or method_count < 1:
-        return None
+            higher_candles = candle_data(market, ticker["symbol"], higher_interval)
+            higher_closes = [float(k["close"]) for k in higher_candles]
+            h50, h200 = ema(higher_closes, 50), ema(higher_closes, 200)
+            if h50 is not None and h200 is not None:
+                if side == "BUY" and not (higher_closes[-1] > h200 and h50 > h200):
+                    return None
+                if side == "SELL" and not (higher_closes[-1] < h200 and h50 < h200):
+                    return None
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError, IndexError, TypeError):
+            # Do not fabricate higher-timeframe data; retain same-timeframe filters if provider is unavailable.
+            pass
+
     entry = price
-    risk = max(atr * 1.5, entry * 0.002)
-    if side == "BUY":
-        stop, t1, t2, t3 = entry-risk, entry+risk, entry+2*risk, entry+3*risk
-    else:
-        stop, t1, t2, t3 = entry+risk, entry-risk, entry-2*risk, entry-3*risk
-    if min(stop, t1, t2, t3) <= 0:
+    buffer = max(atr * 0.15, entry * 0.0005)
+    stop = candidate["swing_stop"] - buffer if side == "BUY" else candidate["swing_stop"] + buffer
+    risk = entry - stop if side == "BUY" else stop - entry
+    if stop <= 0 or risk <= max(entry * 0.0005, 1e-12) or risk / entry > 0.08:
         return None
-    # These are rule hits, not proof that every discretionary concept is fully automated.
-    if side == "BUY":
-        directional = ["EMA20 فوق EMA50" if e20 > e50 else "EMA20 دون EMA50",
-                        "EMA50 فوق EMA200" if e50 > e200 else "EMA50 دون EMA200",
-                        "السعر فوق EMA200" if price > e200 else "السعر دون EMA200"]
-        if price > prior_high: directional.append("كسر قمة 20 شمعة")
-        if lows[-1] < prior_low and price > prior_low: directional.append("سحب سيولة القاع")
-        if bullish: directional.append("شمعة صاعدة")
-    else:
-        directional = ["EMA20 دون EMA50" if e20 < e50 else "EMA20 فوق EMA50",
-                        "EMA50 دون EMA200" if e50 < e200 else "EMA50 فوق EMA200",
-                        "السعر دون EMA200" if price < e200 else "السعر فوق EMA200"]
-        if price < prior_low: directional.append("كسر قاع 20 شمعة")
-        if highs[-1] > prior_high and price < prior_high: directional.append("رفض القمة / سحب سيولة")
-        if bearish: directional.append("شمعة هابطة")
-    if avg_vol > 0 and volumes[-1] >= avg_vol * 1.5:
-        directional.append("تأكيد حجم التداول")
-    active = list(dict.fromkeys(directional + method_hits))
+    targets = [entry + risk * r if side == "BUY" else entry - risk * r for r in (1, 2, 3)]
+    if min(targets) <= 0:
+        return None
+
+    volume_ok = avg_vol > 0 and volumes[-1] >= avg_vol * 1.2
+    confirmations = 3 + int(divergence) + int(volume_ok)
+    score = min(92, 62 + int(trend_ok)*8 + int(divergence)*8 + int(volume_ok)*6 + int(bullish_candle if side=="BUY" else bearish_candle)*4)
+    methods = ["اختراق قمة/قاع بإغلاق", "تصحيح 50%", "بنية السوق", "اتجاه EMA200"]
+    if divergence:
+        methods.append("دايفرجنس RSI")
+    if volume_ok:
+        methods.append("حجم تداول داعم")
     return {
         "symbol": ticker["symbol"], "side": side, "market": market, "interval": interval,
         "leverage": "1x" if market == "futures" else None,
-        "entry": entry, "stop": stop, "tp1": t1, "tp2": t2, "tp3": t3,
-        "stop_pct": abs(entry-stop)/entry*100, "tp1_pct": abs(t1-entry)/entry*100,
-        "tp2_pct": abs(t2-entry)/entry*100, "tp3_pct": abs(t3-entry)/entry*100,
-        "score": min(98, score), "confirmations": confirmations,
-        "method_count": method_count, "method_count_raw": method_count_raw,
-        "method_families": method_families,
-        "importance": ("صفقة مهمة جدًا" if method_count >= 7 else "صفقة مهمة" if method_count >= 5 else "توافق متوسط" if method_count >= 3 else "إشارة أولية"),
-        "methods": active, "method_hits": method_hits,
+        "entry": entry, "stop": stop, "tp1": targets[0], "tp2": targets[1], "tp3": targets[2],
+        "stop_pct": abs(entry-stop)/entry*100, "tp1_pct": abs(targets[0]-entry)/entry*100,
+        "tp2_pct": abs(targets[1]-entry)/entry*100, "tp3_pct": abs(targets[2]-entry)/entry*100,
+        "score": score, "score_type": "rule_evidence_not_probability",
+        "confirmations": confirmations, "method_count": len(methods), "method_count_raw": len(methods),
+        "method_families": ["structure_breakout","retracement_50","trend_filter"] + (["rsi_divergence"] if divergence else []) + (["volume_confirmation"] if volume_ok else []),
+        "importance": "صفقة مهمة" if score >= 80 else "توافق فني",
+        "methods": methods, "method_hits": methods,
         "quote_volume": ticker.get("quote_volume", 0), "updated_at": int(time.time()),
-        "method": "ترتيب حسب توافق المناهج مع اتجاه السعر",
-        "status": "عدد المناهج المتوافقة يرفع ترتيب الإشارة؛ الإشارة الأولية تحتاج تحققًا إضافيًا"
+        "method": "اختراق + تصحيح 50% + تأكيدات",
+        "status": "قوة الشواهد وليست احتمال ربح؛ الهدف النهائي 3R"
     }
+
 
 @app.get("/api/saved-signals/{market}")
 def saved_signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20)):
