@@ -96,16 +96,24 @@ async def site_password_gate(request: Request, call_next):
         return JSONResponse({"detail": "يلزم إدخال الرقم السري"}, status_code=401)
 
     return HTMLResponse(LOGIN_HTML, status_code=200)
-# Persist results/articles on a mounted Northflank volume. Configure a persistent volume at /data.
-# DATA_DIR may override this path for local development or another persistent mount.
+# Production results survive restarts only when Northflank mounts a persistent volume at /data.
+# Keep DATA_DIR configurable, but warn loudly when /data is merely container-local storage.
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data/smart-trading-pro-data"))
+PERSISTENT_STORAGE_CONFIGURED = os.path.ismount("/data") or bool(os.getenv("DATA_DIR"))
 try:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-except OSError:
-    # Local development and CI may not have a mounted /data volume.
-    # Fall back without changing the configured persistent path when it is writable.
+    # Verify that the chosen directory can actually be written to before serving requests.
+    _storage_probe = DATA_DIR / f".storage-check-{os.getpid()}.tmp"
+    _storage_probe.write_text("ok", encoding="utf-8")
+    _storage_probe.unlink(missing_ok=True)
+except OSError as exc:
+    # Development/CI fallback only; this is not durable across production restarts.
     DATA_DIR = BASE / ".data"
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    PERSISTENT_STORAGE_CONFIGURED = False
+    print(f"WARNING: persistent storage unavailable ({exc}); results may be lost on restart.")
+if not PERSISTENT_STORAGE_CONFIGURED:
+    print("WARNING: /data is not detected as a mounted persistent volume. Configure a Northflank volume mounted at /data or set DATA_DIR to a persistent mount.")
 RESULTS_PATH = DATA_DIR / "results.json"
 SIGNALS_CACHE_PATH = DATA_DIR / "signals-cache.json"
 # Protect the complete read-modify-write transaction across all market endpoints.
@@ -2878,7 +2886,9 @@ def signal_results(limit: int = Query(100, ge=1, le=500)):
 def admin_status(credentials: HTTPBasicCredentials = Depends(security)):
     require_admin(credentials)
     return {"ok": True, "authenticated": True, "articles": len(read_json_file(ARTICLES_PATH, [])),
-            "data_dir": str(DATA_DIR)}
+            "data_dir": str(DATA_DIR), "persistent_storage_configured": PERSISTENT_STORAGE_CONFIGURED,
+            "results_file_exists": RESULTS_PATH.exists(),
+            "results_count": len(read_json_file(RESULTS_PATH, []))}
 
 
 @app.post("/api/admin/articles")
