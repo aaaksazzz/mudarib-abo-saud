@@ -2566,10 +2566,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 active_items.append(item)
         cached_result["items"] = active_items
         cached_result["count"] = len(active_items)
-        if active_items:
-            return cached_result
-        # Never serve expired saved trades from the short in-memory cache.
-        SIGNAL_CACHE.pop(key, None)
+        # Cache completed empty scans too; otherwise every page poll launches another
+        # full candle scan when the market has no qualifying setup.
+        cached_result["cached"] = True
+        return cached_result
     # Reuse a recent scan persisted on the mounted data volume after page reloads
     # or process restarts; do not make every visitor rescan the whole market.
     with RESULTS_LOCK:
@@ -2604,11 +2604,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             restored["cached"] = True
             restored["live"] = False
             restored["stale"] = True
-            if active_items or restored.get("watch_items"):
-                restored["message"] = "نعرض آخر فحص محفوظًا؛ أزيلت أي صفقة انتهت مدة فريمها."
-            else:
-                # Do not return an empty or expired cached scan; continue with a fresh scan.
-                restored = None
+            # An empty completed scan is still valid for the short cache TTL.
+            # Avoid repeated rescans caused by frontend polling when no setup qualifies.
+            restored["message"] = ("نعرض آخر فحص محفوظًا؛ أزيلت أي صفقة انتهت مدة فريمها."
+                                   if active_items else "آخر فحص لم يجد صفقة اجتازت الجودة؛ سيُعاد الفحص بعد انتهاء التخزين المؤقت.")
             if restored is not None:
                 SIGNAL_CACHE[key] = (now, restored)
                 return restored
