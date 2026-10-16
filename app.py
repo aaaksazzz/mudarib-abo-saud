@@ -3192,36 +3192,37 @@ def market_direction(market: str = Query("all")):
         with urllib.request.urlopen(req, timeout=2.0) as response:
             return json.loads(response.read().decode("utf-8"))
     changes = []
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        jobs = []
-        for symbol in benchmarks:
-            if symbol.endswith("USDT"):
-                url = "https://api.binance.com/api/v3/ticker/24hr?symbol=" + symbol
-                jobs.append((symbol, pool.submit(_fetch_json_url, url)))
-            else:
-                jobs.append((symbol, pool.submit(fetch_yahoo_quote, symbol)))
-        for symbol, future in jobs:
-            try:
-                value = future.result()
-                if symbol.endswith("USDT"):
-                    pct = float(value.get("priceChangePercent", 0)) if isinstance(value, dict) else 0
-                else:
-                    pct = float(value.get("change_pct", 0)) if value else 0
-                if math.isfinite(pct):
-                    changes.append({"symbol": symbol, "change_pct": round(pct, 3)})
-            except Exception:
-                continue
     breadth = None
+    breadth_negative = None
+    up_count = down_count = flat_count = asset_count = 0
+    avg_asset_change = None
     breadth_market = {"crypto": "spot", "us": "us", "saudi": "saudi", "forex": "forex", "contracts": "contracts"}.get(market)
     try:
         if breadth_market:
-            md = market_data(breadth_market, 500)
+            md = market_data(breadth_market, 2000)
             rows = md.get("items", []) if isinstance(md, dict) else []
-            valid = [float(x.get("change_pct", 0)) for x in rows if isinstance(x, dict) and x.get("change_pct") is not None]
+            valid = []
+            for row in rows:
+                if not isinstance(row, dict) or row.get("change_pct") is None:
+                    continue
+                try:
+                    pct = float(row.get("change_pct"))
+                    if math.isfinite(pct):
+                        valid.append(pct)
+                except (TypeError, ValueError):
+                    continue
             if valid:
-                breadth = round(sum(1 for x in valid if x > 0) / len(valid) * 100, 1)
-                if not changes:
-                    changes = [{"symbol": "breadth", "change_pct": round(sum(valid) / len(valid), 3)}]
+                asset_count = len(valid)
+                up_count = sum(1 for pct in valid if pct > 0.05)
+                down_count = sum(1 for pct in valid if pct < -0.05)
+                flat_count = asset_count - up_count - down_count
+                breadth = round(up_count / asset_count * 100, 1)
+                breadth_negative = round(down_count / asset_count * 100, 1)
+                avg_asset_change = round(sum(valid) / asset_count, 3)
+                if market == "crypto":
+                    changes = [{"symbol": "coin_universe_average", "change_pct": avg_asset_change}]
+                else:
+                    changes = [{"symbol": "breadth_average", "change_pct": avg_asset_change}]
     except Exception:
         pass
     news_items = (NEWS_CACHE.get(market) or {}).get("items", [])
@@ -3240,7 +3241,17 @@ def market_direction(market: str = Query("all")):
 
     # Keep market direction tied to observed prices/breadth; news is a separate confirmation layer.
     # This prevents negative headlines from masking a broad price rally (and vice versa).
-    if price_score is not None and abs(price_score) >= 0.02:
+    if market == "crypto":
+        if asset_count and avg_asset_change is not None and abs(avg_asset_change) >= 0.02:
+            direction = "BULLISH" if avg_asset_change > 0 else "BEARISH"
+            direction_source = "coin_prices"
+        elif asset_count and up_count != down_count:
+            direction = "BULLISH" if up_count > down_count else "BEARISH"
+            direction_source = "coin_breadth"
+        else:
+            direction = "NEUTRAL"
+            direction_source = "insufficient_price_signal"
+    elif price_score is not None and abs(price_score) >= 0.02:
         direction = "BULLISH" if price_score > 0 else "BEARISH"
         direction_source = "prices"
     elif breadth is not None and breadth != 50:
@@ -3250,19 +3261,20 @@ def market_direction(market: str = Query("all")):
         direction = "BULLISH" if news_score >= 0 else "BEARISH"
         direction_source = "news_fallback"
     else:
-        direction = "BULLISH"
+        direction = "NEUTRAL"
         direction_source = "fallback"
-    direction_ar = "صاعد" if direction == "BULLISH" else "هابط"
+    direction_ar = "صاعد" if direction == "BULLISH" else "هابط" if direction == "BEARISH" else "محايد"
 
-    conflict = bool(news_rows and price_score is not None and abs(price_score) >= 0.02 and
-                    ((price_score > 0 and news_score < 0) or (price_score < 0 and news_score > 0)))
-    if direction_source == "fallback":
-        reason = "لا تتوفر بيانات كافية للأسعار أو الأخبار؛ الاتجاه مؤقت وغير مؤكد."
+    direction_price = avg_asset_change if market == "crypto" else price_score
+    conflict = bool(news_rows and direction_price is not None and abs(direction_price) >= 0.02 and
+                    ((direction_price > 0 and news_score < 0) or (direction_price < 0 and news_score > 0)))
+    if direction_source in ("fallback", "insufficient_price_signal"):
+        reason = "لا تتوفر حركة أسعار كافية لحسم الاتجاه؛ الأخبار لا تستبدل بيانات الأسعار."
     elif direction_source == "news_fallback":
         reason = "تعذر توفر حركة أسعار كافية؛ الاتجاه مؤقتًا مستنتج من الأخبار فقط."
     elif conflict:
         reason = "حركة الأسعار تحدد الاتجاه، لكن الأخبار تعاكسه؛ راجع الخبر كعامل مخاطرة منفصل."
-    elif price_score is not None and abs(price_score) < 0.2:
+    elif direction_price is not None and abs(direction_price) < 0.2:
         reason = "حركة الأسعار محدودة؛ الاتجاه الحالي قد يتغير مع تحديث البيانات."
     else:
         reason = "الاتجاه مبني على حركة الأسعار واتساع السوق؛ الأخبار معروضة كتأكيد منفصل."
@@ -3271,8 +3283,10 @@ def market_direction(market: str = Query("all")):
     news_alignment = "متعارضة" if conflict else ("متوافقة" if news_rows and direction_source != "news_fallback" and ((direction == "BULLISH" and news_score > 0) or (direction == "BEARISH" and news_score < 0)) else "غير حاسمة")
     return {"ok": True, "market": market, "market_label": label, "direction": direction,
             "direction_ar": direction_ar, "reason": reason, "direction_source": direction_source,
-            "price_change_pct": round(price_score, 3) if price_score is not None else None,
-            "price_samples": changes, "breadth_positive_pct": breadth, "news_positive": positive,
+            "price_change_pct": round(direction_price, 3) if direction_price is not None else None,
+            "price_samples": changes, "assets_sampled": asset_count, "assets_up": up_count, "assets_down": down_count,
+            "assets_flat": flat_count, "breadth_positive_pct": breadth, "breadth_negative_pct": breadth_negative,
+            "average_coin_change_pct": avg_asset_change, "news_positive": positive,
             "news_negative": negative, "news_sample_size": len(news_rows),
             "news_sentiment": news_sentiment, "news_sentiment_ar": news_sentiment_ar,
             "news_alignment": news_alignment, "updated_at": int(now),
