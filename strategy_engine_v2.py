@@ -100,12 +100,26 @@ def evaluate_v2(
     candidates = []
     bullish_breakout = px > prior_high and px > last_open
     bearish_breakout = px < prior_low and px < last_open
-    if long_trend and (momentum_long or bullish_reclaim) and (bullish_reclaim or bullish_breakout):
-        score = 4 + int(vol_confirm)
-        candidates.append(("BUY", score, ["اتجاه الفريمين صاعد", "استعادة قاع سابق" if bullish_reclaim else "اختراق قمة النطاق بإغلاق صاعد", "زخم السعر مؤيد"] + (["حجم التداول مؤكد"] if vol_confirm else [])))
-    if short_trend and (momentum_short or bearish_reclaim) and (bearish_reclaim or bearish_breakout):
-        score = 4 + int(vol_confirm)
-        candidates.append(("SELL", score, ["اتجاه الفريمين هابط", "فشل اختراق قمة سابقة" if bearish_reclaim else "كسر قاع النطاق بإغلاق هابط", "زخم السعر مؤيد"] + (["حجم التداول مؤكد"] if vol_confirm else [])))
+    # Allow a controlled trend-continuation setup as well as sweep/reclaim or breakout.
+    # This avoids requiring a rare liquidity event on every scan while keeping multiple confirmations.
+    bullish_continuation = (
+        long_trend and momentum_long and px > e20[-1]
+        and close[-1] > close[-2] > close[-3]
+        and (vol_confirm or close[-1] > last_open)
+    )
+    bearish_continuation = (
+        short_trend and momentum_short and px < e20[-1]
+        and close[-1] < close[-2] < close[-3]
+        and (vol_confirm or close[-1] < last_open)
+    )
+    if long_trend and (momentum_long or bullish_reclaim) and (bullish_reclaim or bullish_breakout or bullish_continuation):
+        score = 4 + int(vol_confirm) + int(bullish_continuation)
+        setup = "استعادة قاع سابق" if bullish_reclaim else "اختراق قمة النطاق بإغلاق صاعد" if bullish_breakout else "استمرار اتجاه صاعد بزخم متتابع"
+        candidates.append(("BUY", score, ["اتجاه الفريمين صاعد", setup, "زخم السعر مؤيد"] + (["حجم التداول مؤكد"] if vol_confirm else [])))
+    if short_trend and (momentum_short or bearish_reclaim) and (bearish_reclaim or bearish_breakout or bearish_continuation):
+        score = 4 + int(vol_confirm) + int(bearish_continuation)
+        setup = "فشل اختراق قمة سابقة" if bearish_reclaim else "كسر قاع النطاق بإغلاق هابط" if bearish_breakout else "استمرار اتجاه هابط بزخم متتابع"
+        candidates.append(("SELL", score, ["اتجاه الفريمين هابط", setup, "زخم السعر مؤيد"] + (["حجم التداول مؤكد"] if vol_confirm else [])))
     if len(candidates) != 1:
         result["reasons"] = ["لا يوجد توافق فريد بين الاتجاه وسحب السيولة والإغلاق؛ انتظار"]
         return result
