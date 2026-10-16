@@ -118,3 +118,66 @@ def test_candle_data_fetches_extra_bar_before_filtering_open_candle(monkeypatch)
     assert len(candles) == 249
     assert len(candles) >= 220
 
+
+
+
+def test_independent_method_test_is_recorded_and_closed_separately(tmp_path, monkeypatch):
+    import json
+    import time
+
+    monkeypatch.setattr(app, "METHOD_RESULTS_PATH", tmp_path / "method-results.json")
+    monkeypatch.setattr(app, "METHOD_RULES", {"Test Method": "test_method"})
+    monkeypatch.setattr(app, "METHOD_AUXILIARY_DATA_REQUIRED", {})
+    monkeypatch.setattr(app, "METHOD_RISK_ONLY_KEYS", set())
+
+    def fake_method_signal(candles, ticker, method_key):
+        if method_key != "test_method":
+            return None
+        return {
+            **ticker, "side": "BUY", "method": method_key, "score": 70,
+            "entry": 100.0, "stop": 99.0, "tp1": 102.0,
+            "tp2": 102.5, "tp3": 103.0,
+        }
+
+    monkeypatch.setattr(app, "method_signal", fake_method_signal)
+    ticker = {"symbol": "TESTUSDT", "price": 100.0, "change_pct": 0.0, "quote_volume": 2_000_000}
+    app.record_method_candidates("spot", ticker, "15m", synthetic_candles())
+    records = json.loads((tmp_path / "method-results.json").read_text(encoding="utf-8"))
+    assert len(records) == 1
+    assert records[0]["record_type"] == "method_test"
+    assert records[0]["method_key"] == "test_method"
+    assert records[0]["result"] == "مفتوحة"
+
+    now = int(time.time())
+    closed = app.refresh_method_test_results("spot", "15m", {"TESTUSDT": 102.0}, now)
+    assert closed[0]["result"] == "TP1"
+    assert closed[0]["pnl_pct"] == 1.8
+
+    response = client.get("/api/method-performance?market=spot&interval=15m")
+    assert response.status_code == 200
+    ranked = response.json()["items"]
+    assert len(ranked) == 1
+    assert ranked[0]["method_key"] == "test_method"
+    assert ranked[0]["closed"] == 1
+    assert ranked[0]["sample_ready"] is False
+
+
+def test_method_performance_keeps_small_samples_provisional(tmp_path, monkeypatch):
+    import time
+    import app as app_module
+
+    path = tmp_path / "method-results.json"
+    monkeypatch.setattr(app_module, "METHOD_RESULTS_PATH", path)
+    now = int(time.time())
+    app_module.write_json_file(path, [
+        {"record_type": "method_test", "method_key": "small", "method": "Small Sample",
+         "market": "spot", "interval": "1h", "side": "BUY", "result": "TP1",
+         "pnl_pct": 1.0, "created_at": now - i}
+        for i in range(2)
+    ])
+    response = client.get("/api/method-performance?market=spot&interval=1h")
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["closed"] == 2
+    assert item["sample_ready"] is False
+    assert "مؤقت" in item["ranking_status"]
