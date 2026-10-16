@@ -2931,10 +2931,35 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
                 if item["url"] in seen:
                     continue
                 seen.add(item["url"])
-                # Display the whole market/sector, never an individual coin or stock.
+                # Reject unrelated headlines and stale stories before assigning a market label.
+                title_l = item["title"].lower()
+                market_terms = {
+                    "crypto": ("crypto", "cryptocurrency", "digital asset", "digital assets", "سوق العملات الرقمية", "العملات الرقمية", "العملات المشفرة", "الأصول الرقمية", "بيتكوين", "bitcoin", "ethereum", "إيثيريوم", "altcoin", "blockchain", "بلوكشين"),
+                    "us": ("u.s. stocks", "us stocks", "american stocks", "wall street", "s&p 500", "nasdaq", "dow jones", "وول ستريت", "الأسهم الأمريكية", "الأسهم الامريكية", "الفيدرالي الأمريكي", "الاحتياطي الفيدرالي"),
+                    "saudi": ("السعودية", "السعودي", "تاسي", "تداول", "السوق المالية السعودية", "الأسهم السعودية", "بورصة السعودية", "saudi", "tadawul", "tasi", "saudi exchange", "السوق السعودي", "بورصات الخليج", "أسواق الخليج", "أسهم الخليج"),
+                    "forex": ("forex", "currency market", "currencies", "dollar index", "gold prices", "gold market", "الذهب", "الدولار", "الفوركس", "العملات", "أسعار الذهب", "مؤشر الدولار", "البنوك المركزية"),
+                    "contracts": ("futures", "index futures", "commodity futures", "crude oil", "oil prices", "gold futures", "العقود الآجلة", "العقود الأمريكية", "النفط", "الذهب", "مؤشرات الأسهم الأمريكية"),
+                    "all": ("market", "markets", "stocks", "economy", "financial", "الأسواق", "الاقتصاد", "البورصات", "الأسهم", "العملات", "الذهب", "النفط", "تاسي", "السعودية", "crypto", "الفيدرالي")
+                }
+                terms = market_terms.get(market, market_terms["all"])
+                if not any(term in title_l for term in terms):
+                    continue
+                try:
+                    from email.utils import parsedate_to_datetime
+                    published_dt = parsedate_to_datetime(item["published"])
+                    if published_dt.tzinfo is None:
+                        published_dt = published_dt.replace(tzinfo=timezone.utc)
+                    age_hours = (datetime.now(timezone.utc) - published_dt.astimezone(timezone.utc)).total_seconds() / 3600
+                    if age_hours > 24 * 14 or age_hours < -24:
+                        continue
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                # Only show clearly positive or negative sector headlines.
                 item["assets"] = []
                 item["asset_labels"] = [item["category"]]
                 item.update(_news_direction(item["title"]))
+                if item["direction"] not in ("BUY", "SELL"):
+                    continue
                 items.append(item)
     items.sort(key=lambda x: x["published"], reverse=True)
     if not items and cached and cached.get("items"):
