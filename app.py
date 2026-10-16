@@ -2621,9 +2621,13 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             signal_universe = YAHOO_MARKETS[market]
             batch_size = 8
             if market == "saudi":
-                # Rotate through the full TASI directory so the first alphabetic batch
-                # does not permanently exclude most listed companies from signal scans.
+                # Only TASI: load all listed Saudi main-market equities; never apply the US liquidity rule.
                 signal_universe = _load_saudi_symbols()
+            elif market == "us":
+                # Discover US-listed stocks dynamically; the universe loader keeps only >= $1M daily dollar turnover.
+                signal_universe = _load_us_symbols()
+            if market in ("saudi", "us"):
+                # Rotate through the full eligible universe so stocks beyond the first batch are not skipped forever.
                 if len(signal_universe) > batch_size:
                     offset = (int(now // 300) * batch_size) % len(signal_universe)
                     signal_symbols = (signal_universe[offset:] + signal_universe[:offset])[:batch_size]
@@ -3143,7 +3147,7 @@ def _load_saudi_symbols():
     loaded = {}
     # Keep paging: a single page can silently omit listed companies when the directory grows.
     page_size = 200
-    for offset in range(0, 2000, page_size):
+    for offset in range(0, 10000, page_size):
         try:
             url = (
                 "https://api.sahmk.sa/api/v1/companies/?market=TASI"
@@ -3184,7 +3188,9 @@ def _news_universe():
     now = time.time()
     if NEWS_UNIVERSE_CACHE["assets"] and now - NEWS_UNIVERSE_CACHE["at"] < 60:
         return NEWS_UNIVERSE_CACHE["assets"], NEWS_UNIVERSE_CACHE["coins"], NEWS_UNIVERSE_CACHE["counts"]
+    # Keep public universe counts aligned with the dynamically discovered stock universes.
     _load_saudi_symbols()
+    _load_us_symbols()
     coins, counts = {}, {"spot_pairs": 0, "futures_pairs": 0}
     for market in ("spot", "futures"):
         try:
