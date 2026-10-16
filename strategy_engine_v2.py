@@ -80,7 +80,7 @@ def evaluate_v2(
         return result
 
     px, last_open, last_high, last_low = close[-1], float(candles[-1]["open"]), high[-1], low[-1]
-    if atr <= 0 or abs(px - e20[-1]) > 2.0 * atr:
+    if atr <= 0 or abs(px - e20[-1]) > 2.5 * atr:
         result["reasons"] = ["تذبذب غير مناسب أو السعر ممتد؛ لا نطارد الحركة"]
         return result
 
@@ -92,18 +92,18 @@ def evaluate_v2(
     bullish_reclaim = last_low < prior_low and px > prior_low and px > last_open
     bearish_reclaim = last_high > prior_high and px < prior_high and px < last_open
 
-    long_trend = px > e200[-1] and e50[-1] > e200[-1] and higher_trend_up
-    short_trend = px < e200[-1] and e50[-1] < e200[-1] and higher_trend_down
+    long_trend = px > e200[-1] and higher_trend_up
+    short_trend = px < e200[-1] and higher_trend_down
     momentum_long = e20[-1] > e50[-1]
     momentum_short = e20[-1] < e50[-1]
 
     candidates = []
     bullish_breakout = px > prior_high and px > last_open
     bearish_breakout = px < prior_low and px < last_open
-    if long_trend and momentum_long and (bullish_reclaim or bullish_breakout):
+    if long_trend and (momentum_long or bullish_reclaim) and (bullish_reclaim or bullish_breakout):
         score = 4 + int(vol_confirm)
         candidates.append(("BUY", score, ["اتجاه الفريمين صاعد", "استعادة قاع سابق" if bullish_reclaim else "اختراق قمة النطاق بإغلاق صاعد", "زخم السعر مؤيد"] + (["حجم التداول مؤكد"] if vol_confirm else [])))
-    if short_trend and momentum_short and (bearish_reclaim or bearish_breakout):
+    if short_trend and (momentum_short or bearish_reclaim) and (bearish_reclaim or bearish_breakout):
         score = 4 + int(vol_confirm)
         candidates.append(("SELL", score, ["اتجاه الفريمين هابط", "فشل اختراق قمة سابقة" if bearish_reclaim else "كسر قاع النطاق بإغلاق هابط", "زخم السعر مؤيد"] + (["حجم التداول مؤكد"] if vol_confirm else [])))
     if len(candidates) != 1:
@@ -118,7 +118,7 @@ def evaluate_v2(
     else:
         stop = max(last_high, max(high[-5:])) + 0.1 * atr
         risk = stop - px
-    if risk <= 0 or risk > 2.0 * atr:
+    if risk <= 0 or risk > 2.5 * atr:
         result["reasons"] = ["وقف الخسارة واسع أو غير منطقي بالنسبة للتذبذب"]
         return result
 
