@@ -2276,34 +2276,33 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                     found.append(item)
             except (urllib.error.URLError, TimeoutError, ValueError, OSError, IndexError, TypeError, ZeroDivisionError):
                 continue
-    # Three quality levels: publish only actionable "good/strong" trades;
-    # weaker but directionally valid candidates are returned separately as watch-only.
-    # Historical outcomes feed back into the next ranking pass, segmented by market,
-    # timeframe, direction and each confirmed method family. This is ranking adaptation,
-    # not autonomous strategy deployment or a guarantee of future performance.
+    # Publish only high-confluence trades in three quality tiers; discard weak candidates.
+    # Historical outcomes adjust ranking, but a medal is awarded only when explicit quality
+    # thresholds are met. This is a filter, not a promise of profitability.
     apply_strategy_learning(found, market, interval)
-    candidates = [x for x in found if x.get("score", 0) >= 35
-                  and x.get("method_count", 0) >= 1 and x.get("confirmations", 0) >= 3]
-    for item in candidates:
-        if item.get("score", 0) >= 70 and item.get("method_count", 0) >= 4 and item.get("confirmations", 0) >= 5:
-            item["signal_tier"] = "قوية"
-            item["importance"] = "فرصة قوية"
-        elif item.get("score", 0) >= 40:
-            item["signal_tier"] = "جيدة"
-            item["importance"] = "فرصة جيدة"
+    candidates = []
+    for item in found:
+        score = float(item.get("score", 0) or 0)
+        methods = int(item.get("method_count", 0) or 0)
+        confirms = int(item.get("confirmations", 0) or 0)
+        if score >= 82 and methods >= 7 and confirms >= 7:
+            item["signal_tier"], item["medal"], item["importance"] = "ذهبية", "gold", "صفقة ذهبية قوية"
+        elif score >= 75 and methods >= 5 and confirms >= 6:
+            item["signal_tier"], item["medal"], item["importance"] = "فضية", "silver", "صفقة فضية قوية"
+        elif score >= 68 and methods >= 4 and confirms >= 5:
+            item["signal_tier"], item["medal"], item["importance"] = "برونزية", "bronze", "صفقة برونزية قوية"
         else:
-            item["signal_tier"] = "مراقبة"
-            item["importance"] = "مراقبة فقط — لا تُعامل كصفقة"
-    watch_found = [x for x in candidates if x.get("signal_tier") == "مراقبة"]
-    found = [x for x in candidates if x.get("signal_tier") in ("قوية", "جيدة")]
-    found.sort(key=lambda x: (x.get("score", 0), x.get("method_count", 0), x["confirmations"], x["quote_volume"]), reverse=True)
-    watch_found.sort(key=lambda x: (x.get("score", 0), x.get("method_count", 0), x["confirmations"], x["quote_volume"]), reverse=True)
-    found = found[:limit]
-    watch_found = watch_found[:min(8, limit)]
-    medals = ["gold", "silver", "bronze"]
+            continue
+        candidates.append(item)
+    candidates.sort(key=lambda x: (
+        {"gold": 3, "silver": 2, "bronze": 1}.get(x.get("medal"), 0),
+        x.get("score", 0), x.get("method_count", 0), x.get("confirmations", 0),
+        x.get("quote_volume", 0)
+    ), reverse=True)
+    found = candidates[:limit]
+    watch_found = []
     for i, item in enumerate(found):
         item["rank"] = i + 1
-        item["medal"] = medals[i] if i < len(medals) else None
     new_telegram_signals = []
     with RESULTS_LOCK:
         # Read history directly here so prune_results() cannot expire a trade
@@ -2395,18 +2394,20 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             and record.get("interval") == interval
             and int(record.get("expires_at") or 0) > int(now)
         ]
-    display_items.sort(key=lambda x: (x.get("score", 0), x.get("method_count", 0),
-                                      x.get("confirmations", 0), x.get("quote_volume", 0)), reverse=True)
-    medals = ["gold", "silver", "bronze"]
+    # Only keep saved trades that passed the gold/silver/bronze quality gate.
+    display_items = [x for x in display_items if x.get("medal") in ("gold", "silver", "bronze")
+                     and x.get("signal_tier") in ("ذهبية", "فضية", "برونزية")]
+    display_items.sort(key=lambda x: (
+        {"gold": 3, "silver": 2, "bronze": 1}.get(x.get("medal"), 0),
+        x.get("score", 0), x.get("method_count", 0), x.get("confirmations", 0),
+        x.get("quote_volume", 0)
+    ), reverse=True)
     for i, item in enumerate(display_items[:limit]):
         item["rank"] = i + 1
-        item["medal"] = medals[i] if i < len(medals) else None
     result = {"ok": True, "live": True, "market": market, "interval": interval,
               "scanned": len(tickers), "count": len(display_items[:limit]), "updated_at": int(now),
-              "items": display_items[:limit],
-              "watch_items": [{**item, "watch_reason": "التوافق أقل من حد نشر الصفقة؛ راقب فقط ولا تعتبرها توصية دخول."}
-                              for item in watch_found if item.get("symbol") not in {x.get("symbol") for x in display_items[:limit]}],
-              "message": "تُعرض الصفقات الجيدة والقوية كصفقات محفوظة حتى انتهاء مدة الفريم، وتظهر الإشارات الأضعف في قسم مراقبة منفصل بلا دخول فعلي. لا توجد نسبة ربح تاريخية موثقة."}
+              "items": display_items[:limit], "watch_items": [],
+              "message": "تُعرض فقط الصفقات التي اجتازت شروط الذهبي والفضي والبرونزي؛ قد لا تظهر صفقات إذا لم تتحقق الجودة المطلوبة."}
     SIGNAL_CACHE[key] = (now, result)
     with RESULTS_LOCK:
         persisted_scans = read_json_file(SIGNALS_CACHE_PATH, {})
