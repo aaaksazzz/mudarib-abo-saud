@@ -2290,11 +2290,11 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         score = float(item.get("score", 0) or 0)
         methods = int(item.get("method_count", 0) or 0)
         confirms = int(item.get("confirmations", 0) or 0)
-        if score >= 82 and methods >= 7 and confirms >= 7:
+        if score >= 78 and methods >= 6 and confirms >= 6:
             item["signal_tier"], item["medal"], item["importance"] = "ذهبية", "gold", "صفقة ذهبية قوية"
-        elif score >= 75 and methods >= 5 and confirms >= 6:
+        elif score >= 70 and methods >= 4 and confirms >= 5:
             item["signal_tier"], item["medal"], item["importance"] = "فضية", "silver", "صفقة فضية قوية"
-        elif score >= 68 and methods >= 4 and confirms >= 5:
+        elif score >= 62 and methods >= 3 and confirms >= 4:
             item["signal_tier"], item["medal"], item["importance"] = "برونزية", "bronze", "صفقة برونزية قوية"
         else:
             continue
@@ -2371,10 +2371,15 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             ident = (market, interval, item["symbol"])
             existing = active_map.get(ident)
             if existing:
-                # Preserve original expiry; rescanning must not extend a signal lifetime.
+                # Preserve original entry/expiry while refreshing medal metadata.
                 item["id"] = existing.get("id")
                 item["created_at"] = existing.get("created_at")
                 item["expires_at"] = existing.get("expires_at")
+                for field in ("score", "method_count", "method_count_raw", "confirmations",
+                              "method_families", "methods", "method_hits", "signal_tier",
+                              "medal", "importance", "learning_adjustment", "learning_samples"):
+                    if field in item:
+                        existing[field] = item[field]
                 continue
             created_at = int(now)
             item["created_at"] = created_at
