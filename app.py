@@ -2632,7 +2632,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             # Signal scans are interactive: quote the first bounded symbol batch here.
             # Full market listings remain available through /api/market/{market}.
             signal_universe = YAHOO_MARKETS[market]
-            batch_size = max(24, min(limit * 2, 30))
+            batch_size = 20
             if market == "saudi":
                 # Rotate through the full TASI directory so the first alphabetic batch
                 # does not permanently exclude most listed companies from signal scans.
