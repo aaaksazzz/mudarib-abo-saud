@@ -305,7 +305,7 @@ def futures_crypto_symbols():
     return cached["symbols"] if cached["symbols"] else set()
 
 
-def market_tickers(market):
+def _fetch_market_tickers_uncached(market):
     if market == "alpha":
         return alpha_market_tickers()
     raw = fetch_json(BINANCE[market])
@@ -331,6 +331,20 @@ def market_tickers(market):
         rows.append({"symbol": symbol, "price": price, "change_pct": change, "quote_volume": quote_volume})
     rows.sort(key=lambda x: x["quote_volume"], reverse=True)
     return rows
+
+
+MARKET_TICKERS_CACHE = {}
+MARKET_TICKERS_CACHE_TTL = 15
+
+
+def market_tickers(market):
+    now = time.time()
+    cached = MARKET_TICKERS_CACHE.get(market)
+    if cached and now - cached[0] < MARKET_TICKERS_CACHE_TTL:
+        return [dict(item) for item in cached[1]]
+    rows = _fetch_market_tickers_uncached(market)
+    MARKET_TICKERS_CACHE[market] = (now, [dict(item) for item in rows])
+    return [dict(item) for item in rows]
 
 
 def candle_closes(market, symbol, interval):
@@ -1917,7 +1931,7 @@ SIGNAL_CACHE = {}
 SIGNAL_CACHE_TTL = 20
 
 
-def candle_data(market: str, symbol: str, interval: str):
+def _fetch_candle_data_uncached(market: str, symbol: str, interval: str):
     from urllib.parse import urlencode, quote
     if market == "alpha":
         url = ALPHA_BASE + "/klines?" + urlencode({"symbol": symbol, "interval": interval, "limit": 250})
@@ -1970,6 +1984,21 @@ def candle_data(market: str, symbol: str, interval: str):
                 g["volume"] += candle["volume"]
         out = [grouped[k] for k in sorted(grouped)]
     return out[-500:]
+
+
+CANDLE_DATA_CACHE = {}
+CANDLE_DATA_CACHE_TTL = 30
+
+
+def candle_data(market: str, symbol: str, interval: str):
+    key = (market, symbol, interval)
+    now = time.time()
+    cached = CANDLE_DATA_CACHE.get(key)
+    if cached and now - cached[0] < CANDLE_DATA_CACHE_TTL:
+        return [dict(candle) for candle in cached[1]]
+    candles = _fetch_candle_data_uncached(market, symbol, interval)
+    CANDLE_DATA_CACHE[key] = (now, [dict(candle) for candle in candles])
+    return [dict(candle) for candle in candles]
 
 
 def telegram_send_signal(signal: dict) -> bool:
@@ -2032,9 +2061,20 @@ def record_method_candidates(market: str, ticker: dict, interval: str, candles):
     candle_id = int(candles[-1].get("time") or now)
     evaluated = []
     candidates = []
-    for method_name, method_key in METHOD_RULES.items():
-        if method_key in METHOD_AUXILIARY_DATA_REQUIRED or method_key in METHOD_RISK_ONLY_KEYS:
-            continue
+    symbol = str(ticker.get("symbol") or "")
+    dedupe_prefix = "|".join((market, interval, symbol))
+    with RESULTS_LOCK:
+        prior_eval_data = read_json_file(METHOD_EVALUATIONS_PATH, {"seen": {}, "stats": {}})
+    prior_seen = prior_eval_data.get("seen", {}) if isinstance(prior_eval_data, dict) else {}
+    pending_methods = [
+        (name, key) for name, key in METHOD_RULES.items()
+        if key not in METHOD_AUXILIARY_DATA_REQUIRED
+        and key not in METHOD_RISK_ONLY_KEYS
+        and prior_seen.get("|".join((dedupe_prefix, key))) != candle_id
+    ]
+    if not pending_methods:
+        return []
+    for method_name, method_key in pending_methods:
         try:
             candidate = method_signal(candles, ticker, method_key)
         except (ValueError, TypeError, IndexError, ZeroDivisionError, OverflowError):
@@ -2465,13 +2505,11 @@ def latest_strategy_news(market: str):
     }.get(market)
     if not sector:
         return None
+    # Signal generation must not block on a separate news-provider request.
+    # The news page/background refresh may populate NEWS_CACHE independently.
     cached = NEWS_CACHE.get(sector)
-    if not cached or time.time() - float(cached.get("at", 0) or 0) >= 300:
-        try:
-            market_news(limit=30, market=sector, refresh=False)
-        except Exception:
-            pass
-        cached = NEWS_CACHE.get(sector)
+    if cached and time.time() - float(cached.get("at", 0) or 0) >= 300:
+        cached = None
     items = (cached or {}).get("items", [])
     if not items:
         return None
