@@ -1687,7 +1687,7 @@ def method_signal(candles, ticker, method_key):
         return None
     if side is None or method_key == "risk_management":
         return None
-    side = "SELL" if side == "BUY" else "BUY"
+    # Preserve the direction detected by this method; reversing it here inverted every method signal.
     entry=price
     risk=max(atr*1.5,entry*0.002)
     if side=="BUY":
