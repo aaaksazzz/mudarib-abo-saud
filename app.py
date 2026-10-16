@@ -2083,12 +2083,12 @@ def record_method_candidates(market: str, ticker: dict, interval: str, candles):
                 records = []
             duration = INTERVAL_SECONDS.get(interval, 86400)
             recent_keys = {
-                (r.get("market"), r.get("interval"), r.get("symbol"), r.get("method_key"))
+                (r.get("market"), r.get("interval"), r.get("symbol"), r.get("method_key"),
+                 int(r.get("signal_candle_time") or r.get("created_at") or 0))
                 for r in records if isinstance(r, dict)
-                and now - int(r.get("created_at") or 0) < duration
             }
             for method_name, method_key, candidate in candidates:
-                ident = (market, interval, ticker.get("symbol"), method_key)
+                ident = (market, interval, ticker.get("symbol"), method_key, candle_id)
                 if ident in recent_keys:
                     continue
                 entry = float(candidate["entry"])
@@ -2100,7 +2100,7 @@ def record_method_candidates(market: str, ticker: dict, interval: str, candles):
                     "entry": entry, "stop": float(candidate["stop"]),
                     "tp1": float(candidate["tp1"]), "tp2": float(candidate["tp2"]),
                     "tp3": float(candidate["tp3"]), "score": candidate.get("score", 0),
-                    "created_at": now, "expires_at": now + duration,
+                    "created_at": now, "signal_candle_time": candle_id, "expires_at": now + duration,
                     "last_price": float(ticker.get("price") or entry),
                     "result": "مفتوحة", "pnl_pct": 0.0,
                     "estimated_round_trip_cost_pct": 0.20,
