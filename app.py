@@ -17,6 +17,7 @@ from fastapi import FastAPI, Query, Depends, Request
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from strategy_engine_v2 import evaluate_v2
 
 BASE = Path(__file__).resolve().parent
 app = FastAPI(title="التداول الذكي PRO", version="2.1.3")
@@ -2005,7 +2006,20 @@ def telegram_status():
 
 def build_signal(market: str, ticker: dict, interval: str):
     candles = candle_data(market, ticker["symbol"], interval)
-    if len(candles) < 205:
+    if len(candles) < 220:
+        return None
+    # Research-informed confluence gate: higher-timeframe trend + liquidity sweep/reclaim
+    # + volatility-aware stop. It is a strict filter, not a win-probability estimate.
+    try:
+        higher_interval = HIGHER_INTERVAL.get(interval, interval)
+        higher_candles = candles if higher_interval == interval else candle_data(market, ticker["symbol"], higher_interval)
+        strategy_decision = evaluate_v2(
+            candles, higher_candles, market=market, timeframe=interval,
+            estimated_round_trip_cost_pct=0.20, risk_per_trade_pct=0.5, min_net_rr=2.0
+        )
+        if strategy_decision.get("action") not in ("BUY", "SELL"):
+            return None
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError, IndexError, TypeError, ZeroDivisionError):
         return None
     closes = [k["close"] for k in candles]
     highs = [k["high"] for k in candles]
@@ -2072,7 +2086,11 @@ def build_signal(market: str, ticker: dict, interval: str):
     if side is None:
         return None
     original_side = side
-    side = "SELL" if side == "BUY" else "BUY"
+    # Require the legacy directional score to agree with the stricter strategy gate.
+    # Conflicting setups are rejected rather than reversing the signal.
+    if original_side != strategy_decision.get("action"):
+        return None
+    side = original_side
     # Evaluate every named-method rule and make method confluence part of eligibility and score.
     method_hits = []
     for method_name, method_key in METHOD_RULES.items():
@@ -2093,12 +2111,15 @@ def build_signal(market: str, ticker: dict, interval: str):
     score = int(0.65 * directional_score + 0.35 * method_score)
     if score < 35 or confirmations < 3 or method_count < 1:
         return None
-    entry = price
-    risk = max(atr * 1.5, entry * 0.002)
+    entry = float(strategy_decision["entry"])
+    stop = float(strategy_decision["stop_loss"])
+    risk = abs(entry - stop)
+    if risk <= 0:
+        return None
     if side == "BUY":
-        stop, t1, t2, t3 = entry-risk, entry+risk, entry+2*risk, entry+3*risk
+        t1, t2, t3 = entry + 2.0*risk, entry + 2.5*risk, entry + 3.0*risk
     else:
-        stop, t1, t2, t3 = entry+risk, entry-risk, entry-2*risk, entry-3*risk
+        t1, t2, t3 = entry - 2.0*risk, entry - 2.5*risk, entry - 3.0*risk
     if min(stop, t1, t2, t3) <= 0:
         return None
     # These are rule hits, not proof that every discretionary concept is fully automated.
@@ -2131,8 +2152,12 @@ def build_signal(market: str, ticker: dict, interval: str):
         "importance": ("صفقة مهمة جدًا" if method_count >= 7 else "صفقة مهمة" if method_count >= 5 else "توافق متوسط" if method_count >= 3 else "إشارة أولية"),
         "methods": active, "method_hits": method_hits,
         "quote_volume": ticker.get("quote_volume", 0), "updated_at": int(time.time()),
-        "method": "ترتيب حسب توافق المناهج مع اتجاه السعر",
-        "status": "عدد المناهج المتوافقة يرفع ترتيب الإشارة؛ الإشارة الأولية تحتاج تحققًا إضافيًا"
+        "method": "توافق الاتجاه متعدد الفريمات + سحب السيولة واستعادتها + توافق المناهج",
+        "strategy_name": strategy_decision.get("strategy"),
+        "strategy_score": strategy_decision.get("score"),
+        "risk_reward_net": strategy_decision.get("risk_reward_net"),
+        "risk_per_trade_pct": strategy_decision.get("risk_per_trade_pct"),
+        "status": "اجتازت بوابة الاتجاه والسيولة والمخاطرة؛ هذه ليست نسبة احتمال ربح ولا ضمانًا"
     }
 
 CRYPTO_SIGNAL_MARKETS = {"spot", "futures", "alpha"}
