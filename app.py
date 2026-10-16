@@ -2904,7 +2904,7 @@ def _news_direction(title, summary=""):
     # Classify the combined headline and RSS summary, not the headline alone.
     # Conflicting language and speculation remain unclear rather than being forced into BUY/SELL.
     import re
-    t = re.sub(r"\\s+", " ", f"{title or ''} {summary or ''}".lower()).strip()
+    t = re.sub(r"\s+", " ", f"{title or ''} {summary or ''}".lower()).strip()
     speculative = ("هل ", "هل يمكن", "قد ", "ربما", "يتوقع", "توقعات", "تساؤلات", "what if", "could ", "may ", "might ", "forecast", "expects", "predicts", "outlook")
     if any(w in t for w in speculative) and not any(w in t for w in ("أكد", "أكدت", "أعلن", "أعلنت", "ارتفع فعليًا", "انخفض فعليًا")):
         return {"direction": "UNCLEAR", "direction_ar": "توقع أو سؤال — لا يؤكد حركة السوق"}
@@ -3049,7 +3049,7 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
                 description = (node.findtext("description") or "").strip()
                 # Strip RSS HTML markup before using the summary for validation/classification.
                 description = re.sub(r"<[^>]+>", " ", description)
-                description = re.sub(r"\\s+", " ", description).strip()
+                description = re.sub(r"\s+", " ", description).strip()
                 if title and link and source and source.lower() not in {"google news", "أخبار google"}:
                     found.append({"title": title, "url": link, "published": pub, "source": source,
                                   "source_url": source_url, "summary": description, "category": label})
@@ -3108,7 +3108,7 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
     # Deduplicate by normalized headline as well as URL; RSS feeds often repeat the same story.
     deduped, seen_titles = [], set()
     for item in sorted(items, key=lambda x: x.get("_published_ts", 0), reverse=True):
-        normalized = re.sub(r"[^a-z0-9\\u0600-\\u06ff]+", "", item["title"].lower())
+        normalized = re.sub(r"[^a-z0-9\u0600-\u06ff]+", "", item["title"].lower())
         if normalized in seen_titles:
             continue
         seen_titles.add(normalized)
