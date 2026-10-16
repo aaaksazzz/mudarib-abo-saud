@@ -689,10 +689,15 @@ def fetch_yahoo_quote(symbol: str):
 def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
     market = market.lower()
     if market == "saudi":
-        old_symbols = len(YAHOO_MARKETS["saudi"])
+        old_symbols = tuple(YAHOO_MARKETS["saudi"])
         _load_saudi_symbols()
-        if len(YAHOO_MARKETS["saudi"]) != old_symbols:
+        if tuple(YAHOO_MARKETS["saudi"]) != old_symbols:
             YAHOO_CACHE.pop("saudi", None)
+    elif market == "us":
+        old_symbols = tuple(YAHOO_MARKETS["us"])
+        _load_us_symbols()
+        if tuple(YAHOO_MARKETS["us"]) != old_symbols:
+            YAHOO_CACHE.pop("us", None)
     if market in YAHOO_MARKETS:
         now = time.time()
         cached = YAHOO_CACHE.get(market)
@@ -3099,6 +3104,59 @@ NEWS_CACHE = {}
 NEWS_UNIVERSE_CACHE = {"at": 0, "assets": [], "coins": {}, "counts": {}}
 SAUDI_SYMBOL_CACHE = {"at": 0, "symbols": []}
 
+
+US_SYMBOL_CACHE = {"at": 0, "symbols": []}
+
+def _load_us_symbols():
+    """Discover US-listed stocks from Nasdaq's public screener and keep only >= $1M daily dollar volume."""
+    now = time.time()
+    if US_SYMBOL_CACHE["symbols"] and now - US_SYMBOL_CACHE["at"] < 21600:
+        return US_SYMBOL_CACHE["symbols"]
+
+    loaded = {}
+    # Discover Nasdaq, NYSE and NYSE American listings rather than relying on a short hard-coded list.
+    for exchange in ("nasdaq", "nyse", "amex"):
+        offset = 0
+        page_size = 5000
+        while offset < 25000:
+            try:
+                url = (
+                    "https://api.nasdaq.com/api/screener/stocks?"
+                    f"tableonly=true&limit={page_size}&offset={offset}&exchange={exchange}"
+                )
+                payload = fetch_json(url, timeout=12)
+                data = payload.get("data", {}) if isinstance(payload, dict) else {}
+                rows = data.get("table", {}).get("rows", []) if isinstance(data, dict) else []
+                if not rows:
+                    break
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    raw_symbol = str(row.get("symbol") or "").strip()
+                    if not raw_symbol or any(ch in raw_symbol for ch in ("^", "/", "=", " ")):
+                        continue
+                    try:
+                        price = float(str(row.get("lastsale") or "0").replace("$", "").replace(",", ""))
+                        volume = float(str(row.get("volume") or "0").replace(",", ""))
+                    except (TypeError, ValueError):
+                        continue
+                    if price <= 0 or price * volume < 1000000:
+                        continue
+                    yahoo_symbol = raw_symbol.replace(".", "-")
+                    loaded[yahoo_symbol] = str(row.get("name") or yahoo_symbol)
+                if len(rows) < page_size:
+                    break
+                offset += page_size
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError, TypeError):
+                break
+
+    if loaded:
+        symbols = sorted(loaded.keys())
+        YAHOO_MARKETS["us"] = symbols
+        YAHOO_LABELS.update(loaded)
+        US_SYMBOL_CACHE.update({"symbols": symbols, "at": now})
+    return US_SYMBOL_CACHE["symbols"] or YAHOO_MARKETS["us"]
+
 def _load_saudi_symbols():
     """Load the complete TASI listed-equity universe, paging until the directory ends."""
     now = time.time()
@@ -3122,10 +3180,7 @@ def _load_saudi_symbols():
             for row in rows:
                 if not isinstance(row, dict):
                     continue
-                security_type = str(row.get("security_type") or row.get("type") or "").strip().lower()
-                # This directory is filtered to TASI; when a type is provided, retain equities only.
-                if security_type and not any(tag in security_type for tag in ("equity", "stock", "share", "سهم")):
-                    continue
+                # No price, volume, or security-type filters: include every numeric listing in the TASI directory.
                 raw_symbol = str(row.get("symbol") or row.get("ticker") or "").strip()
                 digits = raw_symbol.split(".")[0].strip()
                 if not digits.isdigit():
