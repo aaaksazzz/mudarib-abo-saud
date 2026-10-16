@@ -1708,7 +1708,7 @@ def method_signal(candles, ticker, method_key):
             "stop_pct":abs(entry-stop)/entry*100,"tp1_pct":abs(tp1-entry)/entry*100,
             "score":score,
             "status":"إشارة حسب قاعدة المنهج — درجة توافق فنية وليست احتمال ربح مضمون",
-            "change_pct":ticker["change_pct"]}
+            "change_pct":ticker.get("change_pct", 0)}
 
 
 
