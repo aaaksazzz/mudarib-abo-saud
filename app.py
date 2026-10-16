@@ -2601,7 +2601,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 key=lambda item: (abs(item.get("change_pct", 0)), item.get("quote_volume", 0)),
                 reverse=True,
             )
-            batch_size = 8
+            # Scan 20 liquid crypto symbols per request; keep worker concurrency capped below.
+            batch_size = 20
             if len(eligible_tickers) > batch_size:
                 # Advance to the next circular batch every 5 minutes. Repeated requests
                 # in the same window share a batch; later windows cover the rest of the universe.
