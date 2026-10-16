@@ -56,14 +56,25 @@ def evaluate_v2(
         high = [float(x["high"]) for x in candles]
         low = [float(x["low"]) for x in candles]
         volume = [float(x["volume"]) for x in candles]
+        opens = [float(x["open"]) for x in candles]
         hclose = [float(x["close"]) for x in higher_candles]
-        hhigh = [float(x["high"]) for x in candles]
-        hlow = [float(x["low"]) for x in candles]
-        if not all(math.isfinite(v) and v > 0 for v in close + high + low + hclose):
+        hhigh = [float(x["high"]) for x in higher_candles]
+        hlow = [float(x["low"]) for x in higher_candles]
+        hopen = [float(x["open"]) for x in higher_candles]
+        if not all(math.isfinite(v) and v > 0 for v in close + high + low + opens + hclose + hhigh + hlow + hopen):
             result["reasons"] = ["بيانات سعر غير صالحة"]
             return result
         if not all(math.isfinite(v) and v >= 0 for v in volume):
             result["reasons"] = ["بيانات حجم غير صالحة"]
+            return result
+        # Reject malformed OHLC bars before calculating trends or stops.
+        if any(h < max(o, c, l) or l > min(o, c, h)
+               for o, h, l, c in zip(opens, high, low, close)):
+            result["reasons"] = ["شموع الفريم الحالي غير متطابقة"]
+            return result
+        if any(h < max(o, c, l) or l > min(o, c, h)
+               for o, h, l, c in zip(hopen, hhigh, hlow, hclose)):
+            result["reasons"] = ["شموع الفريم الأعلى غير متطابقة"]
             return result
     except (KeyError, TypeError, ValueError):
         result["reasons"] = ["صيغة الشموع غير صحيحة"]
