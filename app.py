@@ -159,6 +159,10 @@ YAHOO_LABELS = {
 }
 YAHOO_CACHE = {}
 YAHOO_CACHE_TTL = 45
+# Cache market-direction calculations and serialize cache misses to avoid duplicate scans.
+MARKET_DIRECTION_CACHE = {}
+MARKET_DIRECTION_LOCK = threading.Lock()
+MARKET_DIRECTION_CACHE_TTL = 15
 ALPHA_CACHE = {"at": 0, "items": []}
 ALPHA_CACHE_TTL = 90
 CACHE = {}
@@ -3466,6 +3470,28 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
 
 @app.get("/api/market-direction")
 def market_direction(market: str = Query("all")):
+    """Serve a short-lived cached market bias; avoid repeated heavy breadth scans."""
+    key = (market or "all").lower().strip()
+    with MARKET_DIRECTION_LOCK:
+        now = time.time()
+        cached = MARKET_DIRECTION_CACHE.get(key)
+        if cached and now - cached.get("at", 0) < MARKET_DIRECTION_CACHE_TTL:
+            payload = dict(cached["data"])
+            payload["cached"] = True
+            return payload
+        payload = _build_market_direction(key)
+        payload["cached"] = False
+        MARKET_DIRECTION_CACHE[key] = {"at": time.time(), "data": dict(payload)}
+        # Bound memory if callers pass many invalid market strings.
+        if len(MARKET_DIRECTION_CACHE) > 12:
+            oldest = sorted(MARKET_DIRECTION_CACHE, key=lambda k: MARKET_DIRECTION_CACHE[k].get("at", 0))
+            for stale_key in oldest[:-8]:
+                MARKET_DIRECTION_CACHE.pop(stale_key, None)
+        return payload
+
+
+def _build_market_direction(market: str = "all"):
+
     """Estimate broad market bias from benchmark/breadth price changes plus sector-news direction."""
     market = (market or "all").lower().strip()
     allowed = {"all", "crypto", "us", "saudi", "forex", "contracts"}
