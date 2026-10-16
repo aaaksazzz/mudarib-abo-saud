@@ -2082,15 +2082,12 @@ def build_signal(market: str, ticker: dict, interval: str):
         price < (sum(closes[-20+i]*volumes[-20+i] for i in range(20))/max(sum(volumes[-20:]),1e-12)),
         price < (max(highs[-50:])+min(lows[-50:]))/2,
     ])
-    side = "BUY" if bullish_points > bearish_points else "SELL" if bearish_points > bullish_points else None
-    if side is None:
+    # The strategy engine owns direction. Legacy rules contribute ranking evidence,
+    # but a disagreement must not silently erase an otherwise valid candidate.
+    side = strategy_decision.get("action")
+    if side not in ("BUY", "SELL"):
         return None
     original_side = side
-    # Require the legacy directional score to agree with the stricter strategy gate.
-    # Conflicting setups are rejected rather than reversing the signal.
-    if original_side != strategy_decision.get("action"):
-        return None
-    side = original_side
     # Evaluate every named-method rule and make method confluence part of eligibility and score.
     method_hits = []
     for method_name, method_key in METHOD_RULES.items():
@@ -2101,7 +2098,7 @@ def build_signal(market: str, ticker: dict, interval: str):
         except (ValueError, TypeError, IndexError, ZeroDivisionError):
             continue
     confirmations = bullish_points if original_side == "BUY" else bearish_points
-    directional_score = 100 * max(bullish_points, bearish_points) / 10
+    directional_score = 100 * (bullish_points if original_side == "BUY" else bearish_points) / 10
     method_families = sorted({method_family(METHOD_RULES[name]) for name in method_hits})
     method_count_raw = len(method_hits)
     method_count = len(method_families)
@@ -2109,7 +2106,9 @@ def build_signal(market: str, ticker: dict, interval: str):
     # A single valid method may surface a candidate; stronger confluence raises its rank.
     # Keep a small directional floor so an isolated rule is not presented as a strong trade.
     score = int(0.65 * directional_score + 0.35 * method_score)
-    if score < 35 or confirmations < 3 or method_count < 1:
+    # Method families boost rank; they are not a mandatory gate that hides all setups.
+    # Keep basic directional evidence, while allowing valid strategy candidates through.
+    if score < 25 or confirmations < 2:
         return None
     entry = float(strategy_decision["entry"])
     stop = float(strategy_decision["stop_loss"])
