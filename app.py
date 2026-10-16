@@ -1826,7 +1826,7 @@ def method_catalog():
 def method_filter(market: str, method: str = Query(...), interval: str = Query("15m"), limit: int = Query(40, ge=1, le=100)):
     market = market.lower()
     enforce_section_access(market)
-    if market not in BINANCE and market != "alpha" and market not in YAHOO_MARKETS:
+    if market not in BINANCE and market not in ("alpha", "tasi_index") and market not in YAHOO_MARKETS:
         return JSONResponse({"ok": False, "live": False, "items": [], "message": "مصدر هذا السوق غير مربوط حاليًا."})
     if interval not in INTERVALS:
         return JSONResponse({"ok": False, "live": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
@@ -1836,10 +1836,15 @@ def method_filter(market: str, method: str = Query(...), interval: str = Query("
     try:
         if market in BINANCE or market == "alpha":
             tickers = market_tickers(market)[:limit]
+        elif market == "tasi_index":
+            quote_item = fetch_yahoo_quote("^TASI.SR")
+            tickers = [quote_item] if quote_item else []
+            for ticker in tickers:
+                ticker.setdefault("quote_volume", 0)
         else:
             if market == "saudi":
                 _load_saudi_symbols()
-            symbols = YAHOO_MARKETS[market]
+            symbols = _load_saudi_symbols() if market == "saudi" else YAHOO_MARKETS[market]
             with ThreadPoolExecutor(max_workers=8) as pool:
                 quotes = [future.result() for future in as_completed(
                     [pool.submit(fetch_yahoo_quote, symbol) for symbol in symbols]
@@ -1866,6 +1871,7 @@ def method_filter(market: str, method: str = Query(...), interval: str = Query("
             item = future.result()
             if item:
                 found.append(item)
+    refresh_method_test_results(market, interval, {x["symbol"]: x["price"] for x in tickers if x.get("price")}, int(time.time()))
     found.sort(key=lambda x: (x.get("score", 0), x.get("quote_volume", 0), abs(x.get("change_pct", 0))), reverse=True)
     return {"ok": True, "live": True, "market": market, "method": method, "interval": interval,
             "scanned": len(tickers), "analyzed": len(tickers), "count": len(found),
