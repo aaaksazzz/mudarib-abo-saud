@@ -142,8 +142,14 @@ def test_independent_method_test_is_recorded_and_closed_separately(tmp_path, mon
 
     monkeypatch.setattr(app, "method_signal", fake_method_signal)
     ticker = {"symbol": "TESTUSDT", "price": 100.0, "change_pct": 0.0, "quote_volume": 2_000_000}
-    app.record_method_candidates("spot", ticker, "15m", synthetic_candles())
+    candles = synthetic_candles()
+    app.record_method_candidates("spot", ticker, "15m", candles)
+    app.record_method_candidates("spot", ticker, "15m", candles)
     records = json.loads((tmp_path / "method-results.json").read_text(encoding="utf-8"))
+    eval_data = json.loads((tmp_path / "method-evaluations.json").read_text(encoding="utf-8"))
+    method_stats = eval_data["stats"]["spot|15m|test_method"]
+    assert method_stats["evaluations"] == 1
+    assert method_stats["setups"] == 1
     assert len(records) == 1
     assert records[0]["record_type"] == "method_test"
     assert records[0]["method_key"] == "test_method"
