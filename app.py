@@ -99,7 +99,7 @@ async def site_password_gate(request: Request, call_next):
 # Production results survive restarts only when Northflank mounts a persistent volume at /data.
 # Keep DATA_DIR configurable, but warn loudly when /data is merely container-local storage.
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data/smart-trading-pro-data"))
-PERSISTENT_STORAGE_CONFIGURED = os.path.ismount("/data") or bool(os.getenv("DATA_DIR"))
+PERSISTENT_STORAGE_CONFIGURED = any(os.path.ismount(str(parent)) for parent in (DATA_DIR, *DATA_DIR.parents))
 try:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     # Verify that the chosen directory can actually be written to before serving requests.
