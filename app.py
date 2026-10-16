@@ -2585,7 +2585,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     result = {"ok": True, "live": True, "market": market, "interval": interval,
               "scanned": len(tickers), "count": len(display_items[:limit]), "updated_at": int(now),
               "items": display_items[:limit], "watch_items": [],
-              "message": "تُعرض فقط الصفقات التي اجتازت شروط الذهبي والفضي والبرونزي؛ قد لا تظهر صفقات إذا لم تتحقق الجودة المطلوبة."}
+              "message": ("اتجاه العملات الرقمية صاعد؛ نعرض صفقات الشراء فقط بعد اجتياز شروط الجودة." if market in CRYPTO_SIGNAL_MARKETS and allowed_side == "BUY" else "اتجاه العملات الرقمية هابط؛ نعرض صفقات البيع فقط بعد اجتياز شروط الجودة." if market in CRYPTO_SIGNAL_MARKETS and allowed_side == "SELL" else "تُعرض فقط الصفقات التي اجتازت شروط الذهبي والفضي والبرونزي؛ قد لا تظهر صفقات إذا لم تتحقق الجودة المطلوبة.")}
     SIGNAL_CACHE[key] = (now, result)
     with RESULTS_LOCK:
         persisted_scans = read_json_file(SIGNALS_CACHE_PATH, {})
