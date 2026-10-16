@@ -2307,6 +2307,13 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             side = record.get("side")
             direction = 1 if side == "BUY" else -1
             record["pnl_pct"] = round((price_now - record["entry"]) / record["entry"] * 100 * direction, 4)
+            expires_at = record.get("expires_at") or (record.get("created_at", int(now)) + INTERVAL_SECONDS.get(record.get("interval"), 86400))
+            if int(now) >= int(expires_at):
+                # Save the latest observed P&L, but never count a post-expiry quote as a TP/SL hit.
+                record["result"] = "انتهت المدة"
+                record["closed_at"] = int(expires_at)
+                record["expiry_reason"] = "انتهت مدة الفريم"
+                continue
             hit = None
             if side == "BUY":
                 if price_now <= record["stop"]: hit = "SL"
@@ -2332,10 +2339,6 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                         record["result"] = "انتهت صلاحية الدخول"
                         record["closed_at"] = int(now)
                         record["expiry_reason"] = "تحرك السعر بعيدًا عن سعر الدخول؛ يلزم فحص جديد"
-                if record.get("result") == "مفتوحة" and int(now) >= int(record.get("expires_at") or (record.get("created_at", int(now)) + INTERVAL_SECONDS.get(record.get("interval"), 86400))):
-                    record["result"] = "انتهت المدة"
-                    record["closed_at"] = int(record.get("expires_at") or now)
-                    record["expiry_reason"] = "انتهت مدة الفريم"
         # Keep expired outcomes in the 24-hour results history; only open records
         # are eligible to be returned as actionable signals.
         history = [record for record in history if isinstance(record, dict)]
