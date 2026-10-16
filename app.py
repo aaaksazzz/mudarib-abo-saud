@@ -2551,12 +2551,12 @@ def apply_strategy_learning(signals, market, interval):
         for family in dict.fromkeys(str(x) for x in families):
             key = "|".join((str(market), str(interval), str(side), family))
             item = stats.get(key)
-            if not isinstance(item, dict) or int(item.get("trades") or 0) < 8:
+            if not isinstance(item, dict) or int(item.get("trades") or 0) < 3:
                 continue
             # Bayesian shrinkage toward neutral prevents a tiny sample from dominating.
             n = int(item["trades"])
             observed = float(item.get("win_rate") or 0)
-            shrunk_win_rate = (observed * n + 50 * 8) / (n + 8)
+            shrunk_win_rate = (observed * n + 50 * 4) / (n + 4)
             avg_pnl = float(item.get("avg_pnl_pct") or 0)
             adjustment = max(-8.0, min(8.0, (shrunk_win_rate - 50.0) * 0.16 + max(-2.0, min(2.0, avg_pnl * 0.4))))
             adjustments.append(adjustment)
@@ -3020,8 +3020,8 @@ def strategy_learning_status():
     items = sorted(raw.values(), key=lambda x: (int(x.get("trades") or 0), float(x.get("avg_pnl_pct") or 0)), reverse=True)
     return {"ok": True, "items": items[:200], "methods_tracked": len(items),
             "total_method_outcomes": sum(int(x.get("trades") or 0) for x in items),
-            "minimum_samples_for_adjustment": 8,
-            "message": "تتعلم الأوزان من نتائج مغلقة محفوظة؛ لا يُعدّل المنهج إلا بعد 8 نتائج لكل سوق وفريم واتجاه."}
+            "minimum_samples_for_adjustment": 3,
+            "message": "يبدأ تعديل وزن المنهج بعد 3 نتائج مغلقة لكل سوق وفريم واتجاه، مع تخفيف أثر العينات الصغيرة لتقليل التذبذب."}
 
 
 @app.get("/api/admin/status")
