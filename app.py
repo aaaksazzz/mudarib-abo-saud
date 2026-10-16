@@ -3121,18 +3121,26 @@ def market_direction(market: str = Query("all")):
     price_score = (sum(x["change_pct"] for x in changes) / len(changes)) if changes else None
     normalized_price = max(-1.0, min(1.0, (price_score or 0.0) / 1.5))
     score = (normalized_price * 0.6) + (news_score * 0.4 if news_rows else 0.0)
-    if price_score is None and not news_rows:
-        direction, direction_ar = "UNCLEAR", "غير واضح"
-        reason = "لا تتوفر بيانات أسعار وأخبار كافية لتحديد الاتجاه."
-    elif abs(score) < 0.18 or (price_score is not None and news_rows and normalized_price * news_score < -0.05):
-        direction, direction_ar = "MIXED", "مختلط / انتظار"
-        reason = "حركة الأسعار والأخبار ضعيفة أو متعارضة؛ الأفضل انتظار تأكيد."
-    elif score > 0:
-        direction, direction_ar = "BULLISH", "إيجابي مائل للصعود"
-        reason = "المؤشرات المتاحة تميل للإيجابية؛ هذا تقدير للسوق وليس ضمانًا."
+    # Binary market bias only: never emit WAIT, MIXED, or UNCLEAR as a direction.
+    # When evidence conflicts or is weak, use the sign of the combined score and disclose the limitation in reason.
+    if score >= 0:
+        direction, direction_ar = "BULLISH", "صاعد"
+        if price_score is None and not news_rows:
+            reason = "البيانات المتاحة محدودة؛ هذا اتجاه افتراضي مؤقت حتى تتوفر بيانات أحدث."
+        elif news_rows and price_score is not None and normalized_price * news_score < -0.05:
+            reason = "السعر والخبر متعارضان؛ الاتجاه حسب محصلة التقييم، وليس تأكيدًا مستقلًا."
+        elif abs(score) < 0.18:
+            reason = "الإشارات ضعيفة؛ الاتجاه حسب المحصلة الحالية وقد يتغير مع البيانات الجديدة."
+        else:
+            reason = "محصلة الأسعار والأخبار تميل للصعود؛ هذا تقدير للسوق وليس ضمانًا."
     else:
-        direction, direction_ar = "BEARISH", "سلبي مائل للهبوط"
-        reason = "المؤشرات المتاحة تميل للسلبية؛ هذا تقدير للسوق وليس ضمانًا."
+        direction, direction_ar = "BEARISH", "هابط"
+        if news_rows and price_score is not None and normalized_price * news_score < -0.05:
+            reason = "السعر والخبر متعارضان؛ الاتجاه حسب محصلة التقييم، وليس تأكيدًا مستقلًا."
+        elif abs(score) < 0.18:
+            reason = "الإشارات ضعيفة؛ الاتجاه حسب المحصلة الحالية وقد يتغير مع البيانات الجديدة."
+        else:
+            reason = "محصلة الأسعار والأخبار تميل للهبوط؛ هذا تقدير للسوق وليس ضمانًا."
     return {"ok": True, "market": market, "market_label": label, "direction": direction,
             "direction_ar": direction_ar, "reason": reason, "price_change_pct": round(price_score, 3) if price_score is not None else None,
             "price_samples": changes, "breadth_positive_pct": breadth, "news_positive": positive,
