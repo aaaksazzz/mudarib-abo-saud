@@ -126,6 +126,7 @@ def test_independent_method_test_is_recorded_and_closed_separately(tmp_path, mon
     import time
 
     monkeypatch.setattr(app, "METHOD_RESULTS_PATH", tmp_path / "method-results.json")
+    monkeypatch.setattr(app, "METHOD_EVALUATIONS_PATH", tmp_path / "method-evaluations.json")
     monkeypatch.setattr(app, "METHOD_RULES", {"Test Method": "test_method"})
     monkeypatch.setattr(app, "METHOD_AUXILIARY_DATA_REQUIRED", {})
     monkeypatch.setattr(app, "METHOD_RISK_ONLY_KEYS", set())
@@ -168,6 +169,7 @@ def test_method_performance_keeps_small_samples_provisional(tmp_path, monkeypatc
 
     path = tmp_path / "method-results.json"
     monkeypatch.setattr(app_module, "METHOD_RESULTS_PATH", path)
+    monkeypatch.setattr(app_module, "METHOD_EVALUATIONS_PATH", tmp_path / "method-evaluations.json")
     now = int(time.time())
     app_module.write_json_file(path, [
         {"record_type": "method_test", "method_key": "small", "method": "Small Sample",
