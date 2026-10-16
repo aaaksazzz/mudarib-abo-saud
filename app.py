@@ -268,14 +268,48 @@ def alpha_market_tickers():
     return [dict(item) for item in rows]
 
 
+FUTURES_CRYPTO_UNIVERSE_CACHE = {"at": 0, "symbols": None}
+
+
+def futures_crypto_symbols():
+    """Return only live USDT crypto perpetuals, excluding Binance TradFi/equity contracts."""
+    now = time.time()
+    cached = FUTURES_CRYPTO_UNIVERSE_CACHE
+    if cached["symbols"] is not None and now - cached["at"] < 900:
+        return cached["symbols"]
+    try:
+        info = fetch_json("https://fapi.binance.com/fapi/v1/exchangeInfo", timeout=8)
+        symbols = set()
+        for item in (info.get("symbols", []) if isinstance(info, dict) else []):
+            if not isinstance(item, dict):
+                continue
+            symbol = str(item.get("symbol") or "")
+            if (item.get("status") == "TRADING"
+                    and item.get("contractType") == "PERPETUAL"
+                    and item.get("quoteAsset") == "USDT"
+                    and symbol.endswith("USDT")
+                    and item.get("underlyingType", "COIN") != "EQUITY"):
+                symbols.add(symbol)
+        if symbols:
+            FUTURES_CRYPTO_UNIVERSE_CACHE.update({"at": now, "symbols": symbols})
+            return symbols
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError):
+        pass
+    # Fail closed: never label an unverified TradFi contract as a crypto perpetual.
+    return cached["symbols"] if cached["symbols"] else set()
+
+
 def market_tickers(market):
     if market == "alpha":
         return alpha_market_tickers()
     raw = fetch_json(BINANCE[market])
+    crypto_futures = futures_crypto_symbols() if market == "futures" else None
     rows = []
     for item in raw:
         symbol = str(item.get("symbol", ""))
         if not symbol.endswith("USDT"):
+            continue
+        if market == "futures" and symbol not in crypto_futures:
             continue
         base = symbol[:-4]
         if base in STABLES:
@@ -2164,7 +2198,8 @@ def latest_strategy_news(market: str):
             if published.tzinfo is None:
                 published = published.replace(tzinfo=timezone.utc)
             age_hours = (now - published.astimezone(timezone.utc)).total_seconds() / 3600
-            if age_hours < -1 or age_hours > 24 * 14:
+            # Only attach genuinely recent headlines to trade cards.
+            if age_hours < -1 or age_hours > 24:
                 continue
             dated.append((published, age_hours, item))
         except (TypeError, ValueError, OverflowError):
@@ -2231,6 +2266,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         cached_result = dict(cached[1])
         cached_items = cached_result.get("items", [])
         active_items = []
+        allowed_futures_symbols = futures_crypto_symbols() if market == "futures" else None
         for item in cached_items if isinstance(cached_items, list) else []:
             if not isinstance(item, dict):
                 continue
@@ -2239,6 +2275,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             if not isinstance(expiry, (int, float)):
                 expiry = created_at + INTERVAL_SECONDS.get(item.get("interval"), 86400)
             if int(expiry) > int(now):
+                if market == "futures" and (not allowed_futures_symbols or item.get("symbol") not in allowed_futures_symbols):
+                    continue
                 active_items.append(item)
         cached_result["items"] = active_items
         cached_result["count"] = len(active_items)
@@ -2269,6 +2307,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 if (int(expiry) > int(now)
                         and item.get("medal") in ("gold", "silver", "bronze")
                         and item.get("signal_tier") in ("ذهبية", "فضية", "برونزية")):
+                    if market == "futures":
+                        allowed_futures_symbols = futures_crypto_symbols()
+                        if not allowed_futures_symbols or item.get("symbol") not in allowed_futures_symbols:
+                            continue
                     active_items.append(item)
             restored["items"] = active_items
             restored["count"] = len(active_items)
