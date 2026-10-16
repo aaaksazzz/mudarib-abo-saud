@@ -2842,6 +2842,86 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
             ("الفوركس والذهب", "forex gold XAUUSD dollar market"),
             ("العقود الأمريكية", "S&P 500 futures Nasdaq futures gold oil")
         ])
+    # Broaden coverage through publisher-targeted Google News RSS searches.
+    # Each article still retains the publisher reported in its RSS item.
+    source_queries = {
+        "crypto": [
+            ("العملات الرقمية", "site:coindesk.com crypto Bitcoin Ethereum"),
+            ("العملات الرقمية", "site:cointelegraph.com cryptocurrency market"),
+            ("العملات الرقمية", "site:decrypt.co crypto market"),
+            ("العملات الرقمية", "site:theblock.co crypto markets"),
+            ("العملات الرقمية", "site:bitcoin.com/news cryptocurrency"),
+            ("العملات الرقمية", "site:finance.yahoo.com cryptocurrency Bitcoin"),
+            ("العملات الرقمية", "site:reuters.com cryptocurrency Bitcoin"),
+            ("العملات الرقمية", "site:bloomberg.com crypto Bitcoin market"),
+            ("العملات الرقمية", "site:investing.com/news cryptocurrency"),
+            ("العملات الرقمية", "site:arabic.cnn.com business cryptocurrency Bitcoin"),
+        ],
+        "us": [
+            ("الأسهم الأمريكية", "site:reuters.com/markets/us stocks earnings"),
+            ("الأسهم الأمريكية", "site:bloomberg.com/markets stocks Nasdaq earnings"),
+            ("الأسهم الأمريكية", "site:cnbc.com markets stocks earnings"),
+            ("الأسهم الأمريكية", "site:finance.yahoo.com/news stocks earnings"),
+            ("الأسهم الأمريكية", "site:marketwatch.com stocks earnings"),
+            ("الأسهم الأمريكية", "site:investing.com/news/stock-market-news US stocks"),
+            ("الأسهم الأمريكية", "site:apnews.com/hub/business stock market"),
+            ("الأسهم الأمريكية", "site:ft.com markets US stocks"),
+            ("الأسهم الأمريكية", "site:wsj.com/market-data stocks market"),
+            ("الأسهم الأمريكية", "site:cnbcarabia.com أسهم أمريكية ناسداك"),
+        ],
+        "saudi": [
+            ("السوق السعودي", "site:argaam.com السوق السعودي تداول"),
+            ("السوق السعودي", "site:aleqt.com سوق الأسهم السعودية"),
+            ("السوق السعودي", "site:asharqbusiness.com السعودية أسهم تداول"),
+            ("السوق السعودي", "site:arabnews.com Saudi stock exchange"),
+            ("السوق السعودي", "site:cnbcarabia.com السعودية أسهم تداول"),
+            ("السوق السعودي", "site:reuters.com Saudi stocks Tadawul"),
+            ("السوق السعودي", "site:saudiexchange.sa أخبار السوق"),
+            ("السوق السعودي", "site:spa.gov.sa اقتصاد السوق المالية السعودية"),
+            ("السوق السعودي", "site:argaam.com نتائج الشركات السعودية"),
+            ("السوق السعودي", "site:investing.com السعودية الأسهم"),
+        ],
+        "forex": [
+            ("الفوركس والذهب", "site:reuters.com/markets/currencies dollar forex gold"),
+            ("الفوركس والذهب", "site:kitco.com gold market news"),
+            ("الفوركس والذهب", "site:fxstreet.com forex gold"),
+            ("الفوركس والذهب", "site:investing.com/news/forex-news currencies gold"),
+            ("الفوركس والذهب", "site:dailyfx.com forex gold market"),
+            ("الفوركس والذهب", "site:cnbc.com gold dollar currency markets"),
+            ("الفوركس والذهب", "site:bloomberg.com markets dollar gold"),
+            ("الفوركس والذهب", "site:finance.yahoo.com gold dollar forex"),
+            ("الفوركس والذهب", "site:cnbcarabia.com الذهب الدولار العملات"),
+            ("الفوركس والذهب", "site:asharqbusiness.com الذهب الدولار العملات"),
+        ],
+        "contracts": [
+            ("العقود الأمريكية", "site:cnbc.com futures S&P 500 Nasdaq oil gold"),
+            ("العقود الأمريكية", "site:reuters.com/markets futures oil gold stocks"),
+            ("العقود الأمريكية", "site:marketwatch.com futures S&P 500 oil gold"),
+            ("العقود الأمريكية", "site:investing.com/news/commodities-news oil gold futures"),
+            ("العقود الأمريكية", "site:bloomberg.com markets futures crude oil gold"),
+            ("العقود الأمريكية", "site:finance.yahoo.com futures Nasdaq S&P 500"),
+            ("العقود الأمريكية", "site:kitco.com gold futures market"),
+            ("العقود الأمريكية", "site:cnbcarabia.com النفط الذهب الأسواق العالمية"),
+            ("العقود الأمريكية", "site:asharqbusiness.com النفط الذهب العقود"),
+            ("العقود الأمريكية", "site:reuters.com/business/energy oil prices"),
+        ],
+        "all": [
+            ("العملات الرقمية", "site:coindesk.com OR site:cointelegraph.com crypto market"),
+            ("الأسهم الأمريكية", "site:reuters.com OR site:bloomberg.com US stocks markets"),
+            ("السوق السعودي", "site:argaam.com OR site:cnbcarabia.com السوق السعودي"),
+            ("الفوركس والذهب", "site:kitco.com OR site:fxstreet.com gold forex"),
+            ("العقود الأمريكية", "site:cnbc.com OR site:marketwatch.com futures markets"),
+            ("الأسواق العالمية", "site:asharqbusiness.com الأسواق العالمية اقتصاد"),
+            ("الأسواق العالمية", "site:arabic.cnn.com business markets economy"),
+            ("الأسواق العالمية", "site:apnews.com/hub/business financial markets"),
+            ("الأسواق العالمية", "site:ft.com markets economy"),
+            ("الأسواق العالمية", "site:investing.com/news market news"),
+        ],
+    }
+    queries.extend(source_queries.get(market, source_queries["all"]))
+    # More targeted feeds, bounded to protect the small production container.
+    queries = queries[:20]
+
     def read_feed(entry):
         label, query = entry
         url = "https://news.google.com/rss/search?" + urlencode({"q": query, "hl": "ar", "gl": "SA", "ceid": "SA:ar"})
@@ -2861,8 +2941,8 @@ def market_news(limit: int = Query(30, ge=1, le=100), market: str = Query("all")
             pass
         return found
     items, seen = [], set()
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = [pool.submit(read_feed, query) for query in queries[:8]]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(read_feed, query) for query in queries[:20]]
         for future in as_completed(futures):
             try:
                 rows = future.result()
