@@ -1721,14 +1721,16 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     # setups, analyze a small, liquid sample using the same market's real OHLCV candles.
     items = external[:limit]
     fallback_used = False
-    if not items:
+    # Fill the board with independently qualified candle-based setups even when one external idea exists.
+    target_count = min(limit, 6)
+    if len(items) < target_count:
         try:
             universe = market_data(market, limit=2000)
             candidates = universe.get("items", []) if isinstance(universe, dict) else []
             candidates = sorted(candidates, key=lambda x: abs(float(x.get("change_pct") or 0)), reverse=True)
-            seen = set()
-            # Bound candle requests on the small production container; never scan the full market universe synchronously.
-            for candidate in candidates[:12]:
+            seen = {str(x.get("symbol") or "").upper() for x in items}
+            # Bounded scan; stop as soon as the board is usefully populated.
+            for candidate in candidates[:24]:
                 symbol = str(candidate.get("symbol") or "").upper()
                 if not symbol or symbol in seen:
                     continue
@@ -1736,7 +1738,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 signal = _technical_fallback_signal(market, symbol, interval)
                 if signal:
                     items.append(signal)
-                if len(items) >= min(limit, 6):
+                if len(items) >= target_count:
                     break
             fallback_used = True
         except Exception as exc:
