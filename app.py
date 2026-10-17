@@ -17,9 +17,6 @@ from fastapi import FastAPI, Query, Depends, Request
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from strategy_engine_v2 import evaluate_v2
-from trade_intelligence import analyze_trade
-
 BASE = Path(__file__).resolve().parent
 app = FastAPI(title="التداول الذكي PRO", version="2.1.3")
 security = HTTPBasic(auto_error=False)
@@ -369,12 +366,7 @@ METHOD_SLUGS = {name.lower().replace(" / ", "-").replace(" ", "-").replace("/", 
 
 @app.get("/analysis/{slug}", response_class=HTMLResponse)
 def standalone_method_page(slug: str):
-    method = METHOD_SLUGS.get(slug.lower())
-    if not method:
-        return HTMLResponse("<h1>المنهج غير موجود</h1><a href='/'>العودة للموقع</a>", status_code=404)
-    page = BASE / "static" / "method.html"
-    html = page.read_text(encoding="utf-8").replace("__METHOD_NAME_JSON__", json.dumps(method, ensure_ascii=False)).replace("__METHOD_NAME__", method).replace("__METHOD_SLUG__", slug).replace("__METHOD_CANONICAL__", SEO_BASE_URL + "/analysis/" + slug)
-    return HTMLResponse(html)
+    return HTMLResponse("<h1>تم إيقاف مناهج واستراتيجيات التداول الداخلية</h1><a href='/'>الرئيسية</a>", status_code=410)
 
 
 
@@ -659,38 +651,11 @@ def section_page(request: Request):
 
 @app.get("/api/trade-intelligence/{market}/{symbol}")
 def independent_trade_intelligence(market: str, symbol: str, interval: str = Query("15m")):
-    """Independent evidence/quality analysis; never submits orders or presents quality as win probability."""
-    market = market.lower()
-    symbol = symbol.upper().strip()
-    if market not in ("spot", "futures"):
-        return JSONResponse({"ok": False, "message": "المحلل المستقل متاح حاليًا لسبوت وفيوتشر Binance."}, status_code=422)
-    if interval not in INTERVALS:
-        return JSONResponse({"ok": False, "message": "الفريم غير مدعوم."}, status_code=422)
-    if not symbol.endswith("USDT") or not symbol.replace("USDT", "").isalnum() or len(symbol) > 24:
-        return JSONResponse({"ok": False, "message": "رمز السوق غير صالح."}, status_code=422)
-    higher = HIGHER_INTERVAL[interval]
-    try:
-        from urllib.parse import urlencode
-        def get_closed_bars(tf):
-            url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": tf, "limit": 210})
-            rows = fetch_json(url, timeout=7)
-            now_ms = int(time.time() * 1000)
-            return [row for row in rows if isinstance(row, (list, tuple)) and len(row) > 6 and int(row[6]) < now_ms]
-        candles = get_closed_bars(interval)
-        higher_candles = candles if higher == interval else get_closed_bars(higher)
-        result = analyze_trade(candles, higher_candles, market, symbol, interval)
-        result["updated_at"] = int(time.time())
-        result["message"] = "محلل مستقل لجودة الأدلة، وليس استراتيجية دخول مضمونة أو نسبة نجاح."
-        return result
-    except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError, IndexError):
-        return JSONResponse({"ok": False, "market": market, "symbol": symbol, "items": [],
-                             "message": "تعذر جلب الشموع من Binance الآن؛ لم يتم إنشاء تحليل تقديري."}, status_code=503)
-
+    return JSONResponse({"ok": False, "message": "تم حذف محلل الاستراتيجية الداخلي."}, status_code=410)
 
 @app.get("/trade-intelligence", response_class=HTMLResponse)
 def trade_intelligence_page():
-    page = BASE / "static" / "trade-intelligence.html"
-    return HTMLResponse(page.read_text(encoding="utf-8"))
+    return HTMLResponse("<h1>تم حذف محلل الاستراتيجية الداخلي</h1><a href='/'>الرئيسية</a>", status_code=410)
 
 
 @app.get("/health")
@@ -1851,94 +1816,12 @@ METHOD_PROXY_KEYS = {
 
 @app.get("/api/methods/catalog")
 def method_catalog():
-    items = []
-    for label, key in METHOD_RULES.items():
-        if key in METHOD_RISK_ONLY_KEYS:
-            status = "risk_tool"
-            signal_capable = False
-            note = "أداة لإدارة المخاطر وليست مولّد إشارة دخول."
-        elif key in METHOD_AUXILIARY_DATA_REQUIRED:
-            status = "needs_auxiliary_data"
-            signal_capable = False
-            note = METHOD_AUXILIARY_DATA_REQUIRED[key]
-        elif key in METHOD_PROXY_KEYS:
-            status = "approximation"
-            signal_capable = True
-            note = "تقريب مبني على OHLCV؛ لا يعادل بيانات الأوامر/الجلسات الأصلية ولا يُعد مثبت الربحية."
-        else:
-            status = "ohlcv_rule_unvalidated"
-            signal_capable = True
-            note = "قاعدة شموع/سعر/حجم؛ يلزم اختبار تاريخي مستقل قبل اعتمادها."
-        items.append({
-            "name": label, "key": key, "status": status,
-            "signal_capable": signal_capable, "note": note,
-            "score_is_probability": False,
-        })
-    counts = {}
-    for item in items:
-        counts[item["status"]] = counts.get(item["status"], 0) + 1
-    return {
-        "ok": True, "count": len(items), "counts": counts, "items": items,
-        "message": "وجود المنهج في القائمة لا يعني اجتيازه اختبار ربحية. score يقيس شواهد القاعدة فقط، وليس احتمال الربح.",
-    }
+    return JSONResponse({"ok": False, "message": "تم حذف كتالوج المناهج الداخلية."}, status_code=410)
 
 
 @app.get("/api/methods/{market}")
 def method_filter(market: str, method: str = Query(...), interval: str = Query("15m"), limit: int = Query(40, ge=1, le=100)):
-    market = market.lower()
-    enforce_section_access(market)
-    if market not in BINANCE and market not in ("alpha", "tasi_index") and market not in YAHOO_MARKETS:
-        return JSONResponse({"ok": False, "live": False, "items": [], "message": "مصدر هذا السوق غير مربوط حاليًا."})
-    if interval not in INTERVALS:
-        return JSONResponse({"ok": False, "live": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
-    method_key = METHOD_RULES.get(method)
-    if not method_key:
-        return JSONResponse({"ok": False, "live": False, "items": [], "message": "المنهج غير معروف."}, status_code=422)
-    try:
-        if market in BINANCE or market == "alpha":
-            tickers = market_tickers(market)[:limit]
-        elif market == "tasi_index":
-            quote_item = fetch_yahoo_quote("^TASI.SR")
-            tickers = [quote_item] if quote_item else []
-            for ticker in tickers:
-                ticker.setdefault("quote_volume", 0)
-        else:
-            if market == "saudi":
-                _load_saudi_symbols()
-            symbols = _load_saudi_symbols() if market == "saudi" else YAHOO_MARKETS[market]
-            with ThreadPoolExecutor(max_workers=8) as pool:
-                quotes = [future.result() for future in as_completed(
-                    [pool.submit(fetch_yahoo_quote, symbol) for symbol in symbols]
-                )]
-            tickers = [q for q in quotes if q]
-            tickers.sort(key=lambda x: x.get("change_pct", 0), reverse=True)
-            tickers = tickers[:limit]
-            for ticker in tickers:
-                ticker.setdefault("quote_volume", 0)
-    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
-        return JSONResponse({"ok": False, "live": False, "items": [], "message": "تعذر جلب بيانات السوق المباشرة."}, status_code=503)
-    def analyze(ticker):
-        try:
-            candles = candle_data(market, ticker["symbol"], interval)
-            # Each manual method scan also feeds the independent all-method research ledger.
-            if len(candles) >= 30:
-                record_method_candidates(market, ticker, interval, candles)
-            return method_signal(candles, ticker, method_key)
-        except (urllib.error.URLError, TimeoutError, ValueError, OSError, IndexError, TypeError, ZeroDivisionError):
-            return None
-    found = []
-    with ThreadPoolExecutor(max_workers=16) as pool:
-        for future in as_completed([pool.submit(analyze, t) for t in tickers]):
-            item = future.result()
-            if item:
-                found.append(item)
-    refresh_method_test_results(market, interval, {x["symbol"]: x["price"] for x in tickers if x.get("price")}, int(time.time()))
-    found.sort(key=lambda x: (x.get("score", 0), x.get("quote_volume", 0), abs(x.get("change_pct", 0))), reverse=True)
-    return {"ok": True, "live": True, "market": market, "method": method, "interval": interval,
-            "scanned": len(tickers), "analyzed": len(tickers), "count": len(found),
-            "updated_at": int(time.time()), "items": found,
-            "message": "تم فحص الشموع المباشرة وفق شرط أولي خاص بالمنهج المختار. بعض المناهج المركبة تحتاج تأكيدًا بصريًا/سياقيًا؛ النتيجة ليست ضمانًا أو توصية آلية مكتملة."}
-
+    return JSONResponse({"ok": False, "message": "تم إيقاف فحص المناهج والشموع الخاص بها."}, status_code=410)
 
 
 @app.get("/api/risk/position-size")
@@ -2264,260 +2147,8 @@ def refresh_method_test_results(market: str, interval: str, ticker_prices: dict,
 
 
 @app.get("/api/method-performance")
-def method_performance(market: str = Query("all"), interval: str = Query("all"),
-                       limit: int = Query(200, ge=1, le=300)):
-    """Rank independent method tests by net outcomes; small samples remain provisional."""
-    records = read_json_file(METHOD_RESULTS_PATH, [])
-    if not isinstance(records, list):
-        records = []
-    valid_closed = {"TP1", "TP2", "TP3", "SL", "انتهت المدة"}
-    grouped = {}
-    for record in records:
-        if not isinstance(record, dict) or record.get("record_type") != "method_test":
-            continue
-        if market != "all" and record.get("market") != market:
-            continue
-        if interval != "all" and record.get("interval") != interval:
-            continue
-        key = (record.get("method_key"), record.get("method"), record.get("market"), record.get("interval"))
-        item = grouped.setdefault(key, {"method_key": key[0], "method": key[1], "market": key[2],
-                                        "interval": key[3], "trades": 0, "closed": 0,
-                                        "wins": 0, "losses": 0, "net_pnl_pct": 0.0})
-        if record.get("result") not in valid_closed:
-            continue
-        pnl = record.get("pnl_pct")
-        if not isinstance(pnl, (int, float)):
-            continue
-        item["closed"] += 1
-        item["wins"] += int(pnl > 0)
-        item["losses"] += int(pnl < 0)
-        item["net_pnl_pct"] += float(pnl)
-    eval_data = read_json_file(METHOD_EVALUATIONS_PATH, {"stats": {}})
-    eval_stats = eval_data.get("stats", {}) if isinstance(eval_data, dict) else {}
-    if market != "all" and interval != "all":
-        # Show every registered method, including those with no setup yet or missing required data.
-        for method_name, method_key in METHOD_RULES.items():
-            key = (method_key, method_name, market, interval)
-            grouped.setdefault(key, {"method_key": method_key, "method": method_name,
-                                     "market": market, "interval": interval, "trades": 0,
-                                     "closed": 0, "wins": 0, "losses": 0, "net_pnl_pct": 0.0})
-    items = []
-    for key, item in grouped.items():
-        stats_key = "|".join((str(item.get("market")), str(item.get("interval")), str(item.get("method_key"))))
-        stat = eval_stats.get(stats_key, {}) if isinstance(eval_stats, dict) else {}
-        item["evaluations"] = int(stat.get("evaluations") or 0) if isinstance(stat, dict) else 0
-        item["setups"] = int(stat.get("setups") or 0) if isinstance(stat, dict) else 0
-        item["trades"] = item["setups"]
-        item["setup_rate"] = round(item["setups"] * 100 / item["evaluations"], 2) if item["evaluations"] else None
-        item["net_pnl_pct"] = round(item["net_pnl_pct"], 4)
-        closed = item["closed"]
-        item["win_rate"] = round(item["wins"] * 100 / closed, 1) if closed else None
-        item["avg_net_pnl_pct"] = round(item["net_pnl_pct"] / closed, 4) if closed else None
-        item["sample_ready"] = closed >= 10
-        if item["method_key"] in METHOD_RISK_ONLY_KEYS:
-            item["ranking_status"] = "أداة مخاطر وليست منهج دخول"
-        elif item["method_key"] in METHOD_AUXILIARY_DATA_REQUIRED:
-            item["ranking_status"] = "تحتاج بيانات إضافية قبل الاختبار"
-        elif closed >= 10:
-            item["ranking_status"] = "عينة كافية مبدئيًا"
-        elif item["evaluations"] == 0 and closed == 0:
-            item["ranking_status"] = "بانتظار أول فحص"
-        else:
-            # Closed method-test outcomes are real observations even if this
-            # method's evaluation counter is absent from an older/corrupt stats file.
-            item["ranking_status"] = "ترتيب مؤقت — نحتاج 10 نتائج مغلقة"
-        items.append(item)
-    items.sort(key=lambda x: (x["sample_ready"], x["avg_net_pnl_pct"] if x["avg_net_pnl_pct"] is not None else -999,
-                              x["win_rate"] if x["win_rate"] is not None else -1, x["closed"]), reverse=True)
-    for rank, item in enumerate(items, 1):
-        item["rank"] = rank
-    return {"ok": True, "market": market, "interval": interval, "items": items[:limit],
-            "methods_with_observations": sum(1 for x in items if x.get("evaluations") or x.get("closed")),
-            "total_method_evaluations": sum(x.get("evaluations", 0) for x in items),
-            "closed_method_tests": sum(x["closed"] for x in items),
-            "minimum_closed_samples": 10,
-            "message": "الترتيب مبني على اختبارات مستقلة مسجلة في الموقع وصافي نتيجة تقديري بعد تكلفة ذهاب وعودة 0.20%؛ لا توجد بيانات تاريخية مصطنعة. الترتيب مؤقت حتى تتوفر 10 نتائج مغلقة على الأقل لكل منهج."}
-
-
-def build_signal(market: str, ticker: dict, interval: str):
-    candles = candle_data(market, ticker["symbol"], interval)
-    method_candidates = record_method_candidates(market, ticker, interval, candles) if len(candles) >= 30 else []
-    # Weekly/monthly feeds often have fewer than 220 bars. Keep EMA20/50 mandatory,
-    # but allow valid closed-candle setups when EMA200 history is not available.
-    if len(candles) < 60:
-        return None
-    # Research-informed confluence gate: higher-timeframe trend + liquidity sweep/reclaim
-    # + volatility-aware stop. It is a strict filter, not a win-probability estimate.
-    try:
-        higher_interval = HIGHER_INTERVAL.get(interval, interval)
-        higher_candles = candles if higher_interval == interval else candle_data(market, ticker["symbol"], higher_interval)
-        strategy_decision = evaluate_v2(
-            candles, higher_candles, market=market, timeframe=interval,
-            estimated_round_trip_cost_pct=0.20, risk_per_trade_pct=0.5, min_net_rr=1.6
-        )
-        if strategy_decision.get("action") not in ("BUY", "SELL"):
-            return None
-    except (urllib.error.URLError, TimeoutError, ValueError, OSError, IndexError, TypeError, ZeroDivisionError):
-        return None
-    closes = [k["close"] for k in candles]
-    highs = [k["high"] for k in candles]
-    lows = [k["low"] for k in candles]
-    opens = [k["open"] for k in candles]
-    volumes = [k["volume"] for k in candles]
-    price, prev = closes[-1], closes[-2]
-    e20, e50, e200 = ema(closes, 20), ema(closes, 50), ema(closes, 200)
-    if e20 is None or e50 is None or price <= 0:
-        return None
-    has_ema200 = e200 is not None
-    tr = [max(candles[i]["high"]-candles[i]["low"],
-              abs(candles[i]["high"]-candles[i-1]["close"]),
-              abs(candles[i]["low"]-candles[i-1]["close"])) for i in range(1, len(candles))]
-    atr = sum(tr[-14:]) / min(14, len(tr))
-    if atr <= 0:
-        return None
-    prior_high, prior_low = max(highs[-21:-1]), min(lows[-21:-1])
-    avg_vol = sum(volumes[-21:-1]) / max(1, len(volumes[-21:-1]))
-    candle_range = max(highs[-1] - lows[-1], 1e-12)
-    body = abs(closes[-1] - opens[-1])
-    bullish = closes[-1] > opens[-1]
-    bearish = closes[-1] < opens[-1]
-    # Independent rule families: trend, structure, momentum, volume, candle shape and location.
-    tests = {
-        "الاتجاه EMA20/50": e20 > e50,
-        "الاتجاه EMA50/200": bool(has_ema200 and e50 > e200),
-        "السعر فوق EMA200": bool(has_ema200 and price > e200),
-        "زخم 4 شمعات": price > closes[-5] if len(closes) >= 5 else False,
-        "كسر قمة 20 شمعة": price > prior_high,
-        "كسر قاع 20 شمعة": price < prior_low,
-        "شمعة صاعدة": bullish,
-        "شمعة هابطة": bearish,
-        "حجم تداول مرتفع": avg_vol > 0 and volumes[-1] >= avg_vol * 1.5,
-        "إغلاق قرب القمة": (highs[-1]-price)/candle_range < 0.2,
-        "إغلاق قرب القاع": (price-lows[-1])/candle_range < 0.2,
-        "قوة جسم الشمعة": body/candle_range >= 0.6,
-        "سحب سيولة القاع": lows[-1] < prior_low and price > prior_low,
-        "رفض قمة سابقة": highs[-1] > prior_high and price < prior_high,
-        "قرب مقاومة": abs(price-prior_high)/price < 0.004,
-        "قرب دعم": abs(price-prior_low)/price < 0.004,
-        "فجوة سعرية صاعدة": candles[-3]["high"] < lows[-1],
-        "فجوة سعرية هابطة": candles[-3]["low"] > highs[-1],
-        "تتابع صاعد": closes[-1] > closes[-2] > closes[-3],
-        "تتابع هابط": closes[-1] < closes[-2] < closes[-3],
-        "VWAP تقريبي": price > (sum(closes[-20+i]*volumes[-20+i] for i in range(20))/max(sum(volumes[-20:]),1e-12)),
-        "فوق منتصف النطاق": price > (max(highs[-50:])+min(lows[-50:]))/2,
-        "تذبذب معقول": (highs[-1]-lows[-1])/price < 0.05,
-    }
-    bullish_points = sum([
-        bool(has_ema200 and price > e200), bool(has_ema200 and e50 > e200), e20 > e50, price > closes[-5],
-        price > prior_high, bullish, (highs[-1]-price)/candle_range < 0.2,
-        lows[-1] < prior_low and price > prior_low,
-        price > (sum(closes[-20+i]*volumes[-20+i] for i in range(20))/max(sum(volumes[-20:]),1e-12)),
-        price > (max(highs[-50:])+min(lows[-50:]))/2,
-    ])
-    bearish_points = sum([
-        bool(has_ema200 and price < e200), bool(has_ema200 and e50 < e200), e20 < e50, price < closes[-5],
-        price < prior_low, bearish, (price-lows[-1])/candle_range < 0.2,
-        highs[-1] > prior_high and price < prior_high,
-        price < (sum(closes[-20+i]*volumes[-20+i] for i in range(20))/max(sum(volumes[-20:]),1e-12)),
-        price < (max(highs[-50:])+min(lows[-50:]))/2,
-    ])
-    # The strategy engine owns direction. Legacy rules contribute ranking evidence,
-    # but a disagreement must not silently erase an otherwise valid candidate.
-    side = strategy_decision.get("action")
-    if side not in ("BUY", "SELL"):
-        return None
-    original_side = side
-    # Evaluate every named-method rule and make method confluence part of eligibility and score.
-    method_hits = [method_name for method_name, method_key, method_result in method_candidates
-                   if method_result.get("side") == original_side]
-    confirmations = bullish_points if original_side == "BUY" else bearish_points
-    directional_score = 100 * (bullish_points if original_side == "BUY" else bearish_points) / 10
-    method_families = sorted({method_family(METHOD_RULES[name]) for name in method_hits})
-    method_count_raw = len(method_hits)
-    method_count = len(method_families)
-    method_score = min(method_count, 10) * 10
-    # A single valid method may surface a candidate; stronger confluence raises its rank.
-    # Keep a small directional floor so an isolated rule is not presented as a strong trade.
-    score = int(0.65 * directional_score + 0.35 * method_score)
-    # Method families boost rank; they are not a mandatory gate that hides all setups.
-    # Keep basic directional evidence, while allowing valid strategy candidates through.
-    if score < 25 or confirmations < 2:
-        return None
-    entry = float(strategy_decision["entry"])
-    stop = float(strategy_decision["stop_loss"])
-    risk = abs(entry - stop)
-    if risk <= 0:
-        return None
-    if side == "BUY":
-        t1, t2, t3 = entry + 2.0*risk, entry + 2.5*risk, entry + 3.0*risk
-    else:
-        t1, t2, t3 = entry - 2.0*risk, entry - 2.5*risk, entry - 3.0*risk
-    if min(stop, t1, t2, t3) <= 0:
-        return None
-    # These are rule hits, not proof that every discretionary concept is fully automated.
-    if side == "BUY":
-        directional = ["EMA20 فوق EMA50" if e20 > e50 else "EMA20 دون EMA50"]
-        if has_ema200:
-            directional.extend([
-                "EMA50 فوق EMA200" if e50 > e200 else "EMA50 دون EMA200",
-                "السعر فوق EMA200" if price > e200 else "السعر دون EMA200"
-            ])
-        if price > prior_high: directional.append("كسر قمة 20 شمعة")
-        if lows[-1] < prior_low and price > prior_low: directional.append("سحب سيولة القاع")
-        if bullish: directional.append("شمعة صاعدة")
-    else:
-        directional = ["EMA20 دون EMA50" if e20 < e50 else "EMA20 فوق EMA50"]
-        if has_ema200:
-            directional.extend([
-                "EMA50 دون EMA200" if e50 < e200 else "EMA50 فوق EMA200",
-                "السعر دون EMA200" if price < e200 else "السعر فوق EMA200"
-            ])
-        if price < prior_low: directional.append("كسر قاع 20 شمعة")
-        if highs[-1] > prior_high and price < prior_high: directional.append("رفض القمة / سحب سيولة")
-        if bearish: directional.append("شمعة هابطة")
-    if avg_vol > 0 and volumes[-1] >= avg_vol * 1.5:
-        directional.append("تأكيد حجم التداول")
-    active = list(dict.fromkeys(directional + method_hits))
-    return {
-        "symbol": ticker["symbol"], "side": side, "market": market, "interval": interval,
-        "leverage": "1x" if market == "futures" else None,
-        "entry": entry, "stop": stop, "tp1": t1, "tp2": t2, "tp3": t3,
-        "stop_pct": abs(entry-stop)/entry*100, "tp1_pct": abs(t1-entry)/entry*100,
-        "tp2_pct": abs(t2-entry)/entry*100, "tp3_pct": abs(t3-entry)/entry*100,
-        "score": min(98, score), "confirmations": confirmations,
-        "method_count": method_count, "method_count_raw": method_count_raw,
-        "method_families": method_families,
-        "importance": ("صفقة مهمة جدًا" if method_count >= 7 else "صفقة مهمة" if method_count >= 5 else "توافق متوسط" if method_count >= 3 else "إشارة أولية"),
-        "methods": active, "method_hits": method_hits,
-        "quote_volume": ticker.get("quote_volume", 0), "updated_at": int(time.time()),
-        "method": "توافق الاتجاه متعدد الفريمات + سحب السيولة واستعادتها + توافق المناهج",
-        "strategy_name": strategy_decision.get("strategy"),
-        "strategy_score": strategy_decision.get("score"),
-        "risk_reward_net": strategy_decision.get("risk_reward_net"),
-        "risk_per_trade_pct": strategy_decision.get("risk_per_trade_pct"),
-        "status": "اجتازت بوابة الاتجاه والسيولة والمخاطرة؛ هذه ليست نسبة احتمال ربح ولا ضمانًا"
-    }
-
-CRYPTO_SIGNAL_MARKETS = {"spot", "futures", "alpha"}
-_CRYPTO_SIGNAL_BIAS_CACHE = {"at": 0.0, "side": None}
-_CRYPTO_SIGNAL_BIAS_LOCK = threading.Lock()
-
-
-def crypto_signal_side():
-    """Use only price/breadth-based crypto direction; missing data never creates a trade side."""
-    now = time.time()
-    with _CRYPTO_SIGNAL_BIAS_LOCK:
-        if now - _CRYPTO_SIGNAL_BIAS_CACHE["at"] < 45:
-            return _CRYPTO_SIGNAL_BIAS_CACHE["side"]
-        try:
-            snapshot = market_direction("crypto")
-            source = snapshot.get("direction_source")
-            direction = snapshot.get("direction")
-            side = ("BUY" if direction == "BULLISH" else "SELL") if source in ("prices", "breadth", "coin_prices", "coin_breadth") and direction in ("BULLISH", "BEARISH") else None
-        except Exception:
-            side = None
-        _CRYPTO_SIGNAL_BIAS_CACHE.update({"at": now, "side": side})
-        return side
+def method_performance(market: str = Query("all"), interval: str = Query("all"), limit: int = Query(40, ge=1, le=100)):
+    return JSONResponse({"ok": False, "message": "تم حذف تقييم أداء الاستراتيجيات الداخلية."}, status_code=410)
 
 
 @app.get("/api/saved-signals/{market}")
@@ -3726,15 +3357,7 @@ def signal_results(limit: int = Query(100, ge=1, le=500)):
 
 @app.get("/api/strategy-learning")
 def strategy_learning_status():
-    """Public read-only summary of learned strategy performance by market/timeframe."""
-    raw = read_json_file(STRATEGY_LEARNING_PATH, {})
-    if not isinstance(raw, dict):
-        raw = {}
-    items = sorted(raw.values(), key=lambda x: (int(x.get("trades") or 0), float(x.get("avg_pnl_pct") or 0)), reverse=True)
-    return {"ok": True, "items": items[:200], "methods_tracked": len(items),
-            "total_method_outcomes": sum(int(x.get("trades") or 0) for x in items),
-            "minimum_samples_for_adjustment": 3,
-            "message": "يبدأ تعديل وزن المنهج بعد 3 نتائج مغلقة لكل سوق وفريم واتجاه، مع تخفيف أثر العينات الصغيرة لتقليل التذبذب."}
+    return JSONResponse({"ok": False, "message": "تم حذف نظام تعلم الاستراتيجيات الداخلي."}, status_code=410)
 
 
 @app.get("/api/admin/status")
