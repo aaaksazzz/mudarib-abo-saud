@@ -1355,8 +1355,12 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
         ):
             continue
         detected_interval = _public_idea_interval(full_text)
-        # Never assign a timeframe that the source did not explicitly state.
-        if not detected_interval or (interval != "auto" and detected_interval != interval):
+        # In auto mode, accept a source idea with no stated timeframe only when its
+        # entry, stop and all three targets are explicit and later pass level validation.
+        # Never invent a timeframe: display it as "غير محدد" instead.
+        if interval != "auto" and detected_interval != interval:
+            continue
+        if interval != "auto" and not detected_interval:
             continue
         stage_counts["timeframe"] += 1
         levels = _public_idea_levels(full_text)
@@ -1376,7 +1380,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
         # Do not expose outbound source URLs as clickable links on the public site.
         item["url"] = ""
         unique[item_id] = {**item, "market": market, "direction": direction, "symbol": symbol,
-                           "interval": detected_interval, "levels": levels,
+                           "interval": detected_interval or "غير محدد", "levels": levels,
                            "age_hours": round((now - published) / 3600, 1),
                            "has_complete_levels": True}
     items = sorted(unique.values(), key=lambda row: row["published_at"], reverse=True)[:limit]
@@ -1494,7 +1498,6 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     return {"ok": True, "live": True, "market": market, "interval": interval,
             "scanned": 0, "count": 0, "items": [], "watch_items": [],
             "message": "تم حذف محرك الاستراتيجية؛ الصفحة تعرض بيانات السوق فقط دون إشارات تداول."}
-
 def read_json_file(path, default):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
