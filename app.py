@@ -912,6 +912,47 @@ def candle_data(market: str, symbol: str, interval: str):
     return [dict(candle) for candle in copied]
 
 
+@app.get("/api/market-direction")
+def market_direction(market: str = Query("spot")):
+    """Summarize current public quote changes for one market; this is not a trade signal."""
+    market = (market or "spot").lower()
+    allowed = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
+    if market not in allowed:
+        return JSONResponse({"ok": False, "live": False, "message": "السوق غير مدعوم."}, status_code=422)
+    try:
+        response = market_data(market, limit=2000)
+        if isinstance(response, JSONResponse):
+            return JSONResponse({"ok": False, "live": False, "market": market,
+                                 "message": "تعذر تحديد الاتجاه لأن بيانات الأسعار غير متاحة."}, status_code=503)
+        items = response.get("items", []) if isinstance(response, dict) else []
+        changes = []
+        for item in items:
+            try:
+                change = float(item.get("change_pct"))
+                if math.isfinite(change):
+                    changes.append(change)
+            except (TypeError, ValueError):
+                continue
+        if not changes:
+            return JSONResponse({"ok": False, "live": False, "market": market,
+                                 "message": "لا توجد تغيّرات سعرية كافية لتحديد اتجاه السوق."}, status_code=503)
+        up = sum(1 for value in changes if value > 0.10)
+        down = sum(1 for value in changes if value < -0.10)
+        flat = len(changes) - up - down
+        average = sum(changes) / len(changes)
+        direction = "BULLISH" if average >= 0.15 and up > down else "BEARISH" if average <= -0.15 and down > up else "NEUTRAL"
+        direction_ar = {"BULLISH": "صاعد", "BEARISH": "هابط", "NEUTRAL": "مختلط / محايد"}[direction]
+        return {"ok": True, "live": True, "market": market, "direction": direction,
+                "direction_ar": direction_ar, "price_change_pct": round(average, 3),
+                "assets_up": up, "assets_down": down, "assets_flat": flat,
+                "assets_sampled": len(changes), "updated_at": int(time.time()),
+                "message": "اتجاه وصفي محسوب من متوسط تغيّر الأسعار واتساع السوق، وليس توصية دخول."}
+    except Exception as exc:
+        print(f"market direction failed for {market}: {type(exc).__name__}: {exc}")
+        return JSONResponse({"ok": False, "live": False, "market": market,
+                             "message": "تعذر تحديد اتجاه السوق مؤقتًا؛ مصدر الأسعار لم يرجع بيانات كافية."}, status_code=503)
+
+
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20)):
     """Strategy signal engine was removed; never generate or return strategy trades."""
