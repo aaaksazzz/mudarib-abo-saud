@@ -1273,6 +1273,12 @@ def _public_idea_market_match(market, value):
     return bool(pattern and re.search(pattern, value, re.I))
 def _public_idea_levels(value):
     import re
+    from html import unescape
+    # RSS descriptions often wrap labels and prices in HTML. Strip markup before
+    # matching so "<b>Entry</b>: 1.25" is parsed like plain text.
+    value = unescape(re.sub(r"<[^>]*>", " ", str(value or "")))
+    value = value.replace("：", ":").replace("−", "-").replace("–", "-").replace("—", "-")
+    value = re.sub(r"[\t\r]+", " ", value)
     number = r"\$?([0-9][0-9,]*(?:\.[0-9]+)?)"
     def find(pattern):
         match = re.search(pattern + r"\s*(?:[:=@]\s*|-\s*)?" + number, value, re.I)
@@ -1282,13 +1288,12 @@ def _public_idea_levels(value):
             return float(match.group(1).replace(",", ""))
         except (TypeError, ValueError):
             return None
-    entry = find(r"(?:\bentry(?:\s*price|\s*zone)?\b|\bbuy\s*(?:at|entry)\b|\bsell\s*(?:at|entry)\b|الدخول|سعر الدخول)")
-    stop = find(r"(?:\bstop(?:\s*loss)?\b|\bSL\b|\binvalidation\b|وقف الخسارة|الوقف)")
-    # Require numbered targets; a generic "target" can incorrectly parse "target 2"
-    # as TP1 and create a false price ordering.
-    tp1 = find(r"(?:\bTP\s*1\b|\bTP1\b|\bT1\b|\btarget\s*1\b|\btarget1\b|\btake\s*profit\s*1\b|الهدف الأول|هدف 1)")
-    tp2 = find(r"(?:\bTP\s*2\b|\bTP2\b|\bT2\b|\btarget\s*2\b|\btarget2\b|\btake\s*profit\s*2\b|الهدف الثاني|هدف 2)")
-    tp3 = find(r"(?:\bTP\s*3\b|\bTP3\b|\bT3\b|\btarget\s*3\b|\btarget3\b|\btake\s*profit\s*3\b|الهدف الثالث|هدف 3)")
+    entry = find(r"(?:\bentry(?:\s*(?:price|zone|range))?\b|\b(?:buy|sell)\s*(?:at|entry)\b|سعر\s*الدخول|الدخول)")
+    stop = find(r"(?:\bstop\s*[-_ ]?\s*(?:loss|price)?\b|\bstoploss\b|\bSL\b|\binvalidation\b|وقف\s*الخسارة|الوقف)")
+    # Numbered targets only; never mistake a generic target for TP1.
+    tp1 = find(r"(?:\bTP\s*[-_#]?\s*1\b|\bT\s*1\b|\btarget\s*[-_#]?\s*1\b|\btake\s*profit\s*[-_#]?\s*1\b|الهدف\s*(?:الأول|الاول|1)|هدف\s*1)")
+    tp2 = find(r"(?:\bTP\s*[-_#]?\s*2\b|\bT\s*2\b|\btarget\s*[-_#]?\s*2\b|\btake\s*profit\s*[-_#]?\s*2\b|الهدف\s*(?:الثاني|2)|هدف\s*2)")
+    tp3 = find(r"(?:\bTP\s*[-_#]?\s*3\b|\bT\s*3\b|\btarget\s*[-_#]?\s*3\b|\btake\s*profit\s*[-_#]?\s*3\b|الهدف\s*(?:الثالث|3)|هدف\s*3)")
     return {"entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3}
 @app.get("/api/public-ideas")
 def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limit: int = Query(20, ge=1, le=50), discover: bool = Query(False)):
