@@ -323,7 +323,7 @@ async function loadMarketSignals(){
  const buttons=$("publicIdeaFrames");if(buttons)buttons.querySelectorAll("[data-frame]").forEach(b=>b.classList.toggle("active",b.dataset.frame===frame));
  root.innerHTML=empty("جاري بحث في أفكار التداول العامة…","جاري الفحص");
  try{
-  const d=await getJson("/api/public-ideas?market="+encodeURIComponent(market)+"&interval="+encodeURIComponent(frame)+"&limit=30");
+  const d=await getJson("/api/public-ideas?market="+encodeURIComponent(market)+"&interval="+encodeURIComponent(frame)+"&limit=30&discover=true");
   const items=Array.isArray(d.items)?d.items:[];
   const money=(v)=>v==null?"غير مذكور":num(v,8);
   root.innerHTML=items.length?'<div class="signals">'+items.map(x=>{
