@@ -1077,6 +1077,17 @@ PUBLIC_IDEA_FEEDS = [
     ("Reddit - Stocks", "https://www.reddit.com/r/stocks/.rss"),
     ("Reddit - CryptoCurrency", "https://www.reddit.com/r/CryptoCurrency/.rss"),
 ]
+# Trade-idea sources are deliberately separate from the news feeds below.
+# Only public trader/community posts are searched for explicit buy/sell ideas.
+PUBLIC_TRADE_IDEA_FEEDS = [
+    ("TradingView عربي — أفكار المتداولين", "https://ar.tradingview.com/feed/"),
+    ("TradingView — Trading Ideas", "https://www.tradingview.com/feed/"),
+    ("Reddit — Trading", "https://www.reddit.com/r/Trading/.rss"),
+    ("Reddit — Daytrading", "https://www.reddit.com/r/Daytrading/.rss"),
+    ("Reddit — Forex", "https://www.reddit.com/r/Forex/.rss"),
+    ("Reddit — Crypto Markets", "https://www.reddit.com/r/BitcoinMarkets/.rss"),
+    ("Reddit — Stocks", "https://www.reddit.com/r/stocks/.rss"),
+]
 PUBLIC_IDEA_MAX_AGE = 24 * 60 * 60
 PUBLIC_MARKET_SYMBOLS = {
     "spot": r"\b(BTC|ETH|BNB|SOL|XRP|DOGE|ADA|AVAX|LINK|SUI|LTC|DOT|TRX|TON|NEAR|APT|ARB|OP|INJ|TAO|PEPE|SHIB|WIF|FET|RENDER|UNI|AAVE|PAXG|XAUT)(?:USDT|USDC|USD)?\b|بيتكوين|إيثريوم|عملات رقمية|crypto|bitcoin|ethereum|altcoin",
@@ -1214,7 +1225,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
     gathered = []
     feed_errors = 0
     with ThreadPoolExecutor(max_workers=min(12, len(PUBLIC_IDEA_FEEDS))) as pool:
-        futures = [pool.submit(_fetch_public_idea_feed, source, url) for source, url in PUBLIC_IDEA_FEEDS]
+        futures = [pool.submit(_fetch_public_idea_feed, source, url) for source, url in PUBLIC_TRADE_IDEA_FEEDS]
         for future in as_completed(futures):
             try:
                 gathered.extend(future.result())
@@ -1246,9 +1257,9 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
                            "has_complete_levels": all(levels[k] is not None for k in ("entry", "stop_loss", "tp1"))}
     items = sorted(unique.values(), key=lambda row: row["published_at"], reverse=True)[:limit]
     response = {"ok": True, "market": market, "interval": interval, "items": items,
-                "count": len(items), "sources_checked": len(PUBLIC_IDEA_FEEDS),
+                "count": len(items), "sources_checked": len(PUBLIC_TRADE_IDEA_FEEDS),
                 "sources_failed": feed_errors, "max_age_hours": 24, "updated_at": now,
-                "message": "تم فحص خلاصات المصادر العامة المتاحة؛ الأفكار خلال 24 ساعة فقط، وقد تتعذر بعض المصادر أو تحجب الوصول. مستويات الدخول والأهداف والوقف لا تُستكمل بالتخمين."}
+                "message": "تم فحص منشورات التداول العامة فقط (TradingView ومجتمعات المتداولين)، منفصلة عن الأخبار. المنشورات خلال 24 ساعة؛ لا تُنشأ مستويات دخول أو أهداف أو وقف بالتخمين."}
     with PUBLIC_IDEAS_LOCK:
         PUBLIC_IDEAS_CACHE[cache_key] = (now, response)
     return response
