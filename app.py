@@ -244,7 +244,7 @@ def alpha_market_tickers():
             quote_volume = float(row.get("quoteVolume") or 0)
         except (TypeError, ValueError):
             return None
-        if price <= 0:
+        if price <= 0 or quote_volume < 1_000_000:
             return None
         return {"symbol": symbol, "price": price, "change_pct": change, "quote_volume": quote_volume}
     rows = []
@@ -699,14 +699,19 @@ def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
                     "ok": False, "market": market, "live": False, "items": [],
                     "message": "تعذر جلب الأسعار من مزود السوق الآن. جرّب التحديث لاحقًا."
                 }, status_code=503)
-            # Apply the $1M daily dollar-turnover rule to US equities only.
-            # Saudi equities are intentionally exempt; keep every listed TASI stock only; NOMU is excluded.
+            # Minimum daily traded value: $1M for US equities; approximate SAR equivalent for Saudi equities.
             if market == "us":
                 data = [item for item in data if item.get("dollar_volume", 0) >= 1_000_000]
                 if not data:
                     return {"ok": True, "market": market, "live": True, "provider": "Yahoo Finance",
                             "delayed": True, "updated_at": int(now), "items": [],
                             "message": "لا توجد أسهم أمريكية مستوفية لسيولة مليون دولار يوميًا في البيانات المتاحة."}
+            elif market == "saudi":
+                data = [item for item in data if item.get("quote_volume", 0) >= 3_750_000]
+                if not data:
+                    return {"ok": True, "market": market, "live": True, "provider": "Yahoo Finance",
+                            "delayed": True, "updated_at": int(now), "items": [],
+                            "message": "لا توجد أسهم سعودية مستوفية لقيمة تداول تقارب مليون دولار يوميًا في البيانات المتاحة."}
             data.sort(key=lambda x: x["change_pct"], reverse=True)
             YAHOO_CACHE[market] = (now, data)
         return {"ok": True, "market": market, "live": True, "provider": "Yahoo Finance",
