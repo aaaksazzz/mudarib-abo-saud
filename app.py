@@ -1396,11 +1396,22 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), lim
         return JSONResponse({"ok": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
 
     now = int(time.time())
-    cache_key = (market, interval, bool(discover))
+    cache_key = (market, interval, int(limit), bool(discover))
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if cached and now - cached[0] < PUBLIC_IDEAS_CACHE_TTL:
-            return {**cached[1], "cached": True}
+            cached_response = {**cached[1], "cached": True}
+            fresh_items = []
+            for item in cached_response.get("items", []):
+                try:
+                    published = int(item.get("published_at") or 0)
+                except (TypeError, ValueError):
+                    published = 0
+                if now - PUBLIC_IDEA_MAX_AGE <= published <= now + 300:
+                    fresh_items.append(item)
+            cached_response["items"] = fresh_items
+            cached_response["count"] = len(fresh_items)
+            return cached_response
 
     channels = _telegram_public_channels() if discover else []
     feed_cache_key = bool(discover)
