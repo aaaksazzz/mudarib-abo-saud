@@ -2636,18 +2636,15 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 return restored
     try:
         if market in BINANCE or market == "alpha":
-            # Keep each interactive request bounded, but rotate through the full eligible
-            # Binance universe so symbols beyond the first batch are not permanently skipped.
-            # market_tickers filters USDT pairs to >= $1M 24h quote volume and sorts by volume.
+            # Use the cached ticker universe and scan a small rotating batch per request.
+            # Keep request latency bounded; the background/cache path handles repeat visits.
             eligible_tickers = market_tickers(market)
-            # Prioritize liquid, fast-moving coins for signal discovery. This changes
-            # scan order only; it does not change any entry, target, stop, or strategy rule.
             eligible_tickers.sort(
                 key=lambda item: (abs(item.get("change_pct", 0)), item.get("quote_volume", 0)),
                 reverse=True,
             )
-            # Scan 20 liquid crypto symbols per request; keep worker concurrency capped below.
-            batch_size = 20
+            # Fewer symbols reduce serial candle-fetch timeouts on constrained instances.
+            batch_size = 8
             if len(eligible_tickers) > batch_size:
                 # Advance to the next circular batch every 5 minutes. Repeated requests
                 # in the same window share a batch; later windows cover the rest of the universe.
@@ -2705,7 +2702,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                              "message": "تعذر تحديث السعر الحالي؛ أخفينا الصفقات القديمة مؤقتًا حتى يتوفر سعر حديث. أعد الفحص بعد قليل."})
 
     found = []
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    # Avoid oversubscribing the small web instance: each worker can fetch current and
+    # higher-timeframe candles. Small bounded batches keep the request responsive.
+    scan_workers = 4 if market in BINANCE or market == "alpha" else 3
+    with ThreadPoolExecutor(max_workers=scan_workers) as pool:
         jobs = [pool.submit(build_signal, market, ticker, interval) for ticker in tickers]
         for job in as_completed(jobs):
             try:
