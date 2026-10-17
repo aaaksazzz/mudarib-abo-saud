@@ -1916,7 +1916,7 @@ def trade_chart_data(market: str = Query(...), symbol: str = Query(..., min_leng
     """Return real OHLC candles for an accurately scaled trade chart overlay."""
     market = (market or "").lower().strip()
     symbol = (symbol or "").strip()
-    if market not in {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"} or interval not in {"15m", "1h", "4h"}:
+    if market not in {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"} or interval not in INTERVALS:
         return JSONResponse({"ok": False, "items": [], "message": "السوق أو الفريم غير مدعوم."}, status_code=422)
     if not re.fullmatch(r"[A-Za-z0-9_./=^-]{1,40}", symbol):
         return JSONResponse({"ok": False, "items": [], "message": "رمز غير صالح."}, status_code=422)
