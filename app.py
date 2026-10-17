@@ -207,6 +207,7 @@ CACHE = {}
 CACHE_TTL = 20
 STABLES = {"USDC", "USDT", "BUSD", "FDUSD", "TUSD", "DAI", "USDP", "USDE", "USD1", "USDD", "USTC", "EUR", "EURC"}
 INTERVALS = {"15m", "1h", "4h", "1d", "1w", "1M"}
+PUBLIC_IDEA_INTERVALS = INTERVALS | {"auto"}
 # A signal remains active only for its own chart timeframe.
 INTERVAL_SECONDS = {"15m": 15 * 60, "1h": 60 * 60, "4h": 4 * 60 * 60,
                     "1d": 24 * 60 * 60, "1w": 7 * 24 * 60 * 60, "1M": 30 * 24 * 60 * 60}
@@ -1289,7 +1290,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
     market = (market or "").lower()
     if market not in {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}:
         return JSONResponse({"ok": False, "items": [], "message": "السوق غير مدعوم."}, status_code=422)
-    if interval not in INTERVALS:
+    if interval not in PUBLIC_IDEA_INTERVALS:
         return JSONResponse({"ok": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
     now = int(time.time())
     cache_key = (market, interval, bool(discover))
@@ -1330,7 +1331,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
         symbol = symbol_match.group(0).upper() if symbol_match else ""
         detected_interval = _public_idea_interval(full_text)
         # An explicit timeframe must match the selected timeframe. If absent, label it unspecified.
-        if detected_interval and detected_interval != interval:
+        if interval != "auto" and detected_interval and detected_interval != interval:
             continue
         stage_counts["timeframe"] += 1
         levels = _public_idea_levels(full_text)
