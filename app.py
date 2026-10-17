@@ -229,6 +229,7 @@ def alpha_market_tickers():
         item.get("symbol") for item in info.get("symbols", [])
         if isinstance(item, dict) and item.get("status") == "TRADING"
         and item.get("quoteAsset") in ("USDT", "USDC") and item.get("symbol")
+        and str(item.get("baseAsset") or item.get("symbol", "").replace("USDT", "").replace("USDC", "")).upper() not in STABLES
     ]
     # Bound outbound calls on the small service; the result is cached and ranked by turnover.
     symbols = list(dict.fromkeys(symbols))[:40]
@@ -244,7 +245,7 @@ def alpha_market_tickers():
             quote_volume = float(row.get("quoteVolume") or 0)
         except (TypeError, ValueError):
             return None
-        if price <= 0 or quote_volume < 1_000_000:
+        if price <= 0 or quote_volume < 1_000_000 or abs(change) < 0.1:
             return None
         return {"symbol": symbol, "price": price, "change_pct": change, "quote_volume": quote_volume}
     rows = []
@@ -314,7 +315,7 @@ def _fetch_market_tickers_uncached(market):
             quote_volume = float(item.get("quoteVolume") or 0)
         except (TypeError, ValueError):
             continue
-        if price <= 0 or quote_volume < 1_000_000:
+        if price <= 0 or quote_volume < 1_000_000 or abs(change) < 0.1:
             continue
         rows.append({"symbol": symbol, "price": price, "change_pct": change, "quote_volume": quote_volume})
     rows.sort(key=lambda x: x["quote_volume"], reverse=True)
@@ -699,6 +700,8 @@ def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
                     "ok": False, "market": market, "live": False, "items": [],
                     "message": "تعذر جلب الأسعار من مزود السوق الآن. جرّب التحديث لاحقًا."
                 }, status_code=503)
+            # Exclude flat movers and require minimum daily turnover.
+            data = [item for item in data if abs(item.get("change_pct", 0)) >= 0.1]
             # Minimum daily traded value: $1M for US equities; approximate SAR equivalent for Saudi equities.
             if market == "us":
                 data = [item for item in data if item.get("dollar_volume", 0) >= 1_000_000]
