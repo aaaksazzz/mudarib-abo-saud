@@ -18,6 +18,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from strategy_engine_v2 import evaluate_v2
+from trade_intelligence import analyze_trade
 
 BASE = Path(__file__).resolve().parent
 app = FastAPI(title="التداول الذكي PRO", version="2.1.3")
@@ -653,6 +654,37 @@ def section_page(request: Request):
     if 'property="og:url"' not in html:
         html = html.replace("</head>", '<meta property="og:url" content="' + _seo_escape(canonical) + '"></head>')
     return HTMLResponse(html)
+
+
+
+@app.get("/api/trade-intelligence/{market}/{symbol}")
+def independent_trade_intelligence(market: str, symbol: str, interval: str = Query("15m")):
+    """Independent evidence/quality analysis; never submits orders or presents quality as win probability."""
+    market = market.lower()
+    symbol = symbol.upper().strip()
+    if market not in ("spot", "futures"):
+        return JSONResponse({"ok": False, "message": "المحلل المستقل متاح حاليًا لسبوت وفيوتشر Binance."}, status_code=422)
+    if interval not in INTERVALS:
+        return JSONResponse({"ok": False, "message": "الفريم غير مدعوم."}, status_code=422)
+    if not symbol.endswith("USDT") or not symbol.replace("USDT", "").isalnum() or len(symbol) > 24:
+        return JSONResponse({"ok": False, "message": "رمز السوق غير صالح."}, status_code=422)
+    higher = HIGHER_INTERVAL[interval]
+    try:
+        from urllib.parse import urlencode
+        def get_closed_bars(tf):
+            url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": tf, "limit": 250})
+            rows = fetch_json(url, timeout=7)
+            now_ms = int(time.time() * 1000)
+            return [row for row in rows if isinstance(row, (list, tuple)) and len(row) > 6 and int(row[6]) < now_ms]
+        candles = get_closed_bars(interval)
+        higher_candles = candles if higher == interval else get_closed_bars(higher)
+        result = analyze_trade(candles, higher_candles, market, symbol, interval)
+        result["updated_at"] = int(time.time())
+        result["message"] = "محلل مستقل لجودة الأدلة، وليس استراتيجية دخول مضمونة أو نسبة نجاح."
+        return result
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError, IndexError):
+        return JSONResponse({"ok": False, "market": market, "symbol": symbol, "items": [],
+                             "message": "تعذر جلب الشموع من Binance الآن؛ لم يتم إنشاء تحليل تقديري."}, status_code=503)
 
 
 @app.get("/health")
