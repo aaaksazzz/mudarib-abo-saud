@@ -209,12 +209,23 @@ def test_public_ideas_auto_interval_and_futures_symbol_match(monkeypatch):
     assert data["items"][0]["direction"] == "شراء"
 
 
-def test_market_page_uses_auto_scan_without_visible_timeframe_buttons():
+def test_market_page_uses_market_specific_ideas_and_visible_timeframe_buttons():
     from pathlib import Path
 
     html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
-    assert 'interval=auto&limit=50&discover=true' in html
-    assert 'id="publicIdeaFrames"' not in html
+    assert 'async function loadMarketSignals()' in html
+    assert '"/api/public-ideas?market="+encodeURIComponent(currentMarket)+"&interval="+encodeURIComponent(interval)+"&limit=50&discover=true"' in html
+    assert 'data-market-frame="'+value+'"' in html
+    assert 'async function loadMarketChart(symbol)' in html
+
+
+def test_market_navigation_targets_have_real_page_and_data_loader_functions():
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
+    assert "function renderMarketPage()" in html
+    assert "async function loadMarketSignals()" in html
+    assert "async function loadMarketChart(symbol)" in html
 
 
 def test_public_ideas_reject_mismatched_tickers_and_incomplete_trade_levels(monkeypatch):
