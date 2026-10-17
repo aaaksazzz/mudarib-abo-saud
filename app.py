@@ -1690,9 +1690,9 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     if market not in allowed_markets:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "السوق غير مدعوم."}, status_code=404)
-    if interval not in PUBLIC_IDEA_INTERVALS or interval == "auto":
+    if interval not in {"15m", "1h", "4h"}:
         return JSONResponse({"ok": False, "live": False, "items": [],
-                             "message": "اختر فريمًا محددًا للتحليل."}, status_code=422)
+                             "message": "المتاح للمضاربة السريعة فقط: 15 دقيقة أو ساعة أو 4 ساعات."}, status_code=422)
     now = int(time.time())
     cache_key = ("signal_cards", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
@@ -1704,7 +1704,14 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         response = {"items": [], "diagnostics": {}, "sources_failed": 0}
     external = []
     for item in response.get("items", []):
-        if item.get("interval") not in (interval, "غير محدد"):
+        # Quick-trading pages only accept explicitly timeframe-matched, fresh ideas.
+        if item.get("interval") != interval:
+            continue
+        try:
+            published = float(item.get("published_at") or 0)
+        except (TypeError, ValueError):
+            published = 0
+        if published <= 0 or now - published > 6 * 60 * 60:
             continue
         if _valid_external_trade(item):
             item["generated_by_site"] = False
@@ -1721,7 +1728,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             candidates = sorted(candidates, key=lambda x: abs(float(x.get("change_pct") or 0)), reverse=True)
             seen = set()
             # Bound candle requests on the small production container; never scan the full market universe synchronously.
-            for candidate in candidates[:24]:
+            for candidate in candidates[:12]:
                 symbol = str(candidate.get("symbol") or "").upper()
                 if not symbol or symbol in seen:
                     continue
