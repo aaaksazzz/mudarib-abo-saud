@@ -270,3 +270,20 @@ def test_public_ideas_detect_timeframe_in_title_when_body_omits_it(monkeypatch):
     assert items[0]["direction"] == "بيع"
     assert items[0]["interval"] == "4h"
     assert items[0]["has_complete_levels"] is True
+
+
+def test_public_idea_levels_parse_html_labels_and_numbered_target_variants():
+    levels = app_module._public_idea_levels(
+        "<b>Entry Price</b>: 100 "
+        "<b>Stop-Loss</b>: 95 "
+        "<b>TP-1</b>: 110 "
+        "<b>Target #2</b>: 115 "
+        "<b>Take Profit 3</b>: 120"
+    )
+    assert levels == {
+        "entry": 100.0,
+        "stop_loss": 95.0,
+        "tp1": 110.0,
+        "tp2": 115.0,
+        "tp3": 120.0,
+    }
