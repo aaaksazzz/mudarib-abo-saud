@@ -137,6 +137,40 @@ def test_public_ideas_aggregates_recent_items_without_network(monkeypatch):
     assert data["items"][0]["levels"]["entry"] == 100
 
 
+
+def test_public_ideas_reads_direction_from_title_and_requires_all_ordered_levels(monkeypatch):
+    now = int(time.time())
+    fake = [
+        {
+            "source": "Test public feed",
+            "title": "BTCUSDT BUY idea 15m",
+            "description": "Entry 100, SL 95, TP1 110, TP2 115, TP3 120",
+            "url": "https://example.com/title-buy",
+            "published_at": now,
+            "_text": "Entry 100, SL 95, TP1 110, TP2 115, TP3 120",
+        },
+        {
+            "source": "Test public feed",
+            "title": "ETHUSDT BUY idea 15m",
+            "description": "Entry 100, SL 95, TP1 110, TP2 115",
+            "url": "https://example.com/incomplete-levels",
+            "published_at": now,
+            "_text": "Entry 100, SL 95, TP1 110, TP2 115",
+        },
+    ]
+    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
+    monkeypatch.setattr(app_module, "_fetch_telegram_public_channel", lambda channel: [])
+    app_module.PUBLIC_IDEAS_CACHE.clear()
+    app_module.PUBLIC_TRADE_FEED_CACHE.clear()
+
+    response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["items"]) == 1
+    assert data["items"][0]["symbol"] == "BTCUSDT"
+    assert data["items"][0]["direction"] == "شراء"
+    assert data["diagnostics"]["levels_missing_tp3"] >= 1
+
 def test_robots_sitemap_and_blog_are_available():
     robots = client.get("/robots.txt")
     sitemap = client.get("/sitemap.xml")
