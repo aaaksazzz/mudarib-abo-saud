@@ -373,7 +373,7 @@ async function loadMarketNews(id){const root=$("marketNewsList");if(!root)return
 async function renderMarketPage(){
  const m=MARKETS.find(x=>x.id===market)||MARKETS[0];
  setTitle(m.full,m.desc+" — توصيات مكتملة أو تحليل فني من بيانات الشموع الفعلية.");
- $("view").innerHTML='<section class="panel market-only-page"><div class="panel" id="marketDirectionPanel"></div><div class="panel-head"><div><h2>'+m.icon+' '+m.full+'</h2><div class="muted">نعرض الصفقات المكتملة فقط: دخول ووقف خسارة وثلاثة أهداف، أو تحليل فني من شموع السوق الفعلية.</div></div><span class="badge">فرص مؤهلة</span></div><div class="frame-buttons" id="marketFrames">'+FRAMES.map(f=>'<button class="frame-btn '+(f[0]===frame?'active':'')+'" data-frame="'+f[0]+'">'+f[1]+'</button>').join("")+'</div><div id="publicIdeas">'+empty("جاري فحص الفرص المكتملة…","جاري التحليل")+'</div></section>';
+ $("view").innerHTML='<section class="panel market-only-page"><div class="panel" id="marketDirectionPanel"></div><div class="panel-head"><div><h2>'+m.icon+' '+m.full+'</h2><div class="muted">نعرض الصفقات المكتملة فقط: دخول ووقف خسارة وثلاثة أهداف، أو تحليل فني من شموع السوق الفعلية.</div></div><span class="badge">فرص مؤهلة</span></div><div class="frames" id="marketFrames">'+FRAMES.map(f=>'<button class="frame '+(f[0]===frame?'active':'')+'" data-frame="'+f[0]+'">'+f[1]+'</button>').join("")+'</div><div id="publicIdeas">'+empty("جاري فحص الفرص المكتملة…","جاري التحليل")+'</div></section>';
  $("connection").textContent="● تحليل فرص السوق · "+m.full;
  loadMarketDirection(market);
  loadMarketSignals();
