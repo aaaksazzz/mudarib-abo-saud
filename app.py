@@ -1088,6 +1088,42 @@ PUBLIC_TRADE_IDEA_FEEDS = [
     ("Reddit — Crypto Markets", "https://www.reddit.com/r/BitcoinMarkets/.rss"),
     ("Reddit — Stocks", "https://www.reddit.com/r/stocks/.rss"),
 ]
+# Public Telegram channel previews; no bot token/API key required.
+# Override/add public usernames with TELEGRAM_PUBLIC_CHANNELS="channel1,channel2".
+TELEGRAM_DEFAULT_CHANNELS = ["TradingGainX", "Binance_Futures_Trades", "Arab_Trading_UAE"]
+def _telegram_public_channels():
+    configured = os.getenv("TELEGRAM_PUBLIC_CHANNELS", "").strip()
+    raw = configured.split(",") if configured else TELEGRAM_DEFAULT_CHANNELS
+    return list(dict.fromkeys(name.strip().lstrip("@") for name in raw
+                              if name.strip().lstrip("@").replace("_", "").isalnum()))[:12]
+
+def _fetch_telegram_public_channel(channel):
+    """Read publicly visible Telegram previews without login or API credentials."""
+    from html import unescape
+    import re
+    request = urllib.request.Request("https://t.me/s/" + channel, headers={
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/128 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+    })
+    with urllib.request.urlopen(request, timeout=5) as response:
+        page = response.read(1_500_000).decode("utf-8", "replace")
+    blocks = re.split(r'(?=<div class="tgme_widget_message_wrap)', page)[1:]
+    rows = []
+    for block in blocks[-80:]:
+        text_match = re.search(r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>', block, re.S)
+        time_match = re.search(r'<time[^>]*datetime="([^"]+)"', block, re.S)
+        post_match = re.search(r'href="(https://t\\.me/' + re.escape(channel) + r'/\\d+)"', block)
+        if not text_match or not time_match or not post_match:
+            continue
+        message = unescape(re.sub(r"<[^>]+>", " ", text_match.group(1)))
+        message = re.sub(r"\\s+", " ", message).strip()
+        published = _idea_timestamp(time_match.group(1))
+        if message and published:
+            rows.append({"source": "Telegram — @" + channel, "title": message[:300],
+                         "description": message[:1600], "url": post_match.group(1),
+                         "published_at": published, "_text": message})
+    return rows
+
 PUBLIC_IDEA_MAX_AGE = 24 * 60 * 60
 PUBLIC_MARKET_SYMBOLS = {
     "spot": r"\b(BTC|ETH|BNB|SOL|XRP|DOGE|ADA|AVAX|LINK|SUI|LTC|DOT|TRX|TON|NEAR|APT|ARB|OP|INJ|TAO|PEPE|SHIB|WIF|FET|RENDER|UNI|AAVE|PAXG|XAUT)(?:USDT|USDC|USD)?\b|بيتكوين|إيثريوم|عملات رقمية|crypto|bitcoin|ethereum|altcoin",
@@ -1224,14 +1260,17 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
             return {**cached[1], "cached": True}
     gathered = []
     feed_errors = 0
-    with ThreadPoolExecutor(max_workers=min(12, len(PUBLIC_TRADE_IDEA_FEEDS))) as pool:
-        futures = [pool.submit(_fetch_public_idea_feed, source, url) for source, url in PUBLIC_TRADE_IDEA_FEEDS]
+    telegram_channels = _telegram_public_channels()
+    jobs = [(_fetch_public_idea_feed, (source, url)) for source, url in PUBLIC_TRADE_IDEA_FEEDS]
+    jobs.extend((_fetch_telegram_public_channel, (channel,)) for channel in telegram_channels)
+    with ThreadPoolExecutor(max_workers=min(12, max(1, len(jobs)))) as pool:
+        futures = [pool.submit(fn, *args) for fn, args in jobs]
         for future in as_completed(futures):
             try:
                 gathered.extend(future.result())
             except Exception as exc:
                 feed_errors += 1
-                print(f"public idea feed failed: {type(exc).__name__}: {exc}")
+                print(f"public trade source failed: {type(exc).__name__}: {exc}")
     cutoff = now - PUBLIC_IDEA_MAX_AGE
     stage_counts = {"fetched": len(gathered), "recent": 0, "direction": 0, "market": 0, "timeframe": 0}
     unique = {}
@@ -1264,9 +1303,9 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
                            "has_complete_levels": all(levels[k] is not None for k in ("entry", "stop_loss", "tp1"))}
     items = sorted(unique.values(), key=lambda row: row["published_at"], reverse=True)[:limit]
     response = {"ok": True, "market": market, "interval": interval, "items": items,
-                "count": len(items), "sources_checked": len(PUBLIC_TRADE_IDEA_FEEDS),
+                "count": len(items), "sources_checked": len(jobs), "telegram_channels_checked": telegram_channels,
                 "sources_failed": feed_errors, "max_age_hours": 24, "updated_at": now, "diagnostics": stage_counts,
-                "message": "تم فحص منشورات التداول العامة فقط (TradingView ومجتمعات المتداولين)، منفصلة عن الأخبار. المنشورات خلال 24 ساعة؛ لا تُنشأ مستويات دخول أو أهداف أو وقف بالتخمين."}
+                "message": "تم فحص منشورات التداول العامة من تيليجرام وTradingView ومجتمعات المتداولين، منفصلة عن الأخبار. تيليجرام يقتصر على القنوات العامة؛ لا تُنشأ مستويات دخول أو أهداف أو وقف بالتخمين."}
     with PUBLIC_IDEAS_LOCK:
         PUBLIC_IDEAS_CACHE[cache_key] = (now, response)
     return response
