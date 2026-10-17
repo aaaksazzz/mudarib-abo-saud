@@ -323,7 +323,21 @@ async function loadMarketSignals(){
  const buttons=$("publicIdeaFrames");if(buttons)buttons.querySelectorAll("[data-frame]").forEach(b=>b.classList.toggle("active",b.dataset.frame===frame));
  root.innerHTML=empty("جاري بحث في أفكار التداول العامة…","جاري الفحص");
  try{
-  const scans=[{frame:"auto",label:"تلقائي",data:await getJson("/api/public-ideas?market="+encodeURIComponent(market)+"&interval=auto&limit=50&discover=true")}];
+  let scans=[];
+  try{
+   scans=[{frame:"auto",label:"تلقائي",data:await getJson("/api/public-ideas?market="+encodeURIComponent(market)+"&interval=auto&limit=50&discover=true")}];
+  }catch(autoErr){
+   // Backward compatibility while Northflank may still be running an older backend.
+   if(!/الفريم غير مدعوم|interval.*(unsupported|invalid)/i.test(String(autoErr&&autoErr.message||autoErr)))throw autoErr;
+   const frames=["15m","1h","4h","1d","1w","1M"];
+   for(const fr of frames){
+    try{
+     const data=await getJson("/api/public-ideas?market="+encodeURIComponent(market)+"&interval="+encodeURIComponent(fr)+"&limit=10&discover=true");
+     scans.push({frame:fr,label:fr,data});
+    }catch(frameErr){/* Keep other timeframe results if one request fails. */}
+   }
+   if(!scans.length)throw autoErr;
+  }
   const rankIdea=x=>((x.has_complete_levels?100:0)+(x.direction?20:0)+(x.symbol?10:0)-Math.max(0,Number(x.age_hours)||0));
   const items=scans.flatMap(scan=>(Array.isArray(scan.data.items)?scan.data.items:[]).map(x=>({...x,interval:x.interval||scan.frame,frame_label:(FRAMES.find(f=>f[0]===(x.interval||scan.frame))||["","غير محدد"])[1]}))).sort((a,b)=>rankIdea(b)-rankIdea(a)).filter((x,i,a)=>a.findIndex(y=>(y.symbol||"").toUpperCase()===(x.symbol||"").toUpperCase()&&y.direction===x.direction)===i).slice(0,30);
   const d={items,diagnostics:{fetched:scans.reduce((n,z)=>n+Number(z.data.diagnostics?.fetched||0),0),recent:scans.reduce((n,z)=>n+Number(z.data.diagnostics?.recent||0),0),direction:scans.reduce((n,z)=>n+Number(z.data.diagnostics?.direction||0),0),market:scans.reduce((n,z)=>n+Number(z.data.diagnostics?.market||0),0),timeframe:scans.reduce((n,z)=>n+Number(z.data.diagnostics?.timeframe||0),0)},message:"تم فحص جميع الفريمات واختيار الفرص الأوضح."};
