@@ -116,12 +116,14 @@ if not PERSISTENT_STORAGE_CONFIGURED:
     print("WARNING: /data is not detected as a mounted persistent volume. Configure a Northflank volume mounted at /data or set DATA_DIR to a persistent mount.")
 RESULTS_PATH = DATA_DIR / "results.json"
 SIGNALS_CACHE_PATH = DATA_DIR / "signals-cache.json"
-# The strategy engine and its trade history were retired. Clear legacy saved strategy records.
+# Initialize legacy data files only when absent. Never erase saved results or cache on process startup.
+# This avoids losing history on a restart/redeploy while keeping fresh installs clean.
 for _legacy_path, _empty_data in ((RESULTS_PATH, []), (SIGNALS_CACHE_PATH, {})):
     try:
-        _legacy_path.write_text(json.dumps(_empty_data), encoding="utf-8")
-    except OSError:
-        pass
+        if not _legacy_path.exists():
+            _legacy_path.write_text(json.dumps(_empty_data), encoding="utf-8")
+    except OSError as exc:
+        print(f"WARNING: could not initialize {_legacy_path.name}: {exc}")
 # Protect the complete read-modify-write transaction across all market endpoints.
 RESULTS_LOCK = threading.RLock()
 ARTICLES_PATH = DATA_DIR / "articles.json"
