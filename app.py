@@ -967,7 +967,7 @@ PUBLIC_IDEA_FEEDS = [
 PUBLIC_IDEA_MAX_AGE = 24 * 60 * 60
 PUBLIC_MARKET_SYMBOLS = {
     "spot": r"\b(BTC|ETH|BNB|SOL|XRP|DOGE|ADA|AVAX|LINK|SUI|LTC|DOT|TRX|TON|NEAR|APT|ARB|OP|INJ|TAO|PEPE|SHIB|WIF|FET|RENDER|UNI|AAVE|PAXG|XAUT)(?:USDT|USDC|USD)?\b|بيتكوين|إيثريوم|عملات رقمية|crypto|bitcoin|ethereum|altcoin",
-    "futures": r"\b(BTC|ETH|BNB|SOL|XRP|DOGE|ADA|AVAX|LINK|SUI|LTC|DOT|TRX|TON|NEAR|APT|ARB|OP|INJ|TAO|PEPE|SHIB|WIF|FET|RENDER|UNI|AAVE)(?:USDT|USD)?\b|perpetual|perp|futures|العقود الآجلة|بيتكوين|إيثريوم|crypto|bitcoin|ethereum",
+    "futures": r"\b(BTC|ETH|BNB|SOL|XRP|DOGE|ADA|AVAX|LINK|SUI|LTC|DOT|TRX|TON|NEAR|APT|ARB|OP|INJ|TAO|PEPE|SHIB|WIF|FET|RENDER|UNI|AAVE)(?:USDT|USD)?\b|perpetual|perp|crypto futures|bitcoin futures|ethereum futures|عقود العملات الرقمية|عقود البيتكوين|بيتكوين|إيثريوم|crypto|bitcoin|ethereum",
     "alpha": r"\b(binance alpha|alpha token|alpha market)\b|باينانس ألفا",
     "contracts": r"\b(ES|MES|NQ|MNQ|YM|MYM|RTY|GC|MGC|SI|CL|NG|HG|ZB|ZN|6E|6B|DXY)\b|S&P ?500 futures|nasdaq futures|gold futures|crude oil futures|العقود الأمريكية|عقود الذهب|عقود النفط",
     "us": r"\b(AAPL|MSFT|NVDA|AMZN|GOOGL|GOOG|META|TSLA|AVGO|JPM|LLY|WMT|XOM|AMD|NFLX|COST|ORCL|PLTR|COIN|INTC|SPY|QQQ|IWM)\b|NASDAQ|NYSE|US stocks|U\.S\. stocks|الأسهم الأمريكية|أبل|إنفيديا|تسلا|مايكروسوفت",
@@ -1025,6 +1025,12 @@ def _fetch_public_idea_feed(source, url):
         published = _idea_timestamp(_idea_text(node, {"pubdate", "published", "updated", "date"}))
         text_value = (title + " " + description).strip()
         if title and link and published:
+            from urllib.parse import urlsplit
+            parsed_link = urlsplit(link)
+            host = (parsed_link.hostname or "").lower()
+            if parsed_link.scheme != "https" or not (host == "tradingview.com" or host.endswith(".tradingview.com")
+                                                       or host == "investing.com" or host.endswith(".investing.com")):
+                continue
             rows.append({"source": source, "title": title[:300], "description": description[:1600],
                          "url": link, "published_at": published, "_text": text_value})
     return rows
