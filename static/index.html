@@ -333,6 +333,7 @@ async function renderMarketPage(){
  $("view").innerHTML='<section class="panel market-only-page"><div class="panel" id="marketDirectionPanel"></div><div class="panel-head"><div><h2>'+m.icon+' '+m.full+'</h2><div class="muted">فرص مرصودة من بيانات عامة خلال آخر 24 ساعة؛ نعرض الصفقة داخل الموقع فقط</div></div><span class="badge">مصادر عامة</span></div><div class="notice auto-frame-note">الفريم تلقائي — يتم فحص الفرص عبر الفريمات المتاحة</div><div id="publicIdeas">'+empty("جاري بحث","جاري بحث")+'</div></section>';
  // Discard any obsolete browser-cached strategy cards.
  $("connection").textContent="● توصيات المصادر العامة · "+m.full;
+ loadMarketDirection(market);
  loadMarketSignals();
 }
 async function loadMarketSignals(){
