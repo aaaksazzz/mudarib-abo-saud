@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>محلل جودة الصفقات | التداول الذكي PRO</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#080d18;color:#edf3ff;font:15px/1.8 Tahoma,Arial,sans-serif}
+main{max-width:850px;margin:auto;padding:22px 14px}.card{background:#111b2a;border:1px solid #29384d;border-radius:18px;padding:18px;margin:12px 0}
+h1{font-size:clamp(23px,5vw,34px);margin:0 0 8px}.muted{color:#a9b8cc}.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+label{display:block;color:#b9c7da;font-size:13px;margin-bottom:5px}input,select,button{width:100%;min-height:46px;border-radius:10px;border:1px solid #354760;background:#080f1d;color:#fff;padding:10px;font-size:15px}
+button{background:#e8b84b;color:#191407;font-weight:800;border:0;cursor:pointer;margin-top:12px}button:disabled{opacity:.6}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:9px}.metric{background:#0b1423;border:1px solid #26364b;border-radius:12px;padding:12px}.label{color:#a9b8cc;font-size:12px}.value{font-weight:800;font-size:18px;overflow-wrap:anywhere}.buy{color:#45dfaa}.sell{color:#ff8585}.wait{color:#f1c76b}
+ul{padding-right:22px}.notice{font-size:12px;color:#a9b8cc}.hidden{display:none}a{color:#e8c66d}
+</style></head>
+<body><main>
+<p><a href="/">← العودة للموقع</a></p>
+<section class="card"><h1>🧠 محلل جودة الصفقات المستقل</h1>
+<p class="muted">محرك منفصل عن الاستراتيجيات؛ يراجع اتجاه الفريم الحالي والأعلى، حجم التداول، الشمعة، والوقف. لا يرسل أوامر تداول.</p>
+<div class="form">
+<div><label for="market">السوق</label><select id="market"><option value="spot">سبوت Binance</option><option value="futures">فيوتشر Binance</option></select></div>
+<div><label for="symbol">العملة (مثال BTCUSDT)</label><input id="symbol" value="BTCUSDT" autocapitalize="characters" maxlength="24"></div>
+<div><label for="interval">فريم التحليل</label><select id="interval"><option>15m</option><option>1h</option><option>4h</option><option>1d</option><option>1w</option><option>1M</option></select></div>
+</div><button id="run">حلّل جودة الصفقة</button><p id="status" class="muted" role="status"></p>
+</section>
+<section id="result" class="card hidden" aria-live="polite">
+<div class="grid">
+<div class="metric"><div class="label">القرار</div><div id="action" class="value wait">انتظار</div></div>
+<div class="metric"><div class="label">درجة جودة الأدلة / 100</div><div id="score" class="value">—</div></div>
+<div class="metric"><div class="label">الفريم الأعلى</div><div id="higher" class="value">—</div></div>
+<div class="metric"><div class="label">العائد/المخاطرة الإجمالي</div><div id="rr" class="value">—</div></div>
+</div><div class="grid" style="margin-top:10px">
+<div class="metric"><div class="label">الدخول المرجعي</div><div id="entry" class="value">—</div></div>
+<div class="metric"><div class="label">وقف الخسارة</div><div id="stop" class="value">—</div></div>
+<div class="metric"><div class="label">الهدف الأول</div><div id="tp1" class="value">—</div></div>
+<div class="metric"><div class="label">الهدف الثاني</div><div id="tp2" class="value">—</div></div>
+</div><h3>فحوصات المحلل</h3><div id="checks" class="muted"></div><h3>أسباب القرار</h3><ul id="reasons"></ul>
+</section>
+<p class="notice">مهم: درجة الجودة ليست نسبة نجاح أو ضمان ربح. لا يشمل الحساب رسوم التداول والانزلاق، ويجب اختبار المحرك تاريخيًا قبل الاعتماد عليه.</p>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const labels={trend_current:"اتجاه الفريم الحالي",trend_higher:"اتجاه الفريم الأعلى",volume_confirmed:"تأكيد حجم التداول",near_support:"قرب الدعم",near_resistance:"قرب المقاومة",closed_candles_only:"شموع مغلقة فقط",ema200_available:"توفر EMA200"};
+function fmt(v){if(v===null||v===undefined||v==="")return "—";return Number.isFinite(Number(v))?Number(v).toLocaleString("en-US",{maximumFractionDigits:8}):String(v)}
+$("run").addEventListener("click",async()=>{
+ const market=$("market").value,symbol=$("symbol").value.trim().toUpperCase(),interval=$("interval").value;
+ if(!/^[A-Z0-9]+USDT$/.test(symbol)){ $("status").textContent="اكتب رمزًا صحيحًا مثل BTCUSDT";return; }
+ $("run").disabled=true;$("status").textContent="جاري جلب الشموع وتحليلها…";$("result").classList.add("hidden");
+ try{
+  const res=await fetch("/api/trade-intelligence/"+encodeURIComponent(market)+"/"+encodeURIComponent(symbol)+"?interval="+encodeURIComponent(interval));
+  const data=await res.json();if(!res.ok||data.ok===false)throw new Error(data.message||"تعذر التحليل");
+  $("result").classList.remove("hidden");
+  const action=data.action||"WAIT";$("action").textContent=action==="BUY"?"شراء":action==="SELL"?"بيع":"انتظار";
+  $("action").className="value "+(action==="BUY"?"buy":action==="SELL"?"sell":"wait");
+  $("score").textContent=String(data.quality_score??0)+"/100";$("higher").textContent=data.higher_timeframe||"—";$("rr").textContent=data.risk_reward_gross?data.risk_reward_gross+"R":"—";
+  for(const [id,key] of [["entry","entry"],["stop","stop_loss"],["tp1","take_profit_1"],["tp2","take_profit_2"]])$(id).textContent=fmt(data[key]);
+  $("checks").innerHTML="";for(const [key,val] of Object.entries(data.checks||{})){const p=document.createElement("p");p.textContent=(labels[key]||key)+": "+(typeof val==="boolean"?(val?"نعم":"لا"):val);$("checks").appendChild(p)}
+  $("reasons").innerHTML="";for(const reason of data.reasons||[]){const li=document.createElement("li");li.textContent=reason;$("reasons").appendChild(li)}
+  $("status").textContent=data.message||"اكتمل التحليل.";
+ }catch(e){$("status").textContent=e.message||"تعذر الاتصال؛ حاول مرة أخرى."}
+ finally{$("run").disabled=false}
+});
+</script></body></html>
