@@ -162,16 +162,11 @@ ALPHA_CACHE = {"at": 0, "items": []}
 ALPHA_CACHE_TTL = 90
 CACHE = {}
 CACHE_TTL = 20
-TECH_CACHE = {}
-TECH_CACHE_TTL = 90
 STABLES = {"USDC", "USDT", "BUSD", "FDUSD", "TUSD", "DAI", "USDP", "USDE", "USD1", "USDD", "USTC", "EUR", "EURC"}
 INTERVALS = {"15m", "1h", "4h", "1d", "1w", "1M"}
 # A signal remains active only for its own chart timeframe.
 INTERVAL_SECONDS = {"15m": 15 * 60, "1h": 60 * 60, "4h": 4 * 60 * 60,
                     "1d": 24 * 60 * 60, "1w": 7 * 24 * 60 * 60, "1M": 30 * 24 * 60 * 60}
-HIGHER_INTERVAL = {"15m": "1h", "1h": "4h", "4h": "1d", "1d": "1w", "1w": "1M", "1M": "1M"}
-
-
 def fetch_json(url: str, timeout: int = 8):
     """Fetch JSON with ordered standby hosts for the public market-data providers."""
     from urllib.parse import urlsplit, urlunsplit
@@ -341,19 +336,6 @@ def market_tickers(market):
     MARKET_TICKERS_CACHE[market] = (now, [dict(item) for item in rows])
     return [dict(item) for item in rows]
 
-
-def candle_closes(market, symbol, interval):
-    from urllib.parse import urlencode
-    if market == "alpha":
-        url = ALPHA_BASE + "/klines?" + urlencode({"symbol": symbol, "interval": interval, "limit": 210})
-        payload = fetch_json(url, timeout=8)
-        candles = payload.get("data", []) if isinstance(payload, dict) else []
-    elif market in BINANCE:
-        url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 210})
-        candles = fetch_json(url, timeout=7)
-    else:
-        return []
-    return [float(candle[4]) for candle in candles if len(candle) > 6 and int(candle[6]) < int(time.time() * 1000)]
 
 
 
@@ -752,60 +734,6 @@ def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
             }, status_code=503)
     return {"ok": True, "market": market, "live": True, "provider": "Binance",
             "updated_at": int(now), "items": data[:limit]}
-
-
-@app.get("/api/technical/{market}")
-def technical_filter(market: str, interval: str = Query("15m"), limit: int = Query(40, ge=1, le=60)):
-    market = market.lower()
-    if market not in BINANCE and market != "alpha":
-        return JSONResponse({"ok": False, "live": False, "items": [], "message": "الفلتر الفني متاح حاليًا لسبوت وفيوتشر وBinance Alpha."})
-    if interval not in INTERVALS:
-        return JSONResponse({"ok": False, "live": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
-    cache_key = (market, interval, limit)
-    now = time.time()
-    cached = TECH_CACHE.get(cache_key)
-    if cached and now - cached[0] < TECH_CACHE_TTL:
-        return cached[1]
-    try:
-        tickers = market_tickers(market)[:limit]
-    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
-        return JSONResponse({"ok": False, "live": False, "items": [], "message": "تعذر جلب بيانات السوق المباشرة."}, status_code=503)
-
-    higher = HIGHER_INTERVAL[interval]
-    def analyze(ticker):
-        try:
-            closes, higher_closes = None, None
-            closes = candle_closes(market, ticker["symbol"], interval)
-            higher_closes = closes if higher == interval else candle_closes(market, ticker["symbol"], higher)
-            e50, e200 = ema(closes, 50), ema(closes, 200)
-            h50, h200 = ema(higher_closes, 50), ema(higher_closes, 200)
-            if None in (e50, e200, h50, h200):
-                return None
-            eligible = ticker["price"] > e200 and e50 > e200 and h50 > h200
-            return {**ticker, "ema50": e50, "ema200": e200, "higher_interval": higher,
-                    "higher_ema50": h50, "higher_ema200": h200, "eligible": eligible}
-        except (urllib.error.URLError, TimeoutError, ValueError, OSError, IndexError, TypeError):
-            return None
-
-    analyzed = []
-    with ThreadPoolExecutor(max_workers=5) as pool:
-        futures = [pool.submit(analyze, ticker) for ticker in tickers]
-        for future in as_completed(futures):
-            item = future.result()
-            if item is not None:
-                analyzed.append(item)
-    analyzed.sort(key=lambda x: x["quote_volume"], reverse=True)
-    eligible_items = [item for item in analyzed if item["eligible"]]
-    result = {
-        "ok": True, "live": True, "market": market, "interval": interval,
-        "higher_interval": higher, "scanned": len(tickers), "analyzed": len(analyzed),
-        "updated_at": int(now), "items": eligible_items,
-        "message": "شرط الاتجاه: السعر فوق EMA200 وEMA50 فوق EMA200 على الفريم المختار، مع تأكيد EMA50 فوق EMA200 على الفريم الأعلى. هذا فلتر اتجاه وليس ضمان ربح."
-    }
-    TECH_CACHE[cache_key] = (now, result)
-    return result
-
-
 
 
 @app.get("/api/tasi/analysis")
