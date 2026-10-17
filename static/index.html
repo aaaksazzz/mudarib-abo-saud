@@ -252,14 +252,8 @@ async function loadMarketSignals(){
  if(!root)return;
  const requestedName=MARKETS.find(m=>m.id===requestedMarket)?.full||requestedMarket;
  const cacheKey="stp-saved-signals:"+requestedMarket+":"+requestedFrame;
- let allowedCryptoSide=null;
- if(["spot","futures","alpha"].includes(requestedMarket)){
-   try{
-     const direction=await getJson("/api/market-direction?market=crypto");
-     if(["prices","breadth","coin_prices","coin_breadth"].includes(direction.direction_source))allowedCryptoSide=direction.direction==="BULLISH"?"BUY":direction.direction==="BEARISH"?"SELL":null;
-   }catch(_e){}
- }
- const isActive=x=>x&&x.market===requestedMarket&&x.interval===requestedFrame&&Number(x.expires_at||0)>Math.floor(Date.now()/1000)&&(!["spot","futures","alpha"].includes(requestedMarket)||(allowedCryptoSide!==null&&x.side===allowedCryptoSide));
+ // Market direction is context only; do not hide valid BUY/SELL signals based on broad-market bias.
+ const isActive=x=>x&&x.market===requestedMarket&&x.interval===requestedFrame&&Number(x.expires_at||0)>Math.floor(Date.now()/1000);
  const renderSaved=(items,message)=>{
    const valid=(Array.isArray(items)?items:[]).filter(isActive).map((x,i)=>({...x,rank:i+1}));
    latestSignals=valid;
