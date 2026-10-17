@@ -1284,7 +1284,7 @@ def _public_idea_levels(value):
     tp3 = find(r"(?:tp\s*3|target\s*3|take profit 3|الهدف الثالث|هدف 3)\s*[:=@-]?\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)")
     return {"entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3}
 @app.get("/api/public-ideas")
-def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limit: int = Query(20, ge=1, le=50)):
+def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limit: int = Query(20, ge=1, le=50), discover: bool = Query(False)):
     """Aggregate explicit, recent public market ideas. Never synthesizes missing trade levels."""
     market = (market or "").lower()
     if market not in {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}:
@@ -1292,14 +1292,14 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
     if interval not in INTERVALS:
         return JSONResponse({"ok": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
     now = int(time.time())
-    cache_key = (market, interval)
+    cache_key = (market, interval, bool(discover))
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if cached and now - cached[0] < PUBLIC_IDEAS_CACHE_TTL:
             return {**cached[1], "cached": True}
     gathered = []
     feed_errors = 0
-    telegram_channels = _telegram_public_channels()
+    telegram_channels = _telegram_public_channels() if discover else []
     jobs = [(_fetch_public_idea_feed, (source, url)) for source, url in PUBLIC_TRADE_IDEA_FEEDS]
     jobs.extend((_fetch_telegram_public_channel, (channel,)) for channel in telegram_channels)
     with ThreadPoolExecutor(max_workers=min(12, max(1, len(jobs)))) as pool:
@@ -1344,7 +1344,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
     response = {"ok": True, "market": market, "interval": interval, "items": items,
                 "count": len(items), "sources_checked": len(jobs), "telegram_channels_checked": telegram_channels,
                 "sources_failed": feed_errors, "max_age_hours": 24, "updated_at": now, "diagnostics": stage_counts,
-                "message": "تم فحص منشورات التداول العامة من تيليجرام وTradingView ومجتمعات المتداولين، منفصلة عن الأخبار. تيليجرام يقتصر على القنوات العامة؛ لا تُنشأ مستويات دخول أو أهداف أو وقف بالتخمين."}
+                "discovery_enabled": bool(discover), "message": "بحث في مصادر التداول العامة، مع اكتشاف موسع لقنوات تيليجرام عند تفعيل البحث الشامل. الأخبار منفصلة؛ لا تُنشأ مستويات دخول أو أهداف أو وقف بالتخمين."}
     with PUBLIC_IDEAS_LOCK:
         PUBLIC_IDEAS_CACHE[cache_key] = (now, response)
     return response
