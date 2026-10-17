@@ -287,3 +287,18 @@ def test_public_idea_levels_parse_html_labels_and_numbered_target_variants():
         "tp2": 115.0,
         "tp3": 120.0,
     }
+
+
+def test_public_idea_interval_distinguishes_monthly_from_one_minute():
+    assert app_module._public_idea_interval("BTCUSDT 1M") == "1M"
+    assert app_module._public_idea_interval("BTCUSDT monthly") == "1M"
+    assert app_module._public_idea_interval("BTCUSDT 1m") == ""
+    assert app_module._public_idea_interval("BTCUSDT 15m") == "15m"
+
+
+def test_public_idea_tickers_are_checked_against_the_requested_market():
+    assert app_module._public_idea_symbol_matches_market("futures", "UNI", "#UNI /USDT - Short 4H")
+    assert app_module._public_idea_symbol_matches_market("spot", "NEWTOKENUSDT", "NEWTOKENUSDT bullish setup")
+    assert not app_module._public_idea_symbol_matches_market("spot", "AAPL", "Bitcoin mentioned in a stock article")
+    assert app_module._public_idea_symbol_matches_market("us", "AAPL", "AAPL buy setup")
+    assert not app_module._public_idea_symbol_matches_market("saudi", "AAPL", "AAPL buy setup")
