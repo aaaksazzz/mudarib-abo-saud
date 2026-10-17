@@ -559,7 +559,7 @@ def seo_blog_article(slug: str):
 def home():
     page = BASE / "static" / "index.html"
     html = page.read_text(encoding="utf-8")
-    return HTMLResponse(html)
+    return HTMLResponse(html, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache", "Expires": "0"})
 
 
 
@@ -650,7 +650,7 @@ def section_page(request: Request):
     )
     if 'property="og:url"' not in html:
         html = html.replace("</head>", '<meta property="og:url" content="' + _seo_escape(canonical) + '"></head>')
-    return HTMLResponse(html)
+    return HTMLResponse(html, headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0", "Pragma": "no-cache", "Expires": "0"})
 
 
 
