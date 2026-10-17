@@ -948,10 +948,23 @@ def _fetch_candle_data_uncached(market: str, symbol: str, interval: str):
     yahoo_range = {"15m":"60d", "1h":"730d", "4h":"730d", "1d":"5y", "1w":"10y", "1M":"max"}.get(interval)
     if not yahoo_interval:
         return []
-    url = "https://query1.finance.yahoo.com/v8/finance/chart/" + quote(symbol, safe="") + "?" + urlencode({"interval": yahoo_interval, "range": yahoo_range})
-    payload = fetch_json(url, timeout=9)
-    result = (payload.get("chart") or {}).get("result") or []
+    # Yahoo has several public query hosts. The primary can return an empty chart
+    # for an index while the quote page is available, so retry an independent host
+    # before declaring the TASI/index chart unavailable.
+    result = []
+    last_error = None
+    for host in ("query1.finance.yahoo.com", "query3.finance.yahoo.com"):
+        url = "https://" + host + "/v8/finance/chart/" + quote(symbol, safe="") + "?" + urlencode({"interval": yahoo_interval, "range": yahoo_range})
+        try:
+            payload = fetch_json(url, timeout=4)
+            result = (payload.get("chart") or {}).get("result") or []
+            if result:
+                break
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError) as exc:
+            last_error = exc
     if not result:
+        if last_error:
+            raise last_error
         return []
     data = result[0]
     stamps = data.get("timestamp") or []
