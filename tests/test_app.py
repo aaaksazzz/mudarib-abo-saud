@@ -82,7 +82,12 @@ def test_results_endpoint_handles_empty_and_malformed_pnl(tmp_path, monkeypatch)
     assert data["profitable"] == 1
 
 
-def test_strategy_signal_endpoint_does_not_fabricate_trades():
+def test_strategy_signal_endpoint_does_not_fabricate_trades(monkeypatch):
+    # The endpoint now adapts public ideas; stub all external sources so this stays deterministic.
+    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: [])
+    monkeypatch.setattr(app_module, "_fetch_telegram_public_channel", lambda channel: [])
+    app_module.PUBLIC_IDEAS_CACHE.clear()
+    app_module.PUBLIC_TRADE_FEED_CACHE.clear()
     response = client.get("/api/signals/spot?interval=15m")
     assert response.status_code == 200
     data = response.json()
