@@ -1866,7 +1866,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         "technical_fallback_used": True,
         "message": ("فرص محسوبة من شموع السوق الفعلية." if items else
                     (f"تم فحص {scanned} رمزًا، لكن ما اكتملت شروط الدخول على فريم {interval}." if scanned else
-                     "ما وصلت رموز قابلة للفحص من مصدر هذا السوق؛ تحقق من توفر بيانات الأسعار والشموع.")),
+                     "ما وصلت رموز قابلة للفحص من مصدر هذا السوق؛ تحقق من توفر بيانات الأسعار والشموع، ولن نعرض أسعارًا على أنها صفقات.")),
     }
     with PUBLIC_IDEAS_LOCK:
         PUBLIC_IDEAS_CACHE[cache_key] = (now, result)
