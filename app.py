@@ -967,7 +967,7 @@ PUBLIC_IDEA_FEEDS = [
 PUBLIC_IDEA_MAX_AGE = 24 * 60 * 60
 PUBLIC_MARKET_SYMBOLS = {
     "spot": r"\b(BTC|ETH|BNB|SOL|XRP|DOGE|ADA|AVAX|LINK|SUI|LTC|DOT|TRX|TON|NEAR|APT|ARB|OP|INJ|TAO|PEPE|SHIB|WIF|FET|RENDER|UNI|AAVE|PAXG|XAUT)(?:USDT|USDC|USD)?\b|بيتكوين|إيثريوم|عملات رقمية|crypto|bitcoin|ethereum|altcoin",
-    "futures": r"\b(BTC|ETH|BNB|SOL|XRP|DOGE|ADA|AVAX|LINK|SUI|LTC|DOT|TRX|TON|NEAR|APT|ARB|OP|INJ|TAO|PEPE|SHIB|WIF|FET|RENDER|UNI|AAVE)(?:USDT|USD)?\b|perpetual|perp|crypto futures|bitcoin futures|ethereum futures|عقود العملات الرقمية|عقود البيتكوين|بيتكوين|إيثريوم|crypto|bitcoin|ethereum",
+    "futures": r"perpetual|perp|crypto futures|bitcoin futures|ethereum futures|عقود العملات الرقمية|عقود البيتكوين|فيوتشر العملات|رافعة مالية|leverage|funding rate",
     "alpha": r"\b(binance alpha|alpha token|alpha market)\b|باينانس ألفا",
     "contracts": r"\b(ES|MES|NQ|MNQ|YM|MYM|RTY|GC|MGC|SI|CL|NG|HG|ZB|ZN|6E|6B|DXY)\b|S&P ?500 futures|nasdaq futures|gold futures|crude oil futures|العقود الأمريكية|عقود الذهب|عقود النفط",
     "us": r"\b(AAPL|MSFT|NVDA|AMZN|GOOGL|GOOG|META|TSLA|AVGO|JPM|LLY|WMT|XOM|AMD|NFLX|COST|ORCL|PLTR|COIN|INTC|SPY|QQQ|IWM)\b|NASDAQ|NYSE|US stocks|U\.S\. stocks|الأسهم الأمريكية|أبل|إنفيديا|تسلا|مايكروسوفت",
