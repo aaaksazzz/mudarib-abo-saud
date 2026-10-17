@@ -1335,17 +1335,19 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
         if not direction:
             continue
         stage_counts["direction"] += 1
-        # Match the requested market and ticker against the post title only.
-        # Descriptive prose may mention unrelated assets or ordinary words like "near".
+        # Prefer the title, but also inspect the beginning of the source text:
+        # many public feeds put the ticker and levels in the description, not the title.
         title_text = str(item.get("title") or "")
-        if not _public_idea_market_match(market, title_text):
+        source_text = str(full_text or "")
+        match_text = title_text + " " + source_text[:1600]
+        if not _public_idea_market_match(market, match_text):
             continue
         stage_counts["market"] += 1
-        # Accept common futures notation such as "#UNI /USDT" without
-        # accidentally extracting unrelated tickers from the description.
+        # Prefer a ticker explicitly stated in the title; otherwise extract it from
+        # the source text. Complete levels are still mandatory before a trade is shown.
         slash_pair = re.search(r"(?<![A-Z0-9])#?(BTC|ETH|BNB|SOL|XRP|DOGE|ADA|AVAX|LINK|SUI|LTC|DOT|TRX|TON|NEAR|APT|ARB|OP|INJ|TAO|PEPE|SHIB|WIF|FET|RENDER|UNI|AAVE)\s*/\s*(USDT|USDC|USD)\b", title_text, re.I)
         symbol_re = re.compile(PUBLIC_SYMBOL_RE.pattern)
-        symbol_match = slash_pair or symbol_re.search(title_text)
+        symbol_match = slash_pair or symbol_re.search(title_text) or symbol_re.search(source_text[:1600])
         if not symbol_match:
             continue
         symbol = (slash_pair.group(1) if slash_pair else symbol_match.group(0)).upper()
