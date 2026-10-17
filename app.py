@@ -1291,7 +1291,7 @@ def _public_idea_symbol_matches_market(market, symbol, text_value=""):
     }
     crypto_quotes = ("USDT", "USDC", "USD")
     explicit_crypto_pair = bool(re.search(
-        r"(?<![A-Z0-9])" + re.escape(symbol) + r"\\s*/\\s*(?:USDT|USDC|USD)\\b",
+        r"(?<![A-Z0-9])" + re.escape(symbol) + r"\s*/\s*(?:USDT|USDC|USD)\b",
         str(text_value or ""), re.I))
     is_crypto_symbol = (
         symbol in crypto_bases or
