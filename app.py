@@ -2342,7 +2342,9 @@ def method_performance(market: str = Query("all"), interval: str = Query("all"),
 def build_signal(market: str, ticker: dict, interval: str):
     candles = candle_data(market, ticker["symbol"], interval)
     method_candidates = record_method_candidates(market, ticker, interval, candles) if len(candles) >= 30 else []
-    if len(candles) < 220:
+    # Weekly/monthly feeds often have fewer than 220 bars. Keep EMA20/50 mandatory,
+    # but allow valid closed-candle setups when EMA200 history is not available.
+    if len(candles) < 60:
         return None
     # Research-informed confluence gate: higher-timeframe trend + liquidity sweep/reclaim
     # + volatility-aware stop. It is a strict filter, not a win-probability estimate.
@@ -2364,8 +2366,9 @@ def build_signal(market: str, ticker: dict, interval: str):
     volumes = [k["volume"] for k in candles]
     price, prev = closes[-1], closes[-2]
     e20, e50, e200 = ema(closes, 20), ema(closes, 50), ema(closes, 200)
-    if None in (e20, e50, e200) or price <= 0:
+    if e20 is None or e50 is None or price <= 0:
         return None
+    has_ema200 = e200 is not None
     tr = [max(candles[i]["high"]-candles[i]["low"],
               abs(candles[i]["high"]-candles[i-1]["close"]),
               abs(candles[i]["low"]-candles[i-1]["close"])) for i in range(1, len(candles))]
@@ -2381,8 +2384,8 @@ def build_signal(market: str, ticker: dict, interval: str):
     # Independent rule families: trend, structure, momentum, volume, candle shape and location.
     tests = {
         "الاتجاه EMA20/50": e20 > e50,
-        "الاتجاه EMA50/200": e50 > e200,
-        "السعر فوق EMA200": price > e200,
+        "الاتجاه EMA50/200": bool(has_ema200 and e50 > e200),
+        "السعر فوق EMA200": bool(has_ema200 and price > e200),
         "زخم 4 شمعات": price > closes[-5] if len(closes) >= 5 else False,
         "كسر قمة 20 شمعة": price > prior_high,
         "كسر قاع 20 شمعة": price < prior_low,
@@ -2405,14 +2408,14 @@ def build_signal(market: str, ticker: dict, interval: str):
         "تذبذب معقول": (highs[-1]-lows[-1])/price < 0.05,
     }
     bullish_points = sum([
-        price > e200, e50 > e200, e20 > e50, price > closes[-5],
+        bool(has_ema200 and price > e200), bool(has_ema200 and e50 > e200), e20 > e50, price > closes[-5],
         price > prior_high, bullish, (highs[-1]-price)/candle_range < 0.2,
         lows[-1] < prior_low and price > prior_low,
         price > (sum(closes[-20+i]*volumes[-20+i] for i in range(20))/max(sum(volumes[-20:]),1e-12)),
         price > (max(highs[-50:])+min(lows[-50:]))/2,
     ])
     bearish_points = sum([
-        price < e200, e50 < e200, e20 < e50, price < closes[-5],
+        bool(has_ema200 and price < e200), bool(has_ema200 and e50 < e200), e20 < e50, price < closes[-5],
         price < prior_low, bearish, (price-lows[-1])/candle_range < 0.2,
         highs[-1] > prior_high and price < prior_high,
         price < (sum(closes[-20+i]*volumes[-20+i] for i in range(20))/max(sum(volumes[-20:]),1e-12)),
@@ -2453,16 +2456,22 @@ def build_signal(market: str, ticker: dict, interval: str):
         return None
     # These are rule hits, not proof that every discretionary concept is fully automated.
     if side == "BUY":
-        directional = ["EMA20 فوق EMA50" if e20 > e50 else "EMA20 دون EMA50",
-                        "EMA50 فوق EMA200" if e50 > e200 else "EMA50 دون EMA200",
-                        "السعر فوق EMA200" if price > e200 else "السعر دون EMA200"]
+        directional = ["EMA20 فوق EMA50" if e20 > e50 else "EMA20 دون EMA50"]
+        if has_ema200:
+            directional.extend([
+                "EMA50 فوق EMA200" if e50 > e200 else "EMA50 دون EMA200",
+                "السعر فوق EMA200" if price > e200 else "السعر دون EMA200"
+            ])
         if price > prior_high: directional.append("كسر قمة 20 شمعة")
         if lows[-1] < prior_low and price > prior_low: directional.append("سحب سيولة القاع")
         if bullish: directional.append("شمعة صاعدة")
     else:
-        directional = ["EMA20 دون EMA50" if e20 < e50 else "EMA20 فوق EMA50",
-                        "EMA50 دون EMA200" if e50 < e200 else "EMA50 فوق EMA200",
-                        "السعر دون EMA200" if price < e200 else "السعر فوق EMA200"]
+        directional = ["EMA20 دون EMA50" if e20 < e50 else "EMA20 فوق EMA50"]
+        if has_ema200:
+            directional.extend([
+                "EMA50 دون EMA200" if e50 < e200 else "EMA50 فوق EMA200",
+                "السعر دون EMA200" if price < e200 else "السعر فوق EMA200"
+            ])
         if price < prior_low: directional.append("كسر قاع 20 شمعة")
         if highs[-1] > prior_high and price < prior_high: directional.append("رفض القمة / سحب سيولة")
         if bearish: directional.append("شمعة هابطة")
