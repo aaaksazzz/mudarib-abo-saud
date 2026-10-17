@@ -393,3 +393,11 @@ def test_tasi_page_includes_candle_chart_and_refresh_controls():
     assert 'id="tasiRefresh"' in html
     assert "function renderCandleChart(items,label)" in html
     assert 'const requestedFrame="1d"' in html
+
+
+def test_home_refresh_does_not_rebuild_dashboard_twice():
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
+    assert 'if(e.target.closest("#homeRefresh"))return;' in html
+    assert 'refresh.addEventListener("click",()=>loadHomeDirections(true))' in html
