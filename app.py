@@ -1224,7 +1224,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
             return {**cached[1], "cached": True}
     gathered = []
     feed_errors = 0
-    with ThreadPoolExecutor(max_workers=min(12, len(PUBLIC_IDEA_FEEDS))) as pool:
+    with ThreadPoolExecutor(max_workers=min(12, len(PUBLIC_TRADE_IDEA_FEEDS))) as pool:
         futures = [pool.submit(_fetch_public_idea_feed, source, url) for source, url in PUBLIC_TRADE_IDEA_FEEDS]
         for future in as_completed(futures):
             try:
@@ -1233,21 +1233,28 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
                 feed_errors += 1
                 print(f"public idea feed failed: {type(exc).__name__}: {exc}")
     cutoff = now - PUBLIC_IDEA_MAX_AGE
+    stage_counts = {"fetched": len(gathered), "recent": 0, "direction": 0, "market": 0, "timeframe": 0}
     unique = {}
     for item in gathered:
         published = item.get("published_at", 0)
         if published < cutoff or published > now + 300:
             continue
+        stage_counts["recent"] += 1
         full_text = item.get("_text", "")
         direction = _public_idea_direction(full_text)
-        if not direction or not _public_idea_market_match(market, full_text):
+        if not direction:
             continue
+        stage_counts["direction"] += 1
+        if not _public_idea_market_match(market, full_text):
+            continue
+        stage_counts["market"] += 1
         symbol_match = PUBLIC_SYMBOL_RE.search(full_text)
         symbol = symbol_match.group(0).upper() if symbol_match else ""
         detected_interval = _public_idea_interval(full_text)
         # An explicit timeframe must match the selected timeframe. If absent, label it unspecified.
         if detected_interval and detected_interval != interval:
             continue
+        stage_counts["timeframe"] += 1
         levels = _public_idea_levels(full_text)
         item_id = item.get("url") or (item.get("source", "") + item.get("title", ""))
         item.pop("_text", None)
@@ -1258,7 +1265,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
     items = sorted(unique.values(), key=lambda row: row["published_at"], reverse=True)[:limit]
     response = {"ok": True, "market": market, "interval": interval, "items": items,
                 "count": len(items), "sources_checked": len(PUBLIC_TRADE_IDEA_FEEDS),
-                "sources_failed": feed_errors, "max_age_hours": 24, "updated_at": now,
+                "sources_failed": feed_errors, "max_age_hours": 24, "updated_at": now, "diagnostics": stage_counts,
                 "message": "تم فحص منشورات التداول العامة فقط (TradingView ومجتمعات المتداولين)، منفصلة عن الأخبار. المنشورات خلال 24 ساعة؛ لا تُنشأ مستويات دخول أو أهداف أو وقف بالتخمين."}
     with PUBLIC_IDEAS_LOCK:
         PUBLIC_IDEAS_CACHE[cache_key] = (now, response)
