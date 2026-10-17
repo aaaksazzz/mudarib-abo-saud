@@ -401,3 +401,28 @@ def test_home_refresh_does_not_rebuild_dashboard_twice():
     html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
     assert 'if(e.target.closest("#homeRefresh"))return;' in html
     assert 'refresh.addEventListener("click",()=>loadHomeDirections(true))' in html
+
+
+def test_saudi_market_keeps_symbols_below_usd_volume_cutoff(monkeypatch):
+    monkeypatch.setattr(app_module, "_load_saudi_symbols", lambda: None)
+    monkeypatch.setattr(app_module, "YAHOO_MARKETS", {
+        **app_module.YAHOO_MARKETS,
+        "saudi": ["2222.SR", "1120.SR"],
+    })
+    monkeypatch.setattr(app_module, "fetch_yahoo_quote", lambda symbol: {
+        "symbol": symbol,
+        "name": symbol,
+        "price": 25.0,
+        "change_pct": 0.5,
+        "volume": 100,
+        "dollar_volume": 2500.0,
+        "currency": "SAR",
+        "exchange": "Saudi Exchange",
+        "quote_time": int(time.time()),
+        "delayed": True,
+    })
+    app_module.YAHOO_CACHE.pop("saudi", None)
+    response = client.get("/api/market/saudi?limit=2000")
+    assert response.status_code == 200
+    assert {item["symbol"] for item in response.json()["items"]} == {"2222.SR", "1120.SR"}
+    app_module.YAHOO_CACHE.pop("saudi", None)
