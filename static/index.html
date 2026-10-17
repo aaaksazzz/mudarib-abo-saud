@@ -276,6 +276,12 @@ input:focus,select:focus,textarea:focus{border-color:#6fa8ff!important;outline:n
 .home-level small{display:block;color:#9aacc4;font-size:10px;margin-bottom:3px}.home-level strong{display:block;direction:ltr;text-align:right;font-size:13px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .home-level.entry-level{border-color:#365b82}.home-level.stop-level{border-color:#814052}.home-level.stop-level strong{color:#ff9aa8}.home-level.target-level{border-color:#1f7358}.home-level.target-level strong{color:#67e3b2}
 @media(max-width:520px){.home-levels-wrap{padding:9px}.home-level strong{font-size:12px}}
+
+/* Make homepage market cards open their dedicated market pages */
+.home-analysis-card[data-home-market]{cursor:pointer;transition:border-color .18s ease,transform .18s ease,box-shadow .18s ease;touch-action:manipulation}
+.home-analysis-card[data-home-market]:hover,.home-analysis-card[data-home-market]:focus-visible{border-color:#6c9bd3;box-shadow:0 0 0 2px rgba(108,155,211,.18),0 12px 28px rgba(0,0,0,.25);outline:none}
+.home-analysis-card[data-home-market]:active{transform:scale(.99)}
+.home-analysis-card[data-home-market]:after{content:"اضغط لفتح السوق ←";display:block;margin-top:10px;padding-top:8px;border-top:1px solid #293a50;text-align:left;color:#8eafd6;font-size:10px;font-weight:800}
 </style>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"التداول الذكي PRO","url":"https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/","inLanguage":"ar-SA","description":"منصة عربية لمتابعة الأسواق وتحليل الفرص الفنية والنتائج والأخبار والمقالات التعليمية."}</script>
 </head>
@@ -353,7 +359,13 @@ async function loadHomeDirections(){
   {key:"nasdaq",name:"ناسداك 100",icon:"📈",market:"contracts",symbol:"NQ=F",interval:"1h",item:find(contracts,"NQ=F"),detail:"عقود ناسداك"},
   {key:"oil",name:"النفط",icon:"🛢️",market:"contracts",symbol:"CL=F",interval:"1h",item:find(contracts,"CL=F"),detail:"خام غرب تكساس"}
  ];
- root.innerHTML=specs.map(s=>'<article class="home-analysis-card" id="home-card-'+s.key+'"><div class="home-analysis-head"><span class="home-analysis-name">'+s.icon+' '+s.name+'</span><span class="home-market-state" id="home-state-'+s.key+'">جاري التحليل</span></div><div class="home-price-row"><strong id="home-price-'+s.key+'">'+(s.item&&Number.isFinite(Number(s.item.price))?esc(fmt(s.item.price)):"—")+'</strong><span id="home-change-'+s.key+'" class="home-change">—</span></div><div class="home-analysis-detail">'+esc(s.detail)+'</div><div class="home-chart-wrap" id="home-chart-'+s.key+'"><div class="home-chart-loading">جاري تحميل الشارت…</div></div><div class="home-levels-wrap" id="home-levels-'+s.key+'"><div class="home-levels-title">مستويات السيناريو الفني</div><div class="home-levels-empty">جاري حساب الدخول والوقف والأهداف من الشموع</div></div><div class="home-analysis-foot"><span>الاتجاه الفني</span><strong id="home-trend-'+s.key+'">قيد التحليل</strong></div><div class="home-analysis-foot"><span>آخر شمعة</span><strong id="home-last-'+s.key+'">—</strong></div></article>').join("");
+ root.innerHTML=specs.map(s=>'<article class="home-analysis-card" id="home-card-'+s.key+'" data-home-market="'+(s.key==="tasi"?"tasi":s.market=== "contracts"?"contracts":s.market)+'" role="link" tabindex="0" aria-label="فتح سوق '+esc(s.name)+'"><div class="home-analysis-head"><span class="home-analysis-name">'+s.icon+' '+s.name+'</span><span class="home-market-state" id="home-state-'+s.key+'">جاري التحليل</span></div><div class="home-price-row"><strong id="home-price-'+s.key+'">'+(s.item&&Number.isFinite(Number(s.item.price))?esc(fmt(s.item.price)):"—")+'</strong><span id="home-change-'+s.key+'" class="home-change">—</span></div><div class="home-analysis-detail">'+esc(s.detail)+'</div><div class="home-chart-wrap" id="home-chart-'+s.key+'"><div class="home-chart-loading">جاري تحميل الشارت…</div></div><div class="home-levels-wrap" id="home-levels-'+s.key+'"><div class="home-levels-title">مستويات السيناريو الفني</div><div class="home-levels-empty">جاري حساب الدخول والوقف والأهداف من الشموع</div></div><div class="home-analysis-foot"><span>الاتجاه الفني</span><strong id="home-trend-'+s.key+'">قيد التحليل</strong></div><div class="home-analysis-foot"><span>آخر شمعة</span><strong id="home-last-'+s.key+'">—</strong></div></article>').join("");
+ if(!root.dataset.marketClicksInstalled){
+  root.dataset.marketClicksInstalled="1";
+  const openMarketCard=el=>{const card=el.closest("[data-home-market]");if(!card)return;const target=card.dataset.homeMarket;if(target==="tasi")navigate("tasi");else chooseMarket(target);};
+  root.addEventListener("click",e=>{if(e.target.closest("button,a,input,select,textarea"))return;openMarketCard(e.target);});
+  root.addEventListener("keydown",e=>{if(e.key!=="Enter"&&e.key!==" ")return;const card=e.target.closest("[data-home-market]");if(!card)return;e.preventDefault();openMarketCard(card);});
+ }
  await Promise.all(specs.map(s=>loadHomeChart(s)));
  $("homeDirectionUpdated").textContent="آخر تحديث: "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})+" · لا تُعرض بيانات غير متاحة على أنها أسعار فعلية.";
 }
