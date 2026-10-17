@@ -518,9 +518,6 @@ def seo_blog_article(slug: str):
 def home():
     page = BASE / "static" / "index.html"
     html = page.read_text(encoding="utf-8")
-    # Keep the interactive technical filter separate from the main page markup.
-    if 'src="/static/technical.js"' not in html:
-        html = html.replace("</body>", '<script src="/static/technical.js?v=2.1"></script></body>')
     return HTMLResponse(html)
 
 
@@ -569,9 +566,6 @@ def retired_trade_boards_redirect():
 def section_page(request: Request):
     page = BASE / "static" / "index.html"
     html = page.read_text(encoding="utf-8")
-    if 'src="/static/technical.js"' not in html:
-        html = html.replace("</body>", '<script src="/static/technical.js?v=2.1"></script></body>')
-
     # Give each shareable section its own canonical URL and search snippet.
     # The SPA shell is shared, but search engines must not see every section as "/".
     section_seo = {
