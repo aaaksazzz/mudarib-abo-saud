@@ -1534,12 +1534,20 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         symbol = str(row.get("symbol", "")).strip()
         try:
             candles = candle_data(market, symbol, interval)
+            # Providers such as Yahoo can include the still-forming daily/weekly/monthly candle.
+            # Conservatively keep only candles whose interval has fully elapsed.
+            now_ts = int(time.time())
+            closed_after = {"15m": 15 * 60, "1h": 60 * 60, "4h": 4 * 60 * 60,
+                            "1d": 24 * 60 * 60, "1w": 7 * 24 * 60 * 60,
+                            "1M": 32 * 24 * 60 * 60}[interval]
+            candles = [c for c in candles if isinstance(c.get("time"), (int, float))
+                       and int(c["time"]) + closed_after <= now_ts]
             candles = [c for c in candles if all(
                 isinstance(c.get(key), (int, float)) and math.isfinite(float(c[key]))
                 for key in ("open", "high", "low", "close", "volume")
             ) and float(c["close"]) > 0]
             # EMA200 is part of the trend filter; do not silently weaken it when history is short.
-            if len(candles) < 202:
+            if len(candles) < 200:
                 return None, "شموع_غير_كافية"
             closes = [float(c["close"]) for c in candles]
             last, previous = candles[-1], candles[-2]
@@ -1591,7 +1599,14 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 score += 10
             if abs(entry - e200) / e200 >= 0.005:
                 score += 5
-            price_digits = max(2, min(8, len(str(entry).split(".")[-1]) if "." in str(entry) else 2))
+            if entry < 1:
+                price_digits = max(4, min(10, int(-math.floor(math.log10(entry))) + 4))
+            elif entry < 100:
+                price_digits = 4
+            elif entry < 10000:
+                price_digits = 2
+            else:
+                price_digits = 1
             item = {
                 "id": f"{market}:{symbol}:{interval}:{int(last.get('time', time.time()))}",
                 "market": market, "symbol": symbol, "interval": interval,
@@ -1627,7 +1642,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     if results:
         message = f"تم فحص {len(candidates)} رمزًا من الشموع المغلقة؛ ظهرت {len(results)} إشارة بمستويات مكتملة."
     elif reasons.get("شموع_غير_كافية", 0) == len(candidates):
-        message = "لا توجد صفقة مؤهلة: مصدر البيانات لم يوفر 202 شمعة مغلقة على الأقل لبعض هذا الفريم؛ لم نخفف شروط الاتجاه."
+        message = "لا توجد صفقة مؤهلة: مصدر البيانات لم يوفر 200 شمعة مغلقة على الأقل لبعض هذا الفريم؛ لم نخفف شروط الاتجاه."
     else:
         message = f"تم فحص {len(candidates)} رمزًا من الشموع المغلقة ولم تكتمل شروط الدخول. تفاصيل الفحص مرفقة بدل إرجاع صفر غير مفسر."
     return {"ok": True, "live": True, "market": market, "interval": interval,
