@@ -392,3 +392,4 @@ def test_tasi_page_includes_candle_chart_and_refresh_controls():
     assert 'id="tasiChart"' in html
     assert 'id="tasiRefresh"' in html
     assert "function renderCandleChart(items,label)" in html
+    assert 'const requestedFrame="1d"' in html
