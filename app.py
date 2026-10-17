@@ -1327,20 +1327,40 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
         if not _public_idea_market_match(market, full_text):
             continue
         stage_counts["market"] += 1
-        symbol_match = PUBLIC_SYMBOL_RE.search(full_text)
-        symbol = symbol_match.group(0).upper() if symbol_match else ""
+        # Ticker detection is case-sensitive: the word "near" must never become NEAR.
+        symbol_re = re.compile(PUBLIC_SYMBOL_RE.pattern)
+        symbol_match = symbol_re.search(full_text)
+        if not symbol_match:
+            continue
+        symbol = symbol_match.group(0).upper()
+        if market == "futures" and not re.fullmatch(
+            r"(?:BTC|ETH|BNB|SOL|XRP|DOGE|ADA|AVAX|LINK|SUI|LTC|DOT|TRX|TON|NEAR|APT|ARB|OP|INJ|TAO|PEPE|SHIB|WIF|FET|RENDER|UNI|AAVE)(?:USDT|USDC|USD)?",
+            symbol
+        ):
+            continue
         detected_interval = _public_idea_interval(full_text)
-        # An explicit timeframe must match the selected timeframe. If absent, label it unspecified.
-        if interval != "auto" and detected_interval and detected_interval != interval:
+        # Never assign a timeframe that the source did not explicitly state.
+        if not detected_interval or (interval != "auto" and detected_interval != interval):
             continue
         stage_counts["timeframe"] += 1
         levels = _public_idea_levels(full_text)
+        side = direction
+        try:
+            entry, stop, tp1, tp2, tp3 = (float(levels[k]) for k in ("entry", "stop_loss", "tp1", "tp2", "tp3"))
+        except (TypeError, ValueError):
+            continue
+        if not all(math.isfinite(v) and v > 0 for v in (entry, stop, tp1, tp2, tp3)):
+            continue
+        if side == "شراء" and not (stop < entry < tp1 < tp2 < tp3):
+            continue
+        if side == "بيع" and not (tp3 < tp2 < tp1 < entry < stop):
+            continue
         item_id = item.get("url") or (item.get("source", "") + item.get("title", ""))
         item.pop("_text", None)
         unique[item_id] = {**item, "market": market, "direction": direction, "symbol": symbol,
-                           "interval": detected_interval or "غير محدد", "levels": levels,
+                           "interval": detected_interval, "levels": levels,
                            "age_hours": round((now - published) / 3600, 1),
-                           "has_complete_levels": all(levels[k] is not None for k in ("entry", "stop_loss", "tp1"))}
+                           "has_complete_levels": True}
     items = sorted(unique.values(), key=lambda row: row["published_at"], reverse=True)[:limit]
     response = {"ok": True, "market": market, "interval": interval, "items": items,
                 "count": len(items), "sources_checked": len(jobs), "telegram_channels_checked": telegram_channels,
