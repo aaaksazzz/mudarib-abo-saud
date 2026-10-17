@@ -79,7 +79,7 @@ def evaluate_v2(
         "risk_per_trade_pct": min(max(float(risk_per_trade_pct), 0.1), 0.5),
         "reasons": []
     }
-    if len(candles) < 60 or len(higher_candles) < 30:
+    if len(candles) < 60 or len(higher_candles) < 50:
         result["reasons"] = ["بيانات الشموع المغلقة غير كافية للفريم الحالي والفريم الأعلى"]
         return result
     try:
@@ -119,31 +119,39 @@ def evaluate_v2(
     prev_e20, prev_e50 = float(e20s[-2]), float(e50s[-2])
     e20, e50 = float(e20s[-1]), float(e50s[-1])
     current_rsi, previous_rsi = float(rsi[-1]), float(rsi[-2])
-    higher_bull = hcloses[-1] > he20 and (he50 is None or he20 >= he50)
-    higher_bear = hcloses[-1] < he20 and (he50 is None or he20 <= he50)
+    higher_bull = hcloses[-1] > he20 and he50 is not None and he20 >= he50
+    higher_bear = hcloses[-1] < he20 and he50 is not None and he20 <= he50
 
     # Each timeframe has its own RSI rebound zone and volume threshold.
     profiles = {
-        "15m": (35.0, 65.0, 1.50),
-        "1h": (40.0, 60.0, 1.35),
-        "4h": (42.0, 58.0, 1.25),
-        "1d": (45.0, 55.0, 1.20),
-        "1w": (48.0, 52.0, 1.15),
+        "15m": (35.0, 65.0, 1.30),
+        "1h": (40.0, 60.0, 1.25),
+        "4h": (42.0, 58.0, 1.20),
+        "1d": (45.0, 55.0, 1.15),
+        "1w": (48.0, 52.0, 1.10),
         "1M": (48.0, 52.0, 1.10),
     }
     oversold, overbought, volume_multiple = profiles.get(timeframe, profiles["15m"])
     avg_volume = sum(volumes[-21:-1]) / 20.0
     volume_ok = avg_volume > 0 and volumes[-1] >= avg_volume * volume_multiple
 
-    # RSI must turn up from the lower zone (buy), or turn down from the upper zone (sell).
-    rsi_bounce_up = previous_rsi <= oversold and current_rsi > previous_rsi
-    rsi_bounce_down = previous_rsi >= overbought and current_rsi < previous_rsi
+    # Accept both a genuine RSI rebound and a confirmed continuation pullback.
+    # Requiring an oversold/overbought bounce on the exact EMA-cross candle
+    # was too restrictive and caused many otherwise valid trends to return WAIT.
+    rsi_bounce_up = (
+        (previous_rsi <= oversold and current_rsi > previous_rsi)
+        or (current_rsi > previous_rsi and 42.0 <= current_rsi <= 68.0 and px > float(e20s[-1]))
+    )
+    rsi_bounce_down = (
+        (previous_rsi >= overbought and current_rsi < previous_rsi)
+        or (current_rsi < previous_rsi and 32.0 <= current_rsi <= 58.0 and px < float(e20s[-1]))
+    )
     cross_up = prev_e20 <= prev_e50 and e20 > e50
     cross_down = prev_e20 >= prev_e50 and e20 < e50
 
-    # For 15m, require the actual EMA crossover. Higher intervals can continue an established trend.
-    ema_buy = cross_up if timeframe == "15m" else (e20 > e50 and (cross_up or closes[-2] <= prev_e20 or rsi_bounce_up))
-    ema_sell = cross_down if timeframe == "15m" else (e20 < e50 and (cross_down or closes[-2] >= prev_e20 or rsi_bounce_down))
+    # Entry may follow a fresh cross or a pullback/reclaim in an already aligned trend.
+    ema_buy = e20 > e50 and (cross_up or (px > e20 and closes[-2] <= prev_e20) or (px > e20 and current_rsi > previous_rsi))
+    ema_sell = e20 < e50 and (cross_down or (px < e20 and closes[-2] >= prev_e20) or (px < e20 and current_rsi < previous_rsi))
 
     # Support/resistance is measured from prior closed candles, excluding the current candle.
     support = min(lows[-21:-1])
@@ -187,7 +195,12 @@ def evaluate_v2(
         result["reasons"] = ["العائد إلى المخاطرة بعد الرسوم والانزلاق لا يحقق الحد الأدنى"]
         return result
 
-    score = 50 + 8 * len(reasons) + (5 if volume_ok else 0)
+    # Score reflects additional confluence; it is not a win probability.
+    score = 64
+    score += 7 if (cross_up if action == "BUY" else cross_down) else 0
+    score += 6 if abs(px - e20) <= 0.5 * atr else 0
+    score += 5 if volumes[-1] >= avg_volume * (volume_multiple + 0.25) else 0
+    score += 5 if (current_rsi >= 50 if action == "BUY" else current_rsi <= 50) else 0
     result.update({
         "action": action, "status": "CANDIDATE", "score": min(98, score),
         "entry": round(px, 8), "stop_loss": round(stop, 8),
