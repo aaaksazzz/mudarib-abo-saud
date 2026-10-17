@@ -1090,12 +1090,40 @@ PUBLIC_TRADE_IDEA_FEEDS = [
 ]
 # Public Telegram channel previews; no bot token/API key required.
 # Override/add public usernames with TELEGRAM_PUBLIC_CHANNELS="channel1,channel2".
+# Public Telegram discovery: starter channels are seeds, not a fixed source limit.
 TELEGRAM_DEFAULT_CHANNELS = ["TradingGainX", "Binance_Futures_Trades", "Arab_Trading_UAE"]
+TELEGRAM_DISCOVERY_TERMS = [
+    "crypto trading signals", "bitcoin buy sell", "forex signals", "gold XAUUSD signals",
+    "stock trading signals", "Binance futures signals", "توصيات العملات الرقمية",
+    "توصيات الذهب", "توصيات الفوركس", "توصيات الأسهم", "تاسي توصيات"
+]
 def _telegram_public_channels():
+    import re
+    from urllib.parse import quote
+    channels = set()
     configured = os.getenv("TELEGRAM_PUBLIC_CHANNELS", "").strip()
-    raw = configured.split(",") if configured else TELEGRAM_DEFAULT_CHANNELS
-    return list(dict.fromkeys(name.strip().lstrip("@") for name in raw
-                              if name.strip().lstrip("@").replace("_", "").isalnum()))[:12]
+    if configured:
+        channels.update(name.strip().lstrip("@") for name in configured.split(",")
+                        if name.strip().lstrip("@").replace("_", "").isalnum())
+    else:
+        channels.update(TELEGRAM_DEFAULT_CHANNELS)
+    # Discover additional public channel usernames from directory search pages.
+    for term in TELEGRAM_DISCOVERY_TERMS:
+        try:
+            request = urllib.request.Request(
+                "https://tgstat.com/search?query=" + quote(term),
+                headers={"User-Agent": "Mozilla/5.0 (compatible; SmartTradingPRO/1.0)",
+                         "Accept": "text/html,*/*"})
+            with urllib.request.urlopen(request, timeout=4) as response:
+                page = response.read(700_000).decode("utf-8", "replace")
+            for username in re.findall(r'href=["\\']https?://t\\.me/([A-Za-z0-9_]{5,})/?["\\']', page):
+                if username.lower() not in {"share", "joinchat", "addstickers", "proxy"}:
+                    channels.add(username)
+            for username in re.findall(r'href=["\\']/channel/([A-Za-z0-9_]{5,})["\\']', page):
+                channels.add(username)
+        except Exception as exc:
+            print(f"Telegram channel discovery failed ({term}): {type(exc).__name__}")
+    return sorted(channels)
 
 def _fetch_telegram_public_channel(channel):
     """Read publicly visible Telegram previews without login or API credentials."""
