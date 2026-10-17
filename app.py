@@ -1313,7 +1313,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
         jobs = [(_fetch_public_idea_feed, (source, url)) for source, url in PUBLIC_TRADE_IDEA_FEEDS]
         jobs.extend((_fetch_telegram_public_channel, (channel,)) for channel in telegram_channels)
         # Keep the worker pool small: the service has limited CPU/RAM and feeds rate-limit bursts.
-        with ThreadPoolExecutor(max_workers=3) as pool:
+        with ThreadPoolExecutor(max_workers=4) as pool:
             futures = [pool.submit(fn, *args) for fn, args in jobs]
             for future in as_completed(futures):
                 try:
