@@ -953,6 +953,176 @@ def market_direction(market: str = Query("spot")):
                              "message": "تعذر تحديد اتجاه السوق مؤقتًا؛ مصدر الأسعار لم يرجع بيانات كافية."}, status_code=503)
 
 
+
+PUBLIC_IDEAS_CACHE = {}
+PUBLIC_IDEAS_CACHE_TTL = 180
+PUBLIC_IDEAS_LOCK = threading.RLock()
+PUBLIC_IDEA_FEEDS = [
+    ("TradingView عربي", "https://ar.tradingview.com/feed/"),
+    ("TradingView", "https://www.tradingview.com/feed/"),
+    ("Investing.com", "https://www.investing.com/rss/news_25.rss"),
+    ("Investing.com", "https://www.investing.com/rss/news_301.rss"),
+    ("Investing.com", "https://www.investing.com/rss/news_14.rss"),
+]
+PUBLIC_IDEA_MAX_AGE = 24 * 60 * 60
+PUBLIC_MARKET_SYMBOLS = {
+    "spot": r"\b(BTC|ETH|BNB|SOL|XRP|DOGE|ADA|AVAX|LINK|SUI|LTC|DOT|TRX|TON|NEAR|APT|ARB|OP|INJ|TAO|PEPE|SHIB|WIF|FET|RENDER|UNI|AAVE|PAXG|XAUT)(?:USDT|USDC|USD)?\b|بيتكوين|إيثريوم|عملات رقمية|crypto|bitcoin|ethereum|altcoin",
+    "futures": r"\b(BTC|ETH|BNB|SOL|XRP|DOGE|ADA|AVAX|LINK|SUI|LTC|DOT|TRX|TON|NEAR|APT|ARB|OP|INJ|TAO|PEPE|SHIB|WIF|FET|RENDER|UNI|AAVE)(?:USDT|USD)?\b|perpetual|perp|futures|العقود الآجلة|بيتكوين|إيثريوم|crypto|bitcoin|ethereum",
+    "alpha": r"\b(binance alpha|alpha token|alpha market)\b|باينانس ألفا",
+    "contracts": r"\b(ES|MES|NQ|MNQ|YM|MYM|RTY|GC|MGC|SI|CL|NG|HG|ZB|ZN|6E|6B|DXY)\b|S&P ?500 futures|nasdaq futures|gold futures|crude oil futures|العقود الأمريكية|عقود الذهب|عقود النفط",
+    "us": r"\b(AAPL|MSFT|NVDA|AMZN|GOOGL|GOOG|META|TSLA|AVGO|JPM|LLY|WMT|XOM|AMD|NFLX|COST|ORCL|PLTR|COIN|INTC|SPY|QQQ|IWM)\b|NASDAQ|NYSE|US stocks|U\.S\. stocks|الأسهم الأمريكية|أبل|إنفيديا|تسلا|مايكروسوفت",
+    "saudi": r"\b(2222|1120|2010|1180|7010|1211|2380|1150|2280|4001|2082|2223|4200|7203)(?:\.SR)?\b|تاسي|السوق السعودي|السوق المالية السعودية|تداول السعودية|Saudi stocks|Tadawul",
+    "forex": r"\b(EURUSD|GBPUSD|USDJPY|AUDUSD|USDCAD|USDCHF|NZDUSD|EURGBP|EURJPY|GBPJPY|XAUUSD|XAGUSD|GOLD|SILVER|DXY|EUR/USD|GBP/USD|USD/JPY)\b|forex|foreign exchange|currency pair|ذهب|الذهب|الفوركس|الدولار مقابل|زوج العملات",
+}
+PUBLIC_SYMBOL_RE = __import__("re").compile(
+    r"\b(?:BTC|ETH|BNB|SOL|XRP|DOGE|ADA|AVAX|LINK|SUI|LTC|DOT|TRX|TON|NEAR|APT|ARB|OP|INJ|TAO|PEPE|SHIB|WIF|FET|RENDER|UNI|AAVE|PAXG|XAUT)(?:USDT|USDC|USD)?\b"
+    r"|\b(?:AAPL|MSFT|NVDA|AMZN|GOOGL|GOOG|META|TSLA|AVGO|JPM|LLY|WMT|XOM|AMD|NFLX|COST|ORCL|PLTR|COIN|INTC|SPY|QQQ|IWM)\b"
+    r"|\b(?:ES|MES|NQ|MNQ|YM|MYM|RTY|GC|MGC|SI|CL|NG|HG|ZB|ZN|6E|6B)\b"
+    r"|\b(?:EURUSD|GBPUSD|USDJPY|AUDUSD|USDCAD|USDCHF|NZDUSD|EURGBP|EURJPY|GBPJPY|XAUUSD|XAGUSD)\b"
+    r"|\b(?:2222|1120|2010|1180|7010|1211|2380|1150|2280|4001|2082|2223|4200|7203)(?:\.SR)?\b",
+    __import__("re").IGNORECASE,
+)
+def _idea_text(node, names):
+    for child in list(node):
+        tag = child.tag.rsplit("}", 1)[-1].lower()
+        if tag in names and child.text:
+            return child.text.strip()
+    return ""
+def _idea_timestamp(value):
+    from email.utils import parsedate_to_datetime
+    try:
+        dt = parsedate_to_datetime(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp())
+    except (TypeError, ValueError, OverflowError):
+        try:
+            from datetime import datetime
+            return int(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp())
+        except (TypeError, ValueError, OverflowError):
+            return 0
+def _fetch_public_idea_feed(source, url):
+    request = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (compatible; SmartTradingPRO/1.0; +https://www.tradingview.com/)",
+        "Accept": "application/rss+xml, application/xml, text/xml, */*",
+    })
+    with urllib.request.urlopen(request, timeout=4) as response:
+        raw = response.read(1_500_000)
+    root = ET.fromstring(raw)
+    rows = []
+    for node in root.iter():
+        if node.tag.rsplit("}", 1)[-1].lower() not in ("item", "entry"):
+            continue
+        title = _idea_text(node, {"title"})
+        description = _idea_text(node, {"description", "summary", "content", "encoded"})
+        link = _idea_text(node, {"link"})
+        if not link:
+            for child in list(node):
+                if child.tag.rsplit("}", 1)[-1].lower() == "link":
+                    link = child.attrib.get("href", "")
+                    if link:
+                        break
+        published = _idea_timestamp(_idea_text(node, {"pubdate", "published", "updated", "date"}))
+        text_value = (title + " " + description).strip()
+        if title and link and published:
+            rows.append({"source": source, "title": title[:300], "description": description[:1600],
+                         "url": link, "published_at": published, "_text": text_value})
+    return rows
+def _public_idea_direction(value):
+    import re
+    text_value = value.lower()
+    buy = bool(re.search(r"\b(buy|long|bullish|strong buy|upside|breakout higher)\b|شراء|اشتر[ىي]|صاعد|إيجابي|اختراق صاعد", text_value))
+    sell = bool(re.search(r"\b(sell|short|bearish|strong sell|downside|breakdown lower)\b|بيع|بيع على المكشوف|هابط|سلبي|اختراق هابط", text_value))
+    if buy == sell:
+        return ""
+    return "شراء" if buy else "بيع"
+def _public_idea_interval(value):
+    import re
+    match = re.search(r"\b(15m|15 min|15-minute|1h|1 hour|4h|4 hour|1d|daily|1 day|1w|weekly|1M|monthly)\b|(?:فريم|إطار)\s*(15\s*د|ساعة|4\s*س|يومي|أسبوعي|شهري)", value, re.I)
+    if not match:
+        return ""
+    token = match.group(0).lower().replace(" ", "")
+    mapping = {"15m":"15m", "15min":"15m", "15-minute":"15m", "15د":"15m",
+               "1h":"1h", "1hour":"1h", "ساعة":"1h", "4h":"4h", "4hour":"4h", "4س":"4h",
+               "1d":"1d", "daily":"1d", "1day":"1d", "يومي":"1d",
+               "1w":"1w", "weekly":"1w", "أسبوعي":"1w", "1m":"1M", "monthly":"1M", "شهري":"1M"}
+    return mapping.get(token, "")
+def _public_idea_market_match(market, value):
+    import re
+    pattern = PUBLIC_MARKET_SYMBOLS.get(market, "")
+    return bool(pattern and re.search(pattern, value, re.I))
+def _public_idea_levels(value):
+    import re
+    def find(pattern):
+        match = re.search(pattern, value, re.I)
+        if not match:
+            return None
+        try:
+            return float(match.group(1).replace(",", ""))
+        except (TypeError, ValueError):
+            return None
+    entry = find(r"(?:entry|entry price|buy at|sell at|الدخول|سعر الدخول)\s*[:=@-]?\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)")
+    stop = find(r"(?:stop(?:\s*loss)?|sl|وقف الخسارة|الوقف)\s*[:=@-]?\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)")
+    tp1 = find(r"(?:tp\s*1|target\s*1|target|take profit 1|الهدف الأول|هدف 1)\s*[:=@-]?\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)")
+    tp2 = find(r"(?:tp\s*2|target\s*2|take profit 2|الهدف الثاني|هدف 2)\s*[:=@-]?\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)")
+    tp3 = find(r"(?:tp\s*3|target\s*3|take profit 3|الهدف الثالث|هدف 3)\s*[:=@-]?\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)")
+    return {"entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3}
+@app.get("/api/public-ideas")
+def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limit: int = Query(20, ge=1, le=50)):
+    """Aggregate explicit, recent public market ideas. Never synthesizes missing trade levels."""
+    market = (market or "").lower()
+    if market not in {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}:
+        return JSONResponse({"ok": False, "items": [], "message": "السوق غير مدعوم."}, status_code=422)
+    if interval not in INTERVALS:
+        return JSONResponse({"ok": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
+    now = int(time.time())
+    cache_key = (market, interval)
+    with PUBLIC_IDEAS_LOCK:
+        cached = PUBLIC_IDEAS_CACHE.get(cache_key)
+        if cached and now - cached[0] < PUBLIC_IDEAS_CACHE_TTL:
+            return {**cached[1], "cached": True}
+    gathered = []
+    feed_errors = 0
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = [pool.submit(_fetch_public_idea_feed, source, url) for source, url in PUBLIC_IDEA_FEEDS]
+        for future in as_completed(futures):
+            try:
+                gathered.extend(future.result())
+            except Exception as exc:
+                feed_errors += 1
+                print(f"public idea feed failed: {type(exc).__name__}: {exc}")
+    cutoff = now - PUBLIC_IDEA_MAX_AGE
+    unique = {}
+    for item in gathered:
+        published = item.get("published_at", 0)
+        if published < cutoff or published > now + 300:
+            continue
+        full_text = item.get("_text", "")
+        direction = _public_idea_direction(full_text)
+        if not direction or not _public_idea_market_match(market, full_text):
+            continue
+        symbol_match = PUBLIC_SYMBOL_RE.search(full_text)
+        symbol = symbol_match.group(0).upper() if symbol_match else ""
+        detected_interval = _public_idea_interval(full_text)
+        # An explicit timeframe must match the selected timeframe. If absent, label it unspecified.
+        if detected_interval and detected_interval != interval:
+            continue
+        levels = _public_idea_levels(full_text)
+        item_id = item.get("url") or (item.get("source", "") + item.get("title", ""))
+        item.pop("_text", None)
+        unique[item_id] = {**item, "market": market, "direction": direction, "symbol": symbol,
+                           "interval": detected_interval or "غير محدد", "levels": levels,
+                           "age_hours": round((now - published) / 3600, 1),
+                           "has_complete_levels": all(levels[k] is not None for k in ("entry", "stop_loss", "tp1"))}
+    items = sorted(unique.values(), key=lambda row: row["published_at"], reverse=True)[:limit]
+    response = {"ok": True, "market": market, "interval": interval, "items": items,
+                "count": len(items), "sources_checked": len(PUBLIC_IDEA_FEEDS),
+                "sources_failed": feed_errors, "max_age_hours": 24, "updated_at": now,
+                "message": "توصيات عامة منشورة خلال 24 ساعة فقط؛ مستويات الدخول والأهداف والوقف لا تُستكمل بالتخمين."}
+    with PUBLIC_IDEAS_LOCK:
+        PUBLIC_IDEAS_CACHE[cache_key] = (now, response)
+    return response
+
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20)):
     """Strategy signal engine was removed; never generate or return strategy trades."""
