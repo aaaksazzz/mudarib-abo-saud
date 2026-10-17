@@ -1523,17 +1523,21 @@ def public_news(market: str = Query("all"), limit: int = Query(50, ge=1, le=100)
 
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20)):
-    """Strategy signal engine was removed; never generate or return strategy trades."""
-    market = market.lower()
-    if market not in BINANCE and market != "alpha" and market not in YAHOO_MARKETS:
+    """Return validated public trade ideas; never fabricate prices or fill missing levels."""
+    market = (market or "").lower()
+    allowed_markets = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
+    if market not in allowed_markets:
         return JSONResponse({"ok": False, "live": False, "items": [],
-                             "message": "هذا السوق غير مربوط بمصدر بيانات حاليًا."}, status_code=404)
-    if interval not in INTERVALS:
+                             "message": "السوق غير مدعوم."}, status_code=404)
+    if interval not in PUBLIC_IDEA_INTERVALS:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "الفريم غير مدعوم."}, status_code=422)
-    return {"ok": True, "live": True, "market": market, "interval": interval,
-            "scanned": 0, "count": 0, "items": [], "watch_items": [],
-            "message": "تم حذف محرك الاستراتيجية؛ الصفحة تعرض بيانات السوق فقط دون إشارات تداول."}
+    response = public_ideas(market=market, interval=interval, limit=limit, discover=True)
+    if isinstance(response, JSONResponse):
+        return response
+    diagnostics = response.get("diagnostics") or {}
+    return {**response, "live": True, "scanned": diagnostics.get("fetched", 0),
+            "watch_items": [], "message": response.get("message", "تم فحص توصيات المصادر العامة.")}
 def read_json_file(path, default):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
