@@ -1566,23 +1566,189 @@ def public_news(market: str = Query("all"), limit: int = Query(50, ge=1, le=100)
         PUBLIC_IDEAS_CACHE[cache_key] = (now, response)
     return response
 
+def _valid_external_trade(row):
+    """Only publish third-party ideas when every level is explicit and ordered correctly."""
+    levels = row.get("levels") if isinstance(row.get("levels"), dict) else {}
+    try:
+        entry, stop = float(levels["entry"]), float(levels["stop_loss"])
+        tp1, tp2, tp3 = float(levels["tp1"]), float(levels["tp2"]), float(levels["tp3"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    side = str(row.get("direction") or "")
+    values = (entry, stop, tp1, tp2, tp3)
+    if not all(math.isfinite(v) and v > 0 for v in values):
+        return False
+    if side == "شراء":
+        valid = stop < entry < tp1 < tp2 < tp3
+    elif side == "بيع":
+        valid = tp3 < tp2 < tp1 < entry < stop
+    else:
+        return False
+    if not valid:
+        return False
+    row["has_complete_levels"] = True
+    return True
+
+
+def _ema_series(values, period):
+    if len(values) < period:
+        return []
+    alpha = 2.0 / (period + 1.0)
+    current = sum(values[:period]) / period
+    result = [None] * (period - 1) + [current]
+    for value in values[period:]:
+        current = alpha * value + (1.0 - alpha) * current
+        result.append(current)
+    return result
+
+
+def _technical_fallback_signal(market, symbol, interval):
+    """Fallback from real candles using trend, momentum, volume, structure and ATR risk."""
+    candles = candle_data(market, symbol, interval)
+    if len(candles) < 80:
+        return None
+    try:
+        closes = [float(c["close"]) for c in candles]
+        highs = [float(c["high"]) for c in candles]
+        lows = [float(c["low"]) for c in candles]
+        volumes = [float(c.get("volume") or 0) for c in candles]
+        if not all(math.isfinite(x) and x > 0 for x in closes[-80:]):
+            return None
+        entry = closes[-1]
+        e20, e50, e200 = _ema_series(closes, 20), _ema_series(closes, 50), _ema_series(closes, 200)
+        # EMA200 is used when the timeframe has enough history; shorter history is not fabricated.
+        ema200 = e200[-1] if e200 and e200[-1] is not None else None
+        ema20, ema50 = e20[-1], e50[-1]
+        if ema20 is None or ema50 is None:
+            return None
+        changes = [closes[i] - closes[i-1] for i in range(1, len(closes))]
+        gains = [max(0.0, x) for x in changes[-14:]]
+        losses = [max(0.0, -x) for x in changes[-14:]]
+        avg_gain = sum(gains) / max(1, len(gains))
+        avg_loss = sum(losses) / max(1, len(losses))
+        rsi = 100.0 if avg_loss == 0 and avg_gain > 0 else 50.0 if avg_loss == 0 else 100 - 100 / (1 + avg_gain / avg_loss)
+        true_ranges = []
+        for i in range(max(1, len(candles)-14), len(candles)):
+            true_ranges.append(max(highs[i]-lows[i], abs(highs[i]-closes[i-1]), abs(lows[i]-closes[i-1])))
+        atr = sum(true_ranges) / len(true_ranges) if true_ranges else entry * 0.01
+        if not math.isfinite(atr) or atr <= 0:
+            return None
+        recent_vol = sum(volumes[-20:]) / max(1, len(volumes[-20:]))
+        vol_ratio = volumes[-1] / recent_vol if recent_vol > 0 else 1.0
+        recent_high = max(highs[-20:-1])
+        recent_low = min(lows[-20:-1])
+        macd_fast, macd_slow = _ema_series(closes, 12), _ema_series(closes, 26)
+        macd_up = bool(macd_fast and macd_slow and macd_fast[-1] is not None and macd_slow[-1] is not None and macd_fast[-1] > macd_slow[-1])
+        above_200 = ema200 is not None and entry > ema200
+        below_200 = ema200 is not None and entry < ema200
+        long_score = sum((entry > ema20, ema20 > ema50, above_200, 52 <= rsi <= 70, macd_up, entry > recent_high, vol_ratio >= 1.15))
+        short_score = sum((entry < ema20, ema20 < ema50, below_200, 30 <= rsi <= 48, not macd_up, entry < recent_low, vol_ratio >= 1.15))
+        if long_score >= 5 and long_score > short_score:
+            side, stop = "شراء", min(entry - atr * 1.5, recent_low)
+            risk = entry - stop
+            if risk <= 0 or risk / entry > 0.08:
+                stop, risk = entry - atr * 1.5, atr * 1.5
+            targets = [entry + risk * n for n in (1, 2, 3)]
+            score = long_score
+        elif short_score >= 5 and short_score > long_score:
+            side, stop = "بيع", max(entry + atr * 1.5, recent_high)
+            risk = stop - entry
+            if risk <= 0 or risk / entry > 0.08:
+                stop, risk = entry + atr * 1.5, atr * 1.5
+            targets = [entry - risk * n for n in (1, 2, 3)]
+            if targets[-1] <= 0:
+                return None
+            score = short_score
+        else:
+            return None
+        digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
+        fmt = lambda value: round(float(value), digits)
+        return {
+            "source": "تحليل فني داخلي متعدد الأدوات",
+            "title": f"{side} {symbol} — تحليل فني متعدد الأدوات",
+            "description": "إشارة محسوبة من شموع السوق الفعلية؛ ليست توصية من شخص خارجي.",
+            "url": "", "published_at": int(time.time()), "market": market,
+            "direction": side, "symbol": symbol, "interval": interval,
+            "levels": {"entry": fmt(entry), "stop_loss": fmt(stop), "tp1": fmt(targets[0]),
+                       "tp2": fmt(targets[1]), "tp3": fmt(targets[2])},
+            "has_complete_levels": True, "ai_score": round(score / 7 * 100),
+            "analysis_methods": ["EMA20/50/200", "RSI", "MACD", "ATR", "حجم التداول",
+                                 "اختراق القمم/القيعان", "بنية السعر"],
+            "age_hours": 0, "generated_by_site": True,
+            "raw_text": "تحليل آلي من بيانات الشموع العامة الفعلية."
+        }
+    except (KeyError, TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError) as exc:
+        print(f"technical fallback skipped {market}/{symbol}/{interval}: {type(exc).__name__}")
+        return None
+
+
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20)):
-    """Return validated public trade ideas; never fabricate prices or fill missing levels."""
+    """Prefer complete external trader recommendations; otherwise derive signals from real candles."""
     market = (market or "").lower()
     allowed_markets = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
     if market not in allowed_markets:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "السوق غير مدعوم."}, status_code=404)
-    if interval not in PUBLIC_IDEA_INTERVALS:
+    if interval not in PUBLIC_IDEA_INTERVALS or interval == "auto":
         return JSONResponse({"ok": False, "live": False, "items": [],
-                             "message": "الفريم غير مدعوم."}, status_code=422)
-    response = public_ideas(market=market, interval=interval, limit=limit, discover=True)
+                             "message": "اختر فريمًا محددًا للتحليل."}, status_code=422)
+    now = int(time.time())
+    cache_key = ("signal_cards", market, interval, limit)
+    with PUBLIC_IDEAS_LOCK:
+        cached = PUBLIC_IDEAS_CACHE.get(cache_key)
+        if cached and now - cached[0] < 120:
+            return {**cached[1], "cached": True}
+    response = public_ideas(market=market, interval=interval, limit=50, discover=True)
     if isinstance(response, JSONResponse):
-        return response
-    diagnostics = response.get("diagnostics") or {}
-    return {**response, "live": True, "scanned": diagnostics.get("fetched", 0),
-            "watch_items": [], "message": response.get("message", "تم فحص توصيات المصادر العامة.")}
+        response = {"items": [], "diagnostics": {}, "sources_failed": 0}
+    external = []
+    for item in response.get("items", []):
+        if item.get("interval") not in (interval, "غير محدد"):
+            continue
+        if _valid_external_trade(item):
+            item["generated_by_site"] = False
+            item["ai_score"] = None
+            external.append(item)
+    # Do not mix invented levels into third-party ideas. If there are no complete external
+    # setups, analyze a small, liquid sample using the same market's real OHLCV candles.
+    items = external[:limit]
+    fallback_used = False
+    if not items:
+        try:
+            universe = market_data(market, limit=2000)
+            candidates = universe.get("items", []) if isinstance(universe, dict) else []
+            candidates = sorted(candidates, key=lambda x: abs(float(x.get("change_pct") or 0)), reverse=True)
+            seen = set()
+            for candidate in candidates:
+                symbol = str(candidate.get("symbol") or "").upper()
+                if not symbol or symbol in seen:
+                    continue
+                seen.add(symbol)
+                signal = _technical_fallback_signal(market, symbol, interval)
+                if signal:
+                    items.append(signal)
+                if len(items) >= min(limit, 6):
+                    break
+            fallback_used = True
+        except Exception as exc:
+            print(f"technical fallback universe failed {market}/{interval}: {type(exc).__name__}: {exc}")
+    items.sort(key=lambda x: (x.get("ai_score") or 0, x.get("published_at") or 0), reverse=True)
+    result = {
+        **{k: v for k, v in response.items() if k not in {"items", "cached"}},
+        "ok": True, "live": True, "market": market, "interval": interval,
+        "items": items[:limit], "count": len(items[:limit]),
+        "external_complete_count": len(external),
+        "technical_fallback_used": fallback_used,
+        "scanned": (response.get("diagnostics") or {}).get("fetched", 0),
+        "message": ("توصيات خارجية مكتملة من متداولين ومصادر عامة." if external else
+                    "لم نجد توصية خارجية مكتملة؛ الإشارات المعروضة ناتجة عن تحليل فني داخلي متعدد الأدوات." if items else
+                    "لم نجد توصية خارجية مكتملة ولم تتوفر إشارة فنية مستوفية للشروط الآن. لن نخترع صفقة."),
+    }
+    with PUBLIC_IDEAS_LOCK:
+        PUBLIC_IDEAS_CACHE[cache_key] = (now, result)
+    return result
+
 def read_json_file(path, default):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
