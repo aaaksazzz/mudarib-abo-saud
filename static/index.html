@@ -313,7 +313,7 @@ async function loadMarketNews(id){const root=$("marketNewsList");if(!root)return
 async function renderMarketPage(){
  let m=MARKETS.find(x=>x.id===market)||MARKETS[0];
  setTitle(m.full,m.desc+" — أسعار السوق العامة فقط؛ لا توجد استراتيجية أو توصيات آلية.");
- $("view").innerHTML='<section class="panel market-only-page"><div class="panel" id="marketDirectionPanel"></div><div class="panel-head"><div><h2>'+m.icon+' '+m.full+'</h2><div class="muted">توصيات منشورة من مواقع عامة خلال آخر 24 ساعة، مع رابط المصدر الأصلي</div></div><span class="badge">مصادر عامة</span></div><div class="frames" id="publicIdeaFrames">'+frameButtons().replace(/^<div class="frames" id="frames">/,"").replace(/<\/div>$/,"")+'</div><div id="publicIdeas">'+empty("جاري بحث","جاري بحث")+'</div></section>';
+ $("view").innerHTML='<section class="panel market-only-page"><div class="panel" id="marketDirectionPanel"></div><div class="panel-head"><div><h2>'+m.icon+' '+m.full+'</h2><div class="muted">أفكار تداول منشورة من TradingView ومجتمعات المتداولين خلال آخر 24 ساعة، بعيدًا عن الأخبار</div></div><span class="badge">مصادر عامة</span></div><div class="frames" id="publicIdeaFrames">'+frameButtons().replace(/^<div class="frames" id="frames">/,"").replace(/<\/div>$/,"")+'</div><div id="publicIdeas">'+empty("جاري بحث","جاري بحث")+'</div></section>';
  // Discard any obsolete browser-cached strategy cards.
  $("connection").textContent="● توصيات المصادر العامة · "+m.full;
  loadMarketSignals();
@@ -321,7 +321,7 @@ async function renderMarketPage(){
 async function loadMarketSignals(){
  const root=$("publicIdeas");if(!root)return;
  const buttons=$("publicIdeaFrames");if(buttons)buttons.querySelectorAll("[data-frame]").forEach(b=>b.classList.toggle("active",b.dataset.frame===frame));
- root.innerHTML=empty("جاري جلب المنشورات الحديثة من المواقع العامة…","جاري الفحص");
+ root.innerHTML=empty("جاري بحث في أفكار التداول العامة…","جاري الفحص");
  try{
   const d=await getJson("/api/public-ideas?market="+encodeURIComponent(market)+"&interval="+encodeURIComponent(frame)+"&limit=30");
   const items=Array.isArray(d.items)?d.items:[];
@@ -330,7 +330,7 @@ async function loadMarketSignals(){
    const l=x.levels||{},complete=!!x.has_complete_levels;
    const levels=complete?'<div class="market-grid"><div class="market-tile"><span><strong>الدخول</strong><small>'+money(l.entry)+'</small></span></div><div class="market-tile"><span><strong>وقف الخسارة</strong><small>'+money(l.stop_loss)+'</small></span></div><div class="market-tile"><span><strong>TP1</strong><small>'+money(l.tp1)+'</small></span></div>'+(l.tp2!=null?'<div class="market-tile"><span><strong>TP2</strong><small>'+money(l.tp2)+'</small></span></div>':'')+(l.tp3!=null?'<div class="market-tile"><span><strong>TP3</strong><small>'+money(l.tp3)+'</small></span></div>':'')+'</div>':'<p class="muted">الدخول أو الوقف أو الهدف غير مذكور بالكامل في المنشور؛ لم تتم إضافته بالتخمين.</p>';
    return '<article class="signal"><div class="panel-head"><span class="badge">'+esc(x.direction||"تحليل")+'</span><span class="muted">'+esc(x.source||"موقع عام")+'</span></div><h3>'+esc(x.symbol||"أصل غير محدد")+' · '+esc(x.title||"تحليل منشور")+'</h3><p>'+esc((x.description||"").slice(0,420))+'</p><div class="muted">الفريم: '+esc(x.interval||"غير محدد")+' · العمر: '+num(x.age_hours,1)+' ساعة</div>'+levels+'<p><a href="'+esc(x.url||"#")+'" target="_blank" rel="noopener noreferrer">فتح المنشور الأصلي ↗</a></p></article>';
-  }).join("")+'</div>':empty(d.message||"لا توجد توصيات واضحة مطابقة لهذا السوق والفريم خلال آخر 24 ساعة.","لم تُعثر على توصيات مستوفية");
+  }).join("")+'</div>':empty(d.message||"لا توجد أفكار تداول واضحة مطابقة لهذا السوق والفريم خلال آخر 24 ساعة.","لم تُعثر على توصيات مستوفية");
   if(d.sources_failed)root.innerHTML+='<p class="muted">تعذر الاتصال بـ '+Number(d.sources_failed)+' من مصادر RSS؛ تُعرض النتائج المتاحة فقط.</p>';
  }catch(e){root.innerHTML=empty(e.message||"تعذر الاتصال بمصادر التوصيات الآن.","مصادر المواقع غير متاحة")}
 }
