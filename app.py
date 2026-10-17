@@ -116,12 +116,14 @@ if not PERSISTENT_STORAGE_CONFIGURED:
     print("WARNING: /data is not detected as a mounted persistent volume. Configure a Northflank volume mounted at /data or set DATA_DIR to a persistent mount.")
 RESULTS_PATH = DATA_DIR / "results.json"
 SIGNALS_CACHE_PATH = DATA_DIR / "signals-cache.json"
-# The strategy engine and its trade history were retired. Clear legacy saved strategy records.
+# Initialize legacy data files only when absent. Never erase saved results or cache on process startup.
+# This avoids losing history on a restart/redeploy while keeping fresh installs clean.
 for _legacy_path, _empty_data in ((RESULTS_PATH, []), (SIGNALS_CACHE_PATH, {})):
     try:
-        _legacy_path.write_text(json.dumps(_empty_data), encoding="utf-8")
-    except OSError:
-        pass
+        if not _legacy_path.exists():
+            _legacy_path.write_text(json.dumps(_empty_data), encoding="utf-8")
+    except OSError as exc:
+        print(f"WARNING: could not initialize {_legacy_path.name}: {exc}")
 # Protect the complete read-modify-write transaction across all market endpoints.
 RESULTS_LOCK = threading.RLock()
 ARTICLES_PATH = DATA_DIR / "articles.json"
@@ -1339,11 +1341,14 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
         if not _public_idea_market_match(market, title_text):
             continue
         stage_counts["market"] += 1
+        # Accept common futures notation such as "#UNI /USDT" without
+        # accidentally extracting unrelated tickers from the description.
+        slash_pair = re.search(r"(?<![A-Z0-9])#?(BTC|ETH|BNB|SOL|XRP|DOGE|ADA|AVAX|LINK|SUI|LTC|DOT|TRX|TON|NEAR|APT|ARB|OP|INJ|TAO|PEPE|SHIB|WIF|FET|RENDER|UNI|AAVE)\\s*/\\s*(USDT|USDC|USD)\\b", title_text, re.I)
         symbol_re = re.compile(PUBLIC_SYMBOL_RE.pattern)
-        symbol_match = symbol_re.search(title_text)
+        symbol_match = slash_pair or symbol_re.search(title_text)
         if not symbol_match:
             continue
-        symbol = symbol_match.group(0).upper()
+        symbol = (slash_pair.group(1) if slash_pair else symbol_match.group(0)).upper()
         if market == "futures" and not re.fullmatch(
             r"(?:BTC|ETH|BNB|SOL|XRP|DOGE|ADA|AVAX|LINK|SUI|LTC|DOT|TRX|TON|NEAR|APT|ARB|OP|INJ|TAO|PEPE|SHIB|WIF|FET|RENDER|UNI|AAVE)(?:USDT|USDC|USD)?",
             symbol
@@ -1376,7 +1381,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
                            "has_complete_levels": True}
     items = sorted(unique.values(), key=lambda row: row["published_at"], reverse=True)[:limit]
     response = {"ok": True, "market": market, "interval": interval, "items": items,
-                "count": len(items), "sources_checked": len(jobs), "telegram_channels_checked": telegram_channels,
+                "count": len(items), "sources_checked": len(PUBLIC_TRADE_IDEA_FEEDS) + len(telegram_channels), "telegram_channels_checked": telegram_channels,
                 "sources_failed": feed_errors, "max_age_hours": 24, "updated_at": now, "diagnostics": stage_counts,
                 "discovery_enabled": bool(discover), "message": "بحث في مصادر التداول العامة، مع اكتشاف موسع لقنوات تيليجرام عند تفعيل البحث الشامل. الأخبار منفصلة؛ لا تُنشأ مستويات دخول أو أهداف أو وقف بالتخمين."}
     with PUBLIC_IDEAS_LOCK:
