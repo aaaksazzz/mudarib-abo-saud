@@ -246,3 +246,27 @@ def test_public_futures_ideas_require_title_ticker_and_valid_complete_levels(mon
     assert items[0]["direction"] == "بيع"
     assert items[0]["has_complete_levels"] is True
     assert items[0]["url"] == ""
+
+
+def test_public_ideas_detect_timeframe_in_title_when_body_omits_it(monkeypatch):
+    now = int(time.time())
+    fake = [{
+        "source": "Test public feed",
+        "title": "#UNI /USDT - Short 4H",
+        "description": "Entry 7.243 Stop Loss 7.3387 Target 1 7.19379 Target 2 7.1357 Target 3 6.92283",
+        "url": "https://example.com/title-timeframe",
+        "published_at": now,
+        "_text": "#UNI /USDT - Short Entry 7.243 Stop Loss 7.3387 Target 1 7.19379 Target 2 7.1357 Target 3 6.92283",
+    }]
+    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
+    app_module.PUBLIC_IDEAS_CACHE.clear()
+    app_module.PUBLIC_TRADE_FEED_CACHE.clear()
+
+    response = client.get("/api/public-ideas?market=futures&interval=4h&limit=10")
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["symbol"] == "UNI"
+    assert items[0]["direction"] == "بيع"
+    assert items[0]["interval"] == "4h"
+    assert items[0]["has_complete_levels"] is True
