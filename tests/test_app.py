@@ -115,10 +115,10 @@ def test_public_ideas_aggregates_recent_items_without_network(monkeypatch):
     fake = [{
         "source": "Test public feed",
         "title": "Bitcoin bullish BTCUSDT 15m buy",
-        "description": "Entry $100 stop loss $95 target $110",
+        "description": "Entry $100 stop loss $95 target 1 $110 target 2 $115 target 3 $120",
         "url": "https://example.com/bitcoin-idea",
         "published_at": now,
-        "_text": "Bitcoin bullish BTCUSDT 15m buy Entry $100 stop loss $95 target $110",
+        "_text": "Bitcoin bullish BTCUSDT 15m buy Entry $100 stop loss $95 target 1 $110 target 2 $115 target 3 $120",
     }]
     monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
     app_module.PUBLIC_IDEAS_CACHE.clear()
@@ -149,11 +149,11 @@ def test_public_ideas_auto_interval_and_futures_symbol_match(monkeypatch):
     now = int(time.time())
     fake = [{
         "source": "Test public feed",
-        "title": "BTCUSDT bullish buy setup",
-        "description": "Entry $100 stop loss $95 target $110",
+        "title": "BTCUSDT bullish buy setup 15m",
+        "description": "Entry $100 stop loss $95 target 1 $110 target 2 $115 target 3 $120",
         "url": "https://example.com/futures-idea",
         "published_at": now,
-        "_text": "BTCUSDT bullish buy setup Entry $100 stop loss $95 target $110",
+        "_text": "BTCUSDT bullish buy setup 15m Entry $100 stop loss $95 target 1 $110 target 2 $115 target 3 $120",
     }]
     monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
     app_module.PUBLIC_IDEAS_CACHE.clear()
@@ -173,3 +173,30 @@ def test_market_page_uses_auto_scan_without_visible_timeframe_buttons():
     html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
     assert 'interval=auto&limit=50&discover=true' in html
     assert 'id="publicIdeaFrames"' not in html
+
+
+def test_public_ideas_reject_mismatched_tickers_and_incomplete_trade_levels(monkeypatch):
+    now = int(time.time())
+    fake = [
+        {
+            "source": "Test public feed",
+            "title": "Carvana heading back to earth after lunar launch",
+            "description": "Near support, bearish below the neckline; short setup",
+            "url": "https://example.com/carvana",
+            "published_at": now,
+            "_text": "Carvana (NYSE: CVNA) bearish short setup on the daily timeframe. Near support.",
+        },
+        {
+            "source": "Test public feed",
+            "title": "FET approaching support (4H)",
+            "description": "Bullish setup, but no trade levels",
+            "url": "https://example.com/fet",
+            "published_at": now,
+            "_text": "FETUSDT bullish 4H buy opportunity near support",
+        },
+    ]
+    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
+    app_module.PUBLIC_IDEAS_CACHE.clear()
+    response = client.get("/api/public-ideas?market=futures&interval=auto&limit=10")
+    assert response.status_code == 200
+    assert response.json()["items"] == []
