@@ -313,7 +313,7 @@ async function loadMarketNews(id){const root=$("marketNewsList");if(!root)return
 async function renderMarketPage(){
  let m=MARKETS.find(x=>x.id===market)||MARKETS[0];
  setTitle(m.full,m.desc+" — أسعار السوق العامة فقط؛ لا توجد استراتيجية أو توصيات آلية.");
- $("view").innerHTML='<section class="panel market-only-page"><div class="panel" id="marketDirectionPanel"></div><div class="panel-head"><div><h2>'+m.icon+' '+m.full+'</h2><div class="muted">أفكار تداول منشورة من TradingView ومجتمعات المتداولين خلال آخر 24 ساعة، بعيدًا عن الأخبار</div></div><span class="badge">مصادر عامة</span></div><div class="frames" id="publicIdeaFrames">'+frameButtons().replace(/^<div class="frames" id="frames">/,"").replace(/<\/div>$/,"")+'</div><div id="publicIdeas">'+empty("جاري بحث","جاري بحث")+'</div></section>';
+ $("view").innerHTML='<section class="panel market-only-page"><div class="panel" id="marketDirectionPanel"></div><div class="panel-head"><div><h2>'+m.icon+' '+m.full+'</h2><div class="muted">أفكار تداول منشورة من TradingView ومجتمعات المتداولين خلال آخر 24 ساعة، بعيدًا عن الأخبار</div></div><span class="badge">مصادر عامة</span></div><div class="notice auto-frame-note">الفريم تلقائي — يتم فحص الفرص عبر الفريمات المتاحة</div><div id="publicIdeas">'+empty("جاري بحث","جاري بحث")+'</div></section>';
  // Discard any obsolete browser-cached strategy cards.
  $("connection").textContent="● توصيات المصادر العامة · "+m.full;
  loadMarketSignals();
@@ -323,7 +323,7 @@ async function loadMarketSignals(){
  const buttons=$("publicIdeaFrames");if(buttons)buttons.querySelectorAll("[data-frame]").forEach(b=>b.classList.toggle("active",b.dataset.frame===frame));
  root.innerHTML=empty("جاري بحث في أفكار التداول العامة…","جاري الفحص");
  try{
-  const scans=await Promise.all(FRAMES.map(async f=>{try{return {frame:f[0],label:f[1],data:await getJson("/api/public-ideas?market="+encodeURIComponent(market)+"&interval="+encodeURIComponent(f[0])+"&limit=30&discover=true")}}catch(_e){return {frame:f[0],label:f[1],data:{items:[]}}}}));
+  const scans=[{frame:"auto",label:"تلقائي",data:await getJson("/api/public-ideas?market="+encodeURIComponent(market)+"&interval=auto&limit=50&discover=true")}];
   const rankIdea=x=>((x.has_complete_levels?100:0)+(x.direction?20:0)+(x.symbol?10:0)-Math.max(0,Number(x.age_hours)||0));
   const items=scans.flatMap(scan=>(Array.isArray(scan.data.items)?scan.data.items:[]).map(x=>({...x,interval:x.interval||scan.frame,frame_label:(FRAMES.find(f=>f[0]===(x.interval||scan.frame))||["","غير محدد"])[1]}))).sort((a,b)=>rankIdea(b)-rankIdea(a)).filter((x,i,a)=>a.findIndex(y=>(y.symbol||"").toUpperCase()===(x.symbol||"").toUpperCase()&&y.direction===x.direction)===i).slice(0,30);
   const d={items,diagnostics:{fetched:scans.reduce((n,z)=>n+Number(z.data.diagnostics?.fetched||0),0),recent:scans.reduce((n,z)=>n+Number(z.data.diagnostics?.recent||0),0),direction:scans.reduce((n,z)=>n+Number(z.data.diagnostics?.direction||0),0),market:scans.reduce((n,z)=>n+Number(z.data.diagnostics?.market||0),0),timeframe:scans.reduce((n,z)=>n+Number(z.data.diagnostics?.timeframe||0),0)},message:"تم فحص جميع الفريمات واختيار الفرص الأوضح."};
