@@ -351,11 +351,11 @@ def market_tickers(market):
 def candle_closes(market, symbol, interval):
     from urllib.parse import urlencode
     if market == "alpha":
-        url = ALPHA_BASE + "/klines?" + urlencode({"symbol": symbol, "interval": interval, "limit": 250})
+        url = ALPHA_BASE + "/klines?" + urlencode({"symbol": symbol, "interval": interval, "limit": 210})
         payload = fetch_json(url, timeout=8)
         candles = payload.get("data", []) if isinstance(payload, dict) else []
     elif market in BINANCE:
-        url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 250})
+        url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 210})
         candles = fetch_json(url, timeout=7)
     else:
         return []
@@ -672,7 +672,7 @@ def independent_trade_intelligence(market: str, symbol: str, interval: str = Que
     try:
         from urllib.parse import urlencode
         def get_closed_bars(tf):
-            url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": tf, "limit": 250})
+            url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": tf, "limit": 210})
             rows = fetch_json(url, timeout=7)
             now_ms = int(time.time() * 1000)
             return [row for row in rows if isinstance(row, (list, tuple)) and len(row) > 6 and int(row[6]) < now_ms]
@@ -1972,7 +1972,7 @@ SIGNAL_CACHE_TTL = 90
 def _fetch_candle_data_uncached(market: str, symbol: str, interval: str):
     from urllib.parse import urlencode, quote
     if market == "alpha":
-        url = ALPHA_BASE + "/klines?" + urlencode({"symbol": symbol, "interval": interval, "limit": 250})
+        url = ALPHA_BASE + "/klines?" + urlencode({"symbol": symbol, "interval": interval, "limit": 210})
         payload = fetch_json(url, timeout=8)
         raw = payload.get("data", []) if isinstance(payload, dict) else []
         if isinstance(payload, dict) and payload.get("success") is False:
@@ -1980,7 +1980,7 @@ def _fetch_candle_data_uncached(market: str, symbol: str, interval: str):
         return [{"time": int(k[0]) // 1000, "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
                 for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
     if market in BINANCE:
-        url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 250})
+        url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 210})
         raw = fetch_json(url, timeout=8)
         return [{"time": int(k[0]) // 1000, "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
                 for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
@@ -2025,7 +2025,7 @@ def _fetch_candle_data_uncached(market: str, symbol: str, interval: str):
 
 
 CANDLE_DATA_CACHE = {}
-CANDLE_DATA_CACHE_TTL = 90
+CANDLE_DATA_CACHE_TTL = 180
 CANDLE_DATA_CACHE_MAX_ENTRIES = 240
 CANDLE_DATA_CACHE_LOCK = threading.RLock()
 
