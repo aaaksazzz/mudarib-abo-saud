@@ -341,3 +341,54 @@ def test_public_idea_tickers_are_checked_against_the_requested_market():
     assert not app_module._public_idea_symbol_matches_market("spot", "AAPL", "Bitcoin mentioned in a stock article")
     assert app_module._public_idea_symbol_matches_market("us", "AAPL", "AAPL buy setup")
     assert not app_module._public_idea_symbol_matches_market("saudi", "AAPL", "AAPL buy setup")
+
+
+def test_trade_chart_endpoint_accepts_daily_weekly_and_monthly_intervals(monkeypatch):
+    candles = [
+        {"time": 1_700_000_000 + i * 60, "open": 100 + i, "high": 103 + i,
+         "low": 99 + i, "close": 102 + i, "volume": 1000}
+        for i in range(5)
+    ]
+    monkeypatch.setattr(app_module, "candle_data", lambda market, symbol, interval: candles)
+    for interval in ("1d", "1w", "1M"):
+        response = client.get(
+            "/api/trade-chart-data",
+            params={"market": "saudi", "symbol": "^TASI.SR", "interval": interval},
+        )
+        assert response.status_code == 200, interval
+        data = response.json()
+        assert data["ok"] is True
+        assert data["interval"] == interval
+        assert len(data["items"]) == 5
+
+
+def test_tasi_analysis_returns_real_candles_and_levels(monkeypatch):
+    candles = []
+    for i in range(220):
+        close = 10000 + i * 2
+        candles.append({
+            "time": 1_700_000_000 + i * 86400,
+            "open": close - 3,
+            "high": close + 8,
+            "low": close - 9,
+            "close": close,
+            "volume": 100000,
+        })
+    monkeypatch.setattr(app_module, "candle_data", lambda market, symbol, interval: candles)
+    response = client.get("/api/tasi/analysis?interval=1d")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ok"] is True
+    assert data["symbol"] == "^TASI.SR"
+    assert len(data["candles"]) == 60
+    assert data["price"] == candles[-1]["close"]
+    assert data["support"] <= data["price"] <= data["resistance"]
+
+
+def test_tasi_page_includes_candle_chart_and_refresh_controls():
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
+    assert 'id="tasiChart"' in html
+    assert 'id="tasiRefresh"' in html
+    assert "function renderCandleChart(items,label)" in html
