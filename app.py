@@ -208,14 +208,6 @@ def fetch_json(url: str, timeout: int = 8):
     raise urllib.error.URLError("All configured market data providers failed")
 
 
-def ema(values, period):
-    if len(values) < period:
-        return None
-    alpha = 2 / (period + 1)
-    value = sum(values[:period]) / period
-    for item in values[period:]:
-        value = item * alpha + value * (1 - alpha)
-    return value
 
 
 def alpha_market_tickers():
@@ -1274,7 +1266,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     result = {"ok": True, "live": True, "market": market, "interval": interval,
               "scanned": len(tickers), "count": len(display_items[:limit]), "updated_at": int(now),
               "items": display_items[:limit], "watch_items": [],
-              "message": ("كل عملة تُقيّم بشكل مستقل؛ اتجاه السوق العام عامل سياقي وليس منعًا تلقائيًا للشراء أو البيع. تُعرض فقط الصفقات التي اجتازت شروط الجودة." if market in CRYPTO_SIGNAL_MARKETS else "تُعرض فقط الصفقات التي اجتازت شروط الذهبي والفضي والبرونزي؛ قد لا تظهر صفقات إذا لم تتحقق الجودة المطلوبة.")}
+              "message": "تم إيقاف توليد إشارات الاستراتيجية الداخلية؛ لا يتم فحص شموع أو إنشاء صفقات آلية من هذا المحرك. استخدم صفحة المصادر العامة للمراجعة المباشرة."}
     SIGNAL_CACHE[key] = (now, result)
     with RESULTS_LOCK:
         persisted_scans = read_json_file(SIGNALS_CACHE_PATH, {})
