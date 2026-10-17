@@ -284,7 +284,7 @@ async function renderMarketPage(){
  $("view").innerHTML='<section class="panel market-only-page"><div class="panel" id="marketDirectionPanel"></div><div class="panel-head"><div><h2>'+m.icon+' '+m.full+'</h2><div class="muted">أسعار السوق والتغيرات فقط — بدون استراتيجية أو إشارات دخول</div></div><span class="badge">بيانات السوق</span></div><div id="marketPrices">'+empty("جاري تحميل الأسعار…","جاري الاتصال بالسوق")+'</div></section>';
  // Discard any obsolete browser-cached strategy cards.
  try{for(let i=localStorage.length-1;i>=0;i--){const k=localStorage.key(i);if(k&&k.startsWith("stp-saved-signals:"))localStorage.removeItem(k)}}catch(_e){}
- loadMarketDirection(marketNewsCategory(m.id));
+ loadMarketDirection(m.id);
  try{
   const d=await getJson("/api/market/"+encodeURIComponent(m.id)+"?limit=100");
   const items=Array.isArray(d.items)?d.items:[];
