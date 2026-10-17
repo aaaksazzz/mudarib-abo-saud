@@ -1342,6 +1342,25 @@ def _public_idea_symbol_matches_market(market, symbol, text_value=""):
                           "GOLD", "SILVER", "DXY"}
     return False
 
+def _public_idea_levels_ordered(row):
+    """Return true only when all five real levels are positive and ordered for the side."""
+    levels = row.get("levels") if isinstance(row.get("levels"), dict) else {}
+    try:
+        entry, stop = float(levels["entry"]), float(levels["stop_loss"])
+        tp1, tp2, tp3 = float(levels["tp1"]), float(levels["tp2"]), float(levels["tp3"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    values = (entry, stop, tp1, tp2, tp3)
+    if not all(math.isfinite(value) and value > 0 for value in values):
+        return False
+    side = str(row.get("direction") or "")
+    if side == "شراء":
+        return stop < entry < tp1 < tp2 < tp3
+    if side == "بيع":
+        return tp3 < tp2 < tp1 < entry < stop
+    return False
+
+
 def _public_idea_levels(value):
     import re
     from html import unescape
@@ -1434,18 +1453,24 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), lim
         pair_re = re.compile(r"(?<![A-Z0-9])([A-Z0-9]{2,15}(?:USDT|USDC|USD))\b", re.I)
         found = slash_pair or symbol_re.search(title) or pair_re.search(title) or symbol_re.search(body[:1600]) or pair_re.search(body[:1600])
         symbol = (found.group(1) if slash_pair else found.group(0)).upper() if found else ""
-        if symbol and not _public_idea_symbol_matches_market(market, symbol, text_all[:2400]):
-            symbol = ""
-        if symbol:
-            stats["symbol"] += 1
+        if not symbol or not _public_idea_symbol_matches_market(market, symbol, text_all[:2400]):
+            # A broad word such as "leverage" or "crypto" is not enough to identify a trade.
+            # Require a recognizable ticker that belongs to the selected market.
+            continue
+        stats["symbol"] += 1
 
         detected_interval = _public_idea_interval(text_all)
-        if interval != "auto" and detected_interval and detected_interval != interval:
+        if not detected_interval:
             continue
-        # Unformatted posts are accepted even if they omit a timeframe, direction, ticker,
-        # entry, stop, or targets. The original wording is kept intact for display.
+        if interval != "auto" and detected_interval != interval:
+            continue
         stats["timeframe"] += 1
+        if not side:
+            continue
         levels = _public_idea_levels(text_all)
+        candidate = {"direction": side, "levels": levels, "interval": detected_interval}
+        if not _public_idea_levels_ordered(candidate):
+            continue
         url = str(raw.get("url") or "")
         identity = url or f"{raw.get('source','')}|{title}|{published}"
         if identity in unique:
@@ -1458,7 +1483,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), lim
             "symbol": symbol or "غير محدد",
             "interval": detected_interval or (interval if interval != "auto" else "غير محدد"),
             "levels": levels, "age_hours": round(max(0, now - published) / 3600, 1),
-            "has_complete_levels": False,
+            "has_complete_levels": True,
             "raw_text": (body or title)[:2400]
         })
         unique[identity] = clean
