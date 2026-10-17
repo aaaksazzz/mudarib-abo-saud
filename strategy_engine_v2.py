@@ -115,26 +115,39 @@ def evaluate_v2(
     bear_structure = bool(current["bear"]) or bear_bos
 
     buy_evidence = [
-        ("اتجاه الفريم الأعلى مؤيد", higher_bull),
-        ("هيكل سعري صاعد أو BOS", bull_structure),
-        ("سحب سيولة هابطة واستعادة المستوى", bull_sweep),
-        ("اختراق هيكل بإغلاق قوي", bull_bos),
-        ("FVG/اندفاع سعري صاعد", bull_fvg),
+        ("MTF اتجاه الفريم الأعلى", higher_bull),
+        ("Price Action هيكل صاعد", bull_structure),
+        ("SMC سحب السيولة واستعادتها", bull_sweep),
+        ("BOS اختراق هيكل بإغلاق قوي", bull_bos),
+        ("ICT / FVG اندفاع سعري", bull_fvg),
+        ("Order Flow proxy تأكيد الحجم والشمعة", orderflow_bull),
+        ("Volume Profile proxy السعر فوق VWAP الحجمي", profile_bull),
+        ("Wyckoff Spring", wyckoff_spring),
+        ("CHOCH proxy انعكاس الهيكل", choch_bull),
         ("تأكيد ضغط الحجم", bull_pressure),
     ]
     sell_evidence = [
-        ("اتجاه الفريم الأعلى مؤيد", higher_bear),
-        ("هيكل سعري هابط أو BOS", bear_structure),
-        ("سحب سيولة صاعدة وفشل الاختراق", bear_sweep),
-        ("كسر هيكل بإغلاق قوي", bear_bos),
-        ("FVG/اندفاع سعري هابط", bear_fvg),
+        ("MTF اتجاه الفريم الأعلى", higher_bear),
+        ("Price Action هيكل هابط", bear_structure),
+        ("SMC سحب السيولة وفشل الاختراق", bear_sweep),
+        ("BOS كسر هيكل بإغلاق قوي", bear_bos),
+        ("ICT / FVG اندفاع سعري هابط", bear_fvg),
+        ("Order Flow proxy تأكيد الحجم والشمعة", orderflow_bear),
+        ("Volume Profile proxy السعر تحت VWAP الحجمي", profile_bear),
+        ("Wyckoff Upthrust", wyckoff_upthrust),
+        ("CHOCH proxy انعكاس الهيكل", choch_bear),
         ("تأكيد ضغط الحجم", bear_pressure),
     ]
     buy_hits = [label for label, ok in buy_evidence if ok]
     sell_hits = [label for label, ok in sell_evidence if ok]
-    # Require MTF alignment plus at least two distinct setup confirmations.
-    buy_setup = higher_bull and bull_structure and sum((bull_sweep, bull_bos, bull_fvg, bull_pressure)) >= 2
-    sell_setup = higher_bear and bear_structure and sum((bear_sweep, bear_bos, bear_fvg, bear_pressure)) >= 2
+    # One unified strategy: MTF must align, and at least three distinct setup clues
+    # must agree, including a structural/liquidity trigger and a volume/displacement clue.
+    buy_trigger = bull_sweep or bull_bos or choch_bull
+    sell_trigger = bear_sweep or bear_bos or choch_bear
+    buy_confirmation_count = sum((bull_sweep, bull_bos, bull_fvg, orderflow_bull, profile_bull, wyckoff_spring, choch_bull, bull_pressure))
+    sell_confirmation_count = sum((bear_sweep, bear_bos, bear_fvg, orderflow_bear, profile_bear, wyckoff_upthrust, choch_bear, bear_pressure))
+    buy_setup = higher_bull and bull_structure and buy_trigger and buy_confirmation_count >= 3
+    sell_setup = higher_bear and bear_structure and sell_trigger and sell_confirmation_count >= 3
     if buy_setup == sell_setup:  # neither side or conflicting signals
         result["reasons"] = ["انتظار: لم يكتمل توافق SMC/ICT والهيكل السعري والفريم الأعلى"]
         return result
@@ -167,8 +180,8 @@ def evaluate_v2(
         "take_profit_2": round(px + direction * 2.5 * risk, 8),
         "risk_reward_net": round(net_rr, 2),
         "reasons": reasons + [
-            "الاستراتيجية الوحيدة المعتمدة: SMC/ICT + Price Action + MTF + تأكيد حجم",
-            "الحجم من OHLCV مؤشر تقريبي وليس تدفق أوامر bid/ask حقيقيًا",
+            "الاستراتيجية الموحدة تجمع 10 عناصر: SMC، ICT، Price Action، BOS/CHOCH، Liquidity Sweep، FVG، MTF، Order Flow proxy، Volume Profile proxy، Wyckoff",
+            "Order Flow وVolume Profile هنا تقديرات من OHLCV/VWAP وليسا بيانات دفتر أوامر أو توزيع حجم سعري حقيقي",
             "المخاطرة المقترحة لا تتجاوز 0.5% من رأس المال؛ إشارة آلية وليست أمر تنفيذ"
         ]
     })
