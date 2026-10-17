@@ -799,16 +799,14 @@ def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
                     "ok": False, "market": market, "live": False, "items": [],
                     "message": "تعذر جلب الأسعار من مزود السوق الآن. جرّب التحديث لاحقًا."
                 }, status_code=503)
-            # Keep all fetched symbols that meet the liquidity floor, including flat movers.
-            # US: at least USD 1M estimated daily turnover; Saudi: USD 1M equivalent (~3.75M SAR).
+            # US equities have a liquidity floor; retain the Saudi market universe without
+            # a dollar-volume cutoff so lower-volume Tadawul listings remain discoverable.
             if market == "us":
                 data = [item for item in data if item.get("dollar_volume", 0) >= 1_000_000]
                 if not data:
                     return {"ok": True, "market": market, "live": True, "provider": "Yahoo Finance",
                             "delayed": True, "updated_at": int(now), "items": [],
                             "message": "لا توجد أسهم أمريكية مستوفية لسيولة مليون دولار يوميًا في البيانات المتاحة."}
-            elif market == "saudi":
-                data = [item for item in data if item.get("dollar_volume", 0) >= 3_750_000]
             data.sort(key=lambda x: x["change_pct"], reverse=True)
             YAHOO_CACHE[market] = (now, data)
         return {"ok": True, "market": market, "live": True, "provider": "Yahoo Finance",
