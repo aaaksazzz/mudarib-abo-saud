@@ -379,18 +379,31 @@ async function drawSignalChart(el){
   if(!r.ok||!d.ok||!Array.isArray(d.items)||d.items.length<2)throw new Error(d.message||"بيانات الشموع غير متاحة");
   const candles=d.items,levels=[{label:"TP3",v:Number(el.dataset.tp3),color:"#42d6a0"},{label:"TP2",v:Number(el.dataset.tp2),color:"#42d6a0"},{label:"TP1",v:Number(el.dataset.tp1),color:"#42d6a0"},{label:"الدخول",v:Number(el.dataset.entry),color:"#78aaff"},{label:"وقف",v:Number(el.dataset.stop),color:"#ff7184"}].filter(z=>Number.isFinite(z.v)&&z.v>0);
   if(levels.length!==5)throw new Error("مستويات الصفقة غير مكتملة");
-  el._chartZoom=el._chartZoom||1;
+  const loAll=Math.min(...candles.map(c=>Number(c.low)),...levels.map(z=>z.v)),hiAll=Math.max(...candles.map(c=>Number(c.high)),...levels.map(z=>z.v)),pad=(hiAll-loAll)*.08||Math.abs(hiAll)*.001;
+  el._chartView=el._chartView||{zoomX:1,zoomY:1,pan:0,center:(hiAll+loAll)/2};
+  const view=el._chartView;
+  if(!Number.isFinite(view.center))view.center=(hiAll+loAll)/2;
   const draw=()=>{
-   const W=700,H=300,L=10,R=142,T=12,B=20,plotW=W-L-R,plotH=H-T-B;
-   const allLo=Math.min(...candles.map(c=>Number(c.low)),...levels.map(z=>z.v)),allHi=Math.max(...candles.map(c=>Number(c.high)),...levels.map(z=>z.v));
-   const basePad=(allHi-allLo)*.08||Math.abs(allHi)*.001,baseLo=allLo-basePad,baseHi=allHi+basePad,mid=(baseLo+baseHi)/2,half=(baseHi-baseLo)/(2*el._chartZoom),lo=mid-half,hi=mid+half;
-   const y=v=>T+(hi-v)/(hi-lo)*plotH,x=i=>L+(i+.5)*plotW/candles.length,cw=Math.max(2,Math.min(7,plotW/candles.length*.58));
-   let svg='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" role="img" aria-label="شارت شموع مع مستويات الدخول والوقف والأهداف المتزامنة مع التكبير"><rect width="'+W+'" height="'+H+'" fill="#0a1320"/>';
+   const W=700,H=300,L=10,R=142,T=12,B=20,plotW=W-L-R,plotH=H-T-B,n=candles.length;
+   const count=Math.max(8,Math.min(n,Math.round(n/view.zoomX))),maxPan=Math.max(0,n-count);
+   view.pan=Math.max(0,Math.min(maxPan,view.pan));
+   const end=Math.max(count,Math.min(n,n-view.pan)),begin=end-count,visible=candles.slice(begin,end);
+   const baseSpan=(hiAll-loAll)+2*pad,span=baseSpan/view.zoomY,lo=view.center-span/2,hi=view.center+span/2;
+   const y=v=>T+(hi-v)/(hi-lo)*plotH,x=i=>L+(i+.5)*plotW/count,cw=Math.max(2,Math.min(7,plotW/count*.58));
+   let svg='<svg class="signal-candle-svg" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" role="img" aria-label="اسحب بإصبعك لتحريك الشارت واستخدم إصبعين للتكبير والتصغير" style="display:block;width:100%;height:auto;touch-action:none;user-select:none;cursor:grab"><rect width="'+W+'" height="'+H+'" fill="#0a1320"/>';
    for(let k=0;k<5;k++){const yy=T+k*plotH/4,price=hi-k*(hi-lo)/4;svg+='<line x1="'+L+'" y1="'+yy+'" x2="'+(W-R+4)+'" y2="'+yy+'" stroke="#243349" stroke-width="1"/><text x="'+(W-4)+'" y="'+(yy+4)+'" text-anchor="end" fill="#8092aa" font-size="10">'+price.toPrecision(6)+'</text>';}
-   candles.forEach((c,i)=>{const o=Number(c.open),h=Number(c.high),l=Number(c.low),cl=Number(c.close);if(![o,h,l,cl].every(Number.isFinite))return;const color=cl>=o?"#42d6a0":"#ff7184",xx=x(i),yo=y(o),yc=y(cl),top=Math.min(yo,yc),body=Math.max(1,Math.abs(yc-yo));svg+='<line x1="'+xx+'" y1="'+y(h)+'" x2="'+xx+'" y2="'+y(l)+'" stroke="'+color+'" stroke-width="1"/><rect x="'+(xx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+body+'" fill="'+color+'" rx=".5"/>';});
+   visible.forEach((c,i)=>{const o=Number(c.open),h=Number(c.high),l=Number(c.low),cl=Number(c.close);if(![o,h,l,cl].every(Number.isFinite))return;const color=cl>=o?"#42d6a0":"#ff7184",xx=x(i),yo=y(o),yc=y(cl),top=Math.min(yo,yc),body=Math.max(1,Math.abs(yc-yo));svg+='<line x1="'+xx+'" y1="'+y(h)+'" x2="'+xx+'" y2="'+y(l)+'" stroke="'+color+'" stroke-width="1"/><rect x="'+(xx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+body+'" fill="'+color+'" rx=".5"/>';});
    levels.forEach(z=>{if(z.v<lo||z.v>hi)return;const yy=y(z.v),ly=Math.max(13,Math.min(H-6,yy+4)),ry=Math.max(1,Math.min(H-19,yy-9));svg+='<line x1="'+L+'" y1="'+yy+'" x2="'+(W-R+2)+'" y2="'+yy+'" stroke="'+z.color+'" stroke-width="'+(z.label==="الدخول"?2:1.5)+'" stroke-dasharray="'+(z.label==="الدخول"?"0":"5 3")+'"/><rect x="'+(W-R+5)+'" y="'+ry+'" width="'+(R-10)+'" height="18" rx="4" fill="'+z.color+'" fill-opacity=".15" stroke="'+z.color+'" stroke-opacity=".6"/><text x="'+(W-R+10)+'" y="'+ly+'" fill="'+z.color+'" font-size="10" font-weight="700">'+z.label+' '+z.v.toPrecision(7)+'</text>';});
-   el.innerHTML='<div class="chart-zoom-controls" dir="rtl" style="display:flex;gap:6px;align-items:center;margin:0 0 6px"><button type="button" data-chart-zoom="in" aria-label="تكبير الشارت" style="background:#172438;color:#fff;border:1px solid #34445c;border-radius:6px;padding:5px 12px">＋</button><button type="button" data-chart-zoom="out" aria-label="تصغير الشارت" style="background:#172438;color:#fff;border:1px solid #34445c;border-radius:6px;padding:5px 12px">－</button><button type="button" data-chart-zoom="reset" style="background:#172438;color:#fff;border:1px solid #34445c;border-radius:6px;padding:5px 10px">إظهار الكل</button><span style="color:#91a2b8;font-size:11px">الأهداف والوقف مرتبطة بمقياس السعر</span></div>'+svg+'</svg>';
-   el.querySelectorAll("[data-chart-zoom]").forEach(btn=>btn.addEventListener("click",()=>{const action=btn.dataset.chartZoom;if(action==="in")el._chartZoom=Math.min(8,el._chartZoom*1.25);else if(action==="out")el._chartZoom=Math.max(1,el._chartZoom/1.25);else el._chartZoom=1;draw();}));
+   svg+='</svg><div style="padding:4px 2px;color:#91a2b8;font-size:11px;text-align:center">حرّك بإصبعك • قرّب/بعّد بإصبعين • بالكمبيوتر استخدم عجلة الماوس</div>';
+   el.innerHTML=svg;
+   const chart=el.querySelector("svg");if(!chart)return;
+   const points=new Map();let lastPinch=0,lastMidY=0,lastMidX=0,drag=null;
+   const xy=e=>{const b=chart.getBoundingClientRect();return{x:(e.clientX-b.left)/b.width*W,y:(e.clientY-b.top)/b.height*H};};
+   chart.addEventListener("pointerdown",e=>{chart.setPointerCapture(e.pointerId);points.set(e.pointerId,xy(e));chart.style.cursor="grabbing";if(points.size===1){const p=xy(e);drag={x:p.x,y:p.y,pan:view.pan,center:view.center};}else if(points.size===2){const a=[...points.values()];lastPinch=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);lastMidY=(a[0].y+a[1].y)/2;lastMidX=(a[0].x+a[1].x)/2;drag=null;}});
+   chart.addEventListener("pointermove",e=>{if(!points.has(e.pointerId))return;points.set(e.pointerId,xy(e));if(points.size>=2){const a=[...points.values()],dist=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);if(lastPinch>0&&dist>0){const ratio=dist/lastPinch;view.zoomX=Math.max(1,Math.min(8,view.zoomX*ratio));view.zoomY=Math.max(.8,Math.min(12,view.zoomY*ratio));}const my=(a[0].y+a[1].y)/2,mx=(a[0].x+a[1].x)/2;view.center+=(my-lastMidY)/plotH*((hi-lo));view.pan+=(mx-lastMidX)/plotW*Math.max(1,Math.round(n/view.zoomX));lastPinch=dist;lastMidY=my;lastMidX=mx;draw();}else if(drag){const p=points.get(e.pointerId);view.pan=drag.pan+(p.x-drag.x)/plotW*Math.max(1,Math.round(n/view.zoomX));view.center=drag.center+(p.y-drag.y)/plotH*(hi-lo);draw();}});
+   const finish=e=>{points.delete(e.pointerId);if(points.size<2)lastPinch=0;if(!points.size){drag=null;chart.style.cursor="grab";}};
+   chart.addEventListener("pointerup",finish);chart.addEventListener("pointercancel",finish);chart.addEventListener("lostpointercapture",finish);
+   chart.addEventListener("wheel",e=>{e.preventDefault();const factor=e.deltaY<0?1.12:.89;view.zoomX=Math.max(1,Math.min(8,view.zoomX*factor));view.zoomY=Math.max(.8,Math.min(12,view.zoomY*factor));draw();},{passive:false});
   };
   draw();
  }catch(e){el.innerHTML='<div class="chart-error"></div>';el.firstChild.textContent="تعذر رسم الشارت: "+(e&&e.message?e.message:"بيانات غير متاحة");}
