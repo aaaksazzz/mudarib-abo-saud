@@ -95,6 +95,44 @@ def test_strategy_signal_endpoint_uses_only_real_candle_universe(monkeypatch):
     assert "شموع السوق الفعلية" in data["message"] or "لن نعرض" in data["message"]
 
 
+def test_signal_endpoint_scans_each_supported_market(monkeypatch):
+    # Each market must route through its own quote universe and keep market identity.
+    supported = ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex")
+    calls = []
+    monkeypatch.setattr(app_module, "market_data", lambda market, limit=500: (
+        calls.append(market) or {"ok": True, "items": [
+            {"symbol": "TEST", "price": 100, "change_pct": 2, "quote_volume": 2_000_000}
+        ]}
+    ))
+    monkeypatch.setattr(app_module, "_technical_fallback_signal", lambda market, symbol, interval: {
+        "symbol": symbol, "market": market, "interval": interval, "direction": "شراء",
+        "levels": {"entry": 100, "stop_loss": 95, "tp1": 105, "tp2": 110, "tp3": 115},
+        "has_complete_levels": True, "ai_score": 90, "generated_by_site": True,
+    })
+    app_module.PUBLIC_IDEAS_CACHE.clear()
+    for market in supported:
+        response = client.get(f"/api/signals/{market}?interval=15m")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["market"] == market
+        assert data["count"] == 1
+        assert data["items"][0]["market"] == market
+    assert calls == list(supported)
+
+
+def test_signal_endpoint_reports_market_provider_outage(monkeypatch):
+    monkeypatch.setattr(app_module, "market_data", lambda market, limit=500: app_module.JSONResponse(
+        {"ok": False, "message": "provider unavailable"}, status_code=503
+    ))
+    app_module.PUBLIC_IDEAS_CACHE.clear()
+    response = client.get("/api/signals/forex?interval=15m")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ok"] is False
+    assert data["items"] == []
+    assert "provider unavailable" in data["message"]
+
+
 def test_technical_signal_uses_real_candles_and_emits_complete_levels(monkeypatch):
     candles = []
     for i in range(210):
