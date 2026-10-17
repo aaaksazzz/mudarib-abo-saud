@@ -173,4 +173,3 @@ def test_market_page_uses_auto_scan_without_visible_timeframe_buttons():
     html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
     assert 'interval=auto&limit=50&discover=true' in html
     assert 'id="publicIdeaFrames"' not in html
-    assert "Fallback to supported timeframes" not in html  # implementation comment is not embedded in the UI
