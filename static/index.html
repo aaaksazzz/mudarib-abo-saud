@@ -302,37 +302,52 @@ async function getJson(url){
  return task;
 }
 const SECTION_CATALOG=[{id:"spot",label:"سبوت"},{id:"futures",label:"فيوتشر"},{id:"contracts",label:"العقود الأمريكية"},{id:"us",label:"الأسهم الأمريكية"},{id:"saudi",label:"السوق السعودي"},{id:"forex",label:"الفوركس والذهب"},{id:"alpha",label:"Binance Alpha"},{id:"tasi",label:"تحليل تاسي العام"},{id:"results",label:"النتائج"},{id:"news",label:"الأخبار"},{id:"blog",label:"المدونة"},{id:"account",label:"الحساب والاشتراك"}];let sectionSettings={};async function loadSectionSettings(){try{let d=await getJson("/api/site/sections");sectionSettings=d.sections||{};}catch(_e){sectionSettings={}}}function sectionMode(id){return sectionSettings[id]||"public"}function sectionGate(id){let mode=sectionMode(id);if(mode==="public")return false;let label=(SECTION_CATALOG.find(x=>x.id===id)||{}).label||"هذا القسم";$("view").innerHTML='<section class="panel locked-section"><h2>'+(mode==="closed"?"القسم مغلق مؤقتًا":"🔒 "+label+" — يتطلب اشتراكًا")+'</h2><p>'+(mode==="closed"?"هذا القسم متوقف حاليًا من الإدارة.":"هذا القسم مخصص للمشتركين. تواصل مع إدارة المنصة لتفعيل الاشتراك.")+'</p><button class="btn" data-page="home">العودة للرئيسية</button></section>';setTitle(label,mode==="closed"?"القسم مغلق":"قسم يتطلب اشتراكًا");return true}window.__sectionsReady=loadSectionSettings();function renderHome(){
- setTitle("التداول الذكي PRO | ملخص الأسواق المهمة","ملخص أسعار واتجاهات تاسي وبيتكوين والذهب ومؤشرات الأسهم الأمريكية.");
- $("heroTitle").textContent="تحليل الأسواق المهمة";
- $("heroDesc").textContent="لوحة مختصرة لتاسي وبيتكوين والذهب وستاندرد آند بورز وناسداك والنفط. الأسعار من المصادر المتاحة، وقد تكون بعض البيانات متأخرة.";
- $("connection").textContent="● ملخص الأسواق";
- $("view").innerHTML=
- '<section class="home-welcome"><div class="home-welcome-copy"><span class="home-kicker">MARKET PULSE</span><h2>وش وضع الأسواق اليوم؟</h2><p>تابع أهم المؤشرات والأصول في مكان واحد، مع السعر والتغير والاتجاه وأبرز المستويات عند توفر التحليل.</p></div><div class="home-orbit" aria-hidden="true"><span>↗</span><i></i><b></b></div></section>'+
- '<section class="panel home-directions"><div class="panel-head"><div><h2>📊 الأسواق الرئيسية</h2><div class="muted">اضغط على البطاقة لفتح صفحة السوق</div></div><button class="btn" id="homeRefresh">↻ تحديث</button></div><div class="home-direction-grid" id="homeDirectionCards"><div class="empty"><strong>جاري تحميل الأسواق</strong>نجيب آخر الأسعار المتاحة.</div></div><p class="muted home-updated" id="homeDirectionUpdated">جاري تحديث البيانات…</p></section>';
+ setTitle("التداول الذكي PRO | تحليل الأسواق المباشر","تحليل وشارت مباشر لأهم الأسواق: تاسي، بيتكوين، الذهب، S&P 500، ناسداك والنفط.");
+ $("heroTitle").textContent="تحليل الأسواق الرئيسية";
+ $("heroDesc").textContent="الأسعار والشموع والاتجاهات في الصفحة نفسها — بدون الحاجة للدخول إلى صفحة كل سوق.";
+ $("connection").textContent="● لوحة الأسواق والتحليل";
+ $("view").innerHTML='<section class="home-welcome"><div class="home-welcome-copy"><span class="home-kicker">LIVE MARKET ANALYSIS</span><h2>الأسواق المهمة بنظرة واحدة</h2><p>شارت شموع وتحليل الاتجاه والسعر والتغير لكل سوق مباشرة هنا. لا توجد توصيات دخول أو وقف وأهداف في هذه الصفحة.</p></div><div class="home-orbit" aria-hidden="true"><span>↗</span><i></i><b></b></div></section><section class="home-live-board"><div class="panel-head"><div><h2>📊 تحليل وشارت الأسواق</h2><div class="muted">بيانات فعلية عند توفر المصدر · تتحدث تلقائيًا</div></div><button class="btn" id="homeRefresh">↻ تحديث</button></div><div class="home-analysis-grid" id="homeDirectionCards"><div class="empty"><strong>جاري تحميل التحليلات</strong>نجيب الأسعار والشموع.</div></div><p class="muted home-updated" id="homeDirectionUpdated">جاري تحديث البيانات…</p></section>';
  loadHomeDirections();
 }
 async function loadHomeDirections(){
  const root=$("homeDirectionCards");if(!root)return;
- root.innerHTML='<div class="empty"><strong>جاري تحميل الأسواق</strong>نجيب آخر الأسعار المتاحة.</div>';
+ root.innerHTML='<div class="empty"><strong>جاري تحميل التحليلات</strong>نجيب الأسعار والشموع.</div>';
  const safeJson=async url=>{try{const d=await getJson(url);return d&&d.ok!==false?d:null}catch(_){return null}};
  const [spot,contracts,tasi]=await Promise.all([safeJson("/api/market/spot?limit=2000"),safeJson("/api/market/contracts?limit=2000"),safeJson("/api/tasi/analysis?interval=1d")]);
  if(!document.getElementById("homeDirectionCards"))return;
  const find=(d,symbol)=>d&&Array.isArray(d.items)?d.items.find(x=>String(x.symbol||"").toUpperCase()===symbol):null;
- const btc=find(spot,"BTCUSDT"),gold=find(contracts,"GC=F"),sp=find(contracts,"ES=F"),nasdaq=find(contracts,"NQ=F"),oil=find(contracts,"CL=F");
  const specs=[
-  {id:"tasi",name:"تاسي",icon:"🇸🇦",item:tasi?{symbol:"^TASI.SR",price:tasi.price,change_pct:tasi.change_pct}:null,detail:tasi?("دعم "+fmt(tasi.support)+" · مقاومة "+fmt(tasi.resistance)):"تحليل المؤشر غير متاح الآن",page:"tasi"},
-  {id:"spot",name:"بيتكوين",icon:"₿",item:btc,detail:"BTC / USDT · السوق الفوري",market:"spot"},
-  {id:"contracts",name:"الذهب",icon:"🥇",item:gold,detail:"عقود الذهب الآجلة · GC=F",market:"contracts"},
-  {id:"contracts",name:"S&P 500",icon:"🇺🇸",item:sp,detail:"عقود مؤشر ستاندرد آند بورز · ES=F",market:"contracts"},
-  {id:"contracts",name:"ناسداك 100",icon:"📈",item:nasdaq,detail:"عقود ناسداك 100 · NQ=F",market:"contracts"},
-  {id:"contracts",name:"النفط",icon:"🛢️",item:oil,detail:"عقود خام غرب تكساس · CL=F",market:"contracts"}
+  {key:"tasi",name:"تاسي",icon:"🇸🇦",market:"saudi",symbol:"^TASI.SR",interval:"1d",item:tasi?{price:tasi.price,change_pct:tasi.change_pct}:null,detail:"المؤشر العام للسوق السعودي"},
+  {key:"btc",name:"بيتكوين",icon:"₿",market:"spot",symbol:"BTCUSDT",interval:"1h",item:find(spot,"BTCUSDT"),detail:"BTC / USDT · سبوت"},
+  {key:"gold",name:"الذهب",icon:"🥇",market:"contracts",symbol:"GC=F",interval:"1h",item:find(contracts,"GC=F"),detail:"عقود الذهب"},
+  {key:"sp500",name:"S&P 500",icon:"🇺🇸",market:"contracts",symbol:"ES=F",interval:"1h",item:find(contracts,"ES=F"),detail:"عقود ستاندرد آند بورز"},
+  {key:"nasdaq",name:"ناسداك 100",icon:"📈",market:"contracts",symbol:"NQ=F",interval:"1h",item:find(contracts,"NQ=F"),detail:"عقود ناسداك"},
+  {key:"oil",name:"النفط",icon:"🛢️",market:"contracts",symbol:"CL=F",interval:"1h",item:find(contracts,"CL=F"),detail:"خام غرب تكساس"}
  ];
- root.innerHTML=specs.map(s=>{
-  const item=s.item,ok=item&&Number.isFinite(Number(item.price)),chg=ok&&item.change_pct!=null?Number(item.change_pct):null,dir=chg===null?"flat":chg>0?"up":chg<0?"down":"flat",direction=chg===null?"الاتجاه غير متاح":chg>0?"صاعد":chg<0?"هابط":"مستقر";
-  const price=ok?fmt(item.price):"—",change=chg===null?"—":(chg>0?"+":"")+chg.toFixed(2)+"%";
-  return '<button class="home-direction-card '+dir+(ok?"":" unavailable")+'" '+(s.page?'data-page="'+s.page+'"':'data-market="'+s.market+'"')+'><span class="direction-card-top"><span>'+s.icon+' '+s.name+'</span><span class="direction-status">'+(ok?direction:"غير متاح")+'</span></span><strong class="direction-main">'+esc(price)+'</strong><small class="home-benchmark-change">'+esc(change)+' · '+esc(s.detail)+'</small><span class="direction-foot">فتح التحليل <b>←</b></span></button>';
- }).join("");
- $("homeDirectionUpdated").textContent="آخر تحديث: "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})+" · قد تتأخر بعض بيانات الأسواق.";
+ root.innerHTML=specs.map(s=>'<article class="home-analysis-card" id="home-card-'+s.key+'"><div class="home-analysis-head"><span class="home-analysis-name">'+s.icon+' '+s.name+'</span><span class="home-market-state" id="home-state-'+s.key+'">جاري التحليل</span></div><div class="home-price-row"><strong id="home-price-'+s.key+'">'+(s.item&&Number.isFinite(Number(s.item.price))?esc(fmt(s.item.price)):"—")+'</strong><span id="home-change-'+s.key+'" class="home-change">—</span></div><div class="home-analysis-detail">'+esc(s.detail)+'</div><div class="home-chart-wrap" id="home-chart-'+s.key+'"><div class="home-chart-loading">جاري تحميل الشارت…</div></div><div class="home-analysis-foot"><span>الاتجاه الفني</span><strong id="home-trend-'+s.key+'">قيد التحليل</strong></div><div class="home-analysis-foot"><span>آخر شمعة</span><strong id="home-last-'+s.key+'">—</strong></div></article>').join("");
+ await Promise.all(specs.map(s=>loadHomeChart(s)));
+ $("homeDirectionUpdated").textContent="آخر تحديث: "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})+" · لا تُعرض بيانات غير متاحة على أنها أسعار فعلية.";
+}
+async function loadHomeChart(s){
+ const box=$("home-chart-"+s.key);if(!box)return;
+ try{
+  const q=new URLSearchParams({market:s.market,symbol:s.symbol,interval:s.interval});
+  const d=await getJson("/api/trade-chart-data?"+q.toString());
+  if(!d||d.ok===false||!Array.isArray(d.items)||d.items.length<3)throw new Error("لا توجد شموع");
+  const cs=d.items.slice(-36),lo=Math.min(...cs.map(x=>Number(x.low)).filter(Number.isFinite)),hi=Math.max(...cs.map(x=>Number(x.high)).filter(Number.isFinite)),range=hi-lo||Math.abs(hi)*.001||1;
+  const W=600,H=180,L=8,R=8,T=8,B=8,pw=W-L-R,ph=H-T-B,n=cs.length,yy=v=>T+(hi-v)/range*ph,xx=i=>L+(i+.5)*pw/n,cw=Math.max(3,Math.min(10,pw/n*.62));
+  let svg='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="شارت شموع '+esc(s.name)+'" style="width:100%;height:auto;display:block;background:#0a1320;border-radius:8px">';
+  for(let k=1;k<4;k++){let y=T+k*ph/4;svg+='<line x1="'+L+'" y1="'+y+'" x2="'+(W-R)+'" y2="'+y+'" stroke="#233249" stroke-width="1"/>';}
+  cs.forEach((c,i)=>{const o=+c.open,h=+c.high,l=+c.low,cl=+c.close;if(![o,h,l,cl].every(Number.isFinite))return;const color=cl>=o?"#36c99a":"#f16d7a",x=xx(i),yo=yy(o),yc=yy(cl);svg+='<line x1="'+x+'" y1="'+yy(h)+'" x2="'+x+'" y2="'+yy(l)+'" stroke="'+color+'" stroke-width="1.5"/><rect x="'+(x-cw/2)+'" y="'+Math.min(yo,yc)+'" width="'+cw+'" height="'+Math.max(1,Math.abs(yc-yo))+'" rx="1" fill="'+color+'"/>';});
+  svg+='</svg>';box.innerHTML=svg;
+  const first=Number(cs[0].open),last=Number(cs[cs.length-1].close),change=first?((last-first)/first*100):null,up=last>=first;
+  const state=$("home-state-"+s.key),chg=$("home-change-"+s.key),trend=$("home-trend-"+s.key),lastEl=$("home-last-"+s.key),price=$("home-price-"+s.key);
+  if(price&&Number.isFinite(last))price.textContent=fmt(last);
+  if(chg){chg.textContent=change===null?"—":(change>0?"+":"")+change.toFixed(2)+"%";chg.style.color=change===null?"#9aa9bc":change>=0?"#36c99a":"#f16d7a";}
+  if(state){state.textContent=up?"صاعد":"هابط";state.className="home-market-state "+(up?"up":"down");}
+  if(trend)trend.textContent=up?"الاتجاه قصير الأجل صاعد":"الاتجاه قصير الأجل هابط";
+  if(lastEl)lastEl.textContent=String(cs[cs.length-1].time||cs[cs.length-1].timestamp||"متاحة").slice(0,22);
+ }catch(e){box.innerHTML='<div class="home-chart-loading">الشارت غير متاح من المصدر حاليًا</div>';const st=$("home-state-"+s.key),tr=$("home-trend-"+s.key);if(st)st.textContent="غير متاح";if(tr)tr.textContent="لا توجد بيانات كافية";}
 }
 function fmt(value){
  const n=Number(value);if(!Number.isFinite(n))return "—";
