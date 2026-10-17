@@ -1,11 +1,52 @@
-"""Single approved multi-market strategy: SMC/ICT + Price Action + MTF structure.
-
-Signal generation only. Uses closed OHLCV candles; candle volume is only a proxy,
-not true bid/ask order flow or exchange volume-at-price. No order execution.
+"""Unified multi-timeframe strategy for SMART TRADING PRO.
+Signal generation only; never submits orders. Uses closed OHLCV candles.
 """
 from __future__ import annotations
 from typing import Any, Sequence
 import math
+
+
+def _ema(values: Sequence[float], period: int) -> float | None:
+    if len(values) < period:
+        return None
+    alpha = 2.0 / (period + 1.0)
+    value = sum(values[:period]) / period
+    for item in values[period:]:
+        value = float(item) * alpha + value * (1.0 - alpha)
+    return value if math.isfinite(value) else None
+
+
+def _ema_series(values: Sequence[float], period: int) -> list[float | None]:
+    out: list[float | None] = [None] * len(values)
+    if len(values) < period:
+        return out
+    alpha = 2.0 / (period + 1.0)
+    value = sum(values[:period]) / period
+    out[period - 1] = value
+    for i in range(period, len(values)):
+        value = float(values[i]) * alpha + value * (1.0 - alpha)
+        out[i] = value
+    return out
+
+
+def _rsi(values: Sequence[float], period: int = 14) -> list[float | None]:
+    out: list[float | None] = [None] * len(values)
+    if len(values) <= period:
+        return out
+    gains = [max(float(values[i]) - float(values[i - 1]), 0.0) for i in range(1, len(values))]
+    losses = [max(float(values[i - 1]) - float(values[i]), 0.0) for i in range(1, len(values))]
+    avg_gain = sum(gains[:period]) / period
+    avg_loss = sum(losses[:period]) / period
+    def value(g: float, l: float) -> float:
+        if l <= 1e-15:
+            return 100.0 if g > 1e-15 else 50.0
+        return 100.0 - 100.0 / (1.0 + g / l)
+    out[period] = value(avg_gain, avg_loss)
+    for i in range(period + 1, len(values)):
+        avg_gain = (avg_gain * (period - 1) + gains[i - 1]) / period
+        avg_loss = (avg_loss * (period - 1) + losses[i - 1]) / period
+        out[i] = value(avg_gain, avg_loss)
+    return out
 
 
 def _atr(candles: Sequence[dict[str, float]], n: int = 14) -> float | None:
@@ -19,23 +60,6 @@ def _atr(candles: Sequence[dict[str, float]], n: int = 14) -> float | None:
     return value if math.isfinite(value) and value > 0 else None
 
 
-def _structure(candles: Sequence[dict[str, float]], window: int = 20) -> dict[str, float | bool]:
-    sample = candles[-min(len(candles), window + 1):-1]
-    highs = [float(x["high"]) for x in sample]
-    lows = [float(x["low"]) for x in sample]
-    if not highs or not lows:
-        return {"high": 0.0, "low": 0.0, "bull": False, "bear": False}
-    # Confirmed swing structure: compare the latest two separated pivot zones.
-    mid = max(3, len(sample) // 2)
-    first, second = sample[:mid], sample[mid:]
-    fh = max(float(x["high"]) for x in first)
-    sh = max(float(x["high"]) for x in second) if second else fh
-    fl = min(float(x["low"]) for x in first)
-    sl = min(float(x["low"]) for x in second) if second else fl
-    return {"high": max(highs), "low": min(lows),
-            "bull": sh > fh and sl > fl, "bear": sh < fh and sl < fl}
-
-
 def evaluate_v2(
     candles: Sequence[dict[str, float]],
     higher_candles: Sequence[dict[str, float]],
@@ -46,9 +70,9 @@ def evaluate_v2(
     risk_per_trade_pct: float = 0.5,
     min_net_rr: float = 1.6,
 ) -> dict[str, Any]:
-    """Return a single confluence BUY/SELL candidate, otherwise WAIT."""
+    """Return BUY/SELL only when timeframe setup, volume and higher-timeframe trend agree."""
     result: dict[str, Any] = {
-        "strategy": "SMC/ICT + Price Action + MTF Structure + Volume Confirmation",
+        "strategy": "EMA20/50 + RSI Bounce + Volume + Higher-Timeframe Trend/Support",
         "market": market, "timeframe": timeframe, "action": "WAIT",
         "status": "WAIT", "score": 0, "entry": None, "stop_loss": None,
         "take_profit_1": None, "take_profit_2": None, "risk_reward_net": None,
@@ -59,23 +83,21 @@ def evaluate_v2(
         result["reasons"] = ["بيانات الشموع المغلقة غير كافية للفريم الحالي والفريم الأعلى"]
         return result
     try:
-        fields = ("open", "high", "low", "close", "volume")
         for bar in list(candles) + list(higher_candles):
-            for field in fields:
-                value = float(bar.get(field, 0) or 0)
-                if not math.isfinite(value) or (field != "volume" and value <= 0) or (field == "volume" and value < 0):
-                    result["reasons"] = ["بيانات سعر أو حجم غير صالحة"]
-                    return result
-            o, h, l, c = (float(bar[k]) for k in ("open", "high", "low", "close"))
+            values = [float(bar[k]) for k in ("open", "high", "low", "close", "volume")]
+            o, h, l, c, v = values
+            if any(not math.isfinite(x) for x in values) or min(o, h, l, c) <= 0 or v < 0:
+                result["reasons"] = ["بيانات سعر أو حجم غير صالحة"]
+                return result
             if h < max(o, c, l) or l > min(o, c, h):
                 result["reasons"] = ["شموع غير متطابقة؛ تم إيقاف الإشارة"]
                 return result
-        close = [float(x["close"]) for x in candles]
-        high = [float(x["high"]) for x in candles]
-        low = [float(x["low"]) for x in candles]
+        closes = [float(x["close"]) for x in candles]
+        highs = [float(x["high"]) for x in candles]
+        lows = [float(x["low"]) for x in candles]
         opens = [float(x["open"]) for x in candles]
-        volume = [float(x.get("volume", 0) or 0) for x in candles]
-        hclose = [float(x["close"]) for x in higher_candles]
+        volumes = [float(x["volume"]) for x in candles]
+        hcloses = [float(x["close"]) for x in higher_candles]
     except (KeyError, TypeError, ValueError):
         result["reasons"] = ["صيغة الشموع غير صحيحة"]
         return result
@@ -84,87 +106,79 @@ def evaluate_v2(
     if not atr:
         result["reasons"] = ["تعذر حساب نطاق الحركة"]
         return result
-    px, op, hi, lo = close[-1], opens[-1], high[-1], low[-1]
-    prev_close = close[-2]
-    current = _structure(candles, 20)
-    higher = _structure(higher_candles, 20)
-    prior_high, prior_low = float(current["high"]), float(current["low"])
-    if prior_high <= prior_low or abs(px - prev_close) > 3.5 * atr:
-        result["reasons"] = ["النطاق غير مناسب أو السعر ممتد؛ لا نطارد الحركة"]
+
+    e20s, e50s = _ema_series(closes, 20), _ema_series(closes, 50)
+    rsi = _rsi(closes, 14)
+    he20 = _ema(hcloses, 20)
+    he50 = _ema(hcloses, 50)
+    if e20s[-1] is None or e50s[-1] is None or e20s[-2] is None or e50s[-2] is None or rsi[-1] is None or rsi[-2] is None or he20 is None:
+        result["reasons"] = ["المؤشرات تحتاج شموعًا أكثر"]
         return result
 
-    # SMC/ICT liquidity sweep and reclaim; current closed candle must reclaim the level.
-    bull_sweep = lo < prior_low and px > prior_low and px > op
-    bear_sweep = hi > prior_high and px < prior_high and px < op
-    # Price-action BOS/CHOCH via a decisive close beyond the prior range.
-    bull_bos = px > prior_high and px > op and (px - op) >= 0.15 * atr
-    bear_bos = px < prior_low and px < op and (op - px) >= 0.15 * atr
-    # Three-candle fair-value-gap / displacement proxy.
-    bull_fvg = len(candles) >= 3 and high[-3] < lo and px > op
-    bear_fvg = len(candles) >= 3 and low[-3] > hi and px < op
-    avg_vol = sum(volume[-21:-1]) / 20.0
-    vol_confirm = avg_vol > 0 and volume[-1] >= 1.2 * avg_vol
-    close_location = (px - lo) / max(hi - lo, 1e-12)
-    bull_pressure = vol_confirm and close_location >= 0.65 and px > op
-    bear_pressure = vol_confirm and close_location <= 0.35 and px < op
+    px, op, hi, lo = closes[-1], opens[-1], highs[-1], lows[-1]
+    prev_e20, prev_e50 = float(e20s[-2]), float(e50s[-2])
+    e20, e50 = float(e20s[-1]), float(e50s[-1])
+    current_rsi, previous_rsi = float(rsi[-1]), float(rsi[-2])
+    higher_bull = hcloses[-1] > he20 and (he50 is None or he20 >= he50)
+    higher_bear = hcloses[-1] < he20 and (he50 is None or he20 <= he50)
 
-    # Multi-timeframe structure is a hard directional filter, not a moving-average substitute.
-    higher_bull = bool(higher["bull"]) or hclose[-1] > hclose[-5] > hclose[-10]
-    higher_bear = bool(higher["bear"]) or hclose[-1] < hclose[-5] < hclose[-10]
-    bull_structure = bool(current["bull"]) or bull_bos
-    bear_structure = bool(current["bear"]) or bear_bos
+    # Each timeframe has its own RSI rebound zone and volume threshold.
+    profiles = {
+        "15m": (35.0, 65.0, 1.50),
+        "1h": (40.0, 60.0, 1.35),
+        "4h": (42.0, 58.0, 1.25),
+        "1d": (45.0, 55.0, 1.20),
+        "1w": (48.0, 52.0, 1.15),
+        "1M": (48.0, 52.0, 1.10),
+    }
+    oversold, overbought, volume_multiple = profiles.get(timeframe, profiles["15m"])
+    avg_volume = sum(volumes[-21:-1]) / 20.0
+    volume_ok = avg_volume > 0 and volumes[-1] >= avg_volume * volume_multiple
 
-    buy_evidence = [
-        ("MTF اتجاه الفريم الأعلى", higher_bull),
-        ("Price Action هيكل صاعد", bull_structure),
-        ("SMC سحب السيولة واستعادتها", bull_sweep),
-        ("BOS اختراق هيكل بإغلاق قوي", bull_bos),
-        ("ICT / FVG اندفاع سعري", bull_fvg),
-        ("Order Flow proxy تأكيد الحجم والشمعة", orderflow_bull),
-        ("Volume Profile proxy السعر فوق VWAP الحجمي", profile_bull),
-        ("Wyckoff Spring", wyckoff_spring),
-        ("CHOCH proxy انعكاس الهيكل", choch_bull),
-        ("تأكيد ضغط الحجم", bull_pressure),
-    ]
-    sell_evidence = [
-        ("MTF اتجاه الفريم الأعلى", higher_bear),
-        ("Price Action هيكل هابط", bear_structure),
-        ("SMC سحب السيولة وفشل الاختراق", bear_sweep),
-        ("BOS كسر هيكل بإغلاق قوي", bear_bos),
-        ("ICT / FVG اندفاع سعري هابط", bear_fvg),
-        ("Order Flow proxy تأكيد الحجم والشمعة", orderflow_bear),
-        ("Volume Profile proxy السعر تحت VWAP الحجمي", profile_bear),
-        ("Wyckoff Upthrust", wyckoff_upthrust),
-        ("CHOCH proxy انعكاس الهيكل", choch_bear),
-        ("تأكيد ضغط الحجم", bear_pressure),
-    ]
-    buy_hits = [label for label, ok in buy_evidence if ok]
-    sell_hits = [label for label, ok in sell_evidence if ok]
-    # One unified strategy: MTF must align, and at least three distinct setup clues
-    # must agree, including a structural/liquidity trigger and a volume/displacement clue.
-    buy_trigger = bull_sweep or bull_bos or choch_bull
-    sell_trigger = bear_sweep or bear_bos or choch_bear
-    buy_confirmation_count = sum((bull_sweep, bull_bos, bull_fvg, orderflow_bull, profile_bull, wyckoff_spring, choch_bull, bull_pressure))
-    sell_confirmation_count = sum((bear_sweep, bear_bos, bear_fvg, orderflow_bear, profile_bear, wyckoff_upthrust, choch_bear, bear_pressure))
-    buy_setup = higher_bull and bull_structure and buy_trigger and buy_confirmation_count >= 3
-    sell_setup = higher_bear and bear_structure and sell_trigger and sell_confirmation_count >= 3
-    if buy_setup == sell_setup:  # neither side or conflicting signals
-        result["reasons"] = ["انتظار: لم يكتمل توافق SMC/ICT والهيكل السعري والفريم الأعلى"]
+    # RSI must turn up from the lower zone (buy), or turn down from the upper zone (sell).
+    rsi_bounce_up = previous_rsi <= oversold and current_rsi > previous_rsi
+    rsi_bounce_down = previous_rsi >= overbought and current_rsi < previous_rsi
+    cross_up = prev_e20 <= prev_e50 and e20 > e50
+    cross_down = prev_e20 >= prev_e50 and e20 < e50
+
+    # For 15m, require the actual EMA crossover. Higher intervals can continue an established trend.
+    ema_buy = cross_up if timeframe == "15m" else (e20 > e50 and (cross_up or closes[-2] <= prev_e20 or rsi_bounce_up))
+    ema_sell = cross_down if timeframe == "15m" else (e20 < e50 and (cross_down or closes[-2] >= prev_e20 or rsi_bounce_down))
+
+    # Support/resistance is measured from prior closed candles, excluding the current candle.
+    support = min(lows[-21:-1])
+    resistance = max(highs[-21:-1])
+    near_support = lo <= support + 1.5 * atr or abs(px - e20) <= atr
+    near_resistance = hi >= resistance - 1.5 * atr or abs(px - e20) <= atr
+    bullish_candle = px > op and (px - lo) / max(hi - lo, 1e-12) >= 0.55
+    bearish_candle = px < op and (hi - px) / max(hi - lo, 1e-12) >= 0.55
+
+    buy_setup = higher_bull and ema_buy and rsi_bounce_up and volume_ok and near_support and bullish_candle
+    sell_setup = higher_bear and ema_sell and rsi_bounce_down and volume_ok and near_resistance and bearish_candle
+    if buy_setup == sell_setup:
+        missing = []
+        if not (higher_bull or higher_bear): missing.append("اتجاه الفريم الأعلى")
+        if not (ema_buy or ema_sell): missing.append("اتجاه/تقاطع EMA20/50")
+        if not (rsi_bounce_up or rsi_bounce_down): missing.append("ارتداد RSI")
+        if not volume_ok: missing.append("حجم تداول مؤكد")
+        if not (near_support or near_resistance): missing.append("دعم/مقاومة")
+        result["reasons"] = ["انتظار: الشروط غير مكتملة — " + "، ".join(missing or ["تعارض شروط الشراء والبيع"])]
         return result
 
     action = "BUY" if buy_setup else "SELL"
-    reasons = buy_hits if buy_setup else sell_hits
     direction = 1 if action == "BUY" else -1
     if action == "BUY":
-        stop = min(lo, min(low[-5:])) - 0.1 * atr
+        stop = min(lo, min(lows[-5:])) - 0.1 * atr
         risk = px - stop
+        reasons = ["اتجاه الفريم الأعلى صاعد", "EMA20/50 صاعد", "RSI ارتد من منطقة منخفضة", "حجم تداول مؤكد", "السعر عند دعم/إعادة اختبار", "شمعة صاعدة مؤكدة"]
     else:
-        stop = max(hi, max(high[-5:])) + 0.1 * atr
+        stop = max(hi, max(highs[-5:])) + 0.1 * atr
         risk = stop - px
+        reasons = ["اتجاه الفريم الأعلى هابط", "EMA20/50 هابط", "RSI ارتد هبوطًا من منطقة مرتفعة", "حجم تداول مؤكد", "السعر عند مقاومة/إعادة اختبار", "شمعة هابطة مؤكدة"]
+
     if risk <= 0 or risk > 3.0 * atr:
         result["reasons"] = ["وقف الخسارة واسع أو غير منطقي بالنسبة للتذبذب"]
         return result
-
     cost_pct = max(0.0, float(estimated_round_trip_cost_pct))
     cost = px * cost_pct / 100.0
     gross_reward = 2.5 * risk
@@ -173,16 +187,16 @@ def evaluate_v2(
         result["reasons"] = ["العائد إلى المخاطرة بعد الرسوم والانزلاق لا يحقق الحد الأدنى"]
         return result
 
+    score = 50 + 8 * len(reasons) + (5 if volume_ok else 0)
     result.update({
-        "action": action, "status": "CANDIDATE", "score": min(100, 50 + 8 * len(reasons)),
+        "action": action, "status": "CANDIDATE", "score": min(98, score),
         "entry": round(px, 8), "stop_loss": round(stop, 8),
         "take_profit_1": round(px + direction * 2.0 * risk, 8),
         "take_profit_2": round(px + direction * 2.5 * risk, 8),
         "risk_reward_net": round(net_rr, 2),
         "reasons": reasons + [
-            "الاستراتيجية الموحدة تجمع 10 عناصر: SMC، ICT، Price Action، BOS/CHOCH، Liquidity Sweep، FVG، MTF، Order Flow proxy، Volume Profile proxy، Wyckoff",
-            "Order Flow وVolume Profile هنا تقديرات من OHLCV/VWAP وليسا بيانات دفتر أوامر أو توزيع حجم سعري حقيقي",
-            "المخاطرة المقترحة لا تتجاوز 0.5% من رأس المال؛ إشارة آلية وليست أمر تنفيذ"
+            "تُستخدم الشموع المغلقة فقط؛ لا يوجد تنفيذ آلي للأوامر",
+            "النتائج تحتاج اختبارًا تاريخيًا ورسومًا وانزلاقًا واقعيًا قبل الاعتماد"
         ]
     })
     return result
