@@ -200,3 +200,44 @@ def test_public_ideas_reject_mismatched_tickers_and_incomplete_trade_levels(monk
     response = client.get("/api/public-ideas?market=futures&interval=auto&limit=10")
     assert response.status_code == 200
     assert response.json()["items"] == []
+
+
+def test_public_futures_ideas_require_title_ticker_and_valid_complete_levels(monkeypatch):
+    now = int(time.time())
+    fake = [
+        {
+            "source": "Telegram — @Binance_Futures_Trades",
+            "title": "#UNI /USDT - Short 4H",
+            "description": "Entry 7.243 Stop Loss 7.3387 Target 1 7.19379 Target 2 7.1357 Target 3 6.92283",
+            "url": "https://t.me/Binance_Futures_Trades/52918",
+            "published_at": now,
+            "_text": "#UNI /USDT - Short 4H Entry 7.243 Stop Loss 7.3387 Target 1 7.19379 Target 2 7.1357 Target 3 6.92283",
+        },
+        {
+            "source": "TradingView — Trading Ideas",
+            "title": "Carvana heading back to earth after lunar launch",
+            "description": "The stock may fall near its peak; leverage is discussed in a separate context.",
+            "url": "https://example.com/carvana",
+            "published_at": now,
+            "_text": "Carvana heading back to earth after lunar launch bearish near its peak leverage",
+        },
+        {
+            "source": "TradingView — Trading Ideas",
+            "title": "UNIUSDT Short 4H setup",
+            "description": "Entry 7.24 Stop Loss 7.34 Target 1 7.30 Target 2 7.20 Target 3 7.10",
+            "url": "https://example.com/invalid-target-order",
+            "published_at": now,
+            "_text": "UNIUSDT Short 4H Entry 7.24 Stop Loss 7.34 Target 1 7.30 Target 2 7.20 Target 3 7.10",
+        },
+    ]
+    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
+    app_module.PUBLIC_IDEAS_CACHE.clear()
+
+    response = client.get("/api/public-ideas?market=futures&interval=auto&limit=10")
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["symbol"] == "UNI"
+    assert items[0]["direction"] == "بيع"
+    assert items[0]["has_complete_levels"] is True
+    assert items[0]["url"] == ""
