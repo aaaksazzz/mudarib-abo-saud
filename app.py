@@ -1050,7 +1050,7 @@ def market_direction(market: str = Query("spot")):
 
 
 PUBLIC_IDEAS_CACHE = {}
-PUBLIC_IDEAS_CACHE_TTL = 180
+PUBLIC_IDEAS_CACHE_TTL = 900
 PUBLIC_IDEAS_LOCK = threading.RLock()
 # Broad public-source discovery. Feeds are best-effort: inaccessible feeds are counted, never fabricated.
 PUBLIC_IDEA_FEEDS = [
@@ -1117,23 +1117,20 @@ def _telegram_directory_search(term):
     return {x for x in found if x.lower() not in {"share", "joinchat", "addstickers", "proxy"}}
 
 def _telegram_public_channels():
+    """Use a small, stable set of public previews to avoid bursty directory crawling."""
     now = int(time.time())
     with TELEGRAM_DISCOVERY_LOCK:
         if TELEGRAM_DISCOVERY_CACHE["channels"] and now - TELEGRAM_DISCOVERY_CACHE["at"] < 1800:
             return list(TELEGRAM_DISCOVERY_CACHE["channels"])
-    channels = set(TELEGRAM_DEFAULT_CHANNELS)
+    channels = list(dict.fromkeys(TELEGRAM_DEFAULT_CHANNELS))
     configured = os.getenv("TELEGRAM_PUBLIC_CHANNELS", "").strip()
     if configured:
-        channels.update(name.strip().lstrip("@") for name in configured.split(",")
-                        if name.strip().lstrip("@").replace("_", "").isalnum())
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        futures = [pool.submit(_telegram_directory_search, term) for term in TELEGRAM_DISCOVERY_TERMS]
-        for future in as_completed(futures):
-            try:
-                channels.update(future.result())
-            except Exception as exc:
-                print(f"Telegram channel discovery failed: {type(exc).__name__}")
-    result = sorted(channels)
+        for name in configured.split(","):
+            name = name.strip().lstrip("@")
+            if name.replace("_", "").isalnum() and name not in channels:
+                channels.append(name)
+    # Keep discovery bounded: every channel triggers a separate external HTTP request.
+    result = channels[:6]
     with TELEGRAM_DISCOVERY_LOCK:
         TELEGRAM_DISCOVERY_CACHE.update({"at": now, "channels": result})
     return result
@@ -1304,7 +1301,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
     telegram_channels = _telegram_public_channels() if discover else []
     jobs = [(_fetch_public_idea_feed, (source, url)) for source, url in PUBLIC_TRADE_IDEA_FEEDS]
     jobs.extend((_fetch_telegram_public_channel, (channel,)) for channel in telegram_channels)
-    with ThreadPoolExecutor(max_workers=min(12, max(1, len(jobs)))) as pool:
+    with ThreadPoolExecutor(max_workers=min(4, max(1, len(jobs)))) as pool:
         futures = [pool.submit(fn, *args) for fn, args in jobs]
         for future in as_completed(futures):
             try:
