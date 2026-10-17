@@ -1586,6 +1586,12 @@ def _valid_external_trade(row):
         return False
     if not valid:
         return False
+    # Reject oversized stops and weak first targets for quick-trading timeframes.
+    risk_pct = abs(entry - stop) / entry
+    max_risk_pct = {"15m": 0.03, "1h": 0.05, "4h": 0.08}.get(str(row.get("interval") or "15m"), 0.03)
+    first_reward = (tp1 - entry) if side == "شراء" else (entry - tp1)
+    if risk_pct > max_risk_pct or first_reward <= 0 or first_reward / abs(entry - stop) < 0.8:
+        return False
     row["has_complete_levels"] = True
     return True
 
@@ -1643,18 +1649,24 @@ def _technical_fallback_signal(market, symbol, interval):
         below_200 = ema200 is not None and entry < ema200
         long_score = sum((entry > ema20, ema20 > ema50, above_200, 52 <= rsi <= 70, macd_up, entry > recent_high, vol_ratio >= 1.15))
         short_score = sum((entry < ema20, ema20 < ema50, below_200, 30 <= rsi <= 48, not macd_up, entry < recent_low, vol_ratio >= 1.15))
+        max_risk_pct = {"15m": 0.03, "1h": 0.05, "4h": 0.08}.get(interval, 0.03)
+        max_risk = entry * max_risk_pct
         if long_score >= 5 and long_score > short_score:
             side, stop = "شراء", min(entry - atr * 1.5, recent_low)
             risk = entry - stop
-            if risk <= 0 or risk / entry > 0.08:
-                stop, risk = entry - atr * 1.5, atr * 1.5
+            if risk <= 0:
+                return None
+            risk = min(risk, max_risk)
+            stop = entry - risk
             targets = [entry + risk * n for n in (1, 2, 3)]
             score = long_score
         elif short_score >= 5 and short_score > long_score:
             side, stop = "بيع", max(entry + atr * 1.5, recent_high)
             risk = stop - entry
-            if risk <= 0 or risk / entry > 0.08:
-                stop, risk = entry + atr * 1.5, atr * 1.5
+            if risk <= 0:
+                return None
+            risk = min(risk, max_risk)
+            stop = entry + risk
             targets = [entry - risk * n for n in (1, 2, 3)]
             if targets[-1] <= 0:
                 return None
