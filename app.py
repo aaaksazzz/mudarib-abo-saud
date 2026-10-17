@@ -2151,6 +2151,14 @@ def method_performance(market: str = Query("all"), interval: str = Query("all"),
     return JSONResponse({"ok": False, "message": "تم حذف تقييم أداء الاستراتيجيات الداخلية."}, status_code=410)
 
 
+def build_signal(market: str, ticker: dict, interval: str):
+    # Internal strategy signal generation removed; no candle-based strategy trades are created.
+    return None
+
+
+CRYPTO_SIGNAL_MARKETS = {"spot", "futures", "alpha"}
+
+
 @app.get("/api/saved-signals/{market}")
 def saved_signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20)):
     """Return persisted open trades immediately, without waiting for a new market scan."""
@@ -2351,7 +2359,6 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     # Publish only high-confluence trades in three quality tiers; discard weak candidates.
     # Historical outcomes adjust ranking, but a medal is awarded only when explicit quality
     # thresholds are met. This is a filter, not a promise of profitability.
-    apply_strategy_learning(found, market, interval)
     candidates = []
     for item in found:
         score = float(item.get("score", 0) or 0)
@@ -2427,7 +2434,6 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                         record["closed_at"] = int(now)
                         record["expiry_reason"] = "تحرك السعر بعيدًا عن سعر الدخول؛ يلزم فحص جديد"
         # Feed finalized outcomes back into persistent method-level learning before saving.
-        sync_strategy_learning(history)
         # Keep expired outcomes in the 24-hour results history; only open records
         # are eligible to be returned as actionable signals.
         history = [record for record in history if isinstance(record, dict)]
@@ -3328,7 +3334,6 @@ def signal_results(limit: int = Query(100, ge=1, le=500)):
         items = read_json_file(RESULTS_PATH, [])
         items = refresh_open_result_prices(items)
         items = prune_results()
-        sync_strategy_learning(items)
         items.sort(key=lambda x: x.get("created_at", 0), reverse=True)
         # A signal is an executed outcome unless entry validity expired before entry.
         # Time-expired trades are scored from their last observed P&L; invalid entries
