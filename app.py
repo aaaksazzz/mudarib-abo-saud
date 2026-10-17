@@ -1364,141 +1364,153 @@ def _public_idea_levels(value):
     tp3 = find(r"(?:\bTP\s*[-_#]?\s*3\b|\bT\s*3\b|\btarget\s*[-_#]?\s*3\b|\btake\s*profit\s*[-_#]?\s*3\b|الهدف\s*(?:الثالث|3)|هدف\s*3)")
     return {"entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3}
 @app.get("/api/public-ideas")
-def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limit: int = Query(20, ge=1, le=50), discover: bool = Query(False)):
-    """Aggregate explicit, recent public market ideas. Never synthesizes missing trade levels."""
-    market = (market or "").lower()
+def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), limit: int = Query(20, ge=1, le=50), discover: bool = Query(False)):
+    """Fresh public-idea pipeline. Only explicit, recent, complete and ordered trade levels qualify."""
+    market = (market or "").strip().lower()
+    interval = (interval or "auto").strip()
     if market not in {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}:
         return JSONResponse({"ok": False, "items": [], "message": "السوق غير مدعوم."}, status_code=422)
     if interval not in PUBLIC_IDEA_INTERVALS:
         return JSONResponse({"ok": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
+
     now = int(time.time())
     cache_key = (market, interval, bool(discover))
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if cached and now - cached[0] < PUBLIC_IDEAS_CACHE_TTL:
             return {**cached[1], "cached": True}
-    telegram_channels = _telegram_public_channels() if discover else []
+
+    channels = _telegram_public_channels() if discover else []
     feed_cache_key = bool(discover)
     feed_cached = PUBLIC_TRADE_FEED_CACHE.get(feed_cache_key)
     if feed_cached and now - feed_cached["at"] < PUBLIC_TRADE_FEED_CACHE_TTL:
-        gathered = list(feed_cached["rows"])
-        feed_errors = feed_cached["errors"]
+        raw_rows = list(feed_cached["rows"])
+        source_errors = int(feed_cached["errors"])
     else:
-        gathered = []
-        feed_errors = 0
-        jobs = [(_fetch_public_idea_feed, (source, url)) for source, url in PUBLIC_TRADE_IDEA_FEEDS]
-        jobs.extend((_fetch_telegram_public_channel, (channel,)) for channel in telegram_channels)
-        # Keep the worker pool small: the service has limited CPU/RAM and feeds rate-limit bursts.
+        raw_rows, source_errors = [], 0
+        jobs = [(_fetch_public_idea_feed, (name, url)) for name, url in PUBLIC_TRADE_IDEA_FEEDS]
+        jobs.extend((_fetch_telegram_public_channel, (channel,)) for channel in channels)
         with ThreadPoolExecutor(max_workers=4) as pool:
             futures = [pool.submit(fn, *args) for fn, args in jobs]
             for future in as_completed(futures):
                 try:
-                    gathered.extend(future.result())
+                    result = future.result()
+                    if isinstance(result, list):
+                        raw_rows.extend(row for row in result if isinstance(row, dict))
                 except Exception as exc:
-                    feed_errors += 1
-                    print(f"public trade source failed: {type(exc).__name__}: {exc}")
-        PUBLIC_TRADE_FEED_CACHE[feed_cache_key] = {"at": now, "rows": list(gathered), "errors": feed_errors}
+                    source_errors += 1
+                    print(f"public idea source failed: {type(exc).__name__}: {exc}")
+        PUBLIC_TRADE_FEED_CACHE[feed_cache_key] = {
+            "at": now, "rows": list(raw_rows), "errors": source_errors
+        }
+
+    stats = {
+        "fetched": len(raw_rows), "recent": 0, "direction": 0, "market": 0,
+        "symbol": 0, "timeframe": 0, "levels_present": 0, "levels_partial": 0,
+        "levels_missing_entry": 0, "levels_missing_stop": 0, "levels_missing_tp1": 0,
+        "levels_missing_tp2": 0, "levels_missing_tp3": 0, "symbol_mismatch": 0,
+        "complete_levels": 0, "invalid_order": 0, "duplicate": 0
+    }
     cutoff = now - PUBLIC_IDEA_MAX_AGE
-    stage_counts = {"fetched": len(gathered), "recent": 0, "direction": 0, "market": 0, "symbol": 0, "timeframe": 0, "levels_present": 0, "levels_partial": 0, "levels_missing_entry": 0, "levels_missing_stop": 0, "levels_missing_tp1": 0, "levels_missing_tp2": 0, "levels_missing_tp3": 0, "symbol_mismatch": 0, "complete_levels": 0, "invalid_order": 0}
     unique = {}
-    for item in gathered:
-        published = item.get("published_at", 0)
+    required = ("entry", "stop_loss", "tp1", "tp2", "tp3")
+    missing_keys = {
+        "entry": "levels_missing_entry", "stop_loss": "levels_missing_stop",
+        "tp1": "levels_missing_tp1", "tp2": "levels_missing_tp2", "tp3": "levels_missing_tp3"
+    }
+
+    for raw in raw_rows:
+        try:
+            published = int(raw.get("published_at") or 0)
+        except (TypeError, ValueError):
+            published = 0
         if published < cutoff or published > now + 300:
             continue
-        stage_counts["recent"] += 1
-        full_text = item.get("_text", "")
-        direction = _public_idea_direction(full_text)
-        if not direction:
+        stats["recent"] += 1
+
+        title = str(raw.get("title") or "")
+        body = str(raw.get("_text") or raw.get("description") or "")
+        text_all = (title + "\n" + body).strip()
+        side = _public_idea_direction(text_all)
+        if not side:
             continue
-        stage_counts["direction"] += 1
-        # Prefer the title, but also inspect the beginning of the source text:
-        # many public feeds put the ticker and levels in the description, not the title.
-        title_text = str(item.get("title") or "")
-        source_text = str(full_text or "")
-        match_text = title_text + " " + source_text[:1600]
-        if not _public_idea_market_match(market, match_text):
+        stats["direction"] += 1
+
+        # Match the intended market against both headline and body, but validate
+        # the extracted ticker separately so symbols cannot leak between markets.
+        if not _public_idea_market_match(market, text_all[:2400]):
             continue
-        stage_counts["market"] += 1
-        # Prefer a ticker explicitly stated in the title; otherwise extract it from
-        # the source text. Complete levels are still mandatory before a trade is shown.
-        slash_pair = re.search(r"(?<![A-Z0-9])#?([A-Z0-9]{2,15})\s*/\s*(USDT|USDC|USD)\b", title_text, re.I)
+        stats["market"] += 1
+
+        slash_pair = re.search(r"(?<![A-Z0-9])#?([A-Z0-9]{2,15})\s*/\s*(USDT|USDC|USD)\b", title, re.I)
         symbol_re = re.compile(PUBLIC_SYMBOL_RE.pattern)
-        # Public signal authors use many Binance tickers beyond the small common-coin list.
-        # Accept explicit quote-suffixed pairs (e.g. TOKENUSDT), but never infer a ticker
-        # from an ordinary word; complete, correctly ordered levels remain mandatory.
         pair_re = re.compile(r"(?<![A-Z0-9])([A-Z0-9]{2,15}(?:USDT|USDC|USD))\b", re.I)
-        symbol_match = (slash_pair or symbol_re.search(title_text) or
-                        pair_re.search(title_text) or symbol_re.search(source_text[:1600]) or
-                        pair_re.search(source_text[:1600]))
-        if not symbol_match:
+        found = slash_pair or symbol_re.search(title) or pair_re.search(title) or symbol_re.search(body[:1600]) or pair_re.search(body[:1600])
+        if not found:
             continue
-        if slash_pair:
-            symbol = slash_pair.group(1).upper()
-        else:
-            symbol = symbol_match.group(0).upper()
-        if market == "futures" and not (
-            re.fullmatch(r"[A-Z0-9]{2,15}(?:USDT|USDC|USD)", symbol) or
-            symbol in {"BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "AVAX", "LINK", "SUI",
-                       "LTC", "DOT", "TRX", "TON", "NEAR", "APT", "ARB", "OP", "INJ", "TAO",
-                       "PEPE", "SHIB", "WIF", "FET", "RENDER", "UNI", "AAVE"}
-        ):
+        symbol = (found.group(1) if slash_pair else found.group(0)).upper()
+        if not _public_idea_symbol_matches_market(market, symbol, text_all[:2400]):
+            stats["symbol_mismatch"] += 1
             continue
-        if not _public_idea_symbol_matches_market(market, symbol, match_text):
-            stage_counts["symbol_mismatch"] += 1
-            continue
-        stage_counts["symbol"] += 1
-        # Timeframe is often placed in the headline (e.g. "#UNI/USDT - Short 4H")
-        # rather than the feed body. Inspect both fields so valid public ideas are not
-        # silently discarded just because the publisher put the timeframe in the title.
-        detected_interval = _public_idea_interval(title_text + " " + full_text)
-        # In auto mode, accept a source idea with no stated timeframe only when its
-        # entry, stop and all three targets are explicit and later pass level validation.
-        # Never invent a timeframe: display it as "غير محدد" instead.
+        stats["symbol"] += 1
+
+        detected_interval = _public_idea_interval(text_all)
         if interval != "auto" and detected_interval != interval:
             continue
         if interval != "auto" and not detected_interval:
             continue
-        stage_counts["timeframe"] += 1
-        # Public posts often place prices in the headline while the feed description only has context.
-        # Parse both fields together, but still require every level to be explicitly present.
-        levels = _public_idea_levels(title_text + "\n" + full_text)
-        required_level_keys = ("entry", "stop_loss", "tp1", "tp2", "tp3")
-        present_level_count = sum(levels.get(key) is not None for key in required_level_keys)
-        if present_level_count:
-            stage_counts["levels_present"] += 1
-        if present_level_count and present_level_count < len(required_level_keys):
-            stage_counts["levels_partial"] += 1
-        missing_counter = {"entry": "levels_missing_entry", "stop_loss": "levels_missing_stop", "tp1": "levels_missing_tp1", "tp2": "levels_missing_tp2", "tp3": "levels_missing_tp3"}
-        for key, counter in missing_counter.items():
+        stats["timeframe"] += 1
+
+        levels = _public_idea_levels(text_all)
+        count_present = sum(levels.get(key) is not None for key in required)
+        if count_present:
+            stats["levels_present"] += 1
+        if 0 < count_present < len(required):
+            stats["levels_partial"] += 1
+        for key, stat_key in missing_keys.items():
             if levels.get(key) is None:
-                stage_counts[counter] += 1
-        side = direction
+                stats[stat_key] += 1
+        if count_present != len(required):
+            continue
+
         try:
-            entry, stop, tp1, tp2, tp3 = (float(levels[k]) for k in required_level_keys)
+            entry, stop, tp1, tp2, tp3 = (float(levels[key]) for key in required)
         except (TypeError, ValueError):
             continue
-        if not all(math.isfinite(v) and v > 0 for v in (entry, stop, tp1, tp2, tp3)):
+        values = (entry, stop, tp1, tp2, tp3)
+        if not all(math.isfinite(value) and value > 0 for value in values):
             continue
-        if side == "شراء" and not (stop < entry < tp1 < tp2 < tp3):
-            stage_counts["invalid_order"] += 1
+        ordered = (stop < entry < tp1 < tp2 < tp3) if side == "شراء" else (tp3 < tp2 < tp1 < entry < stop)
+        if not ordered:
+            stats["invalid_order"] += 1
             continue
-        if side == "بيع" and not (tp3 < tp2 < tp1 < entry < stop):
-            stage_counts["invalid_order"] += 1
+        stats["complete_levels"] += 1
+
+        url = str(raw.get("url") or "")
+        identity = url or f"{raw.get('source','')}|{symbol}|{side}|{published}"
+        if identity in unique:
+            stats["duplicate"] += 1
             continue
-        stage_counts["complete_levels"] += 1
-        item_id = item.get("url") or (item.get("source", "") + item.get("title", ""))
-        item.pop("_text", None)
-        # Do not expose outbound source URLs as clickable links on the public site.
-        item["url"] = ""
-        unique[item_id] = {**item, "market": market, "direction": direction, "symbol": symbol,
-                           "interval": detected_interval or "غير محدد", "levels": levels,
-                           "age_hours": round((now - published) / 3600, 1),
-                           "has_complete_levels": True}
-    items = sorted(unique.values(), key=lambda row: row["published_at"], reverse=True)[:limit]
-    response = {"ok": True, "market": market, "interval": interval, "items": items,
-                "count": len(items), "sources_checked": len(PUBLIC_TRADE_IDEA_FEEDS) + len(telegram_channels), "telegram_channels_checked": telegram_channels,
-                "sources_failed": feed_errors, "max_age_hours": 24, "updated_at": now, "diagnostics": stage_counts,
-                "discovery_enabled": bool(discover), "telegram_preview_enabled": bool(discover), "message": "تم فحص خلاصات عامة وقنوات تيليجرام محددة عند تفعيل البحث الموسع. هذه ليست عملية اكتشاف شامل لكل القنوات؛ الأخبار منفصلة، ولا تُنشأ مستويات دخول أو أهداف أو وقف بالتخمين."}
+        clean = {key: value for key, value in raw.items() if not key.startswith("_")}
+        # Keep recommendations displayed inside the site, not as outbound source links.
+        clean["url"] = ""
+        clean.update({
+            "market": market, "direction": side, "symbol": symbol,
+            "interval": detected_interval or "غير محدد", "levels": levels,
+            "age_hours": round(max(0, now - published) / 3600, 1),
+            "has_complete_levels": True
+        })
+        unique[identity] = clean
+
+    items = sorted(unique.values(), key=lambda row: (row.get("published_at", 0), -row.get("age_hours", 0)), reverse=True)[:limit]
+    response = {
+        "ok": True, "market": market, "interval": interval, "items": items,
+        "count": len(items), "sources_checked": len(PUBLIC_TRADE_IDEA_FEEDS) + len(channels),
+        "telegram_channels_checked": channels, "sources_failed": source_errors,
+        "max_age_hours": 24, "updated_at": now, "diagnostics": stats,
+        "discovery_enabled": bool(discover), "telegram_preview_enabled": bool(discover),
+        "message": "إعادة بناء الفلترة: اتجاه ورمز السوق والفريم والمستويات الخمسة وترتيبها. لا تُنشأ أسعار أو أهداف بالتخمين."
+    }
     with PUBLIC_IDEAS_LOCK:
         PUBLIC_IDEAS_CACHE[cache_key] = (now, response)
     return response
