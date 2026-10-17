@@ -623,6 +623,62 @@ def health():
     return {"ok": True, "service": "smart-trading-pro", "version": "2.1.3", "timestamp": int(time.time())}
 
 
+# Dynamically broaden Yahoo quote universes; preserve known symbols if discovery is unavailable.
+YAHOO_UNIVERSE_CACHE = {}
+YAHOO_UNIVERSE_CACHE_TTL = 900
+YAHOO_UNIVERSE_LOCK = threading.RLock()
+
+def _discover_yahoo_symbols(query, suffix=None, count=250):
+    from urllib.parse import urlencode
+    url = "https://query1.finance.yahoo.com/v1/finance/search?" + urlencode({
+        "q": query, "quotesCount": count, "newsCount": 0, "listsCount": 0
+    })
+    payload = fetch_json(url, timeout=6)
+    found = []
+    for row in payload.get("quotes", []) or []:
+        symbol = str(row.get("symbol", "")).strip().upper()
+        quote_type = str(row.get("quoteType", "")).upper()
+        if not symbol or quote_type not in {"EQUITY", "ETF"}:
+            continue
+        if suffix and not symbol.endswith(suffix):
+            continue
+        if not suffix and (symbol.endswith("=X") or symbol.endswith("=F") or symbol.endswith(".SR")):
+            continue
+        found.append(symbol)
+    return found
+
+def _load_saudi_symbols():
+    now = time.time()
+    with YAHOO_UNIVERSE_LOCK:
+        cached = YAHOO_UNIVERSE_CACHE.get("saudi")
+        if cached and now - cached[0] < YAHOO_UNIVERSE_CACHE_TTL:
+            discovered = cached[1]
+        else:
+            try:
+                discovered = _discover_yahoo_symbols("Saudi Arabia stocks Tadawul", suffix=".SR", count=250)
+                if not discovered:
+                    discovered = _discover_yahoo_symbols(".SR", suffix=".SR", count=250)
+            except Exception as exc:
+                print(f"Saudi symbol discovery failed: {type(exc).__name__}: {exc}")
+                discovered = []
+            YAHOO_UNIVERSE_CACHE["saudi"] = (now, discovered)
+        YAHOO_MARKETS["saudi"] = sorted(set(YAHOO_MARKETS["saudi"]) | set(discovered))
+
+def _load_us_symbols():
+    now = time.time()
+    with YAHOO_UNIVERSE_LOCK:
+        cached = YAHOO_UNIVERSE_CACHE.get("us")
+        if cached and now - cached[0] < YAHOO_UNIVERSE_CACHE_TTL:
+            discovered = cached[1]
+        else:
+            try:
+                discovered = _discover_yahoo_symbols("US stocks", count=250)
+            except Exception as exc:
+                print(f"US symbol discovery failed: {type(exc).__name__}: {exc}")
+                discovered = []
+            YAHOO_UNIVERSE_CACHE["us"] = (now, discovered)
+        YAHOO_MARKETS["us"] = sorted(set(YAHOO_MARKETS["us"]) | set(discovered))
+
 def fetch_yahoo_quote(symbol: str):
     """Fetch one public Yahoo Finance quote; source may be delayed."""
     try:
@@ -1164,6 +1220,94 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
                 "count": len(items), "sources_checked": len(PUBLIC_IDEA_FEEDS),
                 "sources_failed": feed_errors, "max_age_hours": 24, "updated_at": now,
                 "message": "تم فحص خلاصات المصادر العامة المتاحة؛ الأفكار خلال 24 ساعة فقط، وقد تتعذر بعض المصادر أو تحجب الوصول. مستويات الدخول والأهداف والوقف لا تُستكمل بالتخمين."}
+    with PUBLIC_IDEAS_LOCK:
+        PUBLIC_IDEAS_CACHE[cache_key] = (now, response)
+    return response
+
+@app.get("/api/site/sections")
+def site_sections():
+    # Sections are public unless an explicit access-control store is configured.
+    ids = ("spot", "futures", "contracts", "us", "saudi", "forex", "alpha",
+           "tasi", "results", "news", "blog", "account")
+    return {"ok": True, "sections": {section: "public" for section in ids}}
+
+@app.get("/api/universe-counts")
+def universe_counts():
+    return {
+        "ok": True,
+        "unique_coins": None,
+        "spot_pairs": None,
+        "futures_pairs": None,
+        "total_stocks": len(set(YAHOO_MARKETS.get("us", []) + YAHOO_MARKETS.get("saudi", []))),
+        "us_stocks": len(YAHOO_MARKETS.get("us", [])),
+        "saudi_stocks": len(YAHOO_MARKETS.get("saudi", [])),
+        "saudi_universe_source": "Yahoo Finance discovery + fallback list",
+        "message": "الأعداد تمثل رموزًا معروفة/مكتشفة وليست تأكيدًا على اكتمال جميع الشركات المدرجة."
+    }
+
+@app.get("/api/results")
+def public_results(limit: int = Query(100, ge=1, le=500)):
+    rows = read_json_file(RESULTS_PATH, [])
+    if not isinstance(rows, list):
+        rows = []
+    rows = rows[:limit]
+    closed = [row for row in rows if str(row.get("result", "")).upper() in {"TP1", "TP2", "TP3", "SL"}]
+    wins = sum(1 for row in closed if str(row.get("result", "")).upper() in {"TP1", "TP2", "TP3"})
+    losses = sum(1 for row in closed if str(row.get("result", "")).upper() == "SL")
+    profitable = sum(1 for row in closed if float(row.get("pnl_pct") or 0) > 0)
+    return {"ok": True, "items": rows, "total": len(rows), "closed": len(closed),
+            "wins": wins, "losses": losses, "profitable": profitable,
+            "win_rate": round(wins / len(closed) * 100, 1) if closed else None,
+            "message": "محرك الصفقات الآلية متوقف؛ لا تُنشأ نتائج جديدة تلقائيًا."}
+
+@app.get("/api/news")
+def public_news(market: str = Query("all"), limit: int = Query(50, ge=1, le=100),
+                refresh: int = Query(0, ge=0, le=1)):
+    market = (market or "all").lower()
+    aliases = {"crypto": ("spot", "futures"), "all": tuple(PUBLIC_MARKET_SYMBOLS.keys())}
+    if market not in {"all", "crypto", "us", "saudi", "forex", "contracts", "spot", "futures", "alpha"}:
+        return JSONResponse({"ok": False, "items": [], "message": "تصنيف الأخبار غير مدعوم."}, status_code=422)
+    now = int(time.time())
+    cache_key = ("news", market)
+    with PUBLIC_IDEAS_LOCK:
+        cached = PUBLIC_IDEAS_CACHE.get(cache_key)
+        if not refresh and cached and now - cached[0] < PUBLIC_IDEAS_CACHE_TTL:
+            return {**cached[1], "cached": True}
+    gathered = []
+    failed = 0
+    with ThreadPoolExecutor(max_workers=min(12, len(PUBLIC_IDEA_FEEDS))) as pool:
+        futures = [pool.submit(_fetch_public_idea_feed, source, url) for source, url in PUBLIC_IDEA_FEEDS]
+        for future in as_completed(futures):
+            try:
+                gathered.extend(future.result())
+            except Exception as exc:
+                failed += 1
+                print(f"public news feed failed: {type(exc).__name__}: {exc}")
+    cutoff = now - PUBLIC_IDEA_MAX_AGE
+    accepted_markets = aliases.get(market, (market,))
+    unique = {}
+    for row in gathered:
+        published = int(row.get("published_at") or 0)
+        if published < cutoff or published > now + 300:
+            continue
+        full_text = row.get("_text", "")
+        matched = [m for m in accepted_markets if _public_idea_market_match(m, full_text)]
+        if market == "all":
+            matched = [m for m in accepted_markets if _public_idea_market_match(m, full_text)]
+        if not matched:
+            continue
+        direction = _public_idea_direction(full_text)
+        symbol_match = PUBLIC_SYMBOL_RE.search(full_text)
+        item = {k: v for k, v in row.items() if k != "_text"}
+        item.update({"market": market, "asset_labels": [symbol_match.group(0).upper()] if symbol_match else [],
+                     "direction": "BUY" if direction == "شراء" else "SELL" if direction == "بيع" else "UNCLEAR",
+                     "direction_ar": "إيجابي" if direction == "شراء" else "سلبي" if direction == "بيع" else "غير واضح"})
+        unique[item.get("url") or item.get("title", "")] = item
+    items = sorted(unique.values(), key=lambda x: int(x.get("published_at") or 0), reverse=True)[:limit]
+    response = {"ok": True, "market": market, "items": items, "count": len(items),
+                "sources_checked": len(PUBLIC_IDEA_FEEDS), "sources_failed": failed,
+                "max_age_hours": 24, "updated_at": now,
+                "message": "أخبار عامة من الخلاصات المتاحة خلال 24 ساعة؛ الدلالة الآلية أولية وقد تكون غير واضحة."}
     with PUBLIC_IDEAS_LOCK:
         PUBLIC_IDEAS_CACHE[cache_key] = (now, response)
     return response
