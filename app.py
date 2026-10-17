@@ -1425,7 +1425,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), lim
         PUBLIC_TRADE_FEED_CACHE[feed_cache_key] = {"at": now, "rows": list(raw_rows), "errors": source_errors}
 
     stats = {"fetched": len(raw_rows), "recent": 0, "market": 0, "symbol": 0,
-             "timeframe": 0, "direction_detected": 0, "duplicate": 0}
+             "timeframe": 0, "direction_detected": 0, "duplicate": 0, "levels_missing_tp3": 0}
     cutoff = now - PUBLIC_IDEA_MAX_AGE
     unique = {}
     for raw in raw_rows:
@@ -1468,6 +1468,8 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), lim
         if not side:
             continue
         levels = _public_idea_levels(text_all)
+        if levels.get("tp3") is None:
+            stats["levels_missing_tp3"] += 1
         candidate = {"direction": side, "levels": levels, "interval": detected_interval}
         if not _public_idea_levels_ordered(candidate):
             continue
