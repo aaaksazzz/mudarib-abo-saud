@@ -1833,13 +1833,12 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
                 continue
             valid.append((liquidity if math.isfinite(liquidity) else 0.0, change, symbol))
         valid.sort(key=lambda row: (row[0], row[1]), reverse=True)
-        # Broaden coverage for every market while bounding CPU and outbound requests.
-        symbols = list(dict.fromkeys(symbol for _, _, symbol in valid))[:72]
-        # Small parallel batches protect the low-memory service. Scan further when
-        # early candidates fail, and stop only after enough complete setups qualify.
-        for offset in range(0, len(symbols), 8):
-            batch = symbols[offset:offset + 8]
-            with ThreadPoolExecutor(max_workers=4) as pool:
+        # Keep cold-page loads responsive on the small service: scan a bounded
+        # liquidity-ranked shortlist and use small worker batches to avoid overload.
+        symbols = list(dict.fromkeys(symbol for _, _, symbol in valid))[:24]
+        for offset in range(0, len(symbols), 6):
+            batch = symbols[offset:offset + 6]
+            with ThreadPoolExecutor(max_workers=3) as pool:
                 futures = {pool.submit(_technical_fallback_signal, market, symbol, interval): symbol
                            for symbol in batch}
                 for future in as_completed(futures):
@@ -1852,7 +1851,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
                         continue
                     if signal:
                         items.append(signal)
-            if len(items) >= min(limit, 6):
+            if len(items) >= min(limit, 3):
                 break
     except Exception as exc:
         failures += 1
