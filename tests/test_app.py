@@ -82,17 +82,26 @@ def test_results_endpoint_handles_empty_and_malformed_pnl(tmp_path, monkeypatch)
     assert data["profitable"] == 1
 
 
-def test_strategy_signal_endpoint_does_not_fabricate_trades(monkeypatch):
-    # The endpoint now adapts public ideas; stub all external sources so this stays deterministic.
-    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: [])
-    monkeypatch.setattr(app_module, "_fetch_telegram_public_channel", lambda channel: [])
+def test_strategy_signal_endpoint_uses_only_real_candle_universe(monkeypatch):
+    # No market symbols means there are no candles to analyze and no trade can be fabricated.
+    monkeypatch.setattr(app_module, "market_data", lambda market, limit=500: {"ok": True, "items": []})
     app_module.PUBLIC_IDEAS_CACHE.clear()
-    app_module.PUBLIC_TRADE_FEED_CACHE.clear()
     response = client.get("/api/signals/spot?interval=15m")
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
     assert data["scanned"] == 0
+    assert "شموع السوق الفعلية" in data["message"] or "لن نعرض" in data["message"]
+
+
+def test_signal_endpoint_accepts_daily_weekly_and_monthly_frames(monkeypatch):
+    monkeypatch.setattr(app_module, "market_data", lambda market, limit=500: {"ok": True, "items": []})
+    app_module.PUBLIC_IDEAS_CACHE.clear()
+    for interval in ("1d", "1w", "1M"):
+        response = client.get(f"/api/signals/spot?interval={interval}")
+        assert response.status_code == 200
+        assert response.json()["interval"] == interval
+        assert response.json()["items"] == []
 
 
 def test_public_news_aggregates_recent_items_without_network(monkeypatch):
