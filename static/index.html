@@ -360,7 +360,7 @@ async function loadMarketSignals(){
  $("marketQuotesSummary").textContent="جاري جلب الأسعار…";
  $("marketIdeasSummary").textContent="جاري تحليل الشموع والبحث عن فرص على فريم "+interval+"…";
  const quotePromise=getJson("/api/market/"+encodeURIComponent(currentMarket)+"?limit=2000").catch(error=>({ok:false,items:[],message:error.message||"تعذر تحميل الأسعار"}));
- const ideasPromise=getJson("/api/signals/"+encodeURIComponent(currentMarket)+"&interval="+encodeURIComponent(currentMarket)+"?interval="+encodeURIComponent(interval)+"&limit=12").catch(error=>({ok:false,items:[],message:error.message||"تعذر فحص المصادر العامة"}));
+ const ideasPromise=getJson("/api/signals/"+encodeURIComponent(currentMarket)+"?interval="+encodeURIComponent(interval)+"&limit=12").catch(error=>({ok:false,items:[],message:error.message||"تعذر تحليل الشموع"}));
  const [quoteData,ideaData]=await Promise.all([quotePromise,ideasPromise]);
  if(request!==marketViewRequest||page!=="market"||market!==currentMarket)return;
  const quotes=quoteData&&Array.isArray(quoteData.items)?quoteData.items:[];
