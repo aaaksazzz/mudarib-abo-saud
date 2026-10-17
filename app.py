@@ -1345,15 +1345,26 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
         stage_counts["market"] += 1
         # Prefer a ticker explicitly stated in the title; otherwise extract it from
         # the source text. Complete levels are still mandatory before a trade is shown.
-        slash_pair = re.search(r"(?<![A-Z0-9])#?(BTC|ETH|BNB|SOL|XRP|DOGE|ADA|AVAX|LINK|SUI|LTC|DOT|TRX|TON|NEAR|APT|ARB|OP|INJ|TAO|PEPE|SHIB|WIF|FET|RENDER|UNI|AAVE)\s*/\s*(USDT|USDC|USD)\b", title_text, re.I)
+        slash_pair = re.search(r"(?<![A-Z0-9])#?([A-Z0-9]{2,15})\s*/\s*(USDT|USDC|USD)\b", title_text, re.I)
         symbol_re = re.compile(PUBLIC_SYMBOL_RE.pattern)
-        symbol_match = slash_pair or symbol_re.search(title_text) or symbol_re.search(source_text[:1600])
+        # Public signal authors use many Binance tickers beyond the small common-coin list.
+        # Accept explicit quote-suffixed pairs (e.g. TOKENUSDT), but never infer a ticker
+        # from an ordinary word; complete, correctly ordered levels remain mandatory.
+        pair_re = re.compile(r"(?<![A-Z0-9])([A-Z0-9]{2,15}(?:USDT|USDC|USD))\b", re.I)
+        symbol_match = (slash_pair or symbol_re.search(title_text) or
+                        pair_re.search(title_text) or symbol_re.search(source_text[:1600]) or
+                        pair_re.search(source_text[:1600]))
         if not symbol_match:
             continue
-        symbol = (slash_pair.group(1) if slash_pair else symbol_match.group(0)).upper()
-        if market == "futures" and not re.fullmatch(
-            r"(?:BTC|ETH|BNB|SOL|XRP|DOGE|ADA|AVAX|LINK|SUI|LTC|DOT|TRX|TON|NEAR|APT|ARB|OP|INJ|TAO|PEPE|SHIB|WIF|FET|RENDER|UNI|AAVE)(?:USDT|USDC|USD)?",
-            symbol
+        if slash_pair:
+            symbol = slash_pair.group(1).upper()
+        else:
+            symbol = symbol_match.group(0).upper()
+        if market == "futures" and not (
+            re.fullmatch(r"[A-Z0-9]{2,15}(?:USDT|USDC|USD)", symbol) or
+            symbol in {"BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "AVAX", "LINK", "SUI",
+                       "LTC", "DOT", "TRX", "TON", "NEAR", "APT", "ARB", "OP", "INJ", "TAO",
+                       "PEPE", "SHIB", "WIF", "FET", "RENDER", "UNI", "AAVE"}
         ):
             continue
         detected_interval = _public_idea_interval(full_text)
