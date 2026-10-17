@@ -313,16 +313,9 @@ async function loadMarketNews(id){const root=$("marketNewsList");if(!root)return
 async function renderMarketPage(){
  let m=MARKETS.find(x=>x.id===market)||MARKETS[0];
  setTitle(m.full,m.desc+" — أسعار السوق العامة فقط؛ لا توجد استراتيجية أو توصيات آلية.");
- $("view").innerHTML='<section class="panel market-only-page"><div class="panel" id="marketDirectionPanel"></div><div class="panel-head"><div><h2>'+m.icon+' '+m.full+'</h2><div class="muted">توصيات منشورة من مواقع عامة خلال آخر 24 ساعة، مع رابط المصدر الأصلي</div></div><span class="badge">مصادر عامة</span></div><div class="frames" id="publicIdeaFrames">'+frameButtons().replace(/^<div class="frames" id="frames">/,"").replace(/<\/div>$/,"")+'</div><div id="publicIdeas">'+empty("جاري البحث في المواقع العامة…","جاري فحص التوصيات")+'</div><div class="divider"></div><div class="panel-head"><div><h2>أسعار السوق</h2><div class="muted">بيانات الأسعار منفصلة عن توصيات المواقع</div></div><span class="badge">بيانات السوق</span></div><div id="marketPrices">'+empty("جاري تحميل الأسعار…","جاري الاتصال بالسوق")+'</div></section>';
+ $("view").innerHTML='<section class="panel market-only-page"><div class="panel" id="marketDirectionPanel"></div><div class="panel-head"><div><h2>'+m.icon+' '+m.full+'</h2><div class="muted">توصيات منشورة من مواقع عامة خلال آخر 24 ساعة، مع رابط المصدر الأصلي</div></div><span class="badge">مصادر عامة</span></div><div class="frames" id="publicIdeaFrames">'+frameButtons().replace(/^<div class="frames" id="frames">/,"").replace(/<\/div>$/,"")+'</div><div id="publicIdeas">'+empty("جاري البحث في المواقع العامة…","جاري فحص التوصيات")+'</div></section>';
  // Discard any obsolete browser-cached strategy cards.
- try{for(let i=localStorage.length-1;i>=0;i--){const k=localStorage.key(i);if(k&&k.startsWith("stp-saved-signals:"))localStorage.removeItem(k)}}catch(_e){}
- loadMarketDirection(m.id);
- try{
-  const d=await getJson("/api/market/"+encodeURIComponent(m.id)+"?limit=500");
-  const items=Array.isArray(d.items)?d.items:[];
-  $("marketPrices").innerHTML=items.length?'<div class="list">'+items.map(x=>'<article class="row-card"><span class="tile-icon">'+(m.icon||"📈")+'</span><div class="row-main"><h3>'+esc(x.name||x.symbol||"—")+'</h3><p><strong>'+esc(x.symbol||"")+'</strong> · '+num(x.price,8)+'</p><p class="'+(Number(x.change_pct)>=0?"positive":"negative")+'">'+pct(Number(x.change_pct||0))+' · '+esc(x.exchange||d.provider||"مصدر عام")+'</p></div></article>').join("")+'</div>':empty(d.message||"لا توجد أسعار متاحة حاليًا.","لا توجد بيانات");
-  $("connection").textContent="● بيانات أسعار "+m.full;
- }catch(e){$("marketPrices").innerHTML=empty(e.message,"تعذر تحميل أسعار السوق");$("connection").textContent="● مصدر الأسعار غير متاح"}
+ $("connection").textContent="● توصيات المصادر العامة · "+m.full;
 }
 async function loadMarketSignals(){
  const root=$("publicIdeas");if(!root)return;
