@@ -143,3 +143,34 @@ def test_robots_sitemap_and_blog_are_available():
     assert blog.status_code == 200
     assert "مدونة التداول الذكي PRO" in blog.text
     assert article.status_code == 200
+
+
+def test_public_ideas_auto_interval_and_futures_symbol_match(monkeypatch):
+    now = int(time.time())
+    fake = [{
+        "source": "Test public feed",
+        "title": "BTCUSDT bullish buy setup",
+        "description": "Entry $100 stop loss $95 target $110",
+        "url": "https://example.com/futures-idea",
+        "published_at": now,
+        "_text": "BTCUSDT bullish buy setup Entry $100 stop loss $95 target $110",
+    }]
+    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
+    app_module.PUBLIC_IDEAS_CACHE.clear()
+
+    response = client.get("/api/public-ideas?market=futures&interval=auto&limit=10")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["interval"] == "auto"
+    assert len(data["items"]) == 1
+    assert data["items"][0]["symbol"] == "BTCUSDT"
+    assert data["items"][0]["direction"] == "شراء"
+
+
+def test_market_page_uses_auto_scan_without_visible_timeframe_buttons():
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
+    assert 'interval=auto&limit=50&discover=true' in html
+    assert 'id="publicIdeaFrames"' not in html
+    assert "Fallback to supported timeframes" not in html  # implementation comment is not embedded in the UI
