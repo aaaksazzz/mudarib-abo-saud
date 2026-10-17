@@ -687,6 +687,12 @@ def independent_trade_intelligence(market: str, symbol: str, interval: str = Que
                              "message": "تعذر جلب الشموع من Binance الآن؛ لم يتم إنشاء تحليل تقديري."}, status_code=503)
 
 
+@app.get("/trade-intelligence", response_class=HTMLResponse)
+def trade_intelligence_page():
+    page = BASE / "static" / "trade-intelligence.html"
+    return HTMLResponse(page.read_text(encoding="utf-8"))
+
+
 @app.get("/health")
 @app.get("/api/health")
 def health():
