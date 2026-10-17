@@ -1326,7 +1326,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
                     print(f"public trade source failed: {type(exc).__name__}: {exc}")
         PUBLIC_TRADE_FEED_CACHE[feed_cache_key] = {"at": now, "rows": list(gathered), "errors": feed_errors}
     cutoff = now - PUBLIC_IDEA_MAX_AGE
-    stage_counts = {"fetched": len(gathered), "recent": 0, "direction": 0, "market": 0, "symbol": 0, "timeframe": 0, "levels_present": 0, "complete_levels": 0, "invalid_order": 0}
+    stage_counts = {"fetched": len(gathered), "recent": 0, "direction": 0, "market": 0, "symbol": 0, "timeframe": 0, "levels_present": 0, "levels_partial": 0, "levels_missing_entry": 0, "levels_missing_stop": 0, "levels_missing_tp1": 0, "levels_missing_tp2": 0, "levels_missing_tp3": 0, "complete_levels": 0, "invalid_order": 0}
     unique = {}
     for item in gathered:
         published = item.get("published_at", 0)
@@ -1380,10 +1380,22 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
         if interval != "auto" and not detected_interval:
             continue
         stage_counts["timeframe"] += 1
-        levels = _public_idea_levels(full_text)
+        # Public posts often place prices in the headline while the feed description only has context.
+        # Parse both fields together, but still require every level to be explicitly present.
+        levels = _public_idea_levels(title_text + "\n" + full_text)
+        required_level_keys = ("entry", "stop_loss", "tp1", "tp2", "tp3")
+        present_level_count = sum(levels.get(key) is not None for key in required_level_keys)
+        if present_level_count:
+            stage_counts["levels_present"] += 1
+        if present_level_count and present_level_count < len(required_level_keys):
+            stage_counts["levels_partial"] += 1
+        missing_counter = {"entry": "levels_missing_entry", "stop_loss": "levels_missing_stop", "tp1": "levels_missing_tp1", "tp2": "levels_missing_tp2", "tp3": "levels_missing_tp3"}
+        for key, counter in missing_counter.items():
+            if levels.get(key) is None:
+                stage_counts[counter] += 1
         side = direction
         try:
-            entry, stop, tp1, tp2, tp3 = (float(levels[k]) for k in ("entry", "stop_loss", "tp1", "tp2", "tp3"))
+            entry, stop, tp1, tp2, tp3 = (float(levels[k]) for k in required_level_keys)
         except (TypeError, ValueError):
             continue
         stage_counts["levels_present"] += 1
