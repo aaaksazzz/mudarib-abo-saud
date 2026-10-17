@@ -1109,6 +1109,7 @@ TELEGRAM_DISCOVERY_CACHE = {"at": 0, "channels": []}
 TELEGRAM_DISCOVERY_LOCK = threading.RLock()
 
 def _telegram_directory_search(term):
+    """Find public Telegram usernames from one bounded directory search."""
     import re
     from urllib.parse import quote
     request = urllib.request.Request(
@@ -1117,12 +1118,13 @@ def _telegram_directory_search(term):
                  "Accept": "text/html,*/*"})
     with urllib.request.urlopen(request, timeout=4) as response:
         page = response.read(700_000).decode("utf-8", "replace")
-    found = set(re.findall(r"href=[\\\"']https?://t\\.me/([A-Za-z0-9_]{5,})/?[\\\"']", page))
-    found.update(re.findall(r"href=[\\\"']/channel/([A-Za-z0-9_]{5,})[\\\"']", page))
+    # Match both absolute t.me links and TGStat's internal channel links.
+    found = set(re.findall(r"""href=["']https?://t\.me/([A-Za-z0-9_]{5,})/?["']""", page, re.I))
+    found.update(re.findall(r"""href=["']/channel/([A-Za-z0-9_]{5,})["']""", page, re.I))
     return {x for x in found if x.lower() not in {"share", "joinchat", "addstickers", "proxy"}}
 
 def _telegram_public_channels():
-    """Use a small, stable set of public previews to avoid bursty directory crawling."""
+    """Discover a few public signal channels, cache results, and bound outbound work."""
     now = int(time.time())
     with TELEGRAM_DISCOVERY_LOCK:
         if TELEGRAM_DISCOVERY_CACHE["channels"] and now - TELEGRAM_DISCOVERY_CACHE["at"] < 1800:
@@ -1134,8 +1136,24 @@ def _telegram_public_channels():
             name = name.strip().lstrip("@")
             if name.replace("_", "").isalnum() and name not in channels:
                 channels.append(name)
-    # Keep discovery bounded: every channel triggers a separate external HTTP request.
-    result = channels[:6]
+    # Search only two high-yield terms in parallel; never crawl a directory without bounds.
+    discovered = []
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(_telegram_directory_search, term)
+                       for term in ("crypto trading signals", "forex signals")]
+            for future in as_completed(futures):
+                try:
+                    discovered.extend(sorted(future.result()))
+                except Exception as exc:
+                    print(f"telegram discovery failed: {type(exc).__name__}: {exc}")
+    except Exception as exc:
+        print(f"telegram discovery unavailable: {type(exc).__name__}: {exc}")
+    for name in discovered:
+        if name not in channels:
+            channels.append(name)
+    # At most eight channel previews are fetched per refresh; results are cached 30 minutes.
+    result = channels[:8]
     with TELEGRAM_DISCOVERY_LOCK:
         TELEGRAM_DISCOVERY_CACHE.update({"at": now, "channels": result})
     return result
