@@ -1112,11 +1112,11 @@ def _fetch_telegram_public_channel(channel):
     for block in blocks[-80:]:
         text_match = re.search(r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>', block, re.S)
         time_match = re.search(r'<time[^>]*datetime="([^"]+)"', block, re.S)
-        post_match = re.search(r'href="(https://t\\.me/' + re.escape(channel) + r'/\\d+)"', block)
+        post_match = re.search(r'href="(https://t\.me/' + re.escape(channel) + r'/\d+)"', block)
         if not text_match or not time_match or not post_match:
             continue
         message = unescape(re.sub(r"<[^>]+>", " ", text_match.group(1)))
-        message = re.sub(r"\\s+", " ", message).strip()
+        message = re.sub(r"\s+", " ", message).strip()
         published = _idea_timestamp(time_match.group(1))
         if message and published:
             rows.append({"source": "Telegram — @" + channel, "title": message[:300],
