@@ -368,7 +368,7 @@ async function loadMarketSignals(){
   const rankIdea=x=>((validLevelSet(x)?1000:0)+(x.symbol?20:0)-Math.max(0,Number(x.age_hours)||0));
   const allItems=scans.flatMap(scan=>(Array.isArray(scan.data.items)?scan.data.items:[]).map(x=>({...x,interval:x.interval||scan.frame,frame_label:(FRAMES.find(f=>f[0]===(x.interval||scan.frame))||["","غير محدد"])[1]})));
   const items=allItems.filter(validLevelSet).sort((a,b)=>rankIdea(b)-rankIdea(a)).filter((x,i,a)=>a.findIndex(y=>(y.symbol||"").toUpperCase()===(x.symbol||"").toUpperCase()&&y.direction===x.direction)===i).slice(0,30);
-  const d={items,diagnostics:{fetched:scans.reduce((n,z)=>n+Number(z.data.diagnostics?.fetched||0),0),recent:scans.reduce((n,z)=>n+Number(z.data.diagnostics?.recent||0),0),direction:scans.reduce((n,z)=>n+Number(z.data.diagnostics?.direction||0),0),market:scans.reduce((n,z)=>n+Number(z.data.diagnostics?.market||0),0),timeframe:scans.reduce((n,z)=>n+Number(z.data.diagnostics?.timeframe||0),0)},message:"لا تُعرض إلا الصفقات المكتملة التي اجتازت فحص ترتيب الدخول والوقف والأهداف."};
+  const sumDiag=key=>scans.reduce((n,z)=>n+Number(z.data.diagnostics?.[key]||0),0);const d={items,diagnostics:{fetched:sumDiag("fetched"),recent:sumDiag("recent"),direction:sumDiag("direction"),market:sumDiag("market"),symbol:sumDiag("symbol"),timeframe:sumDiag("timeframe"),levels_present:sumDiag("levels_present"),complete_levels:sumDiag("complete_levels"),invalid_order:sumDiag("invalid_order")},message:"لا تُعرض إلا الصفقات المكتملة التي اجتازت فحص ترتيب الدخول والوقف والأهداف."};
   const money=(v)=>v==null?"—":num(v,8);
   root.innerHTML=items.length?'<div class="signals">'+items.map(x=>{
    const l=x.levels||{},buy=["BUY","شراء","LONG"].includes(String(x.direction||"").toUpperCase());
