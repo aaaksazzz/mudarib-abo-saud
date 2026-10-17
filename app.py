@@ -1483,173 +1483,17 @@ def public_news(market: str = Query("all"), limit: int = Query(50, ge=1, le=100)
 
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20)):
-    """Scan closed candles and return only technically valid signals with complete risk levels."""
-    market = (market or "").lower()
+    """Strategy signal engine was removed; never generate or return strategy trades."""
+    market = market.lower()
     if market not in BINANCE and market != "alpha" and market not in YAHOO_MARKETS:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "هذا السوق غير مربوط بمصدر بيانات حاليًا."}, status_code=404)
     if interval not in INTERVALS:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "الفريم غير مدعوم."}, status_code=422)
-
-    try:
-        quote_response = market_data(market, limit=2000)
-        if isinstance(quote_response, JSONResponse):
-            return JSONResponse({"ok": False, "live": False, "market": market, "interval": interval,
-                                 "scanned": 0, "count": 0, "items": [], "watch_items": [],
-                                 "message": "تعذر جلب قائمة الرموز من مصدر السوق؛ لم تُنشأ أي أسعار تقديرية."},
-                                status_code=503)
-        universe = quote_response.get("items", []) if isinstance(quote_response, dict) else []
-    except Exception as exc:
-        print(f"signal universe fetch failed for {market}: {type(exc).__name__}: {exc}")
-        return JSONResponse({"ok": False, "live": False, "market": market, "interval": interval,
-                             "scanned": 0, "count": 0, "items": [], "watch_items": [],
-                             "message": "تعذر جلب قائمة الرموز من مصدر السوق الآن."}, status_code=503)
-
-    # Prioritize symbols with the highest real reported turnover and bound work for service stability.
-    def turnover(row):
-        try:
-            return float(row.get("quote_volume") or row.get("dollar_volume") or row.get("volume") or 0)
-        except (TypeError, ValueError):
-            return 0.0
-
-    candidates = [row for row in universe if isinstance(row, dict) and row.get("symbol")]
-    candidates.sort(key=turnover, reverse=True)
-    candidates = candidates[:min(24, max(12, limit * 2))]
-    if not candidates:
-        return {"ok": True, "live": True, "market": market, "interval": interval,
-                "scanned": 0, "count": 0, "items": [], "watch_items": [],
-                "message": "مصدر السوق لم يُرجع رموزًا قابلة للفحص؛ لم تُنشأ صفقات بالتخمين."}
-
-    def ema(values, period):
-        if len(values) < period:
-            return None
-        value = sum(values[:period]) / period
-        alpha = 2.0 / (period + 1.0)
-        for point in values[period:]:
-            value = point * alpha + value * (1.0 - alpha)
-        return value
-
-    def inspect_symbol(row):
-        symbol = str(row.get("symbol", "")).strip()
-        try:
-            candles = candle_data(market, symbol, interval)
-            # Providers such as Yahoo can include the still-forming daily/weekly/monthly candle.
-            # Conservatively keep only candles whose interval has fully elapsed.
-            now_ts = int(time.time())
-            closed_after = {"15m": 15 * 60, "1h": 60 * 60, "4h": 4 * 60 * 60,
-                            "1d": 24 * 60 * 60, "1w": 7 * 24 * 60 * 60,
-                            "1M": 32 * 24 * 60 * 60}[interval]
-            candles = [c for c in candles if isinstance(c.get("time"), (int, float))
-                       and int(c["time"]) + closed_after <= now_ts]
-            candles = [c for c in candles if all(
-                isinstance(c.get(key), (int, float)) and math.isfinite(float(c[key]))
-                for key in ("open", "high", "low", "close", "volume")
-            ) and float(c["close"]) > 0]
-            # EMA200 is part of the trend filter; do not silently weaken it when history is short.
-            if len(candles) < 200:
-                return None, "شموع_غير_كافية"
-            closes = [float(c["close"]) for c in candles]
-            last, previous = candles[-1], candles[-2]
-            e20, e50, e200 = ema(closes, 20), ema(closes, 50), ema(closes, 200)
-            if not all(v is not None and math.isfinite(v) for v in (e20, e50, e200)):
-                return None, "مؤشرات_غير_متاحة"
-
-            true_ranges = []
-            for index in range(1, len(candles)):
-                current, prior = candles[index], candles[index - 1]
-                true_ranges.append(max(
-                    float(current["high"]) - float(current["low"]),
-                    abs(float(current["high"]) - float(prior["close"])),
-                    abs(float(current["low"]) - float(prior["close"]))
-                ))
-            atr_values = true_ranges[-14:]
-            atr = sum(atr_values) / len(atr_values) if atr_values else 0.0
-            entry = float(last["close"])
-            prev_close = float(previous["close"])
-            if atr <= 0 or not math.isfinite(atr) or entry <= 0:
-                return None, "مدى_السعر_غير_صالح"
-
-            side = None
-            if entry > e200 and e20 > e50 and entry > prev_close:
-                side = "شراء"
-            elif entry < e200 and e20 < e50 and entry < prev_close:
-                side = "بيع"
-            if side is None:
-                return None, "شروط_الاتجاه_غير_مكتملة"
-
-            risk = atr * 1.2
-            if not math.isfinite(risk) or risk <= 0 or risk >= entry * 0.10:
-                return None, "مخاطرة_غير_صالحة"
-            if side == "شراء":
-                stop = entry - risk
-                targets = [entry + risk * multiplier for multiplier in (1, 2, 3)]
-                valid = 0 < stop < entry < targets[0] < targets[1] < targets[2]
-            else:
-                stop = entry + risk
-                targets = [entry - risk * multiplier for multiplier in (1, 2, 3)]
-                valid = 0 < targets[2] < targets[1] < targets[0] < entry < stop
-            if not valid or not all(math.isfinite(v) and v > 0 for v in [entry, stop, *targets]):
-                return None, "ترتيب_المستويات_غير_صالح"
-
-            volume_values = [float(c["volume"]) for c in candles[-21:-1]]
-            avg_volume = sum(volume_values) / len(volume_values) if volume_values else 0.0
-            score = 65
-            if avg_volume > 0 and float(last["volume"]) >= avg_volume * 1.2:
-                score += 10
-            if abs(entry - e200) / e200 >= 0.005:
-                score += 5
-            if entry < 1:
-                price_digits = max(4, min(10, int(-math.floor(math.log10(entry))) + 4))
-            elif entry < 100:
-                price_digits = 4
-            elif entry < 10000:
-                price_digits = 2
-            else:
-                price_digits = 1
-            item = {
-                "id": f"{market}:{symbol}:{interval}:{int(last.get('time', time.time()))}",
-                "market": market, "symbol": symbol, "interval": interval,
-                "direction": side, "side": "BUY" if side == "شراء" else "SELL",
-                "entry": round(entry, price_digits), "stop_loss": round(stop, price_digits),
-                "tp1": round(targets[0], price_digits), "tp2": round(targets[1], price_digits),
-                "tp3": round(targets[2], price_digits), "risk_reward": "1:1 / 1:2 / 1:3",
-                "confidence": min(score, 80), "ai_pct": min(score, 80),
-                "price": round(entry, price_digits), "signal_time": int(last.get("time", time.time())),
-                "strategy": "EMA20/EMA50/EMA200 + إغلاق شمعة + ATR",
-                "levels_valid": True, "status": "active"
-            }
-            return item, "إشارة_صالحة"
-        except Exception as exc:
-            print(f"signal candle scan failed for {market}/{symbol}/{interval}: {type(exc).__name__}: {exc}")
-            return None, "تعذر_جلب_الشموع"
-
-    results = []
-    reasons = {}
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        futures = [pool.submit(inspect_symbol, row) for row in candidates]
-        for future in as_completed(futures):
-            try:
-                item, reason = future.result()
-            except Exception:
-                item, reason = None, "فشل_الفحص"
-            reasons[reason] = reasons.get(reason, 0) + 1
-            if item:
-                results.append(item)
-
-    results.sort(key=lambda item: (item["confidence"], item["signal_time"]), reverse=True)
-    results = results[:limit]
-    if results:
-        message = f"تم فحص {len(candidates)} رمزًا من الشموع المغلقة؛ ظهرت {len(results)} إشارة بمستويات مكتملة."
-    elif reasons.get("شموع_غير_كافية", 0) == len(candidates):
-        message = "لا توجد صفقة مؤهلة: مصدر البيانات لم يوفر 200 شمعة مغلقة على الأقل لبعض هذا الفريم؛ لم نخفف شروط الاتجاه."
-    else:
-        message = f"تم فحص {len(candidates)} رمزًا من الشموع المغلقة ولم تكتمل شروط الدخول. تفاصيل الفحص مرفقة بدل إرجاع صفر غير مفسر."
     return {"ok": True, "live": True, "market": market, "interval": interval,
-            "scanned": len(candidates), "count": len(results), "items": results,
-            "watch_items": [], "diagnostics": reasons, "updated_at": int(time.time()),
-            "message": message}
-
+            "scanned": 0, "count": 0, "items": [], "watch_items": [],
+            "message": "تم حذف محرك الاستراتيجية؛ الصفحة تعرض بيانات السوق فقط دون إشارات تداول."}
 def read_json_file(path, default):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
