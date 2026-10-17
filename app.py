@@ -13,7 +13,7 @@ import urllib.request
 import urllib.error
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from fastapi import FastAPI, Query, Depends, Request
+from fastapi import FastAPI, Query, Depends, Request, HTTPException
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -124,6 +124,43 @@ for _legacy_path, _empty_data in ((RESULTS_PATH, []), (SIGNALS_CACHE_PATH, {})):
 # Protect the complete read-modify-write transaction across all market endpoints.
 RESULTS_LOCK = threading.RLock()
 ARTICLES_PATH = DATA_DIR / "articles.json"
+SECTION_SETTINGS_PATH = DATA_DIR / "section-settings.json"
+SECTION_CATALOG = [
+    {"id": "spot", "label": "سبوت"}, {"id": "futures", "label": "فيوتشر"},
+    {"id": "contracts", "label": "العقود الأمريكية"}, {"id": "us", "label": "الأسهم الأمريكية"},
+    {"id": "saudi", "label": "السوق السعودي"}, {"id": "forex", "label": "الفوركس والذهب"},
+    {"id": "alpha", "label": "Binance Alpha"}, {"id": "tasi", "label": "تحليل تاسي العام"},
+    {"id": "results", "label": "النتائج"}, {"id": "news", "label": "الأخبار"},
+    {"id": "blog", "label": "المدونة"}, {"id": "account", "label": "الحساب"}
+]
+
+def _section_settings():
+    raw = read_json_file(SECTION_SETTINGS_PATH, {})
+    if not isinstance(raw, dict):
+        raw = {}
+    valid_ids = {item["id"] for item in SECTION_CATALOG}
+    return {key: value for key, value in raw.items()
+            if key in valid_ids and value in {"public", "subscription", "closed"}}
+
+def enforce_section_access(section):
+    mode = _section_settings().get(section, "public")
+    if mode == "closed":
+        raise HTTPException(status_code=403, detail="هذا القسم مغلق مؤقتًا.")
+    if mode == "subscription":
+        raise HTTPException(status_code=403, detail="هذا القسم مخصص للمشتركين.")
+
+def require_admin(credentials):
+    username = os.getenv("ADMIN_USERNAME", "admin")
+    password = os.getenv("ADMIN_PASSWORD", "")
+    if not password:
+        raise HTTPException(status_code=503, detail="إعداد ADMIN_PASSWORD مفقود في إعدادات الخدمة.")
+    if (credentials is None or
+        not secrets.compare_digest(str(credentials.username), username) or
+        not secrets.compare_digest(str(credentials.password), password)):
+        raise HTTPException(status_code=401, detail="بيانات الإدارة غير صحيحة.",
+                            headers={"WWW-Authenticate": "Basic"})
+    return True
+
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
 BINANCE = {
@@ -1218,10 +1255,10 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
 
 @app.get("/api/site/sections")
 def site_sections():
-    # Sections are public unless an explicit access-control store is configured.
-    ids = ("spot", "futures", "contracts", "us", "saudi", "forex", "alpha",
-           "tasi", "results", "news", "blog", "account")
-    return {"ok": True, "sections": {section: "public" for section in ids}}
+    return {"ok": True, "sections": {
+        item["id"]: _section_settings().get(item["id"], "public")
+        for item in SECTION_CATALOG
+    }}
 
 @app.get("/api/universe-counts")
 def universe_counts():
@@ -1350,6 +1387,28 @@ def write_json_file(path, data):
         except OSError:
             pass
 
+
+@app.get("/api/admin/sections")
+def admin_get_sections(credentials: HTTPBasicCredentials = Depends(security)):
+    require_admin(credentials)
+    return {"ok": True, "catalog": SECTION_CATALOG,
+            "sections": {item["id"]: _section_settings().get(item["id"], "public")
+                         for item in SECTION_CATALOG}}
+
+@app.post("/api/admin/sections")
+def admin_save_sections(payload: dict, credentials: HTTPBasicCredentials = Depends(security)):
+    require_admin(credentials)
+    supplied = payload.get("sections", {})
+    if not isinstance(supplied, dict):
+        raise HTTPException(status_code=422, detail="صيغة إعدادات الأقسام غير صحيحة.")
+    valid_ids = {item["id"] for item in SECTION_CATALOG}
+    settings = _section_settings()
+    for key, value in supplied.items():
+        if key not in valid_ids or value not in {"public", "subscription", "closed"}:
+            raise HTTPException(status_code=422, detail="يوجد قسم أو وضع غير صالح.")
+        settings[key] = value
+    write_json_file(SECTION_SETTINGS_PATH, settings)
+    return {"ok": True, "sections": settings}
 
 @app.get("/api/admin/status")
 def admin_status(credentials: HTTPBasicCredentials = Depends(security)):
