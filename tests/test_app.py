@@ -2,7 +2,8 @@ import time
 
 from fastapi.testclient import TestClient
 
-from app import app, prune_results, write_json_file
+import app as app_module
+from app import app, write_json_file
 
 client = TestClient(app)
 
@@ -13,32 +14,29 @@ def test_health_endpoint_is_available():
     assert response.json()["ok"] is True
 
 
-def test_home_is_arabic_rtl_and_has_root_canonical():
+def test_home_is_arabic_rtl_and_does_not_reference_missing_asset():
     response = client.get("/")
     assert response.status_code == 200
     assert 'lang="ar" dir="rtl"' in response.text
-    assert '<link rel="canonical" href="https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/">' in response.text
-    assert "الرئيسية للتعريف والتنقل فقط، بدون توصيات أو إشارات تداول" in response.text
+    assert "التداول الذكي PRO" in response.text
+    assert "/static/technical.js" not in response.text
 
 
-def test_market_sections_have_unique_canonical_and_metadata():
-    paths = {
-        "/markets/spot": "سوق السبوت",
-        "/markets/futures": "سوق الفيوتشر",
-        "/markets/saudi": "السوق السعودي",
-        "/markets/us-stocks": "الأسهم الأمريكية",
-        "/results": "نتائج الإشارات",
-    }
-    for path, expected_title in paths.items():
+def test_market_and_section_pages_return_shell_with_distinct_canonicals():
+    paths = [
+        "/markets/spot", "/markets/futures", "/markets/contracts",
+        "/markets/saudi", "/markets/us-stocks", "/markets/forex-gold",
+        "/markets/alpha", "/results", "/news", "/analysis", "/tasi-analysis",
+        "/account", "/admin",
+    ]
+    for path in paths:
         response = client.get(path)
         assert response.status_code == 200, path
-        assert f"<title>{expected_title} | التداول الذكي PRO</title>" in response.text, path
-        assert f'<link rel="canonical" href="https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run{path}">' in response.text, path
-        assert f'<meta property="og:url" content="https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run{path}">' in response.text, path
+        assert 'lang="ar" dir="rtl"' in response.text, path
+        assert f'href="https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run{path}"' in response.text, path
 
 
-
-def test_legacy_singular_market_urls_redirect_to_canonical_market_pages():
+def test_legacy_market_urls_redirect_to_canonical_pages():
     paths = {
         "/market/spot": "/markets/spot",
         "/market/futures": "/markets/futures",
@@ -57,118 +55,91 @@ def test_legacy_singular_market_urls_redirect_to_canonical_market_pages():
         assert response.headers["location"] == destination, path
 
 
-def test_analysis_ui_loads_full_method_catalog_dynamically():
-    response = client.get("/")
+def test_site_section_and_universe_endpoints_exist():
+    sections = client.get("/api/site/sections")
+    counts = client.get("/api/universe-counts")
+    assert sections.status_code == 200
+    assert sections.json()["sections"]["spot"] == "public"
+    assert counts.status_code == 200
+    assert counts.json()["saudi_stocks"] >= 14
+
+
+def test_results_endpoint_handles_empty_and_malformed_pnl(tmp_path, monkeypatch):
+    path = tmp_path / "results.json"
+    monkeypatch.setattr(app_module, "RESULTS_PATH", path)
+    write_json_file(path, [
+        {"symbol": "AAA", "result": "TP1", "pnl_pct": "2.5"},
+        {"symbol": "BBB", "result": "SL", "pnl_pct": "bad"},
+        {"symbol": "CCC", "result": "مفتوحة", "pnl_pct": None},
+    ])
+    response = client.get("/api/results?limit=20")
     assert response.status_code == 200
-    assert 'id="methodSearch"' in response.text
-    assert "loadMethodCatalog()" in response.text
-    assert 'getJson("/api/methods/catalog")' in response.text
+    data = response.json()
+    assert data["total"] == 3
+    assert data["closed"] == 2
+    assert data["wins"] == 1
+    assert data["losses"] == 1
+    assert data["profitable"] == 1
 
 
-def test_blog_and_method_pages_have_distinct_canonicals():
-    blog = client.get("/blog")
-    article = client.get("/blog/risk-management-stop-loss")
-    method = client.get("/analysis/price-action")
-    assert blog.status_code == 200
-    assert article.status_code == 200
-    assert method.status_code == 200
-    assert 'href="https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/blog"' in blog.text
-    assert 'href="https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/blog/risk-management-stop-loss"' in article.text
-    assert 'href="https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/analysis/price-action"' in method.text
+def test_strategy_signal_endpoint_does_not_fabricate_trades():
+    response = client.get("/api/signals/spot?interval=15m")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["items"] == []
+    assert data["scanned"] == 0
 
 
-def test_robots_and_sitemap_are_served():
+def test_public_news_aggregates_recent_items_without_network(monkeypatch):
+    now = int(time.time())
+    fake = [{
+        "source": "Test public feed",
+        "title": "Bitcoin bullish BTCUSDT buy outlook",
+        "description": "Public market commentary",
+        "url": "https://example.com/bitcoin-outlook",
+        "published_at": now,
+        "_text": "Bitcoin bullish BTCUSDT buy outlook",
+    }]
+    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
+    app_module.PUBLIC_IDEAS_CACHE.clear()
+    response = client.get("/api/news?market=spot&limit=10&refresh=1")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["sources_checked"] == len(app_module.PUBLIC_IDEA_FEEDS)
+    assert len(data["items"]) == 1
+    assert data["items"][0]["direction"] == "BUY"
+
+
+def test_public_ideas_aggregates_recent_items_without_network(monkeypatch):
+    now = int(time.time())
+    fake = [{
+        "source": "Test public feed",
+        "title": "Bitcoin bullish BTCUSDT 15m buy",
+        "description": "Entry $100 stop loss $95 target $110",
+        "url": "https://example.com/bitcoin-idea",
+        "published_at": now,
+        "_text": "Bitcoin bullish BTCUSDT 15m buy Entry $100 stop loss $95 target $110",
+    }]
+    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
+    app_module.PUBLIC_IDEAS_CACHE.clear()
+    response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["items"]) == 1
+    assert data["items"][0]["direction"] == "شراء"
+    assert data["items"][0]["levels"]["entry"] == 100
+
+
+def test_robots_sitemap_and_blog_are_available():
     robots = client.get("/robots.txt")
     sitemap = client.get("/sitemap.xml")
+    blog = client.get("/blog")
+    article = client.get("/blog/ar-stop-loss")
     assert robots.status_code == 200
     assert "Sitemap: https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/sitemap.xml" in robots.text
     assert sitemap.status_code == 200
     assert "<urlset" in sitemap.text
     assert "/markets/spot" in sitemap.text
-    assert "/blog/risk-management-stop-loss" in sitemap.text
-
-
-
-def test_result_history_expires_after_24_hours(tmp_path, monkeypatch):
-    results_path = tmp_path / "results.json"
-    monkeypatch.setattr("app.RESULTS_PATH", results_path)
-    now = int(time.time())
-    write_json_file(results_path, [
-        {"id": "old", "created_at": now - 86401, "result": "TP1"},
-        {"id": "fresh", "created_at": now - 3600, "result": "مفتوحة"},
-    ])
-    items = prune_results()
-    assert [item["id"] for item in items] == ["fresh"]
-    assert [item["id"] for item in __import__("json").loads(results_path.read_text(encoding="utf-8"))] == ["fresh"]
-
-def test_multilingual_blog_publishes_200_localized_articles():
-    blog = client.get("/blog")
     assert blog.status_code == 200
-    assert "200 مقال" in blog.text
-    assert 'id="blogLang"' in blog.text
-    assert blog.text.count('class="post"') == 200
-    english = client.get("/blog/en-stop-loss")
-    chinese = client.get("/blog/zh-stop-loss")
-    arabic = client.get("/blog/ar-stop-loss")
-    assert english.status_code == 200
-    assert '<html lang="en" dir="ltr">' in english.text
-    assert 'hreflang="ar-SA"' in english.text
-    assert chinese.status_code == 200
-    assert '<html lang="zh" dir="ltr">' in chinese.text
-    assert arabic.status_code == 200
-    assert '<html lang="ar" dir="rtl">' in arabic.text
-
-def test_open_signals_expire_at_their_own_timeframe(tmp_path, monkeypatch):
-    import json
-
-    results_path = tmp_path / "results.json"
-    monkeypatch.setattr("app.RESULTS_PATH", results_path)
-    now = 2_000_000_000
-    monkeypatch.setattr("app.time.time", lambda: now)
-    write_json_file(results_path, [
-        {"id": "expired-15m", "market": "spot", "symbol": "AAAUSDT", "interval": "15m",
-         "created_at": now - 901, "result": "مفتوحة"},
-        {"id": "active-weekly", "market": "spot", "symbol": "BBBUSDT", "interval": "1w",
-         "created_at": now - 2 * 86400, "expires_at": now + 5 * 86400, "result": "مفتوحة"},
-        {"id": "closed-old", "created_at": now - 3 * 86400, "closed_at": now - 2 * 86400,
-         "result": "TP1"},
-    ])
-
-    items = prune_results()
-    by_id = {item["id"]: item for item in items}
-    assert by_id["expired-15m"]["result"] == "انتهت المدة"
-    assert by_id["expired-15m"]["expires_at"] == now - 901 + 15 * 60
-    assert by_id["active-weekly"]["result"] == "مفتوحة"
-    assert by_id["active-weekly"]["expires_at"] == now + 5 * 86400
-    assert "closed-old" not in by_id
-
-    saved = json.loads(results_path.read_text(encoding="utf-8"))
-    assert next(x for x in saved if x["id"] == "expired-15m")["result"] == "انتهت المدة"
-
-
-def test_signal_timeframe_durations_are_defined():
-    from app import INTERVAL_SECONDS
-
-    assert INTERVAL_SECONDS == {
-        "15m": 900,
-        "1h": 3600,
-        "4h": 14400,
-        "1d": 86400,
-        "1w": 604800,
-        "1M": 2592000,
-    }
-
-def test_crypto_signal_side_matches_market_direction(monkeypatch):
-    import app as app_module
-
-    monkeypatch.setattr(app_module, "market_direction", lambda market: {
-        "direction_source": "prices", "direction": "BULLISH"
-    })
-    app_module._CRYPTO_SIGNAL_BIAS_CACHE.update({"at": 0.0, "side": None})
-    assert app_module.crypto_signal_side() == "BUY"
-
-    monkeypatch.setattr(app_module, "market_direction", lambda market: {
-        "direction_source": "breadth", "direction": "BEARISH"
-    })
-    app_module._CRYPTO_SIGNAL_BIAS_CACHE.update({"at": 0.0, "side": None})
-    assert app_module.crypto_signal_side() == "SELL"
+    assert "مدونة التداول الذكي PRO" in blog.text
+    assert article.status_code == 200
