@@ -32,7 +32,7 @@ class StrategyGateTests(unittest.TestCase):
         bars[-1]["high"] = bars[-1]["low"] / 2
         result = evaluate_v2(bars, make_bars(80), timeframe="1h")
         self.assertEqual(result["action"], "WAIT")
-        self.assertIn("غير صالحة", " ".join(result["reasons"]) + " " + " ".join(result["reasons"]))
+        self.assertIn("شموع غير متطابقة", " ".join(result["reasons"]))
 
     def test_flat_market_does_not_create_a_trade(self):
         bars = make_bars(80)
