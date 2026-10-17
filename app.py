@@ -1387,7 +1387,7 @@ def _public_idea_levels(value):
     return {"entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3}
 @app.get("/api/public-ideas")
 def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), limit: int = Query(20, ge=1, le=50), discover: bool = Query(False)):
-    """Display recent public trading ideas as published; do not require a fixed trade template."""
+    """Display only recent public ideas with a matching ticker, timeframe, direction, and ordered trade levels."""
     market = (market or "").strip().lower()
     interval = (interval or "auto").strip()
     if market not in {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}:
@@ -1497,7 +1497,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), lim
         "telegram_channels_checked": channels, "sources_failed": source_errors,
         "max_age_hours": 24, "updated_at": now, "diagnostics": stats,
         "discovery_enabled": bool(discover), "telegram_preview_enabled": bool(discover),
-        "message": "عرض المنشورات العامة الحديثة بنصها الأصلي؛ لا يُشترط قالب أو مستويات تداول مكتملة."
+        "message": "لا تظهر إلا الأفكار العامة الحديثة التي تحتوي على رمز وفريم واتجاه ومستويات دخول ووقف وأهداف مرتبة."
     }
     with PUBLIC_IDEAS_LOCK:
         PUBLIC_IDEAS_CACHE[cache_key] = (now, response)
