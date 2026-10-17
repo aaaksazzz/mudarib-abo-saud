@@ -1091,39 +1091,50 @@ PUBLIC_TRADE_IDEA_FEEDS = [
 # Public Telegram channel previews; no bot token/API key required.
 # Override/add public usernames with TELEGRAM_PUBLIC_CHANNELS="channel1,channel2".
 # Public Telegram discovery: starter channels are seeds, not a fixed source limit.
+# Public Telegram discovery: starter channels are seeds, not a fixed source limit.
 TELEGRAM_DEFAULT_CHANNELS = ["TradingGainX", "Binance_Futures_Trades", "Arab_Trading_UAE"]
 TELEGRAM_DISCOVERY_TERMS = [
     "crypto trading signals", "bitcoin buy sell", "forex signals", "gold XAUUSD signals",
     "stock trading signals", "Binance futures signals", "توصيات العملات الرقمية",
     "توصيات الذهب", "توصيات الفوركس", "توصيات الأسهم", "تاسي توصيات"
 ]
-def _telegram_public_channels():
+TELEGRAM_DISCOVERY_CACHE = {"at": 0, "channels": []}
+TELEGRAM_DISCOVERY_LOCK = threading.RLock()
+
+def _telegram_directory_search(term):
     import re
     from urllib.parse import quote
-    channels = set()
+    request = urllib.request.Request(
+        "https://tgstat.com/search?query=" + quote(term),
+        headers={"User-Agent": "Mozilla/5.0 (compatible; SmartTradingPRO/1.0)",
+                 "Accept": "text/html,*/*"})
+    with urllib.request.urlopen(request, timeout=4) as response:
+        page = response.read(700_000).decode("utf-8", "replace")
+    found = set(re.findall(r'href=["\\']https?://t\\.me/([A-Za-z0-9_]{5,})/?["\\']', page))
+    found.update(re.findall(r'href=["\\']/channel/([A-Za-z0-9_]{5,})["\\']', page))
+    return {x for x in found if x.lower() not in {"share", "joinchat", "addstickers", "proxy"}}
+
+def _telegram_public_channels():
+    now = int(time.time())
+    with TELEGRAM_DISCOVERY_LOCK:
+        if TELEGRAM_DISCOVERY_CACHE["channels"] and now - TELEGRAM_DISCOVERY_CACHE["at"] < 1800:
+            return list(TELEGRAM_DISCOVERY_CACHE["channels"])
+    channels = set(TELEGRAM_DEFAULT_CHANNELS)
     configured = os.getenv("TELEGRAM_PUBLIC_CHANNELS", "").strip()
     if configured:
         channels.update(name.strip().lstrip("@") for name in configured.split(",")
                         if name.strip().lstrip("@").replace("_", "").isalnum())
-    else:
-        channels.update(TELEGRAM_DEFAULT_CHANNELS)
-    # Discover additional public channel usernames from directory search pages.
-    for term in TELEGRAM_DISCOVERY_TERMS:
-        try:
-            request = urllib.request.Request(
-                "https://tgstat.com/search?query=" + quote(term),
-                headers={"User-Agent": "Mozilla/5.0 (compatible; SmartTradingPRO/1.0)",
-                         "Accept": "text/html,*/*"})
-            with urllib.request.urlopen(request, timeout=4) as response:
-                page = response.read(700_000).decode("utf-8", "replace")
-            for username in re.findall(r'href=["\\']https?://t\\.me/([A-Za-z0-9_]{5,})/?["\\']', page):
-                if username.lower() not in {"share", "joinchat", "addstickers", "proxy"}:
-                    channels.add(username)
-            for username in re.findall(r'href=["\\']/channel/([A-Za-z0-9_]{5,})["\\']', page):
-                channels.add(username)
-        except Exception as exc:
-            print(f"Telegram channel discovery failed ({term}): {type(exc).__name__}")
-    return sorted(channels)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(_telegram_directory_search, term) for term in TELEGRAM_DISCOVERY_TERMS]
+        for future in as_completed(futures):
+            try:
+                channels.update(future.result())
+            except Exception as exc:
+                print(f"Telegram channel discovery failed: {type(exc).__name__}")
+    result = sorted(channels)
+    with TELEGRAM_DISCOVERY_LOCK:
+        TELEGRAM_DISCOVERY_CACHE.update({"at": now, "channels": result})
+    return result
 
 def _fetch_telegram_public_channel(channel):
     """Read publicly visible Telegram previews without login or API credentials."""
