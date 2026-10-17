@@ -1885,3 +1885,21 @@ def status():
         },
         "note": "Yahoo Finance returns last available public quotes for selected symbols; these may be delayed. This endpoint does not claim full-universe or execution-grade real-time coverage."
     }
+
+
+@app.get("/api/trade-chart-data")
+def trade_chart_data(market: str = Query(...), symbol: str = Query(..., min_length=1, max_length=40), interval: str = Query("15m")):
+    """Return real OHLC candles for an accurately scaled trade chart overlay."""
+    market = (market or "").lower().strip()
+    symbol = (symbol or "").strip()
+    if market not in {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"} or interval not in {"15m", "1h", "4h"}:
+        return JSONResponse({"ok": False, "items": [], "message": "السوق أو الفريم غير مدعوم."}, status_code=422)
+    if not re.fullmatch(r"[A-Za-z0-9_./=^-]{1,40}", symbol):
+        return JSONResponse({"ok": False, "items": [], "message": "رمز غير صالح."}, status_code=422)
+    try:
+        candles = candle_data(market, symbol, interval)
+        if not candles:
+            return JSONResponse({"ok": False, "items": [], "message": "بيانات الشموع غير متاحة لهذا الرمز."}, status_code=503)
+        return {"ok": True, "market": market, "symbol": symbol, "interval": interval, "items": candles[-72:]}
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError, KeyError):
+        return JSONResponse({"ok": False, "items": [], "message": "تعذر جلب الشموع الفعلية الآن."}, status_code=503)
