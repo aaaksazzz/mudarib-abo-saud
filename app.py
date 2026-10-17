@@ -1718,13 +1718,15 @@ def _technical_fallback_signal(market, symbol, interval):
         recent_low = min(lows[-20:-1])
         macd_fast, macd_slow = _ema_series(closes, 12), _ema_series(closes, 26)
         macd_up = bool(macd_fast and macd_slow and macd_fast[-1] is not None and macd_slow[-1] is not None and macd_fast[-1] > macd_slow[-1])
-        above_200 = ema200 is not None and entry > ema200
-        below_200 = ema200 is not None and entry < ema200
-        long_score = sum((entry > ema20, ema20 > ema50, above_200, 52 <= rsi <= 70, macd_up, entry > recent_high, vol_ratio >= 1.15))
-        short_score = sum((entry < ema20, ema20 < ema50, below_200, 30 <= rsi <= 48, not macd_up, entry < recent_low, vol_ratio >= 1.15))
+        # Keep EMA200 as a trend filter when enough history exists; do not
+        # count missing EMA200 as a failed signal on shorter-history instruments.
+        long_trend = entry > ema20 and ema20 > ema50 and (ema200 is None or entry > ema200)
+        short_trend = entry < ema20 and ema20 < ema50 and (ema200 is None or entry < ema200)
+        long_score = sum((entry > ema20, ema20 > ema50, 50 <= rsi <= 72, macd_up, entry > recent_high, vol_ratio >= 1.05))
+        short_score = sum((entry < ema20, ema20 < ema50, 28 <= rsi <= 50, not macd_up, entry < recent_low, vol_ratio >= 1.05))
         max_risk_pct = {"15m": 0.03, "1h": 0.05, "4h": 0.08, "1d": 0.12, "1w": 0.20, "1M": 0.30}.get(interval, 0.03)
         max_risk = entry * max_risk_pct
-        if long_score >= 5 and long_score > short_score:
+        if long_trend and long_score >= 4 and long_score > short_score:
             side, stop = "شراء", min(entry - atr * 1.5, recent_low)
             risk = entry - stop
             if risk <= 0:
@@ -1733,7 +1735,7 @@ def _technical_fallback_signal(market, symbol, interval):
             stop = entry - risk
             targets = [entry + risk * n for n in (1, 2, 3)]
             score = long_score
-        elif short_score >= 5 and short_score > long_score:
+        elif short_trend and short_score >= 4 and short_score > long_score:
             side, stop = "بيع", max(entry + atr * 1.5, recent_high)
             risk = stop - entry
             if risk <= 0:
@@ -1756,7 +1758,7 @@ def _technical_fallback_signal(market, symbol, interval):
             "direction": side, "symbol": symbol, "interval": interval,
             "levels": {"entry": fmt(entry), "stop_loss": fmt(stop), "tp1": fmt(targets[0]),
                        "tp2": fmt(targets[1]), "tp3": fmt(targets[2])},
-            "has_complete_levels": True, "ai_score": round(score / 7 * 100),
+            "has_complete_levels": True, "ai_score": round(score / 6 * 100),
             "analysis_methods": ["EMA20/50/200", "RSI", "MACD", "ATR", "حجم التداول",
                                  "اختراق القمم/القيعان", "بنية السعر"],
             "age_hours": 0, "generated_by_site": True,
