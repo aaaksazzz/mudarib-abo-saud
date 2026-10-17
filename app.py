@@ -1050,8 +1050,11 @@ def market_direction(market: str = Query("spot")):
 
 
 PUBLIC_IDEAS_CACHE = {}
-PUBLIC_IDEAS_CACHE_TTL = 900
+PUBLIC_IDEAS_CACHE_TTL = 1800
 PUBLIC_IDEAS_LOCK = threading.RLock()
+# Shared raw-feed cache prevents every market/timeframe request from refetching all external sites.
+PUBLIC_TRADE_FEED_CACHE = {}
+PUBLIC_TRADE_FEED_CACHE_TTL = 600
 # Broad public-source discovery. Feeds are best-effort: inaccessible feeds are counted, never fabricated.
 PUBLIC_IDEA_FEEDS = [
     ("TradingView عربي", "https://ar.tradingview.com/feed/"),
@@ -1296,19 +1299,27 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if cached and now - cached[0] < PUBLIC_IDEAS_CACHE_TTL:
             return {**cached[1], "cached": True}
-    gathered = []
-    feed_errors = 0
     telegram_channels = _telegram_public_channels() if discover else []
-    jobs = [(_fetch_public_idea_feed, (source, url)) for source, url in PUBLIC_TRADE_IDEA_FEEDS]
-    jobs.extend((_fetch_telegram_public_channel, (channel,)) for channel in telegram_channels)
-    with ThreadPoolExecutor(max_workers=min(4, max(1, len(jobs)))) as pool:
-        futures = [pool.submit(fn, *args) for fn, args in jobs]
-        for future in as_completed(futures):
-            try:
-                gathered.extend(future.result())
-            except Exception as exc:
-                feed_errors += 1
-                print(f"public trade source failed: {type(exc).__name__}: {exc}")
+    feed_cache_key = bool(discover)
+    feed_cached = PUBLIC_TRADE_FEED_CACHE.get(feed_cache_key)
+    if feed_cached and now - feed_cached["at"] < PUBLIC_TRADE_FEED_CACHE_TTL:
+        gathered = list(feed_cached["rows"])
+        feed_errors = feed_cached["errors"]
+    else:
+        gathered = []
+        feed_errors = 0
+        jobs = [(_fetch_public_idea_feed, (source, url)) for source, url in PUBLIC_TRADE_IDEA_FEEDS]
+        jobs.extend((_fetch_telegram_public_channel, (channel,)) for channel in telegram_channels)
+        # Keep the worker pool small: the service has limited CPU/RAM and feeds rate-limit bursts.
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures = [pool.submit(fn, *args) for fn, args in jobs]
+            for future in as_completed(futures):
+                try:
+                    gathered.extend(future.result())
+                except Exception as exc:
+                    feed_errors += 1
+                    print(f"public trade source failed: {type(exc).__name__}: {exc}")
+        PUBLIC_TRADE_FEED_CACHE[feed_cache_key] = {"at": now, "rows": list(gathered), "errors": feed_errors}
     cutoff = now - PUBLIC_IDEA_MAX_AGE
     stage_counts = {"fetched": len(gathered), "recent": 0, "direction": 0, "market": 0, "timeframe": 0}
     unique = {}
