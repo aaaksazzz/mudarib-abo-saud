@@ -1290,13 +1290,19 @@ def _public_idea_symbol_matches_market(market, symbol, text_value=""):
         "AAVE", "PAXG", "XAUT"
     }
     crypto_quotes = ("USDT", "USDC", "USD")
+    explicit_crypto_pair = bool(re.search(
+        r"(?<![A-Z0-9])" + re.escape(symbol) + r"\\s*/\\s*(?:USDT|USDC|USD)\\b",
+        str(text_value or ""), re.I))
+    is_crypto_symbol = (
+        symbol in crypto_bases or
+        any(symbol.endswith(q) and re.fullmatch(r"[A-Z0-9]{2,15}", symbol[:-len(q)]) for q in crypto_quotes) or
+        explicit_crypto_pair
+    )
     if market in {"spot", "futures"}:
-        return symbol in crypto_bases or any(
-            symbol.endswith(q) and symbol[:-len(q)] in crypto_bases for q in crypto_quotes)
+        return is_crypto_symbol
     if market == "alpha":
         return bool(re.search(r"binance\s+alpha|alpha\s+token|باينانس\s+ألفا", text_value, re.I)
-                    and (symbol in crypto_bases or any(
-                        symbol.endswith(q) and symbol[:-len(q)] in crypto_bases for q in crypto_quotes)))
+                    and is_crypto_symbol)
     if market == "us":
         return symbol in {"AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "GOOG", "META",
                           "TSLA", "AVGO", "JPM", "LLY", "WMT", "XOM", "AMD", "NFLX",
