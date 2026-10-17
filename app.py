@@ -1722,7 +1722,7 @@ def _technical_fallback_signal(market, symbol, interval):
         below_200 = ema200 is not None and entry < ema200
         long_score = sum((entry > ema20, ema20 > ema50, above_200, 52 <= rsi <= 70, macd_up, entry > recent_high, vol_ratio >= 1.15))
         short_score = sum((entry < ema20, ema20 < ema50, below_200, 30 <= rsi <= 48, not macd_up, entry < recent_low, vol_ratio >= 1.15))
-        max_risk_pct = {"15m": 0.03, "1h": 0.05, "4h": 0.08}.get(interval, 0.03)
+        max_risk_pct = {"15m": 0.03, "1h": 0.05, "4h": 0.08, "1d": 0.12, "1w": 0.20, "1M": 0.30}.get(interval, 0.03)
         max_risk = entry * max_risk_pct
         if long_score >= 5 and long_score > short_score:
             side, stop = "شراء", min(entry - atr * 1.5, recent_low)
@@ -1775,9 +1775,9 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     if market not in allowed_markets:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "السوق غير مدعوم."}, status_code=404)
-    if interval not in {"15m", "1h", "4h"}:
+    if interval not in INTERVALS:
         return JSONResponse({"ok": False, "live": False, "items": [],
-                             "message": "المتاح للمضاربة السريعة فقط: 15 دقيقة أو ساعة أو 4 ساعات."}, status_code=422)
+                             "message": "الفريم غير مدعوم."}, status_code=422)
     now = int(time.time())
     cache_key = ("signal_cards", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
