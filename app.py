@@ -1790,10 +1790,34 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
     items = []
     scanned = 0
     failures = 0
+    universe = None
     try:
         universe = market_data(market, limit=2000)
+        # market_data may return a FastAPI JSONResponse on provider failure. Do not
+        # silently turn an outage into a successful "no signals" result.
+        if isinstance(universe, JSONResponse):
+            try:
+                detail = json.loads(universe.body.decode("utf-8"))
+                message = detail.get("message") or "تعذر جلب بيانات السوق من المصدر."
+            except (ValueError, TypeError, AttributeError):
+                message = "تعذر جلب بيانات السوق من المصدر."
+            result = {"ok": False, "live": False, "market": market, "interval": interval,
+                      "items": [], "count": 0, "scanned": 0, "scan_failures": 1,
+                      "technical_fallback_used": True, "message": message}
+            with PUBLIC_IDEAS_LOCK:
+                PUBLIC_IDEAS_CACHE[cache_key] = (now, result)
+            return result
         candidates = universe.get("items", []) if isinstance(universe, dict) else []
-        # Ignore malformed quote records and rank liquid movers for efficient scanning.
+        if not candidates and isinstance(universe, dict) and universe.get("ok") is False:
+            result = {"ok": False, "live": False, "market": market, "interval": interval,
+                      "items": [], "count": 0, "scanned": 0, "scan_failures": 1,
+                      "technical_fallback_used": True,
+                      "message": universe.get("message") or "مصدر السوق لم يرجع بيانات قابلة للتحليل."}
+            with PUBLIC_IDEAS_LOCK:
+                PUBLIC_IDEAS_CACHE[cache_key] = (now, result)
+            return result
+        # Rank by available liquidity first, then movement. This avoids scanning only
+        # the most erratic assets and keeps the same market universe as the quote page.
         valid = []
         for candidate in candidates:
             symbol = str(candidate.get("symbol") or "").strip().upper()
@@ -1802,15 +1826,17 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
             try:
                 change = abs(float(candidate.get("change_pct") or 0))
                 price = float(candidate.get("price") or 0)
+                liquidity = float(candidate.get("quote_volume") or candidate.get("dollar_volume") or 0)
             except (TypeError, ValueError, OverflowError):
                 continue
             if not math.isfinite(price) or price <= 0 or not math.isfinite(change):
                 continue
-            valid.append((change, symbol))
-        valid.sort(reverse=True)
-        symbols = list(dict.fromkeys(symbol for _, symbol in valid))[:48]
-        # Small parallel batches protect the low-memory service and stop once enough
-        # real-candle setups qualify. No external recommendation feeds are queried.
+            valid.append((liquidity if math.isfinite(liquidity) else 0.0, change, symbol))
+        valid.sort(key=lambda row: (row[0], row[1]), reverse=True)
+        # Broaden coverage for every market while bounding CPU and outbound requests.
+        symbols = list(dict.fromkeys(symbol for _, _, symbol in valid))[:72]
+        # Small parallel batches protect the low-memory service. Scan further when
+        # early candidates fail, and stop only after enough complete setups qualify.
         for offset in range(0, len(symbols), 8):
             batch = symbols[offset:offset + 8]
             with ThreadPoolExecutor(max_workers=4) as pool:
@@ -1839,7 +1865,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         "scanned": scanned, "scan_failures": failures,
         "technical_fallback_used": True,
         "message": ("فرص محسوبة من شموع السوق الفعلية." if items else
-                    "لم تظهر فرصة مستوفية للشروط في الرموز التي تم فحصها؛ لن نعرض توصيات عامة أو أسعارًا على أنها صفقات."),
+                    (f"تم فحص {scanned} رمزًا، لكن ما اكتملت شروط الدخول على فريم {interval}." if scanned else
+                     "ما وصلت رموز قابلة للفحص من مصدر هذا السوق؛ تحقق من توفر بيانات الأسعار والشموع.")),
     }
     with PUBLIC_IDEAS_LOCK:
         PUBLIC_IDEAS_CACHE[cache_key] = (now, result)
