@@ -1459,7 +1459,6 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
             entry, stop, tp1, tp2, tp3 = (float(levels[k]) for k in required_level_keys)
         except (TypeError, ValueError):
             continue
-        stage_counts["levels_present"] += 1
         if not all(math.isfinite(v) and v > 0 for v in (entry, stop, tp1, tp2, tp3)):
             continue
         if side == "شراء" and not (stop < entry < tp1 < tp2 < tp3):
