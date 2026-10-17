@@ -342,14 +342,14 @@ async function loadMarketSignals(){
  try{
   let scans=[];
   try{
-   scans=[{frame:"auto",label:"تلقائي",data:await getJson("/api/public-ideas?market="+encodeURIComponent(market)+"&interval=auto&limit=50&discover=true")}];
+   scans=[{frame:"auto",label:"تلقائي",data:await getJson("/api/public-ideas?market="+encodeURIComponent(market)+"&interval=auto&limit=50&discover=false")}];
   }catch(autoErr){
    // Backward compatibility while Northflank may still be running an older backend.
    if(!/الفريم غير مدعوم|interval.*(unsupported|invalid)/i.test(String(autoErr&&autoErr.message||autoErr)))throw autoErr;
    const frames=["15m","1h","4h","1d","1w","1M"];
    for(const fr of frames){
     try{
-     const data=await getJson("/api/public-ideas?market="+encodeURIComponent(market)+"&interval="+encodeURIComponent(fr)+"&limit=10&discover=true");
+     const data=await getJson("/api/public-ideas?market="+encodeURIComponent(market)+"&interval="+encodeURIComponent(fr)+"&limit=10&discover=false");
      scans.push({frame:fr,label:fr,data});
     }catch(frameErr){/* Keep other timeframe results if one request fails. */}
    }
