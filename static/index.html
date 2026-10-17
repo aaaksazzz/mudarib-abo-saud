@@ -379,7 +379,8 @@ async function loadMarketSignals(){
   ideasBox.innerHTML=ideas.slice(0,12).map(item=>{const side=item.direction==="شراء"?"buy":"sell",l=item.levels||{},f=v=>esc(fmt(v));return '<article class="signal '+side+'"><div class="sig-head"><strong class="symbol">'+esc(item.symbol)+'</strong><span class="tag '+side+'">'+esc(item.direction)+'</span><span class="tag">'+esc(item.interval)+'</span><span class="tag">مصدر عام</span></div><div class="entry"><small>الدخول</small><strong>'+f(l.entry)+'</strong></div><div class="levels"><div class="level sl"><small>وقف الخسارة</small><strong>'+f(l.stop_loss)+'</strong></div><div class="level tp"><small>TP1</small><strong>'+f(l.tp1)+'</strong></div><div class="level tp"><small>TP2</small><strong>'+f(l.tp2)+'</strong></div><div class="level tp"><small>TP3</small><strong>'+f(l.tp3)+'</strong></div></div><div class="meta"><span>عمر المنشور: '+esc(item.age_hours??"—")+' ساعة</span><span>مستويات مكتملة ومراجعة الترتيب</span></div></article>'}).join("");
   $("marketIdeasSummary").textContent=ideas.length+" فكرة مكتملة مطابقة للفريم · "+(ideaData.sources_checked??0)+" مصدرًا تم فحصه";
  }
- if(marketViewSymbol)await loadMarketChart(marketViewSymbol);
+ if(quoteData&&quoteData.ok&&quotes.length&&marketViewSymbol)await loadMarketChart(marketViewSymbol);
+ else{const chart=$("marketChart");if(chart)chart.innerHTML='<div class="home-chart-loading">الشارت متوقف حتى تتوفر قائمة رموز مؤكدة لهذا السوق</div>';const status=$("marketChartStatus");if(status)status.textContent="لم نخلط رمزًا من سوق آخر مع هذا السوق."}
 }
 async function loadMarketChart(symbol){
  const box=$("marketChart");if(!box||!symbol||page!=="market")return;
