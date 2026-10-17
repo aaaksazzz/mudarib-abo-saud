@@ -195,6 +195,45 @@ th{white-space:nowrap}
  .home-market-row:hover,.home-section-row:hover{transform:none}
 }
 
+
+/* Professional UI pass: accessibility, hierarchy, and touch-first behavior */
+:root{--focus:#9cc4ff;--radius-card:18px}
+::selection{background:#315b91;color:#fff}
+:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+button,a,input,select,textarea{-webkit-tap-highlight-color:transparent}
+button:disabled,[aria-disabled="true"]{opacity:.55;cursor:not-allowed}
+body{min-height:100vh;text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased}
+.app{width:100%;padding:clamp(10px,1.6vw,22px)}
+.top{padding:10px 12px;border:1px solid #26354b;border-radius:17px;background:#0b1422eF;backdrop-filter:blur(14px);box-shadow:0 8px 26px #0002}
+.brand h1{letter-spacing:-.025em}
+.logo{flex:0 0 auto;border:1px solid #8bb8ff55;box-shadow:0 8px 26px #1b6bb333}
+.live{display:flex;align-items:center;gap:7px}
+.side{border-color:#344760;background:linear-gradient(165deg,#111d2e,#0a1220);box-shadow:0 24px 80px #000b}
+.nav button,.nav>a{min-height:42px;transition:background .16s,border-color .16s,color .16s}
+.nav button.active{box-shadow:inset -3px 0 #75aaff}
+.hero{position:relative;overflow:hidden;border-color:#314663;box-shadow:0 12px 34px #0002}
+.hero:after{content:"";position:absolute;left:-70px;bottom:-125px;width:240px;height:240px;border:1px solid #6e9de51c;border-radius:50%;pointer-events:none}
+.hero h2{letter-spacing:-.035em}
+.panel,.signal,.article,.stat,.market-tile,.row-card{box-shadow:0 6px 20px #00000012}
+.panel{border-color:#2a3b53}
+.panel-head{flex-wrap:wrap}
+.btn,.icon-btn,.frame,.market-tile,.home-market-row,.home-section-row{transition:transform .16s ease,border-color .16s ease,background .16s ease}
+.btn:hover,.icon-btn:hover,.frame:hover,.market-tile:hover,.home-market-row:hover,.home-section-row:hover{border-color:#5a83b8}
+.btn:active,.icon-btn:active,.frame:active,.market-tile:active,.home-market-row:active,.home-section-row:active{transform:scale(.985)}
+.frame{min-height:38px;font-weight:750}
+.frame.active{box-shadow:0 0 0 1px #5794ee33,inset 0 0 18px #4388e51a}
+.signal{border-color:#2e4058}
+.signal .entry strong,.level strong{font-variant-numeric:tabular-nums}
+.signal .score span{border-radius:10px}
+.empty{line-height:1.8}
+input,select,textarea{max-width:100%}
+input:focus,select:focus,textarea:focus{border-color:#6fa8ff!important;outline:none;box-shadow:0 0 0 3px #6fa8ff20}
+.footer{border-top:1px solid #1d2a3d;margin-top:18px;line-height:1.9}
+.home-market-row,.home-section-row{border:1px solid #2b3d55;border-radius:14px;background:linear-gradient(145deg,#111e30,#0c1523);color:var(--text);text-align:right}
+.home-market-row:focus-visible,.home-section-row:focus-visible{outline-offset:2px}
+@media(min-width:1001px){.side{transform:none;position:sticky;top:14px;width:auto;height:max-content;max-height:calc(100vh - 28px);box-shadow:none}.drawer-backdrop{display:none!important}.layout{display:grid;grid-template-columns:270px minmax(0,1fr);gap:16px;align-items:start}.menu-toggle{display:none}.side .nav{grid-template-columns:1fr}.side .nav button,.side .nav>a{padding:10px 11px}.main{min-width:0}.top{position:sticky;top:10px;z-index:20}.signals{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){.top{padding:8px;border-radius:14px}.brand{gap:8px}.brand h1{font-size:14px}.brand p{max-width:190px;line-height:1.5}.top-actions{justify-content:center}.hero-actions .btn{width:100%}.panel-head h2{line-height:1.5}.signals{grid-template-columns:minmax(0,1fr)}.signal{padding:13px}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.home-market-row,.home-section-row{min-height:68px}.side{width:min(320px,calc(100vw - 20px));top:10px;right:10px;height:calc(100dvh - 20px)}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 </style>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite","name":"التداول الذكي PRO","url":"https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/","inLanguage":"ar-SA","description":"منصة عربية لمتابعة الأسواق وتحليل الفرص الفنية والنتائج والأخبار والمقالات التعليمية.","potentialAction":{"@type":"SearchAction","target":"https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/?q={search_term_string}","query-input":"required name=search_term_string"}}</script>
 </head>
@@ -239,7 +278,7 @@ function marketTiles(){return '<div class="market-grid">'+MARKETS.map(m=>'<butto
 function signalCard(x){let buy=x.side==="BUY",symbol=esc(x.symbol||"—"),score=Math.max(0,Math.min(100,Number(x.score||0))),rank=Number(x.rank||0),rankClass=rank===1?" rank-1":rank===2?" rank-2":rank===3?" rank-3":"";let rankLabel=rank===1?"🏆 الأفضل اليوم":rank===2?"🥈 المركز الثاني":rank===3?"🥉 المركز الثالث":rank>0?"الترتيب #"+rank:"إشارة";return '<article class="signal'+(buy?' buy':' sell')+rankClass+'"><div class="sig-head"><span class="badge rank-badge">'+rankLabel+'</span><span class="symbol">'+symbol+'</span><span class="tag '+(buy?'buy':'sell')+'">'+(buy?'شراء · BUY':'بيع · SELL')+'</span><span class="tag">'+esc(x.interval||frame)+'</span></div><div class="entry"><div><small>سعر الدخول</small><strong>'+num(x.entry,8)+'</strong></div><span class="badge">'+esc(x.importance||"إشارة فنية")+'</span></div><div class="levels"><div class="level sl"><small>وقف الخسارة · SL</small><strong>'+num(x.stop,8)+'</strong><em>−'+Number(x.stop_pct||0).toFixed(2)+'%</em></div><div class="level tp"><small>الهدف الأول · TP1</small><strong>'+num(x.tp1,8)+'</strong><em>+'+Number(x.tp1_pct||0).toFixed(2)+'%</em></div><div class="level tp"><small>الهدف الثاني · TP2</small><strong>'+num(x.tp2,8)+'</strong><em>+'+Number(x.tp2_pct||0).toFixed(2)+'%</em></div><div class="level tp"><small>الهدف الثالث · TP3</small><strong>'+num(x.tp3,8)+'</strong><em>+'+Number(x.tp3_pct||0).toFixed(2)+'%</em></div></div><div class="meta"><span>التوافق <b>'+score+'/100</b></span><span>مناهج متوافقة: <b>'+Number(x.method_count||0)+'</b></span>'+(x.market==="futures"?'<span class="leverage-note">الرافعة: 1x · إذا الربح قليل: 6x</span>':"")+'</div>'+(x.news_title?'<div class="meta news-confirmation"><span>📰 آخر خبر: <a href="'+esc(x.news_url||"#")+'" target="_blank" rel="noopener noreferrer">'+esc(x.news_title)+'</a> · '+esc(x.news_source||"مصدر إخباري")+'</span><span>'+esc(x.news_effect||"سياق خبري للسوق")+'</span></div>':'<div class="meta news-confirmation"><span>📰 آخر خبر: غير متاح حاليًا</span><span>'+esc(x.news_effect||"التقييم فني فقط")+'</span></div>')+'<div class="score"><span style="width:'+score+'%"></span></div><div class="meta"><span>'+esc(({spot:"سبوت",futures:"فيوتشر",contracts:"العقود الأمريكية",us:"الأسهم الأمريكية",saudi:"السوق السعودي",forex:"الفوركس والذهب"})[x.market||market]||(x.market||market))+'</span><span>'+esc(x.status||"إشارة تحليلية وليست أمر تداول")+'</span></div></article>'}
 function empty(msg,title){return '<div class="empty"><strong>'+esc(title||"لا توجد فرص مستوفية للشروط")+'</strong>'+esc(msg||"جرّب فريمًا آخر أو أعد الفحص. لن نعرض صفقات وهمية.")+'</div>'}
 function navState(){document.querySelectorAll("[data-page]").forEach(b=>b.classList.toggle("active",b.dataset.page===page));document.querySelectorAll("[data-market]").forEach(b=>b.classList.toggle("active",b.dataset.market===market))}
-function setTitle(title,desc){$("heroTitle").textContent=title;$("heroDesc").textContent=desc}
+function setTitle(title,desc){$("heroTitle").textContent=title;$("heroDesc").textContent=desc;const cleanTitle=String(title||"التداول الذكي PRO").replace(/\s+/g," ").trim();document.title=cleanTitle.includes("التداول الذكي PRO")?cleanTitle:cleanTitle+" | التداول الذكي PRO";const description=document.querySelector('meta[name="description"]');if(description&&desc)description.setAttribute("content",String(desc).slice(0,300))}
 async function getJson(url){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),45000);try{let r=await fetch(url,{cache:"no-store",signal:controller.signal}),d;try{d=await r.json()}catch(_e){throw Error("الخادم أعاد ردًا غير صالح؛ أعد المحاولة.")}if(!r.ok)throw Error(d.message||d.detail||"تعذر تحميل البيانات");return d}catch(e){if(e&&e.name==="AbortError")throw Error("انتهت مهلة الاتصال بعد 45 ثانية؛ أعد الفحص أو جرّب لاحقًا.");throw e}finally{clearTimeout(timer)}}
 async function fetchSignals(m,f,limit=20){let d=await getJson("/api/signals/"+encodeURIComponent(m)+"?interval="+encodeURIComponent(f)+"&limit="+limit);if(d.live===false&&d.stale!==true)throw Error(d.message||"مصدر الإشارات غير مربوط");return d}
 function renderCards(items,msg){return items&&items.length?'<div class="signals">'+items.map((x,i)=>signalCard({...x,rank:Number(x.rank)||i+1})).join("")+'</div>':empty(msg)}
