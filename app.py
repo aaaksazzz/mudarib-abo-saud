@@ -1258,19 +1258,63 @@ def _public_idea_direction(value):
     return "شراء" if buy else "بيع"
 def _public_idea_interval(value):
     import re
-    match = re.search(r"\b(15m|15 min|15-minute|1h|1 hour|4h|4 hour|1d|daily|1 day|1w|weekly|1M|monthly)\b|(?:فريم|إطار)\s*(15\s*د|ساعة|4\s*س|يومي|أسبوعي|شهري)", value, re.I)
+    value = str(value or "")
+    # Monthly is case-sensitive: 1M is monthly; 1m is one minute and unsupported here.
+    if re.search(r"(?<![A-Za-z0-9])1M(?![A-Za-z0-9])", value):
+        return "1M"
+    match = re.search(
+        r"\\b(15m|15 min|15-minute|1h|1 hour|4h|4 hour|1d|daily|1 day|1w|weekly|monthly)\\b|(?:فريم|إطار)\\s*(15\\s*د|ساعة|4\\s*س|يومي|أسبوعي|شهري)",
+        value, re.I)
     if not match:
         return ""
     token = match.group(0).lower().replace(" ", "")
     mapping = {"15m":"15m", "15min":"15m", "15-minute":"15m", "15د":"15m",
                "1h":"1h", "1hour":"1h", "ساعة":"1h", "4h":"4h", "4hour":"4h", "4س":"4h",
                "1d":"1d", "daily":"1d", "1day":"1d", "يومي":"1d",
-               "1w":"1w", "weekly":"1w", "أسبوعي":"1w", "1m":"1M", "monthly":"1M", "شهري":"1M"}
+               "1w":"1w", "weekly":"1w", "أسبوعي":"1w", "monthly":"1M", "شهري":"1M"}
     return mapping.get(token, "")
+
 def _public_idea_market_match(market, value):
     import re
     pattern = PUBLIC_MARKET_SYMBOLS.get(market, "")
     return bool(pattern and re.search(pattern, value, re.I))
+
+def _public_idea_symbol_matches_market(market, symbol, text_value=""):
+    """Reject an extracted ticker if it belongs to a different market universe."""
+    import re
+    symbol = str(symbol or "").upper().strip().replace("/", "")
+    crypto_bases = {
+        "BTC", "ETH", "BNB", "SOL", "XRP", "DOGE", "ADA", "AVAX", "LINK",
+        "SUI", "LTC", "DOT", "TRX", "TON", "NEAR", "APT", "ARB", "OP",
+        "INJ", "TAO", "PEPE", "SHIB", "WIF", "FET", "RENDER", "UNI",
+        "AAVE", "PAXG", "XAUT"
+    }
+    crypto_quotes = ("USDT", "USDC", "USD")
+    if market in {"spot", "futures"}:
+        return symbol in crypto_bases or any(
+            symbol.endswith(q) and symbol[:-len(q)] in crypto_bases for q in crypto_quotes)
+    if market == "alpha":
+        return bool(re.search(r"binance\\s+alpha|alpha\\s+token|باينانس\\s+ألفا", text_value, re.I)
+                    and (symbol in crypto_bases or any(
+                        symbol.endswith(q) and symbol[:-len(q)] in crypto_bases for q in crypto_quotes)))
+    if market == "us":
+        return symbol in {"AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "GOOG", "META",
+                          "TSLA", "AVGO", "JPM", "LLY", "WMT", "XOM", "AMD", "NFLX",
+                          "COST", "ORCL", "PLTR", "COIN", "INTC", "SPY", "QQQ", "IWM"}
+    if market == "saudi":
+        return symbol.removesuffix(".SR") in {
+            "2222", "1120", "2010", "1180", "7010", "1211", "2380", "1150",
+            "2280", "4001", "2082", "2223", "4200", "7203"}
+    if market == "contracts":
+        return symbol in {"ES", "MES", "NQ", "MNQ", "YM", "MYM", "RTY", "M2K",
+                          "GC", "MGC", "SI", "SIL", "CL", "MCL", "NG", "HG",
+                          "ZB", "ZN", "6E", "6B", "DXY"}
+    if market == "forex":
+        return symbol in {"EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF",
+                          "NZDUSD", "EURGBP", "EURJPY", "GBPJPY", "XAUUSD", "XAGUSD",
+                          "GOLD", "SILVER", "DXY"}
+    return False
+
 def _public_idea_levels(value):
     import re
     from html import unescape
@@ -1331,7 +1375,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
                     print(f"public trade source failed: {type(exc).__name__}: {exc}")
         PUBLIC_TRADE_FEED_CACHE[feed_cache_key] = {"at": now, "rows": list(gathered), "errors": feed_errors}
     cutoff = now - PUBLIC_IDEA_MAX_AGE
-    stage_counts = {"fetched": len(gathered), "recent": 0, "direction": 0, "market": 0, "symbol": 0, "timeframe": 0, "levels_present": 0, "levels_partial": 0, "levels_missing_entry": 0, "levels_missing_stop": 0, "levels_missing_tp1": 0, "levels_missing_tp2": 0, "levels_missing_tp3": 0, "complete_levels": 0, "invalid_order": 0}
+    stage_counts = {"fetched": len(gathered), "recent": 0, "direction": 0, "market": 0, "symbol": 0, "timeframe": 0, "levels_present": 0, "levels_partial": 0, "levels_missing_entry": 0, "levels_missing_stop": 0, "levels_missing_tp1": 0, "levels_missing_tp2": 0, "levels_missing_tp3": 0, "symbol_mismatch": 0, "complete_levels": 0, "invalid_order": 0}
     unique = {}
     for item in gathered:
         published = item.get("published_at", 0)
@@ -1374,6 +1418,9 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
                        "LTC", "DOT", "TRX", "TON", "NEAR", "APT", "ARB", "OP", "INJ", "TAO",
                        "PEPE", "SHIB", "WIF", "FET", "RENDER", "UNI", "AAVE"}
         ):
+            continue
+        if not _public_idea_symbol_matches_market(market, symbol, match_text):
+            stage_counts["symbol_mismatch"] += 1
             continue
         stage_counts["symbol"] += 1
         # Timeframe is often placed in the headline (e.g. "#UNI/USDT - Short 4H")
