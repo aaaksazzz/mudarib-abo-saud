@@ -102,6 +102,7 @@ def test_public_news_aggregates_recent_items_without_network(monkeypatch):
     }]
     monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
     app_module.PUBLIC_IDEAS_CACHE.clear()
+    app_module.PUBLIC_TRADE_FEED_CACHE.clear()
     response = client.get("/api/news?market=spot&limit=10&refresh=1")
     assert response.status_code == 200
     data = response.json()
@@ -122,6 +123,7 @@ def test_public_ideas_aggregates_recent_items_without_network(monkeypatch):
     }]
     monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
     app_module.PUBLIC_IDEAS_CACHE.clear()
+    app_module.PUBLIC_TRADE_FEED_CACHE.clear()
     response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
     assert response.status_code == 200
     data = response.json()
@@ -157,6 +159,7 @@ def test_public_ideas_auto_interval_and_futures_symbol_match(monkeypatch):
     }]
     monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
     app_module.PUBLIC_IDEAS_CACHE.clear()
+    app_module.PUBLIC_TRADE_FEED_CACHE.clear()
 
     response = client.get("/api/public-ideas?market=futures&interval=auto&limit=10")
     assert response.status_code == 200
@@ -197,6 +200,7 @@ def test_public_ideas_reject_mismatched_tickers_and_incomplete_trade_levels(monk
     ]
     monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
     app_module.PUBLIC_IDEAS_CACHE.clear()
+    app_module.PUBLIC_TRADE_FEED_CACHE.clear()
     response = client.get("/api/public-ideas?market=futures&interval=auto&limit=10")
     assert response.status_code == 200
     assert response.json()["items"] == []
@@ -232,6 +236,7 @@ def test_public_futures_ideas_require_title_ticker_and_valid_complete_levels(mon
     ]
     monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
     app_module.PUBLIC_IDEAS_CACHE.clear()
+    app_module.PUBLIC_TRADE_FEED_CACHE.clear()
 
     response = client.get("/api/public-ideas?market=futures&interval=auto&limit=10")
     assert response.status_code == 200
