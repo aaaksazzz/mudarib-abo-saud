@@ -1343,7 +1343,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
         stage_counts["market"] += 1
         # Accept common futures notation such as "#UNI /USDT" without
         # accidentally extracting unrelated tickers from the description.
-        slash_pair = re.search(r"(?<![A-Z0-9])#?(BTC|ETH|BNB|SOL|XRP|DOGE|ADA|AVAX|LINK|SUI|LTC|DOT|TRX|TON|NEAR|APT|ARB|OP|INJ|TAO|PEPE|SHIB|WIF|FET|RENDER|UNI|AAVE)\\s*/\\s*(USDT|USDC|USD)\\b", title_text, re.I)
+        slash_pair = re.search(r"(?<![A-Z0-9])#?(BTC|ETH|BNB|SOL|XRP|DOGE|ADA|AVAX|LINK|SUI|LTC|DOT|TRX|TON|NEAR|APT|ARB|OP|INJ|TAO|PEPE|SHIB|WIF|FET|RENDER|UNI|AAVE)\s*/\s*(USDT|USDC|USD)\b", title_text, re.I)
         symbol_re = re.compile(PUBLIC_SYMBOL_RE.pattern)
         symbol_match = slash_pair or symbol_re.search(title_text)
         if not symbol_match:
