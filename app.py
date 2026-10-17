@@ -1480,7 +1480,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
     response = {"ok": True, "market": market, "interval": interval, "items": items,
                 "count": len(items), "sources_checked": len(PUBLIC_TRADE_IDEA_FEEDS) + len(telegram_channels), "telegram_channels_checked": telegram_channels,
                 "sources_failed": feed_errors, "max_age_hours": 24, "updated_at": now, "diagnostics": stage_counts,
-                "discovery_enabled": bool(discover), "message": "بحث في مصادر التداول العامة، مع اكتشاف موسع لقنوات تيليجرام عند تفعيل البحث الشامل. الأخبار منفصلة؛ لا تُنشأ مستويات دخول أو أهداف أو وقف بالتخمين."}
+                "discovery_enabled": bool(discover), "telegram_preview_enabled": bool(discover), "message": "تم فحص خلاصات عامة وقنوات تيليجرام محددة عند تفعيل البحث الموسع. هذه ليست عملية اكتشاف شامل لكل القنوات؛ الأخبار منفصلة، ولا تُنشأ مستويات دخول أو أهداف أو وقف بالتخمين."}
     with PUBLIC_IDEAS_LOCK:
         PUBLIC_IDEAS_CACHE[cache_key] = (now, response)
     return response
