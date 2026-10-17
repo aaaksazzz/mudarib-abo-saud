@@ -375,35 +375,36 @@ async function loadMarketNews(id){const root=$("marketNewsList");if(!root)return
 async function drawSignalChart(el){
  try{
   const q=new URLSearchParams({market:el.dataset.market||"",symbol:el.dataset.symbol||"",interval:el.dataset.frame||"15m"});
-  const r=await fetch("/api/trade-chart-data?"+q.toString(),{cache:"no-store"});const d=await r.json();
+  const r=await fetch("/api/trade-chart-data?"+q.toString(),{cache:"no-store"}),d=await r.json();
   if(!r.ok||!d.ok||!Array.isArray(d.items)||d.items.length<2)throw new Error(d.message||"بيانات الشموع غير متاحة");
   const candles=d.items,levels=[{label:"TP3",v:Number(el.dataset.tp3),color:"#42d6a0"},{label:"TP2",v:Number(el.dataset.tp2),color:"#42d6a0"},{label:"TP1",v:Number(el.dataset.tp1),color:"#42d6a0"},{label:"الدخول",v:Number(el.dataset.entry),color:"#78aaff"},{label:"وقف",v:Number(el.dataset.stop),color:"#ff7184"}].filter(z=>Number.isFinite(z.v)&&z.v>0);
   if(levels.length!==5)throw new Error("مستويات الصفقة غير مكتملة");
-  const loAll=Math.min(...candles.map(c=>Number(c.low)),...levels.map(z=>z.v)),hiAll=Math.max(...candles.map(c=>Number(c.high)),...levels.map(z=>z.v)),pad=(hiAll-loAll)*.08||Math.abs(hiAll)*.001;
-  el._chartView=el._chartView||{zoomX:1,zoomY:1,pan:0,center:(hiAll+loAll)/2};
-  const view=el._chartView; if(!Number.isFinite(view.center))view.center=(hiAll+loAll)/2;
-  const W=700,H=300,L=10,R=142,T=12,B=20,plotW=W-L-R,plotH=H-T-B,n=candles.length;
-  let lo=loAll-pad,hi=hiAll+pad,count=n,begin=0;
-  const getXY=e=>{const chart=el.querySelector("svg.signal-candle-svg");if(!chart)return{x:0,y:0};const b=chart.getBoundingClientRect();return{x:(e.clientX-b.left)/b.width*W,y:(e.clientY-b.top)/b.height*H};};
+  const allLo=Math.min(...candles.map(c=>Number(c.low)),...levels.map(z=>z.v)),allHi=Math.max(...candles.map(c=>Number(c.high)),...levels.map(z=>z.v)),pad=(allHi-allLo)*.08||Math.abs(allHi)*.001;
+  el._chartView=el._chartView||{zoomX:1,zoomY:1,pan:0,center:(allHi+allLo)/2};
+  const view=el._chartView,W=700,H=300,L=10,R=142,T=12,B=20,plotW=W-L-R,plotH=H-T-B,n=candles.length;
+  el.innerHTML='<svg class="signal-candle-svg" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" role="img" aria-label="اسحب لتحريك الشارت، إصبعان للتكبير والتصغير" style="display:block;width:100%;height:auto;touch-action:none;user-select:none;cursor:grab"></svg><div style="padding:4px 2px;color:#91a2b8;font-size:11px;text-align:center">كبّر وصغّر بإصبعين، واسحب للتحريك</div>';
+  const chart=el.querySelector("svg.signal-candle-svg");
+  let lo=allLo-pad,hi=allHi+pad,count=n;
+  const coords=e=>{const b=chart.getBoundingClientRect();return{x:(e.clientX-b.left)/b.width*W,y:(e.clientY-b.top)/b.height*H};};
   const draw=()=>{
-   count=Math.max(8,Math.min(n,Math.round(n/view.zoomX)));const maxPan=Math.max(0,n-count);view.pan=Math.max(0,Math.min(maxPan,view.pan));
-   const end=Math.max(count,Math.min(n,n-view.pan));begin=end-count;const visible=candles.slice(begin,end);
-   const span=((hiAll-loAll)+2*pad)/view.zoomY;lo=view.center-span/2;hi=view.center+span/2;
-   const y=v=>T+(hi-v)/(hi-lo)*plotH,x=i=>L+(i+.5)*plotW/count,cw=Math.max(2,Math.min(7,plotW/count*.58));
-   let svg='<svg class="signal-candle-svg" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" role="img" aria-label="اسحب بإصبعك لتحريك الشارت واستخدم إصبعين للتكبير والتصغير" style="display:block;width:100%;height:auto;touch-action:none;user-select:none;cursor:grab"><rect width="'+W+'" height="'+H+'" fill="#0a1320"/>';
-   for(let k=0;k<5;k++){const yy=T+k*plotH/4,price=hi-k*(hi-lo)/4;svg+='<line x1="'+L+'" y1="'+yy+'" x2="'+(W-R+4)+'" y2="'+yy+'" stroke="#243349" stroke-width="1"/><text x="'+(W-4)+'" y="'+(yy+4)+'" text-anchor="end" fill="#8092aa" font-size="10">'+price.toPrecision(6)+'</text>';}
-   visible.forEach((c,i)=>{const o=Number(c.open),h=Number(c.high),l=Number(c.low),cl=Number(c.close);if(![o,h,l,cl].every(Number.isFinite))return;const color=cl>=o?"#42d6a0":"#ff7184",xx=x(i),yo=y(o),yc=y(cl),top=Math.min(yo,yc),body=Math.max(1,Math.abs(yc-yo));svg+='<line x1="'+xx+'" y1="'+y(h)+'" x2="'+xx+'" y2="'+y(l)+'" stroke="'+color+'" stroke-width="1"/><rect x="'+(xx-cw/2)+'" y="'+top+'" width="'+cw+'" height="'+body+'" fill="'+color+'" rx=".5"/>';});
-   levels.forEach(z=>{if(z.v<lo||z.v>hi)return;const yy=y(z.v),ly=Math.max(13,Math.min(H-6,yy+4)),ry=Math.max(1,Math.min(H-19,yy-9));svg+='<line x1="'+L+'" y1="'+yy+'" x2="'+(W-R+2)+'" y2="'+yy+'" stroke="'+z.color+'" stroke-width="'+(z.label==="الدخول"?2:1.5)+'" stroke-dasharray="'+(z.label==="الدخول"?"0":"5 3")+'"/><rect x="'+(W-R+5)+'" y="'+ry+'" width="'+(R-10)+'" height="18" rx="4" fill="'+z.color+'" fill-opacity=".15" stroke="'+z.color+'" stroke-opacity=".6"/><text x="'+(W-R+10)+'" y="'+ly+'" fill="'+z.color+'" font-size="10" font-weight="700">'+z.label+' '+z.v.toPrecision(7)+'</text>';});
-   svg+='</svg><div style="padding:4px 2px;color:#91a2b8;font-size:11px;text-align:center">حرّك بإصبعك • قرّب/بعّد بإصبعين • بالكمبيوتر اسحب أو استخدم عجلة الماوس</div>';el.innerHTML=svg;
+   count=Math.max(5,Math.min(n,Math.round(n/view.zoomX)));view.pan=Math.max(0,Math.min(n-count,view.pan));
+   const end=Math.max(count,Math.min(n,n-Math.round(view.pan))),begin=end-count,visible=candles.slice(begin,end);
+   const span=((allHi-allLo)+2*pad)/view.zoomY;lo=view.center-span/2;hi=view.center+span/2;
+   const y=v=>T+(hi-v)/(hi-lo)*plotH,x=i=>L+(i+.5)*plotW/count,cw=Math.max(2,Math.min(8,plotW/count*.62));
+   let s='<rect width="'+W+'" height="'+H+'" fill="#0a1320"/>';
+   for(let k=0;k<5;k++){const yy=T+k*plotH/4,p=hi-k*(hi-lo)/4;s+='<line x1="'+L+'" y1="'+yy+'" x2="'+(W-R+4)+'" y2="'+yy+'" stroke="#243349"/><text x="'+(W-4)+'" y="'+(yy+4)+'" text-anchor="end" fill="#8092aa" font-size="10">'+p.toPrecision(6)+'</text>';}
+   visible.forEach((c,i)=>{const o=+c.open,h=+c.high,l=+c.low,cl=+c.close;if(![o,h,l,cl].every(Number.isFinite))return;const col=cl>=o?"#42d6a0":"#ff7184",xx=x(i),yo=y(o),yc=y(cl);s+='<line x1="'+xx+'" y1="'+y(h)+'" x2="'+xx+'" y2="'+y(l)+'" stroke="'+col+'"/><rect x="'+(xx-cw/2)+'" y="'+Math.min(yo,yc)+'" width="'+cw+'" height="'+Math.max(1,Math.abs(yc-yo))+'" fill="'+col+'"/>';});
+   levels.forEach(z=>{if(z.v<lo||z.v>hi)return;const yy=y(z.v),ry=Math.max(1,Math.min(H-19,yy-9)),ly=Math.max(13,Math.min(H-6,yy+4));s+='<line x1="'+L+'" y1="'+yy+'" x2="'+(W-R+2)+'" y2="'+yy+'" stroke="'+z.color+'" stroke-width="'+(z.label==="الدخول"?2:1.5)+'" stroke-dasharray="'+(z.label==="الدخول"?"0":"5 3")+'"/><rect x="'+(W-R+5)+'" y="'+ry+'" width="'+(R-10)+'" height="18" rx="4" fill="'+z.color+'" fill-opacity=".15" stroke="'+z.color+'"/><text x="'+(W-R+10)+'" y="'+ly+'" fill="'+z.color+'" font-size="10" font-weight="700">'+z.label+' '+z.v.toPrecision(7)+'</text>';});
+   chart.innerHTML=s;
   };
-  if(!el._chartEventsBound){
+  if(!el._chartGestureBound){
    el._chartPointers=new Map();el._chartDrag=null;el._chartPinch=null;
-   el.addEventListener("pointerdown",e=>{if(!el.querySelector("svg.signal-candle-svg"))return;try{el.setPointerCapture(e.pointerId);}catch(_){}const p=getXY(e);el._chartPointers.set(e.pointerId,p);if(el._chartPointers.size===1)el._chartDrag={p,pan:view.pan,center:view.center};else if(el._chartPointers.size===2){const a=[...el._chartPointers.values()];el._chartPinch={dist:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y),midX:(a[0].x+a[1].x)/2,midY:(a[0].y+a[1].y)/2};el._chartDrag=null;}});
-   el.addEventListener("pointermove",e=>{if(!el._chartPointers||!el._chartPointers.has(e.pointerId))return;el._chartPointers.set(e.pointerId,getXY(e));if(el._chartPointers.size>=2){const a=[...el._chartPointers.values()],dist=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y),mx=(a[0].x+a[1].x)/2,my=(a[0].y+a[1].y)/2,old=el._chartPinch;if(old&&old.dist>0&&dist>0){const factor=dist/old.dist;view.zoomX=Math.max(1,Math.min(8,view.zoomX*factor));view.zoomY=Math.max(.8,Math.min(12,view.zoomY*factor));view.center+=(my-old.midY)/plotH*((hi-lo));view.pan+=(mx-old.midX)/plotW*Math.max(1,Math.round(n/view.zoomX));}el._chartPinch={dist,midX:mx,midY:my};draw();}else if(el._chartDrag){const p=el._chartPointers.get(e.pointerId),drag=el._chartDrag;view.pan=drag.pan+(p.x-drag.p.x)/plotW*Math.max(1,Math.round(n/view.zoomX));view.center=drag.center+(p.y-drag.p.y)/plotH*(hi-lo);draw();}});
-   const stop=e=>{if(el._chartPointers)el._chartPointers.delete(e.pointerId);if(!el._chartPointers||el._chartPointers.size<2)el._chartPinch=null;if(!el._chartPointers||!el._chartPointers.size)el._chartDrag=null;};
+   el.addEventListener("pointerdown",e=>{if(!el.querySelector("svg.signal-candle-svg"))return;try{el.setPointerCapture(e.pointerId)}catch(_){}el._chartPointers.set(e.pointerId,coords(e));if(el._chartPointers.size===1)el._chartDrag={p:coords(e),pan:view.pan,center:view.center};if(el._chartPointers.size===2){const a=[...el._chartPointers.values()];el._chartPinch={dist:Math.max(1,Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)),midY:(a[0].y+a[1].y)/2};el._chartDrag=null;}});
+   el.addEventListener("pointermove",e=>{if(!el._chartPointers?.has(e.pointerId))return;el._chartPointers.set(e.pointerId,coords(e));if(el._chartPointers.size>=2){const a=[...el._chartPointers.values()],dist=Math.max(1,Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)),my=(a[0].y+a[1].y)/2,old=el._chartPinch;if(old){const f=dist/old.dist;view.zoomX=Math.max(1,Math.min(12,view.zoomX*f));view.zoomY=Math.max(1,Math.min(15,view.zoomY*f));view.center+=(my-old.midY)/plotH*((hi-lo));}el._chartPinch={dist,midY:my};draw();}else if(el._chartDrag){const p=coords(e),g=el._chartDrag;view.pan=g.pan+(g.p.x-p.x)/plotW*Math.max(1,Math.round(n/view.zoomX));view.center=g.center+(p.y-g.p.y)/plotH*(hi-lo);draw();}});
+   const stop=e=>{el._chartPointers?.delete(e.pointerId);if(!el._chartPointers||el._chartPointers.size<2)el._chartPinch=null;if(!el._chartPointers||!el._chartPointers.size)el._chartDrag=null;};
    el.addEventListener("pointerup",stop);el.addEventListener("pointercancel",stop);el.addEventListener("lostpointercapture",stop);
-   el.addEventListener("wheel",e=>{if(!el.querySelector("svg.signal-candle-svg"))return;e.preventDefault();const factor=e.deltaY<0?1.12:.89;view.zoomX=Math.max(1,Math.min(8,view.zoomX*factor));view.zoomY=Math.max(.8,Math.min(12,view.zoomY*factor));draw();},{passive:false});
-   el._chartEventsBound=true;
+   el.addEventListener("wheel",e=>{if(!el.querySelector("svg.signal-candle-svg"))return;e.preventDefault();const f=e.deltaY<0?1.15:.87;view.zoomX=Math.max(1,Math.min(12,view.zoomX*f));view.zoomY=Math.max(1,Math.min(15,view.zoomY*f));draw();},{passive:false});
+   el._chartGestureBound=true;
   }
   draw();
  }catch(e){el.innerHTML='<div class="chart-error"></div>';el.firstChild.textContent="تعذر رسم الشارت: "+(e&&e.message?e.message:"بيانات غير متاحة");}
