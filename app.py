@@ -1371,7 +1371,10 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
         ):
             continue
         stage_counts["symbol"] += 1
-        detected_interval = _public_idea_interval(full_text)
+        # Timeframe is often placed in the headline (e.g. "#UNI/USDT - Short 4H")
+        # rather than the feed body. Inspect both fields so valid public ideas are not
+        # silently discarded just because the publisher put the timeframe in the title.
+        detected_interval = _public_idea_interval(title_text + " " + full_text)
         # In auto mode, accept a source idea with no stated timeframe only when its
         # entry, stop and all three targets are explicit and later pass level validation.
         # Never invent a timeframe: display it as "غير محدد" instead.
