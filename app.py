@@ -1768,8 +1768,8 @@ def _technical_fallback_signal(market, symbol, interval):
 
 
 @app.get("/api/signals/{market}")
-def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20)):
-    """Prefer complete external trader recommendations; otherwise derive signals from real candles."""
+def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(12, ge=1, le=20)):
+    """Generate market-specific trade setups from real OHLCV candles only; never show public-tip feeds."""
     market = (market or "").lower()
     allowed_markets = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
     if market not in allowed_markets:
@@ -1782,83 +1782,67 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     cache_key = ("signal_cards", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
-        if cached and now - cached[0] < 120:
+        if cached and now - cached[0] < 90:
             return {**cached[1], "cached": True}
-    response = public_ideas(market=market, interval=interval, limit=50, discover=True)
-    if isinstance(response, JSONResponse):
-        response = {"items": [], "diagnostics": {}, "sources_failed": 0}
-    external = []
-    for item in response.get("items", []):
-        # Quick-trading pages only accept explicitly timeframe-matched, fresh ideas.
-        if item.get("interval") != interval:
-            continue
-        try:
-            published = float(item.get("published_at") or 0)
-        except (TypeError, ValueError):
-            published = 0
-        if published <= 0 or now - published > 6 * 60 * 60:
-            continue
-        if _valid_external_trade(item):
-            item["generated_by_site"] = False
-            item["ai_score"] = None
-            external.append(item)
-    # Do not mix invented levels into third-party ideas. If there are no complete external
-    # setups, analyze a small, liquid sample using the same market's real OHLCV candles.
-    items = external[:limit]
-    fallback_used = False
-    # Fill the board with independently qualified candle-based setups even when one external idea exists.
-    target_count = min(limit, 6)
-    if len(items) < target_count:
-        try:
-            universe = market_data(market, limit=2000)
-            candidates = universe.get("items", []) if isinstance(universe, dict) else []
-            candidates = sorted(candidates, key=lambda x: abs(float(x.get("change_pct") or 0)), reverse=True)
-            seen = {str(x.get("symbol") or "").upper() for x in items}
-            # Broaden discovery so one strict setup among the first few movers does not
-            # leave the board looking empty. Scan in small parallel batches to protect the
-            # low-memory service, and stop as soon as enough real, complete setups are found.
-            candidates = candidates[:48]
-            for offset in range(0, len(candidates), 8):
-                batch = []
-                for candidate in candidates[offset:offset + 8]:
-                    symbol = str(candidate.get("symbol") or "").upper()
-                    if not symbol or symbol in seen:
+
+    items = []
+    scanned = 0
+    failures = 0
+    try:
+        universe = market_data(market, limit=2000)
+        candidates = universe.get("items", []) if isinstance(universe, dict) else []
+        # Ignore malformed quote records and rank liquid movers for efficient scanning.
+        valid = []
+        for candidate in candidates:
+            symbol = str(candidate.get("symbol") or "").strip().upper()
+            if not symbol:
+                continue
+            try:
+                change = abs(float(candidate.get("change_pct") or 0))
+                price = float(candidate.get("price") or 0)
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if not math.isfinite(price) or price <= 0 or not math.isfinite(change):
+                continue
+            valid.append((change, symbol))
+        valid.sort(reverse=True)
+        symbols = list(dict.fromkeys(symbol for _, symbol in valid))[:48]
+        # Small parallel batches protect the low-memory service and stop once enough
+        # real-candle setups qualify. No external recommendation feeds are queried.
+        for offset in range(0, len(symbols), 8):
+            batch = symbols[offset:offset + 8]
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                futures = {pool.submit(_technical_fallback_signal, market, symbol, interval): symbol
+                           for symbol in batch}
+                for future in as_completed(futures):
+                    scanned += 1
+                    try:
+                        signal = future.result()
+                    except Exception as scan_exc:
+                        failures += 1
+                        print(f"technical signal skipped {market}/{futures[future]}/{interval}: {type(scan_exc).__name__}")
                         continue
-                    seen.add(symbol)
-                    batch.append(symbol)
-                if not batch:
-                    continue
-                with ThreadPoolExecutor(max_workers=4) as pool:
-                    futures = {pool.submit(_technical_fallback_signal, market, symbol, interval): symbol
-                               for symbol in batch}
-                    for future in as_completed(futures):
-                        try:
-                            signal = future.result()
-                        except Exception as scan_exc:
-                            print(f"technical fallback skipped {market}/{futures[future]}/{interval}: {type(scan_exc).__name__}")
-                            continue
-                        if signal:
-                            items.append(signal)
-                if len(items) >= target_count:
-                    break
-            fallback_used = True
-        except Exception as exc:
-            print(f"technical fallback universe failed {market}/{interval}: {type(exc).__name__}: {exc}")
-    items.sort(key=lambda x: (x.get("ai_score") or 0, x.get("published_at") or 0), reverse=True)
+                    if signal:
+                        items.append(signal)
+            if len(items) >= min(limit, 6):
+                break
+    except Exception as exc:
+        failures += 1
+        print(f"technical signal universe failed {market}/{interval}: {type(exc).__name__}: {exc}")
+
+    items.sort(key=lambda item: (item.get("ai_score") or 0, abs(float(item.get("levels", {}).get("tp1", 0) or 0) - float(item.get("levels", {}).get("entry", 0) or 0))), reverse=True)
     result = {
-        **{k: v for k, v in response.items() if k not in {"items", "cached"}},
         "ok": True, "live": True, "market": market, "interval": interval,
         "items": items[:limit], "count": len(items[:limit]),
-        "external_complete_count": len(external),
-        "technical_fallback_used": fallback_used,
-        "scanned": (response.get("diagnostics") or {}).get("fetched", 0),
-        "message": ("توصيات خارجية مكتملة من متداولين ومصادر عامة." if external else
-                    "لم نجد توصية خارجية مكتملة؛ الإشارات المعروضة ناتجة عن تحليل فني داخلي متعدد الأدوات." if items else
-                    "لم نجد توصية خارجية مكتملة ولم تتوفر إشارة فنية مستوفية للشروط الآن. لن نخترع صفقة."),
+        "scanned": scanned, "scan_failures": failures,
+        "technical_fallback_used": True,
+        "message": ("فرص محسوبة من شموع السوق الفعلية." if items else
+                    "لم تظهر فرصة مستوفية للشروط في الرموز التي تم فحصها؛ لن نعرض توصيات عامة أو أسعارًا على أنها صفقات."),
     }
     with PUBLIC_IDEAS_LOCK:
         PUBLIC_IDEAS_CACHE[cache_key] = (now, result)
     return result
+
 
 def read_json_file(path, default):
     try:
