@@ -115,8 +115,6 @@ if not PERSISTENT_STORAGE_CONFIGURED:
     print("WARNING: /data is not detected as a mounted persistent volume. Configure a Northflank volume mounted at /data or set DATA_DIR to a persistent mount.")
 RESULTS_PATH = DATA_DIR / "results.json"
 SIGNALS_CACHE_PATH = DATA_DIR / "signals-cache.json"
-METHOD_RESULTS_PATH = DATA_DIR / "method-results.json"
-METHOD_EVALUATIONS_PATH = DATA_DIR / "method-evaluations.json"
 # Protect the complete read-modify-write transaction across all market endpoints.
 RESULTS_LOCK = threading.RLock()
 ARTICLES_PATH = DATA_DIR / "articles.json"
@@ -1278,8 +1276,6 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         # before this scan records its latest available price and P&L.
         history = read_json_file(RESULTS_PATH, [])
         ticker_prices = {x["symbol"]: x["price"] for x in tickers}
-        # Independent method tests are tracked separately from user-facing signal cards.
-        refresh_method_test_results(market, interval, ticker_prices, int(now))
         for record in history:
             if record.get("result") != "مفتوحة" or record.get("market") != market or record.get("interval") != interval:
                 continue
