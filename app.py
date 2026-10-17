@@ -1323,7 +1323,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
                     print(f"public trade source failed: {type(exc).__name__}: {exc}")
         PUBLIC_TRADE_FEED_CACHE[feed_cache_key] = {"at": now, "rows": list(gathered), "errors": feed_errors}
     cutoff = now - PUBLIC_IDEA_MAX_AGE
-    stage_counts = {"fetched": len(gathered), "recent": 0, "direction": 0, "market": 0, "timeframe": 0}
+    stage_counts = {"fetched": len(gathered), "recent": 0, "direction": 0, "market": 0, "symbol": 0, "timeframe": 0, "complete_levels": 0}
     unique = {}
     for item in gathered:
         published = item.get("published_at", 0)
@@ -1367,6 +1367,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
                        "PEPE", "SHIB", "WIF", "FET", "RENDER", "UNI", "AAVE"}
         ):
             continue
+        stage_counts["symbol"] += 1
         detected_interval = _public_idea_interval(full_text)
         # In auto mode, accept a source idea with no stated timeframe only when its
         # entry, stop and all three targets are explicit and later pass level validation.
@@ -1388,6 +1389,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
             continue
         if side == "بيع" and not (tp3 < tp2 < tp1 < entry < stop):
             continue
+        stage_counts["complete_levels"] += 1
         item_id = item.get("url") or (item.get("source", "") + item.get("title", ""))
         item.pop("_text", None)
         # Do not expose outbound source URLs as clickable links on the public site.
