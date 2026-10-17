@@ -1378,7 +1378,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
                            "has_complete_levels": True}
     items = sorted(unique.values(), key=lambda row: row["published_at"], reverse=True)[:limit]
     response = {"ok": True, "market": market, "interval": interval, "items": items,
-                "count": len(items), "sources_checked": len(jobs), "telegram_channels_checked": telegram_channels,
+                "count": len(items), "sources_checked": len(PUBLIC_TRADE_IDEA_FEEDS) + len(telegram_channels), "telegram_channels_checked": telegram_channels,
                 "sources_failed": feed_errors, "max_age_hours": 24, "updated_at": now, "diagnostics": stage_counts,
                 "discovery_enabled": bool(discover), "message": "بحث في مصادر التداول العامة، مع اكتشاف موسع لقنوات تيليجرام عند تفعيل البحث الشامل. الأخبار منفصلة؛ لا تُنشأ مستويات دخول أو أهداف أو وقف بالتخمين."}
     with PUBLIC_IDEAS_LOCK:
