@@ -437,3 +437,47 @@ def test_saudi_market_keeps_symbols_below_usd_volume_cutoff(monkeypatch):
     assert response.status_code == 200
     assert {item["symbol"] for item in response.json()["items"]} == {"2222.SR", "1120.SR"}
     app_module.YAHOO_CACHE.pop("saudi", None)
+
+
+def test_public_ideas_cache_respects_requested_limit(monkeypatch):
+    now = int(time.time())
+    levels = "Entry 100 SL 95 TP1 110 TP2 115 TP3 120"
+    fake = [
+        {
+            "source": "Test public feed",
+            "title": f"BTCUSDT bullish setup 15m idea {index}",
+            "description": levels,
+            "url": f"https://example.com/idea-{index}",
+            "published_at": now - index,
+            "_text": f"BTCUSDT bullish setup 15m {levels}",
+        }
+        for index in range(3)
+    ]
+    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
+    app_module.PUBLIC_IDEAS_CACHE.clear()
+    app_module.PUBLIC_TRADE_FEED_CACHE.clear()
+
+    one = client.get("/api/public-ideas?market=spot&interval=15m&limit=1").json()
+    many = client.get("/api/public-ideas?market=spot&interval=15m&limit=10").json()
+    assert len(one["items"]) == 1
+    assert len(many["items"]) == 3
+
+
+def test_public_ideas_cached_results_expire_at_24_hours():
+    now = int(time.time())
+    stale = {
+        "title": "BTCUSDT bullish setup 15m",
+        "symbol": "BTCUSDT",
+        "direction": "شراء",
+        "interval": "15m",
+        "published_at": now - 25 * 3600,
+        "levels": {"entry": 100, "stop_loss": 95, "tp1": 110, "tp2": 115, "tp3": 120},
+        "has_complete_levels": True,
+    }
+    key = ("spot", "15m", 10, False)
+    app_module.PUBLIC_IDEAS_CACHE[key] = (now - 10, {"ok": True, "items": [stale], "count": 1})
+    response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+    assert response.json()["count"] == 0
+    app_module.PUBLIC_IDEAS_CACHE.clear()
