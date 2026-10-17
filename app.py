@@ -965,12 +965,32 @@ def market_direction(market: str = Query("spot")):
 PUBLIC_IDEAS_CACHE = {}
 PUBLIC_IDEAS_CACHE_TTL = 180
 PUBLIC_IDEAS_LOCK = threading.RLock()
+# Broad public-source discovery. Feeds are best-effort: inaccessible feeds are counted, never fabricated.
 PUBLIC_IDEA_FEEDS = [
     ("TradingView عربي", "https://ar.tradingview.com/feed/"),
     ("TradingView", "https://www.tradingview.com/feed/"),
-    ("Investing.com", "https://www.investing.com/rss/news_25.rss"),
-    ("Investing.com", "https://www.investing.com/rss/news_301.rss"),
-    ("Investing.com", "https://www.investing.com/rss/news_14.rss"),
+    ("Investing.com - Markets", "https://www.investing.com/rss/news_25.rss"),
+    ("Investing.com - Stocks", "https://www.investing.com/rss/news_301.rss"),
+    ("Investing.com - Forex", "https://www.investing.com/rss/news_14.rss"),
+    ("CoinDesk", "https://www.coindesk.com/arc/outboundfeeds/rss/"),
+    ("Cointelegraph", "https://cointelegraph.com/rss"),
+    ("Decrypt", "https://decrypt.co/feed"),
+    ("Bitcoin Magazine", "https://bitcoinmagazine.com/.rss/full/"),
+    ("The Block", "https://www.theblock.co/rss.xml"),
+    ("Yahoo Finance", "https://finance.yahoo.com/news/rssindex"),
+    ("CNBC Markets", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
+    ("CNBC Investing", "https://www.cnbc.com/id/15839069/device/rss/rss.html"),
+    ("MarketWatch", "https://feeds.marketwatch.com/marketwatch/marketpulse/"),
+    ("Seeking Alpha", "https://seekingalpha.com/market_currents.xml"),
+    ("Nasdaq", "https://www.nasdaq.com/feed/rssoutbound?category=Markets"),
+    ("Federal Reserve", "https://www.federalreserve.gov/feeds/press_all.xml"),
+    ("Google News - Global markets", "https://news.google.com/rss/search?q=stock+market+OR+forex+OR+gold+OR+cryptocurrency+trading&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News - Saudi market", "https://news.google.com/rss/search?q=Tadawul+OR+Saudi+stocks&hl=ar&gl=SA&ceid=SA:ar"),
+    ("Google News - Crypto analysis", "https://news.google.com/rss/search?q=bitcoin+OR+ethereum+price+analysis+buy+sell&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News - US stocks", "https://news.google.com/rss/search?q=US+stocks+price+target+buy+sell&hl=en-US&gl=US&ceid=US:en"),
+    ("Reddit - Trading", "https://www.reddit.com/r/Trading/.rss"),
+    ("Reddit - Stocks", "https://www.reddit.com/r/stocks/.rss"),
+    ("Reddit - CryptoCurrency", "https://www.reddit.com/r/CryptoCurrency/.rss"),
 ]
 PUBLIC_IDEA_MAX_AGE = 24 * 60 * 60
 PUBLIC_MARKET_SYMBOLS = {
@@ -1036,8 +1056,19 @@ def _fetch_public_idea_feed(source, url):
             from urllib.parse import urlsplit
             parsed_link = urlsplit(link)
             host = (parsed_link.hostname or "").lower()
-            if parsed_link.scheme != "https" or not (host == "tradingview.com" or host.endswith(".tradingview.com")
-                                                       or host == "investing.com" or host.endswith(".investing.com")):
+            allowed_hosts = (
+                "tradingview.com", "investing.com", "coindesk.com", "cointelegraph.com",
+                "decrypt.co", "bitcoinmagazine.com", "theblock.co", "yahoo.com",
+                "finance.yahoo.com", "cnbc.com", "marketwatch.com", "seekingalpha.com",
+                "nasdaq.com", "federalreserve.gov", "news.google.com", "reddit.com",
+                "reuters.com", "bloomberg.com", "wsj.com", "ft.com", "forbes.com",
+                "marketwatch.com", "barrons.com", "thestreet.com", "benzinga.com",
+                "arabnews.com", "argaam.com", "aleqt.com", "mubasher.info",
+                "saudiexchange.sa", "spa.gov.sa"
+            )
+            if parsed_link.scheme != "https" or not any(
+                host == domain or host.endswith("." + domain) for domain in allowed_hosts
+            ):
                 continue
             rows.append({"source": source, "title": title[:300], "description": description[:1600],
                          "url": link, "published_at": published, "_text": text_value})
