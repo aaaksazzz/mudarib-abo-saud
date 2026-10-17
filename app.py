@@ -1720,7 +1720,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             candidates = universe.get("items", []) if isinstance(universe, dict) else []
             candidates = sorted(candidates, key=lambda x: abs(float(x.get("change_pct") or 0)), reverse=True)
             seen = set()
-            for candidate in candidates:
+            # Bound candle requests on the small production container; never scan the full market universe synchronously.
+            for candidate in candidates[:24]:
                 symbol = str(candidate.get("symbol") or "").upper()
                 if not symbol or symbol in seen:
                     continue
