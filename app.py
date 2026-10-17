@@ -1263,7 +1263,7 @@ def _public_idea_interval(value):
     if re.search(r"(?<![A-Za-z0-9])1M(?![A-Za-z0-9])", value):
         return "1M"
     match = re.search(
-        r"\\b(15m|15 min|15-minute|1h|1 hour|4h|4 hour|1d|daily|1 day|1w|weekly|monthly)\\b|(?:فريم|إطار)\\s*(15\\s*د|ساعة|4\\s*س|يومي|أسبوعي|شهري)",
+        r"\b(15m|15 min|15-minute|1h|1 hour|4h|4 hour|1d|daily|1 day|1w|weekly|monthly)\b|(?:فريم|إطار)\s*(15\s*د|ساعة|4\s*س|يومي|أسبوعي|شهري)",
         value, re.I)
     if not match:
         return ""
@@ -1294,7 +1294,7 @@ def _public_idea_symbol_matches_market(market, symbol, text_value=""):
         return symbol in crypto_bases or any(
             symbol.endswith(q) and symbol[:-len(q)] in crypto_bases for q in crypto_quotes)
     if market == "alpha":
-        return bool(re.search(r"binance\\s+alpha|alpha\\s+token|باينانس\\s+ألفا", text_value, re.I)
+        return bool(re.search(r"binance\s+alpha|alpha\s+token|باينانس\s+ألفا", text_value, re.I)
                     and (symbol in crypto_bases or any(
                         symbol.endswith(q) and symbol[:-len(q)] in crypto_bases for q in crypto_quotes)))
     if market == "us":
