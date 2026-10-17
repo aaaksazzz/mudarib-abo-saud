@@ -1436,7 +1436,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), lim
         raw_rows, source_errors = [], 0
         jobs = [(_fetch_public_idea_feed, (name, url)) for name, url in PUBLIC_TRADE_IDEA_FEEDS]
         jobs.extend((_fetch_telegram_public_channel, (channel,)) for channel in channels)
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=2) as pool:
             futures = [pool.submit(fn, *args) for fn, args in jobs]
             for future in as_completed(futures):
                 try:
