@@ -1110,8 +1110,8 @@ def _telegram_directory_search(term):
                  "Accept": "text/html,*/*"})
     with urllib.request.urlopen(request, timeout=4) as response:
         page = response.read(700_000).decode("utf-8", "replace")
-    found = set(re.findall(r'href=["\\']https?://t\\.me/([A-Za-z0-9_]{5,})/?["\\']', page))
-    found.update(re.findall(r'href=["\\']/channel/([A-Za-z0-9_]{5,})["\\']', page))
+    found = set(re.findall(r"href=[\\\"']https?://t\\.me/([A-Za-z0-9_]{5,})/?[\\\"']", page))
+    found.update(re.findall(r"href=[\\\"']/channel/([A-Za-z0-9_]{5,})[\\\"']", page))
     return {x for x in found if x.lower() not in {"share", "joinchat", "addstickers", "proxy"}}
 
 def _telegram_public_channels():
