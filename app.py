@@ -1729,15 +1729,31 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             candidates = universe.get("items", []) if isinstance(universe, dict) else []
             candidates = sorted(candidates, key=lambda x: abs(float(x.get("change_pct") or 0)), reverse=True)
             seen = {str(x.get("symbol") or "").upper() for x in items}
-            # Bounded scan; stop as soon as the board is usefully populated.
-            for candidate in candidates[:24]:
-                symbol = str(candidate.get("symbol") or "").upper()
-                if not symbol or symbol in seen:
+            # Broaden discovery so one strict setup among the first few movers does not
+            # leave the board looking empty. Scan in small parallel batches to protect the
+            # low-memory service, and stop as soon as enough real, complete setups are found.
+            candidates = candidates[:48]
+            for offset in range(0, len(candidates), 8):
+                batch = []
+                for candidate in candidates[offset:offset + 8]:
+                    symbol = str(candidate.get("symbol") or "").upper()
+                    if not symbol or symbol in seen:
+                        continue
+                    seen.add(symbol)
+                    batch.append(symbol)
+                if not batch:
                     continue
-                seen.add(symbol)
-                signal = _technical_fallback_signal(market, symbol, interval)
-                if signal:
-                    items.append(signal)
+                with ThreadPoolExecutor(max_workers=4) as pool:
+                    futures = {pool.submit(_technical_fallback_signal, market, symbol, interval): symbol
+                               for symbol in batch}
+                    for future in as_completed(futures):
+                        try:
+                            signal = future.result()
+                        except Exception as scan_exc:
+                            print(f"technical fallback skipped {market}/{futures[future]}/{interval}: {type(scan_exc).__name__}")
+                            continue
+                        if signal:
+                            items.append(signal)
                 if len(items) >= target_count:
                     break
             fallback_used = True
