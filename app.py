@@ -1966,7 +1966,7 @@ def risk_position_size(
 
 
 SIGNAL_CACHE = {}
-SIGNAL_CACHE_TTL = 20
+SIGNAL_CACHE_TTL = 90
 
 
 def _fetch_candle_data_uncached(market: str, symbol: str, interval: str):
@@ -2025,7 +2025,7 @@ def _fetch_candle_data_uncached(market: str, symbol: str, interval: str):
 
 
 CANDLE_DATA_CACHE = {}
-CANDLE_DATA_CACHE_TTL = 30
+CANDLE_DATA_CACHE_TTL = 90
 CANDLE_DATA_CACHE_MAX_ENTRIES = 240
 CANDLE_DATA_CACHE_LOCK = threading.RLock()
 
