@@ -1273,19 +1273,22 @@ def _public_idea_market_match(market, value):
     return bool(pattern and re.search(pattern, value, re.I))
 def _public_idea_levels(value):
     import re
+    number = r"\$?([0-9][0-9,]*(?:\.[0-9]+)?)"
     def find(pattern):
-        match = re.search(pattern, value, re.I)
+        match = re.search(pattern + r"\s*(?:[:=@]\s*|-\s*)?" + number, value, re.I)
         if not match:
             return None
         try:
             return float(match.group(1).replace(",", ""))
         except (TypeError, ValueError):
             return None
-    entry = find(r"(?:entry|entry price|buy at|sell at|الدخول|سعر الدخول)\s*[:=@-]?\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)")
-    stop = find(r"(?:stop(?:\s*loss)?|sl|وقف الخسارة|الوقف)\s*[:=@-]?\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)")
-    tp1 = find(r"(?:tp\s*1|target\s*1|target|take profit 1|الهدف الأول|هدف 1)\s*[:=@-]?\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)")
-    tp2 = find(r"(?:tp\s*2|target\s*2|take profit 2|الهدف الثاني|هدف 2)\s*[:=@-]?\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)")
-    tp3 = find(r"(?:tp\s*3|target\s*3|take profit 3|الهدف الثالث|هدف 3)\s*[:=@-]?\s*\$?([0-9][0-9,]*(?:\.[0-9]+)?)")
+    entry = find(r"(?:\bentry(?:\s*price|\s*zone)?\b|\bbuy\s*(?:at|entry)\b|\bsell\s*(?:at|entry)\b|الدخول|سعر الدخول)")
+    stop = find(r"(?:\bstop(?:\s*loss)?\b|\bSL\b|\binvalidation\b|وقف الخسارة|الوقف)")
+    # Require numbered targets; a generic "target" can incorrectly parse "target 2"
+    # as TP1 and create a false price ordering.
+    tp1 = find(r"(?:\bTP\s*1\b|\bTP1\b|\bT1\b|\btarget\s*1\b|\btarget1\b|\btake\s*profit\s*1\b|الهدف الأول|هدف 1)")
+    tp2 = find(r"(?:\bTP\s*2\b|\bTP2\b|\bT2\b|\btarget\s*2\b|\btarget2\b|\btake\s*profit\s*2\b|الهدف الثاني|هدف 2)")
+    tp3 = find(r"(?:\bTP\s*3\b|\bTP3\b|\bT3\b|\btarget\s*3\b|\btarget3\b|\btake\s*profit\s*3\b|الهدف الثالث|هدف 3)")
     return {"entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3}
 @app.get("/api/public-ideas")
 def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limit: int = Query(20, ge=1, le=50), discover: bool = Query(False)):
@@ -1323,7 +1326,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
                     print(f"public trade source failed: {type(exc).__name__}: {exc}")
         PUBLIC_TRADE_FEED_CACHE[feed_cache_key] = {"at": now, "rows": list(gathered), "errors": feed_errors}
     cutoff = now - PUBLIC_IDEA_MAX_AGE
-    stage_counts = {"fetched": len(gathered), "recent": 0, "direction": 0, "market": 0, "symbol": 0, "timeframe": 0, "complete_levels": 0}
+    stage_counts = {"fetched": len(gathered), "recent": 0, "direction": 0, "market": 0, "symbol": 0, "timeframe": 0, "levels_present": 0, "complete_levels": 0, "invalid_order": 0}
     unique = {}
     for item in gathered:
         published = item.get("published_at", 0)
@@ -1383,11 +1386,14 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
             entry, stop, tp1, tp2, tp3 = (float(levels[k]) for k in ("entry", "stop_loss", "tp1", "tp2", "tp3"))
         except (TypeError, ValueError):
             continue
+        stage_counts["levels_present"] += 1
         if not all(math.isfinite(v) and v > 0 for v in (entry, stop, tp1, tp2, tp3)):
             continue
         if side == "شراء" and not (stop < entry < tp1 < tp2 < tp3):
+            stage_counts["invalid_order"] += 1
             continue
         if side == "بيع" and not (tp3 < tp2 < tp1 < entry < stop):
+            stage_counts["invalid_order"] += 1
             continue
         stage_counts["complete_levels"] += 1
         item_id = item.get("url") or (item.get("source", "") + item.get("title", ""))
