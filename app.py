@@ -560,6 +560,8 @@ def retired_trade_boards_redirect():
 @app.get("/markets/saudi", response_class=HTMLResponse)
 @app.get("/markets/forex-gold", response_class=HTMLResponse)
 @app.get("/markets/alpha", response_class=HTMLResponse)
+@app.get("/analysis", response_class=HTMLResponse)
+@app.get("/tasi-analysis", response_class=HTMLResponse)
 @app.get("/results", response_class=HTMLResponse)
 @app.get("/news", response_class=HTMLResponse)
 @app.get("/account", response_class=HTMLResponse)
@@ -765,12 +767,8 @@ def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
                     return {"ok": True, "market": market, "live": True, "provider": "Yahoo Finance",
                             "delayed": True, "updated_at": int(now), "items": [],
                             "message": "لا توجد أسهم أمريكية مستوفية لسيولة مليون دولار يوميًا في البيانات المتاحة."}
-            elif market == "saudi":
-                data = [item for item in data if item.get("quote_volume", 0) >= 3_750_000]
-                if not data:
-                    return {"ok": True, "market": market, "live": True, "provider": "Yahoo Finance",
-                            "delayed": True, "updated_at": int(now), "items": [],
-                            "message": "لا توجد أسهم سعودية مستوفية لقيمة تداول تقارب مليون دولار يوميًا في البيانات المتاحة."}
+            # Saudi equities intentionally have no $1M turnover cutoff so the TASI list
+            # is not silently reduced to only the largest/liquid names.
             data.sort(key=lambda x: x["change_pct"], reverse=True)
             YAHOO_CACHE[market] = (now, data)
         return {"ok": True, "market": market, "live": True, "provider": "Yahoo Finance",
@@ -1254,7 +1252,12 @@ def public_results(limit: int = Query(100, ge=1, le=500)):
     closed = [row for row in rows if str(row.get("result", "")).upper() in {"TP1", "TP2", "TP3", "SL"}]
     wins = sum(1 for row in closed if str(row.get("result", "")).upper() in {"TP1", "TP2", "TP3"})
     losses = sum(1 for row in closed if str(row.get("result", "")).upper() == "SL")
-    profitable = sum(1 for row in closed if float(row.get("pnl_pct") or 0) > 0)
+    def _numeric_pnl(row):
+        try:
+            return float(row.get("pnl_pct") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+    profitable = sum(1 for row in closed if _numeric_pnl(row) > 0)
     return {"ok": True, "items": rows, "total": len(rows), "closed": len(closed),
             "wins": wins, "losses": losses, "profitable": profitable,
             "win_rate": round(wins / len(closed) * 100, 1) if closed else None,
