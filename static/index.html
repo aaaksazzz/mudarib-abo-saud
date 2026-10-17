@@ -302,41 +302,41 @@ async function getJson(url){
  return task;
 }
 const SECTION_CATALOG=[{id:"spot",label:"سبوت"},{id:"futures",label:"فيوتشر"},{id:"contracts",label:"العقود الأمريكية"},{id:"us",label:"الأسهم الأمريكية"},{id:"saudi",label:"السوق السعودي"},{id:"forex",label:"الفوركس والذهب"},{id:"alpha",label:"Binance Alpha"},{id:"tasi",label:"تحليل تاسي العام"},{id:"results",label:"النتائج"},{id:"news",label:"الأخبار"},{id:"blog",label:"المدونة"},{id:"account",label:"الحساب والاشتراك"}];let sectionSettings={};async function loadSectionSettings(){try{let d=await getJson("/api/site/sections");sectionSettings=d.sections||{};}catch(_e){sectionSettings={}}}function sectionMode(id){return sectionSettings[id]||"public"}function sectionGate(id){let mode=sectionMode(id);if(mode==="public")return false;let label=(SECTION_CATALOG.find(x=>x.id===id)||{}).label||"هذا القسم";$("view").innerHTML='<section class="panel locked-section"><h2>'+(mode==="closed"?"القسم مغلق مؤقتًا":"🔒 "+label+" — يتطلب اشتراكًا")+'</h2><p>'+(mode==="closed"?"هذا القسم متوقف حاليًا من الإدارة.":"هذا القسم مخصص للمشتركين. تواصل مع إدارة المنصة لتفعيل الاشتراك.")+'</p><button class="btn" data-page="home">العودة للرئيسية</button></section>';setTitle(label,mode==="closed"?"القسم مغلق":"قسم يتطلب اشتراكًا");return true}window.__sectionsReady=loadSectionSettings();function renderHome(){
- setTitle("التداول الذكي PRO | توجهات الأسواق","واجهة عربية لمتابعة توجهات الأسواق والانتقال إلى صفحات كل سوق بصورة مستقلة.");
- $("heroTitle").textContent="كل الأسواق… بنظرة واحدة";
- $("heroDesc").textContent="تابع المزاج العام للأسواق من حركة الأسعار، ثم افتح السوق المطلوب. لا نعرض توصيات دخول في الرئيسية ولا نخترع بيانات غير متاحة.";
- $("connection").textContent="● لوحة توجهات الأسواق";
+ setTitle("التداول الذكي PRO | ملخص الأسواق المهمة","ملخص أسعار واتجاهات تاسي وبيتكوين والذهب ومؤشرات الأسهم الأمريكية.");
+ $("heroTitle").textContent="تحليل الأسواق المهمة";
+ $("heroDesc").textContent="لوحة مختصرة لتاسي وبيتكوين والذهب وستاندرد آند بورز وناسداك والنفط. الأسعار من المصادر المتاحة، وقد تكون بعض البيانات متأخرة.";
+ $("connection").textContent="● ملخص الأسواق";
  $("view").innerHTML=
- '<section class="home-welcome"><div class="home-welcome-copy"><span class="home-kicker">MARKET PULSE · SMART TRADING PRO</span><h2>وش اتجاه السوق اليوم؟</h2><p>ملخص لحركة الأسعار واتساع الصعود والهبوط عبر الأسواق المدعومة، مع وقت التحديث وحالة البيانات.</p><div class="home-pills"><span>🧭 توجهات عامة</span><span>🌐 أسواق مستقلة</span><span>⏱️ تحديث من المصدر</span></div></div><div class="home-orbit" aria-hidden="true"><span>↗</span><i></i><b></b></div></section>'+
- '<section class="panel home-directions" id="homeDirections"><div class="panel-head"><div><h2>🧭 توجهات الأسواق</h2><div class="muted">قراءة عامة لحركة الأسعار — ليست توصية شراء أو بيع</div></div><button class="btn" id="homeRefresh">↻ تحديث</button></div><div class="home-direction-grid" id="homeDirectionCards"><div class="empty"><strong>جاري تحميل التوجهات</strong>نقرأ بيانات الأسواق المتاحة من المصدر.</div></div><p class="muted home-updated" id="homeDirectionUpdated">الاتجاه غير متاح حتى تكتمل قراءة البيانات.</p></section>'+
- '<section class="panel"><div class="panel-head"><div><h2>📊 ادخل إلى السوق</h2><div class="muted">كل سوق له بيانات وصفحة مستقلة</div></div></div><div class="home-market-grid">'+MARKETS.map(m=>'<button class="home-market-card" data-market="'+m.id+'"><span class="home-market-icon">'+m.icon+'</span><span class="home-market-copy"><strong>'+m.full+'</strong><small>'+m.desc+'</small></span><span class="home-arrow">←</span></button>').join("")+'</div></section>'+
- '<section class="panel"><div class="panel-head"><div><h2>✨ أقسام المنصة</h2><div class="muted">محتوى مرتب بعيد عن قائمة الأسواق</div></div></div><div class="home-tools-grid"><button class="home-tool" data-page="tasi"><span>🇸🇦</span><strong>تحليل تاسي العام</strong><small>قراءة حركة المؤشر السعودي</small></button><button class="home-tool" data-page="results"><span>◷</span><strong>نتائج الصفقات</strong><small>متابعة النتائج المسجلة</small></button><button class="home-tool" data-page="news"><span>◈</span><strong>أخبار الأسواق</strong><small>أخبار مصنفة حسب السوق</small></button><a class="home-tool" href="/blog"><span>▤</span><strong>المدونة</strong><small>مقالات ومعرفة للأسواق</small></a></div></section>';
+ '<section class="home-welcome"><div class="home-welcome-copy"><span class="home-kicker">MARKET PULSE</span><h2>وش وضع الأسواق اليوم؟</h2><p>تابع أهم المؤشرات والأصول في مكان واحد، مع السعر والتغير والاتجاه وأبرز المستويات عند توفر التحليل.</p></div><div class="home-orbit" aria-hidden="true"><span>↗</span><i></i><b></b></div></section>'+
+ '<section class="panel home-directions"><div class="panel-head"><div><h2>📊 الأسواق الرئيسية</h2><div class="muted">اضغط على البطاقة لفتح صفحة السوق</div></div><button class="btn" id="homeRefresh">↻ تحديث</button></div><div class="home-direction-grid" id="homeDirectionCards"><div class="empty"><strong>جاري تحميل الأسواق</strong>نجيب آخر الأسعار المتاحة.</div></div><p class="muted home-updated" id="homeDirectionUpdated">جاري تحديث البيانات…</p></section>';
  loadHomeDirections();
 }
 async function loadHomeDirections(){
  const root=$("homeDirectionCards");if(!root)return;
- root.innerHTML='<div class="empty"><strong>جاري تحميل التوجهات</strong>نقرأ حركة الأسعار المتاحة.</div>';
- const labels={BULLISH:"صاعد",BEARISH:"هابط",NEUTRAL:"مختلط / محايد"};
- const icons={BULLISH:"↗",BEARISH:"↘",NEUTRAL:"↔"};
- const tone={BULLISH:"up",BEARISH:"down",NEUTRAL:"flat"};
- const results=await Promise.all(MARKETS.map(async m=>{
-  try{
-   const d=await getJson("/api/market-direction?market="+encodeURIComponent(m.id));
-   if(!d||d.ok===false)throw new Error("direction unavailable");
-   return {m,d,ok:true};
-  }catch(e){return {m,d:null,ok:false};}
- }));
+ root.innerHTML='<div class="empty"><strong>جاري تحميل الأسواق</strong>نجيب آخر الأسعار المتاحة.</div>';
+ const safeJson=async url=>{try{const d=await getJson(url);return d&&d.ok!==false?d:null}catch(_){return null}};
+ const [spot,contracts,tasi]=await Promise.all([safeJson("/api/market/spot?limit=2000"),safeJson("/api/market/contracts?limit=2000"),safeJson("/api/tasi/analysis?interval=1d")]);
  if(!document.getElementById("homeDirectionCards"))return;
- root.innerHTML=results.map(({m,d,ok})=>{
-  if(!ok)return '<button class="home-direction-card unavailable" data-market="'+m.id+'"><span class="direction-card-top"><span>'+m.icon+' '+m.name+'</span><span class="direction-status">غير متاح</span></span><strong class="direction-main">—</strong><small>بيانات الاتجاه غير متاحة الآن</small><span class="direction-foot">فتح السوق ←</span></button>';
-  const dir=["BULLISH","BEARISH","NEUTRAL"].includes(d.direction)?d.direction:"NEUTRAL";
-  const n=Number(d.price_change_pct),change=d.price_change_pct==null?"—":(n>0?"+":"")+n.toFixed(2)+"%";
-  const total=Number(d.assets_sampled||0),up=Number(d.assets_up||0),down=Number(d.assets_down||0);
-  const stamp=Number(d.updated_at||0)>0?new Date(Number(d.updated_at)*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"}):"";
-  return '<button class="home-direction-card '+tone[dir]+'" data-market="'+m.id+'"><span class="direction-card-top"><span>'+m.icon+' '+m.name+'</span><span class="direction-status">'+icons[dir]+' '+labels[dir]+'</span></span><strong class="direction-main">'+esc(change)+'</strong><small>صاعدة '+up+' · هابطة '+down+' · عينة '+total+'</small><span class="direction-foot">تفاصيل السوق '+(stamp?'· '+esc(stamp):'')+' <b>←</b></span></button>';
+ const find=(d,symbol)=>d&&Array.isArray(d.items)?d.items.find(x=>String(x.symbol||"").toUpperCase()===symbol):null;
+ const btc=find(spot,"BTCUSDT"),gold=find(contracts,"GC=F"),sp=find(contracts,"ES=F"),nasdaq=find(contracts,"NQ=F"),oil=find(contracts,"CL=F");
+ const specs=[
+  {id:"tasi",name:"تاسي",icon:"🇸🇦",item:tasi?{symbol:"^TASI.SR",price:tasi.price,change_pct:tasi.change_pct}:null,detail:tasi?("دعم "+fmt(tasi.support)+" · مقاومة "+fmt(tasi.resistance)):"تحليل المؤشر غير متاح الآن",page:"tasi"},
+  {id:"spot",name:"بيتكوين",icon:"₿",item:btc,detail:"BTC / USDT · السوق الفوري",market:"spot"},
+  {id:"contracts",name:"الذهب",icon:"🥇",item:gold,detail:"عقود الذهب الآجلة · GC=F",market:"contracts"},
+  {id:"contracts",name:"S&P 500",icon:"🇺🇸",item:sp,detail:"عقود مؤشر ستاندرد آند بورز · ES=F",market:"contracts"},
+  {id:"contracts",name:"ناسداك 100",icon:"📈",item:nasdaq,detail:"عقود ناسداك 100 · NQ=F",market:"contracts"},
+  {id:"contracts",name:"النفط",icon:"🛢️",item:oil,detail:"عقود خام غرب تكساس · CL=F",market:"contracts"}
+ ];
+ root.innerHTML=specs.map(s=>{
+  const item=s.item,ok=item&&Number.isFinite(Number(item.price)),chg=ok&&item.change_pct!=null?Number(item.change_pct):null,dir=chg===null?"flat":chg>0?"up":chg<0?"down":"flat",direction=chg===null?"الاتجاه غير متاح":chg>0?"صاعد":chg<0?"هابط":"مستقر";
+  const price=ok?fmt(item.price):"—",change=chg===null?"—":(chg>0?"+":"")+chg.toFixed(2)+"%";
+  return '<button class="home-direction-card '+dir+(ok?"":" unavailable")+'" '+(s.page?'data-page="'+s.page+'"':'data-market="'+s.market+'"')+'><span class="direction-card-top"><span>'+s.icon+' '+s.name+'</span><span class="direction-status">'+(ok?direction:"غير متاح")+'</span></span><strong class="direction-main">'+esc(price)+'</strong><small class="home-benchmark-change">'+esc(change)+' · '+esc(s.detail)+'</small><span class="direction-foot">فتح التحليل <b>←</b></span></button>';
  }).join("");
- const available=results.filter(x=>x.ok).length;
- $("homeDirectionUpdated").textContent="الأسواق المقروءة: "+available+" من "+MARKETS.length+" · التحديث "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})+".";
+ $("homeDirectionUpdated").textContent="آخر تحديث: "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"})+" · قد تتأخر بعض بيانات الأسواق.";
+}
+function fmt(value){
+ const n=Number(value);if(!Number.isFinite(n))return "—";
+ return n.toLocaleString("en-US",{maximumFractionDigits:n>=1000?2:6});
 }
 function marketNewsCategory(id){if(["spot","futures","alpha"].includes(id))return "crypto";if(id==="us")return "us";if(id==="saudi")return "saudi";if(id==="forex")return "forex";if(id==="contracts")return "contracts";return null}
 async function loadMarketDirection(market){
