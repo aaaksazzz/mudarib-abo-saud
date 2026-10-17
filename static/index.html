@@ -318,7 +318,7 @@ async function renderMarketPage(){
  try{for(let i=localStorage.length-1;i>=0;i--){const k=localStorage.key(i);if(k&&k.startsWith("stp-saved-signals:"))localStorage.removeItem(k)}}catch(_e){}
  loadMarketDirection(m.id);
  try{
-  const d=await getJson("/api/market/"+encodeURIComponent(m.id)+"?limit=100");
+  const d=await getJson("/api/market/"+encodeURIComponent(m.id)+"?limit=500");
   const items=Array.isArray(d.items)?d.items:[];
   $("marketPrices").innerHTML=items.length?'<div class="list">'+items.map(x=>'<article class="row-card"><span class="tile-icon">'+(m.icon||"📈")+'</span><div class="row-main"><h3>'+esc(x.name||x.symbol||"—")+'</h3><p><strong>'+esc(x.symbol||"")+'</strong> · '+num(x.price,8)+'</p><p class="'+(Number(x.change_pct)>=0?"positive":"negative")+'">'+pct(Number(x.change_pct||0))+' · '+esc(x.exchange||d.provider||"مصدر عام")+'</p></div></article>').join("")+'</div>':empty(d.message||"لا توجد أسعار متاحة حاليًا.","لا توجد بيانات");
   $("connection").textContent="● بيانات أسعار "+m.full;
