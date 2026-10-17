@@ -1127,7 +1127,7 @@ def _telegram_public_channels():
     """Discover a few public signal channels, cache results, and bound outbound work."""
     now = int(time.time())
     with TELEGRAM_DISCOVERY_LOCK:
-        if TELEGRAM_DISCOVERY_CACHE["channels"] and now - TELEGRAM_DISCOVERY_CACHE["at"] < 1800:
+        if TELEGRAM_DISCOVERY_CACHE["at"] and now - TELEGRAM_DISCOVERY_CACHE["at"] < 1800:
             return list(TELEGRAM_DISCOVERY_CACHE["channels"])
     channels = list(dict.fromkeys(TELEGRAM_DEFAULT_CHANNELS))
     configured = os.getenv("TELEGRAM_PUBLIC_CHANNELS", "").strip()
