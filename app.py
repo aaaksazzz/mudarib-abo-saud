@@ -1325,12 +1325,14 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
         if not direction:
             continue
         stage_counts["direction"] += 1
-        if not _public_idea_market_match(market, full_text):
+        # Match the requested market and ticker against the post title only.
+        # Descriptive prose may mention unrelated assets or ordinary words like "near".
+        title_text = str(item.get("title") or "")
+        if not _public_idea_market_match(market, title_text):
             continue
         stage_counts["market"] += 1
-        # Ticker detection is case-sensitive: the word "near" must never become NEAR.
         symbol_re = re.compile(PUBLIC_SYMBOL_RE.pattern)
-        symbol_match = symbol_re.search(full_text)
+        symbol_match = symbol_re.search(title_text)
         if not symbol_match:
             continue
         symbol = symbol_match.group(0).upper()
@@ -1358,6 +1360,8 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
             continue
         item_id = item.get("url") or (item.get("source", "") + item.get("title", ""))
         item.pop("_text", None)
+        # Do not expose outbound source URLs as clickable links on the public site.
+        item["url"] = ""
         unique[item_id] = {**item, "market": market, "direction": direction, "symbol": symbol,
                            "interval": detected_interval, "levels": levels,
                            "age_hours": round((now - published) / 3600, 1),
