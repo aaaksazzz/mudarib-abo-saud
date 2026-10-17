@@ -316,6 +316,7 @@ async function renderMarketPage(){
  $("view").innerHTML='<section class="panel market-only-page"><div class="panel" id="marketDirectionPanel"></div><div class="panel-head"><div><h2>'+m.icon+' '+m.full+'</h2><div class="muted">توصيات منشورة من مواقع عامة خلال آخر 24 ساعة، مع رابط المصدر الأصلي</div></div><span class="badge">مصادر عامة</span></div><div class="frames" id="publicIdeaFrames">'+frameButtons().replace(/^<div class="frames" id="frames">/,"").replace(/<\/div>$/,"")+'</div><div id="publicIdeas">'+empty("جاري بحث","جاري بحث")+'</div></section>';
  // Discard any obsolete browser-cached strategy cards.
  $("connection").textContent="● توصيات المصادر العامة · "+m.full;
+ loadMarketSignals();
 }
 async function loadMarketSignals(){
  const root=$("publicIdeas");if(!root)return;
