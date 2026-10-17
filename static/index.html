@@ -271,7 +271,7 @@ const MARKETS=[
 {id:"forex",name:"الفوركس والذهب",full:"الفوركس والذهب",icon:"💱",desc:"أزواج العملات والمعادن",path:"/markets/forex-gold"},
 {id:"alpha",name:"Binance Alpha",full:"Binance Alpha",icon:"✨",desc:"بيانات Binance Alpha العامة؛ قد تختلف السيولة حسب الرمز",path:"/markets/alpha"}
 ];
-const FRAMES=[["15m","15 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
+const FRAMES=[["15m","15 دقيقة"],["1h","ساعة"],["4h","4 ساعات"]];
 const $=id=>document.getElementById(id),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function num(v,max=4){v=Number(v);if(!Number.isFinite(v))return"—";return v.toLocaleString("en-US",{maximumFractionDigits:v>=100?2:max})}
 function pct(v){v=Number(v);return (v>0?"+":"")+v.toFixed(2)+"%"}
