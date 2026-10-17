@@ -1,3 +1,4 @@
+import math
 import time
 
 from fastapi.testclient import TestClient
@@ -92,6 +93,29 @@ def test_strategy_signal_endpoint_uses_only_real_candle_universe(monkeypatch):
     assert data["items"] == []
     assert data["scanned"] == 0
     assert "شموع السوق الفعلية" in data["message"] or "لن نعرض" in data["message"]
+
+
+def test_technical_signal_uses_real_candles_and_emits_complete_levels(monkeypatch):
+    candles = []
+    for i in range(210):
+        close = 100 + i * 0.12 + math.sin(i * 0.6) * 0.4
+        candles.append({"time": i * 900, "open": close - 0.03, "high": close + 0.08,
+                        "low": close - 0.08, "close": close, "volume": 100.0})
+    recent_high = max(row["high"] for row in candles[-20:-1])
+    candles[-1]["close"] = max(candles[-1]["close"], recent_high + 0.05)
+    candles[-1]["high"] = candles[-1]["close"] + 0.08
+    candles[-1]["volume"] = 160.0
+    monkeypatch.setattr(app_module, "candle_data", lambda market, symbol, interval: candles)
+    signal = app_module._technical_fallback_signal("spot", "TESTUSDT", "15m")
+    assert signal is not None
+    assert signal["generated_by_site"] is True
+    assert signal["direction"] in {"شراء", "بيع"}
+    assert set(("entry", "stop_loss", "tp1", "tp2", "tp3")).issubset(signal["levels"])
+    levels = signal["levels"]
+    if signal["direction"] == "شراء":
+        assert levels["stop_loss"] < levels["entry"] < levels["tp1"] < levels["tp2"] < levels["tp3"]
+    else:
+        assert levels["tp3"] < levels["tp2"] < levels["tp1"] < levels["entry"] < levels["stop_loss"]
 
 
 def test_signal_endpoint_accepts_daily_weekly_and_monthly_frames(monkeypatch):
