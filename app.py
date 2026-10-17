@@ -286,7 +286,7 @@ def alpha_market_tickers():
             quote_volume = float(row.get("quoteVolume") or 0)
         except (TypeError, ValueError):
             return None
-        if price <= 0 or quote_volume < 1_000_000 or abs(change) < 0.1:
+        if price <= 0 or quote_volume < 1_000_000:
             return None
         return {"symbol": symbol, "price": price, "change_pct": change, "quote_volume": quote_volume}
     rows = []
@@ -356,7 +356,7 @@ def _fetch_market_tickers_uncached(market):
             quote_volume = float(item.get("quoteVolume") or 0)
         except (TypeError, ValueError):
             continue
-        if price <= 0 or quote_volume < 1_000_000 or abs(change) < 0.1:
+        if price <= 0 or quote_volume < 1_000_000:
             continue
         rows.append({"symbol": symbol, "price": price, "change_pct": change, "quote_volume": quote_volume})
     rows.sort(key=lambda x: x["quote_volume"], reverse=True)
@@ -702,17 +702,23 @@ def _load_saudi_symbols():
         YAHOO_MARKETS["saudi"] = sorted(set(YAHOO_MARKETS["saudi"]) | set(discovered))
 
 def _load_us_symbols():
+    """Broaden the US equity/ETF directory using several public Yahoo Finance searches."""
     now = time.time()
     with YAHOO_UNIVERSE_LOCK:
         cached = YAHOO_UNIVERSE_CACHE.get("us")
         if cached and now - cached[0] < YAHOO_UNIVERSE_CACHE_TTL:
             discovered = cached[1]
         else:
-            try:
-                discovered = _discover_yahoo_symbols("US stocks", count=250)
-            except Exception as exc:
-                print(f"US symbol discovery failed: {type(exc).__name__}: {exc}")
-                discovered = []
+            discovered = []
+            # Yahoo search is limited; combine independent searches to broaden coverage.
+            for query in ("US stocks", "NASDAQ stocks", "NYSE stocks",
+                          "US technology stocks", "US healthcare stocks",
+                          "US financial stocks", "US ETFs"):
+                try:
+                    discovered.extend(_discover_yahoo_symbols(query, count=250))
+                except Exception as exc:
+                    print(f"US symbol discovery failed for {query}: {type(exc).__name__}")
+            discovered = sorted(set(discovered))
             YAHOO_UNIVERSE_CACHE["us"] = (now, discovered)
         YAHOO_MARKETS["us"] = sorted(set(YAHOO_MARKETS["us"]) | set(discovered))
 
@@ -793,17 +799,16 @@ def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
                     "ok": False, "market": market, "live": False, "items": [],
                     "message": "تعذر جلب الأسعار من مزود السوق الآن. جرّب التحديث لاحقًا."
                 }, status_code=503)
-            # Exclude flat movers and require minimum daily turnover.
-            data = [item for item in data if abs(item.get("change_pct", 0)) >= 0.1]
-            # Minimum daily traded value: $1M for US equities; approximate SAR equivalent for Saudi equities.
+            # Keep all fetched symbols that meet the liquidity floor, including flat movers.
+            # US: at least USD 1M estimated daily turnover; Saudi: USD 1M equivalent (~3.75M SAR).
             if market == "us":
                 data = [item for item in data if item.get("dollar_volume", 0) >= 1_000_000]
                 if not data:
                     return {"ok": True, "market": market, "live": True, "provider": "Yahoo Finance",
                             "delayed": True, "updated_at": int(now), "items": [],
                             "message": "لا توجد أسهم أمريكية مستوفية لسيولة مليون دولار يوميًا في البيانات المتاحة."}
-            # Saudi equities intentionally have no $1M turnover cutoff so the TASI list
-            # is not silently reduced to only the largest/liquid names.
+            elif market == "saudi":
+                data = [item for item in data if item.get("dollar_volume", 0) >= 3_750_000]
             data.sort(key=lambda x: x["change_pct"], reverse=True)
             YAHOO_CACHE[market] = (now, data)
         return {"ok": True, "market": market, "live": True, "provider": "Yahoo Finance",
@@ -1482,16 +1487,35 @@ def site_sections():
 
 @app.get("/api/universe-counts")
 def universe_counts():
+    # Counts are for eligible crypto pairs; cached data avoids repeated provider calls.
+    try:
+        spot = market_tickers("spot")
+        spot_pairs = len(spot)
+    except Exception as exc:
+        print(f"universe count spot unavailable: {type(exc).__name__}")
+        spot, spot_pairs = [], None
+    try:
+        futures = market_tickers("futures")
+        futures_pairs = len(futures)
+    except Exception as exc:
+        print(f"universe count futures unavailable: {type(exc).__name__}")
+        futures, futures_pairs = [], None
+    symbols = {str(item.get("symbol") or "").upper()[:-4]
+               for item in spot + futures
+               if str(item.get("symbol") or "").upper().endswith("USDT")}
     return {
         "ok": True,
-        "unique_coins": None,
-        "spot_pairs": None,
-        "futures_pairs": None,
+        "unique_coins": len(symbols) if spot_pairs is not None or futures_pairs is not None else None,
+        "spot_pairs": spot_pairs,
+        "futures_pairs": futures_pairs,
         "total_stocks": len(set(YAHOO_MARKETS.get("us", []) + YAHOO_MARKETS.get("saudi", []))),
-        "us_stocks": len(YAHOO_MARKETS.get("us", [])),
-        "saudi_stocks": len(YAHOO_MARKETS.get("saudi", [])),
+        "us_stocks": len(set(YAHOO_MARKETS.get("us", []))),
+        "saudi_stocks": len(set(YAHOO_MARKETS.get("saudi", []))),
+        "crypto_quote_volume_min_usd": 1_000_000,
+        "us_stock_turnover_min_usd": 1_000_000,
+        "saudi_stock_turnover_min_sar": 3_750_000,
         "saudi_universe_source": "Yahoo Finance discovery + fallback list",
-        "message": "الأعداد تمثل رموزًا معروفة/مكتشفة وليست تأكيدًا على اكتمال جميع الشركات المدرجة."
+        "message": "العملات الرقمية: أزواج USDT المؤهلة بحجم تداول 24 ساعة لا يقل عن مليون دولار، مع استبعاد العملات المستقرة. الأسهم: رموز مكتشفة من Yahoo Finance مع حد السيولة المحدد؛ ليس ضمانًا لاكتمال كل إدراج عالمي."
     }
 
 @app.get("/api/results")
