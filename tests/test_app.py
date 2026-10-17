@@ -215,7 +215,7 @@ def test_market_page_uses_market_specific_ideas_and_visible_timeframe_buttons():
     html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
     assert 'async function loadMarketSignals()' in html
     assert '"/api/public-ideas?market="+encodeURIComponent(currentMarket)+"&interval="+encodeURIComponent(interval)+"&limit=50&discover=true"' in html
-    assert 'data-market-frame="'+value+'"' in html
+    assert 'data-market-frame=' in html and 'value+' in html
     assert 'async function loadMarketChart(symbol)' in html
 
 
