@@ -1128,7 +1128,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
             return {**cached[1], "cached": True}
     gathered = []
     feed_errors = 0
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    with ThreadPoolExecutor(max_workers=min(12, len(PUBLIC_IDEA_FEEDS))) as pool:
         futures = [pool.submit(_fetch_public_idea_feed, source, url) for source, url in PUBLIC_IDEA_FEEDS]
         for future in as_completed(futures):
             try:
@@ -1163,7 +1163,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("15m"), limi
     response = {"ok": True, "market": market, "interval": interval, "items": items,
                 "count": len(items), "sources_checked": len(PUBLIC_IDEA_FEEDS),
                 "sources_failed": feed_errors, "max_age_hours": 24, "updated_at": now,
-                "message": "توصيات عامة منشورة خلال 24 ساعة فقط؛ مستويات الدخول والأهداف والوقف لا تُستكمل بالتخمين."}
+                "message": "تم فحص خلاصات المصادر العامة المتاحة؛ الأفكار خلال 24 ساعة فقط، وقد تتعذر بعض المصادر أو تحجب الوصول. مستويات الدخول والأهداف والوقف لا تُستكمل بالتخمين."}
     with PUBLIC_IDEAS_LOCK:
         PUBLIC_IDEAS_CACHE[cache_key] = (now, response)
     return response
