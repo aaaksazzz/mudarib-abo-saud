@@ -79,14 +79,10 @@
   function renderMarketPage(key) {
     const m=markets[key]; if(!m)return;
     view.innerHTML=pageHeader(m.name,m.sub+" · المصدر: "+m.source,"الأسواق")+
-      '<section class="panel"><div class="panel-head"><div><h2>أصول السوق</h2><div class="muted" id="quoteMeta">قائمة الأصول فقط — الأسعار مخفية.</div></div><div class="toolbar"><button class="button small primary" id="loadQuotes">تحميل الأصول</button><button class="button small" id="refreshQuotes">تحديث</button></div></div><div id="quoteContent">'+empty("جاهز لتحميل السوق","اضغط تحميل الأصول لعرض الرموز دون أسعار.")+'</div></section>'+
       '<section class="panel"><div class="panel-head"><div><h2>فرص التحليل الفني</h2><div class="muted">فحص محدود عند الطلب حتى لا تتجمّد الصفحة.</div></div></div><div class="toolbar"><button class="button primary" id="loadSignals">فحص الفرص</button><span class="muted" id="signalMeta">لا يبدأ الفحص إلا عند الضغط.</span></div><div class="signal-grid" id="signalContent" style="margin-top:12px"></div></section>'+
       '<div class="notice">الأسعار العامة قد تكون متأخرة. الإشارات آلية تجريبية وليست ضمانًا للربح أو تنفيذًا لأوامر تداول.</div>';
-    $("loadQuotes").addEventListener("click",()=>loadQuotes(m));
-    $("refreshQuotes").addEventListener("click",()=>loadQuotes(m));
     $("loadSignals").addEventListener("click",()=>loadSignals(m));
     $("signalContent").addEventListener("click",e=>{const b=e.target.closest("[data-inline-chart]");if(!b)return;const card=b.closest(".signal-card"),symbol=b.dataset.symbol,frame=b.dataset.frame||selectedInterval,box=card&&card.querySelector("[data-chart-box]");if(!box)return;if(box.dataset.open==="1"){box.dataset.open="0";box.innerHTML="";b.textContent="عرض الشارت داخل الصفقة";return;}box.dataset.open="1";b.textContent="إخفاء الشارت";box.innerHTML='<div class="loading">تحميل الشارت…</div>';getJSON("/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(symbol)+"&interval="+encodeURIComponent(frame)).then(d=>{if(box.dataset.open==="1")box.innerHTML=drawCandles(d.items||[])}).catch(err=>{if(box.dataset.open==="1")box.innerHTML=empty("الشارت غير متاح",err.message)});});
-    loadQuotes(m);
   }
   async function loadQuotes(m) {
     const out=$("quoteContent"), meta=$("quoteMeta"); if(!out)return;
