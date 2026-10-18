@@ -147,7 +147,7 @@
     const out=$("signalContent"),meta=$("signalMeta"),button=$("loadSignals");button.disabled=true;
     out.innerHTML='<div class="loading">جاري فحص عينة محدودة من '+esc(m.name)+'…</div>';meta.textContent="فحص محدود · "+selectedInterval;
     try {
-      const d=await getJSON("/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedInterval)+"&limit=12");
+      const d=await getJSON("/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedInterval)+"&limit=20");
       const items=Array.isArray(d.items)?d.items.slice():[];
       // Rank the medals by the source's own confidence score when available.
       items.sort((a,b)=>{
