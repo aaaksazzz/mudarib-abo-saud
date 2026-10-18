@@ -628,4 +628,42 @@ Promise.race([window.__sectionsReady,new Promise(resolve=>setTimeout(resolve,250
   }))).observe(document.documentElement,{childList:true,subtree:true});
 })();
 </script>
+
+<script>
+/* Navigation safety net: keep the homepage usable if a page renderer fails. */
+(function(){
+  const marketPaths={spot:"/markets/spot",futures:"/markets/futures",contracts:"/markets/contracts",us:"/markets/us-stocks",saudi:"/markets/saudi",forex:"/markets/forex-gold",alpha:"/markets/alpha"};
+  const pagePaths={home:"/",results:"/results",news:"/news",analysis:"/analysis",tasi:"/tasi-analysis",account:"/account",admin:"/admin"};
+  document.addEventListener("click",function(event){
+    const target=event.target instanceof Element?event.target:null;
+    if(!target)return;
+    const menu=target.closest("#menuToggle");
+    if(menu){
+      event.preventDefault();event.stopImmediatePropagation();
+      const drawer=document.getElementById("sideDrawer"),backdrop=document.getElementById("drawerBackdrop");
+      if(drawer&&backdrop){const open=!drawer.classList.contains("open");drawer.classList.toggle("open",open);backdrop.classList.toggle("open",open);menu.setAttribute("aria-expanded",String(open));document.body.style.overflow=open?"hidden":"";}
+      return;
+    }
+    const pageButton=target.closest("[data-page]");
+    if(pageButton){
+      const page=pageButton.getAttribute("data-page"),path=pagePaths[page];
+      if(path){event.preventDefault();event.stopImmediatePropagation();if(location.pathname!==path)location.href=path;else location.reload();}
+      return;
+    }
+    const marketButton=target.closest("[data-market]");
+    if(marketButton&&!marketButton.closest("#newsMarketFilters")){
+      const market=marketButton.getAttribute("data-market");
+      const inDrawer=!!marketButton.closest("#sideDrawer");
+      const isMarketTile=marketButton.matches(".market-tile,.home-market-row,.btn.gold")||inDrawer;
+      if(isMarketTile&&marketPaths[market]){
+        event.preventDefault();event.stopImmediatePropagation();
+        if(location.pathname!==marketPaths[market])location.href=marketPaths[market];else location.reload();
+      }
+      return;
+    }
+    const refresh=target.closest("#homeRefresh,#heroRefresh");
+    if(refresh){event.preventDefault();event.stopImmediatePropagation();location.reload();}
+  },true);
+})();
+</script>
 </body></html>
