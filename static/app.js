@@ -21,6 +21,7 @@
   const marketKey = pathToMarket[path];
   let selectedInterval = "15m";
   let lastMarketItems = [];
+  let currentChartSymbol = "";
   let adminAuth = "";
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const price = (v) => {
@@ -79,12 +80,15 @@
     const m=markets[key]; if(!m)return;
     view.innerHTML=pageHeader(m.name,m.sub+" · المصدر: "+m.source,"الأسواق")+
       '<section class="panel"><div class="panel-head"><div><h2>أسعار السوق</h2><div class="muted" id="quoteMeta">تحميل أسعار السوق عند الطلب…</div></div><div class="toolbar"><button class="button small primary" id="loadQuotes">تحميل الأسعار</button><button class="button small" id="refreshQuotes">تحديث</button></div></div><div id="quoteContent">'+empty("جاهز لتحميل السوق","اضغط تحميل الأسعار لبدء طلب واحد لهذا السوق فقط.")+'</div></section>'+
-      '<section class="panel"><div class="panel-head"><div><h2>فرص التحليل الفني</h2><div class="muted">فحص محدود عند الطلب حتى لا تتجمّد الصفحة.</div></div></div><div class="frame-list" id="frames">'+["15m","1h","4h","1d","1w","1M"].map((f,i)=>'<button class="frame '+(i===0?"active":"")+'" data-frame="'+f+'">'+({"15m":"15 دقيقة","1h":"ساعة","4h":"4 ساعات","1d":"يومي","1w":"أسبوعي","1M":"شهري"}[f])+'</button>').join("")+'</div><div class="toolbar"><button class="button primary" id="loadSignals">فحص الفرص</button><span class="muted" id="signalMeta">لا يبدأ الفحص إلا عند الضغط.</span></div><div class="signal-grid" id="signalContent" style="margin-top:12px"></div></section>'+
+      '<section class="panel"><div class="panel-head"><div><h2>الشارت الفني</h2><div class="muted" id="chartMeta">اختر أصلًا من الجدول لعرض شموعه الفعلية.</div></div><span class="pill" id="chartSymbol">لم يُحدد أصل</span></div><div class="frame-list" id="frames">'+["15m","1h","4h","1d","1w","1M"].map((f,i)=>'<button class="frame '+(i===0?"active":"")+'" data-frame="'+f+'">'+({"15m":"15 دقيقة","1h":"ساعة","4h":"4 ساعات","1d":"يومي","1w":"أسبوعي","1M":"شهري"}[f])+'</button>').join("")+'</div><div id="chartContent">'+empty("بانتظار اختيار الأصل","سيتم رسم الشموع من بيانات المصدر الفعلية فقط.")+'</div></section>'+
+      '<section class="panel"><div class="panel-head"><div><h2>فرص التحليل الفني</h2><div class="muted">فحص محدود عند الطلب حتى لا تتجمّد الصفحة.</div></div></div><div class="toolbar"><button class="button primary" id="loadSignals">فحص الفرص</button><span class="muted" id="signalMeta">لا يبدأ الفحص إلا عند الضغط.</span></div><div class="signal-grid" id="signalContent" style="margin-top:12px"></div></section>'+
       '<div class="notice">الأسعار العامة قد تكون متأخرة. الإشارات آلية تجريبية وليست ضمانًا للربح أو تنفيذًا لأوامر تداول.</div>';
+    $("quoteContent").addEventListener("click",e=>{const row=e.target.closest("[data-symbol]");if(row)loadChart(m,row.dataset.symbol)});
+    $("quoteContent").addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.matches("[data-symbol]")){e.preventDefault();loadChart(m,e.target.dataset.symbol)}});
     $("loadQuotes").addEventListener("click",()=>loadQuotes(m));
     $("refreshQuotes").addEventListener("click",()=>loadQuotes(m));
     $("loadSignals").addEventListener("click",()=>loadSignals(m));
-    $("frames").addEventListener("click",e=>{const b=e.target.closest("[data-frame]");if(!b)return;selectedInterval=b.dataset.frame;$("frames").querySelectorAll("button").forEach(x=>x.classList.toggle("active",x===b));$("signalContent").innerHTML="";$("signalMeta").textContent="الفريم المختار: "+selectedInterval+" · اضغط فحص الفرص."});
+    $("frames").addEventListener("click",e=>{const b=e.target.closest("[data-frame]");if(!b)return;selectedInterval=b.dataset.frame;$("frames").querySelectorAll("button").forEach(x=>x.classList.toggle("active",x===b));$("signalContent").innerHTML="";$("signalMeta").textContent="الفريم المختار: "+selectedInterval+" · اضغط فحص الفرص.";if(currentChartSymbol)loadChart(m,currentChartSymbol)});
     loadQuotes(m);
   }
   async function loadQuotes(m) {
@@ -98,8 +102,25 @@
       meta.textContent=(d.provider||m.source)+" · "+(d.delayed?"قد تكون متأخرة · ":"")+(d.updated_at?"آخر تحديث: "+timeText(d.updated_at):"البيانات حسب المصدر");
       setStatus(d.live?"بيانات متاحة":"بيانات محدودة",!!d.live);
       if(!lastMarketItems.length)out.innerHTML=empty("المصدر لم يعرض أسعارًا",d.message||"لا توجد بيانات متاحة حاليًا.");
+      else {out.querySelectorAll("tbody tr").forEach((row,i)=>{const symbol=lastMarketItems[i]?.symbol;if(symbol){row.tabIndex=0;row.setAttribute("role","button");row.setAttribute("aria-label","عرض شارت "+symbol);row.dataset.symbol=symbol}});currentChartSymbol=lastMarketItems[0].symbol;loadChart(m,currentChartSymbol)}
     } catch(err) {out.innerHTML=empty("تعذر تحميل الأسعار",err.message);meta.textContent="فشل الطلب";setStatus("مصدر غير متاح",false)}
     finally {$("loadQuotes").disabled=false;$("refreshQuotes").disabled=false}
+  }
+  function drawCandles(items) {
+    const rows=(items||[]).filter(c=>[c.open,c.high,c.low,c.close].every(v=>Number.isFinite(Number(v))&&Number(v)>0));
+    if(rows.length<2)return empty("بيانات الشموع غير كافية","لم يرسم الموقع أي شموع تقديرية.");
+    const W=900,H=300,pad=28,lo=Math.min(...rows.map(c=>Number(c.low))),hi=Math.max(...rows.map(c=>Number(c.high))),range=hi-lo||1;
+    const y=v=>pad+(hi-Number(v))/range*(H-pad*2),step=(W-pad*2)/rows.length,bodyW=Math.max(2,Math.min(9,step*.58));
+    const grid=[0,.25,.5,.75,1].map(t=>{const val=hi-range*t,yy=pad+(H-pad*2)*t;return '<line x1="'+pad+'" y1="'+yy+'" x2="'+(W-pad)+'" y2="'+yy+'" stroke="#26364d" stroke-width="1"/><text x="'+(W-pad)+'" y="'+(yy-4)+'" fill="#92a6c2" font-size="10" text-anchor="end">'+esc(price(val))+'</text>'}).join("");
+    const candles=rows.map((c,i)=>{const x=pad+step*i+step/2,up=Number(c.close)>=Number(c.open),color=up?"#43d6a1":"#ff7184",top=y(Math.max(Number(c.open),Number(c.close))),bottom=y(Math.min(Number(c.open),Number(c.close))),height=Math.max(1,bottom-top);return '<line x1="'+x+'" y1="'+y(c.high)+'" x2="'+x+'" y2="'+y(c.low)+'" stroke="'+color+'" stroke-width="1.3"/><rect x="'+(x-bodyW/2)+'" y="'+top+'" width="'+bodyW+'" height="'+height+'" fill="'+color+'" rx=".5"/>'}).join("");
+    return '<div style="width:100%;overflow:hidden"><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="مخطط شموع حقيقية" style="width:100%;height:auto;display:block;background:#0a1321;border-radius:12px">'+grid+candles+'</svg></div><div class="muted" style="margin-top:8px">عدد الشموع: '+rows.length+' · المصدر الفعلي · آخر إغلاق: '+price(rows[rows.length-1].close)+'</div>';
+  }
+  async function loadChart(m,symbol) {
+    currentChartSymbol=symbol;
+    const out=$("chartContent"),meta=$("chartMeta"),badge=$("chartSymbol");if(!out)return;
+    badge.textContent=symbol;out.innerHTML='<div class="loading">جاري تحميل الشموع الفعلية…</div>';meta.textContent=m.name+" · "+selectedInterval;
+    try {const d=await getJSON("/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(symbol)+"&interval="+encodeURIComponent(selectedInterval));out.innerHTML=drawCandles(d.items||[]);meta.textContent=m.source+" · "+selectedInterval+" · "+(d.items||[]).length+" شمعة"}
+    catch(err){out.innerHTML=empty("الشارت غير متاح",err.message);meta.textContent="لا توجد بيانات شموع مؤكدة"}
   }
   function signalCard(x) {
     const l=x.levels||{};const side=x.direction||x.side||"غير محدد";const buy=["شراء","BUY","LONG"].includes(side);
