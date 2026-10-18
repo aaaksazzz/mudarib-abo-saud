@@ -148,8 +148,17 @@
     out.innerHTML='<div class="loading">جاري فحص عينة محدودة من '+esc(m.name)+'…</div>';meta.textContent="فحص محدود · "+selectedInterval;
     try {
       const d=await getJSON("/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedInterval)+"&limit=12");
-      const items=Array.isArray(d.items)?d.items:[];
-      meta.textContent="تم فحص "+(d.scanned??"—")+" أصل · "+items.length+" فرصة";
+      const items=Array.isArray(d.items)?d.items.slice():[];
+      // Rank the medals by the source's own confidence score when available.
+      items.sort((a,b)=>{
+        const score=x=>{const n=Number(x.ai_score??x.confidence);return Number.isFinite(n)?n:null};
+        const aa=score(a),bb=score(b);
+        if(aa===null&&bb===null)return 0;
+        if(aa===null)return 1;
+        if(bb===null)return -1;
+        return bb-aa;
+      });
+      meta.textContent="تم فحص "+(d.scanned??"—")+" أصل · "+items.length+" فرصة · الترتيب حسب الثقة المتاحة";
       out.innerHTML=items.length?items.map((x,i)=>signalCard(x,i)).join(""):empty("لا توجد فرص مؤهلة الآن",d.message||"لن نعرض صفقة بمستويات ناقصة أو غير مرتبة.");
     } catch(err) {out.innerHTML=empty("تعذر فحص الفرص",err.message);meta.textContent="فشل الفحص"}
     finally {button.disabled=false}
