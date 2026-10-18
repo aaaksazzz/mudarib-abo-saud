@@ -1726,7 +1726,12 @@ def _technical_fallback_signal(market, symbol, interval):
         short_score = sum((entry < ema20, ema20 < ema50, 28 <= rsi <= 50, not macd_up, entry < recent_low, vol_ratio >= 1.05))
         max_risk_pct = {"15m": 0.03, "1h": 0.05, "4h": 0.08, "1d": 0.12, "1w": 0.20, "1M": 0.30}.get(interval, 0.03)
         max_risk = entry * max_risk_pct
-        if long_trend and long_score >= 4 and long_score > short_score:
+        # REVERSED STRATEGY (v1): invert the original setup direction, not merely
+        # the displayed BUY/SELL label. A bearish setup now produces a BUY with
+        # downside stop / upside targets; a bullish setup produces a SELL with
+        # upside stop / downside targets. Keep all levels derived from the same
+        # real candles and the same bounded ATR risk.
+        if short_trend and short_score >= 4 and short_score > long_score:
             side, stop = "شراء", min(entry - atr * 1.5, recent_low)
             risk = entry - stop
             if risk <= 0:
@@ -1734,8 +1739,8 @@ def _technical_fallback_signal(market, symbol, interval):
             risk = min(risk, max_risk)
             stop = entry - risk
             targets = [entry + risk * n for n in (1, 2, 3)]
-            score = long_score
-        elif short_trend and short_score >= 4 and short_score > long_score:
+            score = short_score
+        elif long_trend and long_score >= 4 and long_score > short_score:
             side, stop = "بيع", max(entry + atr * 1.5, recent_high)
             risk = stop - entry
             if risk <= 0:
@@ -1745,7 +1750,7 @@ def _technical_fallback_signal(market, symbol, interval):
             targets = [entry - risk * n for n in (1, 2, 3)]
             if targets[-1] <= 0:
                 return None
-            score = short_score
+            score = long_score
         else:
             return None
         digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
@@ -1781,7 +1786,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "الفريم غير مدعوم."}, status_code=422)
     now = int(time.time())
-    cache_key = ("signal_cards", market, interval, limit)
+    cache_key = ("signal_cards_inverse_v1", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if cached and now - cached[0] < 90:
