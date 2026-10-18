@@ -71,15 +71,15 @@
     }).catch(()=>{const s=$("homeStatus");if(s)s.textContent="تعذر التحقق من الخدمة الآن";setStatus("تعذر التحقق",false)});
   }
   function quoteRows(items) {
-    if(!items.length)return empty("لا توجد أسعار متاحة","لم يرجع المصدر بيانات قابلة للعرض؛ لم نضع أسعارًا تقديرية.");
-    return '<div class="table-wrap"><table><thead><tr><th>الأصل</th><th>السعر</th><th>التغير 24س</th><th>حجم التداول</th></tr></thead><tbody>'+
-      items.map(x=>'<tr><td><b dir="ltr">'+esc(x.symbol||"—")+'</b></td><td class="ltr">'+price(x.price)+'</td><td class="'+(Number(x.change_pct)>0?"positive":Number(x.change_pct)<0?"negative":"")+'">'+pct(x.change_pct)+'</td><td class="ltr">'+(x.quote_volume!=null?price(x.quote_volume):x.dollar_volume!=null?price(x.dollar_volume):"—")+'</td></tr>').join("")+
+    if(!items.length)return empty("لا توجد أصول متاحة","لم يرجع المصدر أصولًا قابلة للعرض.");
+    return '<div class="table-wrap"><table><thead><tr><th>الأصل</th><th>الشارت</th></tr></thead><tbody>'+
+      items.map(x=>'<tr><td><b dir="ltr">'+esc(x.symbol||"—")+'</b></td><td><span class="pill">اضغط لعرض الشارت</span></td></tr>').join("")+
       '</tbody></table></div>';
   }
   function renderMarketPage(key) {
     const m=markets[key]; if(!m)return;
     view.innerHTML=pageHeader(m.name,m.sub+" · المصدر: "+m.source,"الأسواق")+
-      '<section class="panel"><div class="panel-head"><div><h2>أسعار السوق</h2><div class="muted" id="quoteMeta">تحميل أسعار السوق عند الطلب…</div></div><div class="toolbar"><button class="button small primary" id="loadQuotes">تحميل الأسعار</button><button class="button small" id="refreshQuotes">تحديث</button></div></div><div id="quoteContent">'+empty("جاهز لتحميل السوق","اضغط تحميل الأسعار لبدء طلب واحد لهذا السوق فقط.")+'</div></section>'+
+      '<section class="panel"><div class="panel-head"><div><h2>أصول السوق</h2><div class="muted" id="quoteMeta">قائمة الأصول فقط — الأسعار مخفية.</div></div><div class="toolbar"><button class="button small primary" id="loadQuotes">تحميل الأصول</button><button class="button small" id="refreshQuotes">تحديث</button></div></div><div id="quoteContent">'+empty("جاهز لتحميل السوق","اضغط تحميل الأصول لعرض الرموز دون أسعار.")+'</div></section>'+
       '<section class="panel"><div class="panel-head"><div><h2>الشارت الفني</h2><div class="muted" id="chartMeta">اختر أصلًا من الجدول لعرض شموعه الفعلية.</div></div><span class="pill" id="chartSymbol">لم يُحدد أصل</span></div><div class="frame-list" id="frames">'+["15m","1h","4h","1d","1w","1M"].map((f,i)=>'<button class="frame '+(i===0?"active":"")+'" data-frame="'+f+'">'+({"15m":"15 دقيقة","1h":"ساعة","4h":"4 ساعات","1d":"يومي","1w":"أسبوعي","1M":"شهري"}[f])+'</button>').join("")+'</div><div id="chartContent">'+empty("بانتظار اختيار الأصل","سيتم رسم الشموع من بيانات المصدر الفعلية فقط.")+'</div></section>'+
       '<section class="panel"><div class="panel-head"><div><h2>فرص التحليل الفني</h2><div class="muted">فحص محدود عند الطلب حتى لا تتجمّد الصفحة.</div></div></div><div class="toolbar"><button class="button primary" id="loadSignals">فحص الفرص</button><span class="muted" id="signalMeta">لا يبدأ الفحص إلا عند الضغط.</span></div><div class="signal-grid" id="signalContent" style="margin-top:12px"></div></section>'+
       '<div class="notice">الأسعار العامة قد تكون متأخرة. الإشارات آلية تجريبية وليست ضمانًا للربح أو تنفيذًا لأوامر تداول.</div>';
@@ -93,17 +93,17 @@
   }
   async function loadQuotes(m) {
     const out=$("quoteContent"), meta=$("quoteMeta"); if(!out)return;
-    out.innerHTML='<div class="loading">جاري تحميل بيانات '+esc(m.name)+'…</div>';meta.textContent="اتصال بمصدر الأسعار";
+    out.innerHTML='<div class="loading">جاري تحميل بيانات '+esc(m.name)+'…</div>';meta.textContent="تحميل قائمة الأصول";
     $("loadQuotes").disabled=true;$("refreshQuotes").disabled=true;
     try {
       const d=await getJSON("/api/market/"+encodeURIComponent(m.api)+"?limit=100");
       lastMarketItems=Array.isArray(d.items)?d.items:[];
       out.innerHTML=quoteRows(lastMarketItems);
-      meta.textContent=(d.provider||m.source)+" · "+(d.delayed?"قد تكون متأخرة · ":"")+(d.updated_at?"آخر تحديث: "+timeText(d.updated_at):"البيانات حسب المصدر");
+      meta.textContent="تم تحميل "+lastMarketItems.length+" أصل · الأسعار مخفية";
       setStatus(d.live?"بيانات متاحة":"بيانات محدودة",!!d.live);
       if(!lastMarketItems.length)out.innerHTML=empty("المصدر لم يعرض أسعارًا",d.message||"لا توجد بيانات متاحة حاليًا.");
       else {out.querySelectorAll("tbody tr").forEach((row,i)=>{const symbol=lastMarketItems[i]?.symbol;if(symbol){row.tabIndex=0;row.setAttribute("role","button");row.setAttribute("aria-label","عرض شارت "+symbol);row.dataset.symbol=symbol}});currentChartSymbol=lastMarketItems[0].symbol;loadChart(m,currentChartSymbol)}
-    } catch(err) {out.innerHTML=empty("تعذر تحميل الأسعار",err.message);meta.textContent="فشل الطلب";setStatus("مصدر غير متاح",false)}
+    } catch(err) {out.innerHTML=empty("تعذر تحميل الأسعار",err.message);meta.textContent="تعذر تحميل الأصول";setStatus("مصدر غير متاح",false)}
     finally {$("loadQuotes").disabled=false;$("refreshQuotes").disabled=false}
   }
   function drawCandles(items) {
@@ -122,15 +122,26 @@
     try {const d=await getJSON("/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(symbol)+"&interval="+encodeURIComponent(selectedInterval));out.innerHTML=drawCandles(d.items||[]);meta.textContent=m.source+" · "+selectedInterval+" · "+(d.items||[]).length+" شمعة"}
     catch(err){out.innerHTML=empty("الشارت غير متاح",err.message);meta.textContent="لا توجد بيانات شموع مؤكدة"}
   }
-  function signalCard(x) {
-    const l=x.levels||{};const side=x.direction||x.side||"غير محدد";const buy=["شراء","BUY","LONG"].includes(side);
-    return '<article class="signal-card"><div class="signal-top"><b class="signal-symbol">'+esc(x.symbol||"—")+'</b><span class="tag '+(buy?"buy":"sell")+'">'+esc(side)+'</span><span class="tag">'+esc(x.interval||selectedInterval)+'</span><span class="tag">AI '+esc(x.ai_score??x.confidence??"—")+'%</span></div>'+
-      '<div class="entry-line"><span>الدخول</span><strong>'+price(l.entry??x.entry)+'</strong></div><div class="levels-grid">'+
-      '<div class="level stop"><small>وقف الخسارة</small><strong>'+price(l.stop_loss??x.stop_loss)+'</strong></div>'+
-      '<div class="level target"><small>الهدف الأول</small><strong>'+price(l.tp1??x.tp1)+'</strong></div>'+
-      '<div class="level target"><small>الهدف الثاني</small><strong>'+price(l.tp2??x.tp2)+'</strong></div>'+
-      '<div class="level target"><small>الهدف الثالث</small><strong>'+price(l.tp3??x.tp3)+'</strong></div></div>'+
-      '<div class="muted" style="margin-top:10px">'+esc(x.status||"إشارة فنية تجريبية · تحقق من البيانات قبل أي قرار")+'</div></article>';
+  function signalCard(x, rank=0) {
+    const l=x.levels||{};
+    const side=x.direction||x.side||"غير محدد";
+    const buy=["شراء","BUY","LONG"].includes(side);
+    const entry=Number(l.entry??x.entry);
+    const pctTo=(target, favorable)=> {
+      const n=Number(target);
+      if(!Number.isFinite(entry)||entry<=0||!Number.isFinite(n)||n<=0)return "—";
+      const value=(favorable?(buy?n-entry:entry-n):(buy?entry-n:n-entry))/entry*100;
+      return (value>0?"+":"")+value.toFixed(2)+"%";
+    };
+    const medal=rank===0?"🥇 ذهبي":rank===1?"🥈 فضي":rank===2?"🥉 برونزي":"🏅 #"+(rank+1);
+    const stop=l.stop_loss??x.stop_loss,tp1=l.tp1??x.tp1,tp2=l.tp2??x.tp2,tp3=l.tp3??x.tp3;
+    return '<article class="signal-card"><div class="signal-top"><span class="tag" style="font-weight:800;border:1px solid #c79b35;background:linear-gradient(135deg,#35270a,#9b7622);color:#fff0b3">'+medal+'</span><b class="signal-symbol">'+esc(x.symbol||"—")+'</b><span class="tag '+(buy?"buy":"sell")+'">'+esc(side)+'</span><span class="tag">'+esc(x.interval||selectedInterval)+'</span><span class="tag">AI '+esc(x.ai_score??x.confidence??"—")+'%</span></div>'+
+      '<div class="entry-line"><span>الدخول</span><strong>'+price(entry)+'</strong></div><div class="levels-grid">'+
+      '<div class="level stop"><small>وقف الخسارة</small><strong>'+price(stop)+'</strong><small class="negative">خسارة محتملة '+pctTo(stop,false)+'</small></div>'+
+      '<div class="level target"><small>الهدف الأول</small><strong>'+price(tp1)+'</strong><small class="positive">ربح محتمل '+pctTo(tp1,true)+'</small></div>'+
+      '<div class="level target"><small>الهدف الثاني</small><strong>'+price(tp2)+'</strong><small class="positive">ربح محتمل '+pctTo(tp2,true)+'</small></div>'+
+      '<div class="level target"><small>الهدف الثالث</small><strong>'+price(tp3)+'</strong><small class="positive">ربح محتمل '+pctTo(tp3,true)+'</small></div></div>'+
+      '<div class="muted" style="margin-top:10px">'+esc(x.status||"النسب تقديرية من سعر الدخول إلى الهدف/الوقف، قبل الرسوم والانزلاق")+'</div></article>';
   }
   async function loadSignals(m) {
     const out=$("signalContent"),meta=$("signalMeta"),button=$("loadSignals");button.disabled=true;
@@ -139,7 +150,7 @@
       const d=await getJSON("/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedInterval)+"&limit=12");
       const items=Array.isArray(d.items)?d.items:[];
       meta.textContent="تم فحص "+(d.scanned??"—")+" أصل · "+items.length+" فرصة";
-      out.innerHTML=items.length?items.map(signalCard).join(""):empty("لا توجد فرص مؤهلة الآن",d.message||"لن نعرض صفقة بمستويات ناقصة أو غير مرتبة.");
+      out.innerHTML=items.length?items.map((x,i)=>signalCard(x,i)).join(""):empty("لا توجد فرص مؤهلة الآن",d.message||"لن نعرض صفقة بمستويات ناقصة أو غير مرتبة.");
     } catch(err) {out.innerHTML=empty("تعذر فحص الفرص",err.message);meta.textContent="فشل الفحص"}
     finally {button.disabled=false}
   }
