@@ -1117,11 +1117,11 @@ def market_direction(market: str = Query("spot")):
 
 
 PUBLIC_IDEAS_CACHE = {}
-PUBLIC_IDEAS_CACHE_TTL = 1800
+PUBLIC_IDEAS_CACHE_TTL = 300
 PUBLIC_IDEAS_LOCK = threading.RLock()
 # Shared raw-feed cache prevents every market/timeframe request from refetching all external sites.
 PUBLIC_TRADE_FEED_CACHE = {}
-PUBLIC_TRADE_FEED_CACHE_TTL = 600
+PUBLIC_TRADE_FEED_CACHE_TTL = 300
 # Broad public-source discovery. Feeds are best-effort: inaccessible feeds are counted, never fabricated.
 PUBLIC_IDEA_FEEDS = [
     ("TradingView عربي", "https://ar.tradingview.com/feed/"),
