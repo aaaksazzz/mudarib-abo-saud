@@ -111,9 +111,9 @@
     if(rows.length<2)return empty("بيانات الشموع غير كافية","لم يرسم الموقع أي شموع تقديرية.");
     const W=900,H=300,pad=28,lo=Math.min(...rows.map(c=>Number(c.low))),hi=Math.max(...rows.map(c=>Number(c.high))),range=hi-lo||1;
     const y=v=>pad+(hi-Number(v))/range*(H-pad*2),step=(W-pad*2)/rows.length,bodyW=Math.max(2,Math.min(9,step*.58));
-    const grid=[0,.25,.5,.75,1].map(t=>{const val=hi-range*t,yy=pad+(H-pad*2)*t;return '<line x1="'+pad+'" y1="'+yy+'" x2="'+(W-pad)+'" y2="'+yy+'" stroke="#26364d" stroke-width="1"/><text x="'+(W-pad)+'" y="'+(yy-4)+'" fill="#92a6c2" font-size="10" text-anchor="end">'+esc(price(val))+'</text>'}).join("");
+    const grid=[0,.25,.5,.75,1].map(t=>{const yy=pad+(H-pad*2)*t;return '<line x1="'+pad+'" y1="'+yy+'" x2="'+(W-pad)+'" y2="'+yy+'" stroke="#26364d" stroke-width="1"/>'}).join("");
     const candles=rows.map((c,i)=>{const x=pad+step*i+step/2,up=Number(c.close)>=Number(c.open),color=up?"#43d6a1":"#ff7184",top=y(Math.max(Number(c.open),Number(c.close))),bottom=y(Math.min(Number(c.open),Number(c.close))),height=Math.max(1,bottom-top);return '<line x1="'+x+'" y1="'+y(c.high)+'" x2="'+x+'" y2="'+y(c.low)+'" stroke="'+color+'" stroke-width="1.3"/><rect x="'+(x-bodyW/2)+'" y="'+top+'" width="'+bodyW+'" height="'+height+'" fill="'+color+'" rx=".5"/>'}).join("");
-    return '<div style="width:100%;overflow:hidden"><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="مخطط شموع حقيقية" style="width:100%;height:auto;display:block;background:#0a1321;border-radius:12px">'+grid+candles+'</svg></div><div class="muted" style="margin-top:8px">عدد الشموع: '+rows.length+' · المصدر الفعلي · آخر إغلاق: '+price(rows[rows.length-1].close)+'</div>';
+    return '<div style="width:100%;overflow:hidden"><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="مخطط شموع حقيقية دون إظهار تدريج الأسعار" style="width:100%;height:auto;display:block;background:#0a1321;border-radius:12px">'+grid+candles+'</svg></div><div class="muted" style="margin-top:8px">عدد الشموع: '+rows.length+' · المصدر الفعلي · تدريج الأسعار مخفي</div>';
   }
   async function loadChart(m,symbol) {
     currentChartSymbol=symbol;
