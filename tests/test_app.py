@@ -147,13 +147,11 @@ def test_technical_signal_uses_real_candles_and_emits_complete_levels(monkeypatc
     signal = app_module._technical_fallback_signal("spot", "TESTUSDT", "15m")
     assert signal is not None
     assert signal["generated_by_site"] is True
-    assert signal["direction"] in {"شراء", "بيع"}
+    # The input series is bullish; the reversed strategy must emit a SELL.
+    assert signal["direction"] == "بيع"
     assert set(("entry", "stop_loss", "tp1", "tp2", "tp3")).issubset(signal["levels"])
     levels = signal["levels"]
-    if signal["direction"] == "شراء":
-        assert levels["stop_loss"] < levels["entry"] < levels["tp1"] < levels["tp2"] < levels["tp3"]
-    else:
-        assert levels["tp3"] < levels["tp2"] < levels["tp1"] < levels["entry"] < levels["stop_loss"]
+    assert levels["tp3"] < levels["tp2"] < levels["tp1"] < levels["entry"] < levels["stop_loss"]
 
 
 def test_signal_endpoint_accepts_daily_weekly_and_monthly_frames(monkeypatch):
