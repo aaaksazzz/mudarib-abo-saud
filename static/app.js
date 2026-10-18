@@ -80,15 +80,12 @@
     const m=markets[key]; if(!m)return;
     view.innerHTML=pageHeader(m.name,m.sub+" · المصدر: "+m.source,"الأسواق")+
       '<section class="panel"><div class="panel-head"><div><h2>أصول السوق</h2><div class="muted" id="quoteMeta">قائمة الأصول فقط — الأسعار مخفية.</div></div><div class="toolbar"><button class="button small primary" id="loadQuotes">تحميل الأصول</button><button class="button small" id="refreshQuotes">تحديث</button></div></div><div id="quoteContent">'+empty("جاهز لتحميل السوق","اضغط تحميل الأصول لعرض الرموز دون أسعار.")+'</div></section>'+
-      '<section class="panel"><div class="panel-head"><div><h2>الشارت الفني</h2><div class="muted" id="chartMeta">اختر أصلًا من الجدول لعرض شموعه الفعلية.</div></div><span class="pill" id="chartSymbol">لم يُحدد أصل</span></div><div class="frame-list" id="frames">'+["15m","1h","4h","1d","1w","1M"].map((f,i)=>'<button class="frame '+(i===0?"active":"")+'" data-frame="'+f+'">'+({"15m":"15 دقيقة","1h":"ساعة","4h":"4 ساعات","1d":"يومي","1w":"أسبوعي","1M":"شهري"}[f])+'</button>').join("")+'</div><div id="chartContent">'+empty("بانتظار اختيار الأصل","سيتم رسم الشموع من بيانات المصدر الفعلية فقط.")+'</div></section>'+
       '<section class="panel"><div class="panel-head"><div><h2>فرص التحليل الفني</h2><div class="muted">فحص محدود عند الطلب حتى لا تتجمّد الصفحة.</div></div></div><div class="toolbar"><button class="button primary" id="loadSignals">فحص الفرص</button><span class="muted" id="signalMeta">لا يبدأ الفحص إلا عند الضغط.</span></div><div class="signal-grid" id="signalContent" style="margin-top:12px"></div></section>'+
       '<div class="notice">الأسعار العامة قد تكون متأخرة. الإشارات آلية تجريبية وليست ضمانًا للربح أو تنفيذًا لأوامر تداول.</div>';
-    $("quoteContent").addEventListener("click",e=>{const row=e.target.closest("[data-symbol]");if(row)loadChart(m,row.dataset.symbol)});
-    $("quoteContent").addEventListener("keydown",e=>{if((e.key==="Enter"||e.key===" ")&&e.target.matches("[data-symbol]")){e.preventDefault();loadChart(m,e.target.dataset.symbol)}});
     $("loadQuotes").addEventListener("click",()=>loadQuotes(m));
     $("refreshQuotes").addEventListener("click",()=>loadQuotes(m));
     $("loadSignals").addEventListener("click",()=>loadSignals(m));
-    $("frames").addEventListener("click",e=>{const b=e.target.closest("[data-frame]");if(!b)return;selectedInterval=b.dataset.frame;$("frames").querySelectorAll("button").forEach(x=>x.classList.toggle("active",x===b));$("signalContent").innerHTML="";$("signalMeta").textContent="الفريم المختار: "+selectedInterval+" · اضغط فحص الفرص.";if(currentChartSymbol)loadChart(m,currentChartSymbol)});
+    $("signalContent").addEventListener("click",e=>{const b=e.target.closest("[data-inline-chart]");if(!b)return;const card=b.closest(".signal-card"),symbol=b.dataset.symbol,frame=b.dataset.frame||selectedInterval,box=card&&card.querySelector("[data-chart-box]");if(!box)return;if(box.dataset.open==="1"){box.dataset.open="0";box.innerHTML="";b.textContent="عرض الشارت داخل الصفقة";return;}box.dataset.open="1";b.textContent="إخفاء الشارت";box.innerHTML='<div class="loading">تحميل الشارت…</div>';getJSON("/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(symbol)+"&interval="+encodeURIComponent(frame)).then(d=>{if(box.dataset.open==="1")box.innerHTML=drawCandles(d.items||[])}).catch(err=>{if(box.dataset.open==="1")box.innerHTML=empty("الشارت غير متاح",err.message)});});
     loadQuotes(m);
   }
   async function loadQuotes(m) {
@@ -102,7 +99,7 @@
       meta.textContent="تم تحميل "+lastMarketItems.length+" أصل · الأسعار مخفية";
       setStatus(d.live?"بيانات متاحة":"بيانات محدودة",!!d.live);
       if(!lastMarketItems.length)out.innerHTML=empty("المصدر لم يعرض أسعارًا",d.message||"لا توجد بيانات متاحة حاليًا.");
-      else {out.querySelectorAll("tbody tr").forEach((row,i)=>{const symbol=lastMarketItems[i]?.symbol;if(symbol){row.tabIndex=0;row.setAttribute("role","button");row.setAttribute("aria-label","عرض شارت "+symbol);row.dataset.symbol=symbol}});currentChartSymbol=lastMarketItems[0].symbol;loadChart(m,currentChartSymbol)}
+      else {out.querySelectorAll("tbody tr").forEach((row,i)=>{const symbol=lastMarketItems[i]?.symbol;if(symbol){row.tabIndex=0;row.setAttribute("role","button");row.setAttribute("aria-label","الأصل "+symbol);row.dataset.symbol=symbol}})}
     } catch(err) {out.innerHTML=empty("تعذر تحميل الأسعار",err.message);meta.textContent="تعذر تحميل الأصول";setStatus("مصدر غير متاح",false)}
     finally {$("loadQuotes").disabled=false;$("refreshQuotes").disabled=false}
   }
@@ -141,7 +138,7 @@
       '<div class="level target"><small>الهدف الأول</small><strong>'+price(tp1)+'</strong><small class="positive">ربح محتمل '+pctTo(tp1,true)+'</small></div>'+
       '<div class="level target"><small>الهدف الثاني</small><strong>'+price(tp2)+'</strong><small class="positive">ربح محتمل '+pctTo(tp2,true)+'</small></div>'+
       '<div class="level target"><small>الهدف الثالث</small><strong>'+price(tp3)+'</strong><small class="positive">ربح محتمل '+pctTo(tp3,true)+'</small></div></div>'+
-      '<div class="muted" style="margin-top:10px">'+esc(x.status||"النسب تقديرية من سعر الدخول إلى الهدف/الوقف، قبل الرسوم والانزلاق")+'</div></article>';
+      '<div class="toolbar" style="margin-top:12px"><button type="button" class="button small" data-inline-chart="1" data-symbol="'+esc(x.symbol||"")+'" data-frame="'+esc(x.interval||selectedInterval)+'">عرض الشارت داخل الصفقة</button></div><div data-chart-box data-open="0" style="margin-top:10px"></div><div class="muted" style="margin-top:10px">'+esc(x.status||"النسب تقديرية من سعر الدخول إلى الهدف/الوقف، قبل الرسوم والانزلاق")+'</div></article>';
   }
   async function loadSignals(m) {
     const out=$("signalContent"),meta=$("signalMeta"),button=$("loadSignals");button.disabled=true;
