@@ -623,7 +623,7 @@ Promise.race([window.__sectionsReady,new Promise(resolve=>setTimeout(resolve,250
     // Let the primary navigation handler process [data-home-scroll]. It navigates home first,
     // then scrolls to the section; intercepting here broke the button from other pages.
     const pageButton=target.closest("[data-page]");
-    if(pageButton){
+    if(pageButton&&!pageButton.hasAttribute("data-home-scroll")){
       const page=pageButton.getAttribute("data-page"),path=pagePaths[page];
       if(path){event.preventDefault();event.stopImmediatePropagation();if(location.pathname!==path)location.href=path;else location.reload();return;}
     }
