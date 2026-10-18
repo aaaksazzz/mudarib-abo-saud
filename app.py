@@ -685,20 +685,39 @@ def _discover_yahoo_symbols(query, suffix=None, count=250):
     return found
 
 def _load_saudi_symbols():
+    """Discover a broad Tadawul universe across main/parallel markets and sectors."""
     now = time.time()
     with YAHOO_UNIVERSE_LOCK:
         cached = YAHOO_UNIVERSE_CACHE.get("saudi")
         if cached and now - cached[0] < YAHOO_UNIVERSE_CACHE_TTL:
             discovered = cached[1]
         else:
-            try:
-                discovered = _discover_yahoo_symbols("Saudi Arabia stocks Tadawul", suffix=".SR", count=250)
-                if not discovered:
-                    discovered = _discover_yahoo_symbols(".SR", suffix=".SR", count=250)
-            except Exception as exc:
-                print(f"Saudi symbol discovery failed: {type(exc).__name__}: {exc}")
-                discovered = []
+            discovered = set()
+            # One generic Yahoo search often returns only a small handful of Saudi tickers.
+            # Combine several independent queries; keep only actual Saudi-listed .SR equities/ETFs.
+            queries = (
+                "Saudi Arabia stocks Tadawul",
+                "Saudi Exchange listed companies",
+                "Tadawul main market stocks",
+                "Nomu parallel market Saudi stocks",
+                "Saudi banks stocks Tadawul",
+                "Saudi petrochemical stocks",
+                "Saudi insurance stocks Tadawul",
+                "Saudi REIT stocks Tadawul",
+                "Saudi cement stocks",
+                "Saudi healthcare stocks Tadawul",
+                "Saudi retail stocks Tadawul",
+                "Saudi industrial stocks Tadawul",
+                ".SR Saudi stocks",
+            )
+            for query in queries:
+                try:
+                    discovered.update(_discover_yahoo_symbols(query, suffix=".SR", count=250))
+                except Exception as exc:
+                    print(f"Saudi symbol discovery failed for {query}: {type(exc).__name__}")
+            discovered = sorted(discovered)
             YAHOO_UNIVERSE_CACHE["saudi"] = (now, discovered)
+        # Preserve the seed list if discovery is temporarily unavailable.
         YAHOO_MARKETS["saudi"] = sorted(set(YAHOO_MARKETS["saudi"]) | set(discovered))
 
 def _load_us_symbols():
