@@ -1823,8 +1823,11 @@ def _technical_fallback_signal(market, symbol, interval):
         return None
 
 
+SCAN_CURSORS = {}
+SCAN_CURSOR_LOCK = threading.Lock()
+
 @app.get("/api/signals/{market}")
-def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(12, ge=1, le=20)):
+def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(12, ge=1, le=20), refresh: bool = Query(False)):
     """Generate market-specific trade setups from real OHLCV candles only; never show public-tip feeds."""
     market = (market or "").lower()
     allowed_markets = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
@@ -1838,7 +1841,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
     cache_key = ("signal_cards_inverse_v1", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
-        if cached and now - cached[0] < 90:
+        if not refresh and cached and now - cached[0] < 90:
             return {**cached[1], "cached": True}
 
     items = []
@@ -1887,9 +1890,15 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
                 continue
             valid.append((liquidity if math.isfinite(liquidity) else 0.0, change, symbol))
         valid.sort(key=lambda row: (row[0], row[1]), reverse=True)
-        # Keep cold-page loads responsive on the small service: scan a bounded
-        # liquidity-ranked shortlist and use small worker batches to avoid overload.
-        symbols = list(dict.fromkeys(symbol for _, _, symbol in valid))[:min(limit, 20)]
+        # Rotate through the full market universe in bounded batches, rather than
+        # repeatedly scanning only the same first 20 symbols.
+        all_symbols = list(dict.fromkeys(symbol for _, _, symbol in valid))
+        batch_size = min(limit, 20, len(all_symbols))
+        with SCAN_CURSOR_LOCK:
+            start = SCAN_CURSORS.get((market, interval), 0) % max(1, len(all_symbols))
+            symbols = [all_symbols[(start + i) % len(all_symbols)] for i in range(batch_size)]
+            if all_symbols:
+                SCAN_CURSORS[(market, interval)] = (start + batch_size) % len(all_symbols)
         for offset in range(0, len(symbols), 6):
             batch = symbols[offset:offset + 6]
             with ThreadPoolExecutor(max_workers=3) as pool:
