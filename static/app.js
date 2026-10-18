@@ -130,7 +130,7 @@
     const pctTo=(target, favorable)=> {
       const n=Number(target);
       if(!Number.isFinite(entry)||entry<=0||!Number.isFinite(n)||n<=0)return "—";
-      const value=(favorable?(buy?n-entry:entry-n):(buy?entry-n:n-entry))/entry*100;
+      const value=(buy?n-entry:entry-n)/entry*100;
       return (value>0?"+":"")+value.toFixed(2)+"%";
     };
     const medal=rank===0?"🥇 ذهبي":rank===1?"🥈 فضي":rank===2?"🥉 برونزي":"🏅 #"+(rank+1);
