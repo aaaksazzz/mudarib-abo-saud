@@ -219,10 +219,21 @@
     $("adminLogout").addEventListener("click",()=>{adminAuth="";$("adminPanel").classList.add("hidden");$("adminSections").classList.add("hidden");$("adminLoginPanel").classList.remove("hidden");$("adminUser").value="";$("adminPass").value=""});
     $("articleForm").addEventListener("submit",async e=>{e.preventDefault();const out=$("articleMessage");out.textContent="جاري النشر…";try{await getJSON("/api/admin/articles",{method:"POST",headers:{"Content-Type":"application/json",Authorization:adminAuth},body:JSON.stringify({title:$("articleTitle").value,category:$("articleCategory").value,summary:$("articleSummary").value,body:$("articleBody").value})});out.textContent="تم نشر المقال.";e.target.reset();await loadAdminArticles()}catch(err){out.textContent=err.message}});
   }
+  function renderMarketDirection() {
+    const options=Object.entries(markets).map(([key,m])=>'<option value="'+esc(key)+'">'+esc(m.name)+'</option>').join("");
+    view.innerHTML=pageHeader("توجهات الأسواق","اعرف هل حركة الأصول تميل للصعود أو الهبوط أو الحياد، مع عدد الأصول الصاعدة والهابطة.","الأسواق")+
+      '<section class="panel"><div class="toolbar"><label class="field" style="flex:1;min-width:180px">اختر السوق<select id="directionMarket" class="frame" style="width:100%;margin-top:6px">'+options+'</select></label><button class="button primary" id="refreshDirection">تحديث الاتجاه</button></div><div id="directionContent" style="margin-top:14px">'+empty("اختر السوق","اضغط تحديث الاتجاه لجلب قراءة السوق الحالية.")+'</div></section>'+
+      '<div class="notice">الاتجاه قراءة عامة مبنية على تغيّر الأصول واتساع السوق، وليس توصية شراء أو بيع. قد تتأخر البيانات حسب المصدر.</div>';
+    const load=async()=>{const out=$("directionContent"),btn=$("refreshDirection"),key=$("directionMarket").value;out.innerHTML='<div class="loading">جاري حساب اتجاه السوق…</div>';btn.disabled=true;try{const d=await getJSON("/api/market-direction?market="+encodeURIComponent(markets[key].api));if(!d.ok)throw new Error(d.message||"بيانات الاتجاه غير متاحة");const up=Number(d.assets_up||0),down=Number(d.assets_down||0),flat=Number(d.assets_flat||0),dir=d.direction_ar||"مختلط / محايد",color=d.direction==="BULLISH"?"var(--green)":d.direction==="BEARISH"?"var(--red)":"var(--gold)";out.innerHTML='<div class="feature-grid"><div class="feature-card"><small>اتجاه السوق</small><strong style="color:'+color+'">'+esc(dir)+'</strong></div><div class="feature-card"><small>متوسط التغير</small><strong>'+pct(d.price_change_pct)+'</strong></div><div class="feature-card"><small>أصول صاعدة</small><strong style="color:var(--green)">'+up+'</strong></div><div class="feature-card"><small>أصول هابطة</small><strong style="color:var(--red)">'+down+'</strong></div><div class="feature-card"><small>أصول شبه مستقرة</small><strong>'+flat+'</strong></div><div class="feature-card"><small>الأصول المفحوصة</small><strong>'+esc(d.assets_sampled??(up+down+flat))+'</strong></div></div><p class="muted" style="margin-top:12px">آخر تحديث: '+timeText(d.updated_at)+'</p>';}catch(err){out.innerHTML=empty("تعذر تحديد اتجاه السوق",err.message)}finally{btn.disabled=false}};
+    $("refreshDirection").addEventListener("click",load);
+    $("directionMarket").addEventListener("change",load);
+    load();
+  }
   async function render() {
     activateDrawer();
     if(path==="/"){renderHome();return}
     if(marketKey){renderMarketPage(marketKey);return}
+    if(path==="/market-direction"){renderMarketDirection();return}
     if(path==="/results"){await renderResults();return}
     if(path==="/news"){await renderNews();return}
     if(path==="/analysis"){renderAnalysis();return}
