@@ -161,10 +161,24 @@
     view.innerHTML=pageHeader("مكتبة التحليل","محتوى تعليمي مختصر. مختبر الاستراتيجيات وإعداداتها ليسا متاحين للمستخدم العادي.","التعلّم")+
       '<div class="feature-grid">'+items.map(x=>'<article class="feature-card"><span>⌁</span><strong>'+esc(x[0])+'</strong><small>'+esc(x[1])+'</small></article>').join("")+'</div><div class="notice" style="margin-top:16px">المحتوى للتثقيف فقط. لا توجد استراتيجية مضمونة الربح، ويجب اختبار أي قواعد تاريخيًا بعد الرسوم والانزلاق.</div>';
   }
+  function renderCandleChart(items,label) {
+    return '<div id="tasiChart">'+drawCandles(items)+'</div><div class="muted" style="margin-top:8px">'+esc(label||"شموع المؤشر الفعلية")+'</div>';
+  }
   async function renderTasi() {
     view.innerHTML=pageHeader("تحليل تاسي العام","تحليل المؤشر العام وليس توصية على سهم منفرد.","السوق السعودي")+
-      '<section class="panel"><div class="panel-head"><h2>الفريم</h2><div class="frame-list" id="tasiFrames">'+["15m","1h","4h","1d","1w","1M"].map((f,i)=>'<button class="frame '+(i===3?"active":"")+'" data-frame="'+f+'">'+f+'</button>').join("")+'</div></div><div id="tasiContent" class="loading">جاري طلب التحليل…</div></section>';
-    let frame="1d";const load=async()=>{const out=$("tasiContent");out.innerHTML='<div class="loading">تحميل بيانات المؤشر…</div>';try{const d=await getJSON("/api/tasi/analysis?interval="+frame);out.innerHTML='<div class="feature-grid">'+Object.entries(d).filter(([k,v])=>!["items","candles","series"].includes(k)&&typeof v!=="object").slice(0,9).map(([k,v])=>'<div class="feature-card"><small>'+esc(k)+'</small><strong>'+esc(typeof v==="number"?price(v):v)+'</strong></div>').join("")+'</div>'+(d.message?'<p class="muted">'+esc(d.message)+'</p>':"")}catch(err){out.innerHTML=empty("تعذر جلب تحليل تاسي",err.message)}};$("tasiFrames").addEventListener("click",e=>{const b=e.target.closest("[data-frame]");if(!b)return;frame=b.dataset.frame;$("tasiFrames").querySelectorAll("button").forEach(x=>x.classList.toggle("active",x===b));load()});await load();
+      '<section class="panel"><div class="panel-head"><h2>الفريم</h2><button class="button small" id="tasiRefresh">تحديث التحليل</button></div><div class="frame-list" id="tasiFrames">'+["15m","1h","4h","1d","1w","1M"].map(f=>'<button class="frame '+(f==="1d"?"active":"")+'" data-frame="'+f+'">'+f+'</button>').join("")+'</div><div id="tasiContent" class="loading">جاري طلب التحليل…</div></section>';
+    let frame="1d";
+    const load=async()=>{
+      const out=$("tasiContent");out.innerHTML='<div class="loading">تحميل بيانات المؤشر…</div>';
+      try {
+        const d=await getJSON("/api/tasi/analysis?interval="+encodeURIComponent(frame));
+        const stats=[["آخر سعر",price(d.price)],["التغير",pct(d.change_pct)],["الاتجاه",d.trend||"—"],["الدعم",price(d.support)],["المقاومة",price(d.resistance)],["السيناريو",d.scenario||"—"]];
+        out.innerHTML='<div class="feature-grid">'+stats.map(x=>'<div class="feature-card"><small>'+esc(x[0])+'</small><strong>'+esc(x[1])+'</strong></div>').join("")+'</div><div class="panel" style="margin:14px 0"><div class="panel-head"><h2>شموع تاسي</h2><span class="pill">'+esc(frame)+'</span></div>'+renderCandleChart(d.candles||[],(d.provider||"مصدر عام")+(d.delayed?" · قد تكون البيانات متأخرة":""))+'</div><div class="feature-grid">'+[["الدخول المشروط",price(d.entry)],["وقف الخسارة",price(d.stop_loss)],["الهدف الأول",price(d.tp1)],["الهدف الثاني",price(d.tp2)],["الهدف الثالث",price(d.tp3)]].map(x=>'<div class="feature-card"><small>'+esc(x[0])+'</small><strong>'+esc(x[1])+'</strong></div>').join("")+'</div><p class="muted">'+esc(d.message||"")+'</p>';
+      } catch(err){out.innerHTML=empty("تعذر جلب تحليل تاسي",err.message)}
+    };
+    $("tasiFrames").addEventListener("click",e=>{const b=e.target.closest("[data-frame]");if(!b)return;frame=b.dataset.frame;$("tasiFrames").querySelectorAll("button").forEach(x=>x.classList.toggle("active",x===b));load()});
+    $("tasiRefresh").addEventListener("click",load);
+    await load();
   }
   function renderAccount() {
     view.innerHTML=pageHeader("الحساب","حالة الحسابات والخدمات المتاحة حاليًا.","الحساب")+
