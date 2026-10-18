@@ -280,23 +280,29 @@ def test_public_ideas_auto_interval_and_futures_symbol_match(monkeypatch):
     assert data["items"][0]["direction"] == "شراء"
 
 
-def test_market_page_uses_market_specific_ideas_and_visible_timeframe_buttons():
+def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     from pathlib import Path
 
-    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
-    assert 'async function loadMarketSignals()' in html
-    assert '"/api/signals/"+encodeURIComponent(currentMarket)+"?interval="+encodeURIComponent(interval)+"&limit=12"' in html
-    assert 'data-market-frame=' in html and 'value+' in html
-    assert 'async function loadMarketChart(symbol)' in html
+    root = Path(__file__).resolve().parents[1] / "static"
+    html = (root / "index.html").read_text(encoding="utf-8")
+    js = (root / "app.js").read_text(encoding="utf-8")
+    assert 'href="/markets/spot"' in html and 'href="/markets/futures"' in html
+    assert 'async function loadSignals(m)' in js
+    assert '"/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedInterval)+"&limit=12"' in js
+    assert 'data-frame="' in js and '"15m","1h","4h","1d","1w","1M"' in js
+    assert 'async function loadChart(m,symbol)' in js
 
 
 def test_market_navigation_targets_have_real_page_and_data_loader_functions():
     from pathlib import Path
 
-    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
-    assert "function renderMarketPage()" in html
-    assert "async function loadMarketSignals()" in html
-    assert "async function loadMarketChart(symbol)" in html
+    root = Path(__file__).resolve().parents[1] / "static"
+    html = (root / "index.html").read_text(encoding="utf-8")
+    js = (root / "app.js").read_text(encoding="utf-8")
+    assert all(f'href="{path}"' in html for path in ("/markets/spot", "/markets/futures", "/markets/contracts", "/markets/us-stocks", "/markets/saudi", "/markets/forex-gold", "/markets/alpha"))
+    assert "function renderMarketPage(key)" in js
+    assert "async function loadSignals(m)" in js
+    assert "async function loadChart(m,symbol)" in js
 
 
 def test_public_ideas_reject_mismatched_tickers_and_incomplete_trade_levels(monkeypatch):
@@ -470,19 +476,23 @@ def test_tasi_analysis_returns_real_candles_and_levels(monkeypatch):
 def test_tasi_page_includes_candle_chart_and_refresh_controls():
     from pathlib import Path
 
-    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
-    assert 'id="tasiChart"' in html
-    assert 'id="tasiRefresh"' in html
-    assert "function renderCandleChart(items,label)" in html
-    assert 'const requestedFrame="1d"' in html
+    js = (Path(__file__).resolve().parents[1] / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'id="tasiChart"' in js
+    assert 'id="tasiRefresh"' in js
+    assert "function renderCandleChart(items,label)" in js
+    assert 'getJSON("/api/tasi/analysis?interval="+encodeURIComponent(frame))' in js
 
 
 def test_home_refresh_does_not_rebuild_dashboard_twice():
     from pathlib import Path
 
-    html = (Path(__file__).resolve().parents[1] / "static" / "index.html").read_text(encoding="utf-8")
-    assert 'if(e.target.closest("#homeRefresh"))return;' in html
-    assert 'refresh.addEventListener("click",()=>loadHomeDirections(true))' in html
+    root = Path(__file__).resolve().parents[1] / "static"
+    html = (root / "index.html").read_text(encoding="utf-8")
+    js = (root / "app.js").read_text(encoding="utf-8")
+    assert '/static/app.css?v=20261018' in html
+    assert '/static/app.js?v=20261018' in html
+    assert 'getJSON("/api/status")' in js
+    assert 'setInterval(' not in js
 
 
 def test_saudi_market_keeps_symbols_below_usd_volume_cutoff(monkeypatch):
