@@ -289,7 +289,7 @@ def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     assert 'href="/markets/spot"' in html and 'href="/markets/futures"' in html
     assert 'async function loadSignals(m)' in js
     assert '"/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedInterval)+"&limit=12"' in js
-    assert 'data-frame="'+f+'"' in js
+    assert 'data-frame="' in js and '"15m","1h","4h","1d","1w","1M"' in js
     assert 'async function loadChart(m,symbol)' in js
 
 
