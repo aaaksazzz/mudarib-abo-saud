@@ -181,8 +181,8 @@ KLINES = {
 YAHOO_MARKETS = {
     "us": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "GOOG", "META", "TSLA", "AVGO", "BRK-B", "JPM", "LLY", "WMT", "XOM", "AMD", "NFLX", "COST", "ORCL", "PLTR", "COIN", "INTC", "CRM", "ADBE", "CSCO", "IBM", "QCOM", "TXN", "AMAT", "MU", "NOW", "PANW", "CRWD", "SNPS", "CDNS", "INTU", "ISRG", "UBER", "ABNB", "BKNG", "DIS", "SHOP", "SQ", "PYPL", "HOOD", "SOFI", "BAC", "GS", "MS", "V", "MA", "AXP", "C", "WFC", "SCHW", "BLK", "PFE", "MRK", "ABBV", "JNJ", "UNH", "CVX", "COP", "CAT", "GE", "BA", "F", "GM", "T", "VZ", "TMUS", "TGT", "HD", "LOW", "KO", "PEP", "MCD", "NKE", "SBUX", "DELL", "ARM", "SMCI", "MSTR", "MARA", "RIOT", "RIVN", "LCID", "TQQQ", "SPY", "QQQ", "DIA", "IWM"],
     "saudi": ["2222.SR", "1120.SR", "2010.SR", "1180.SR", "7010.SR", "1211.SR", "2380.SR", "1150.SR", "2280.SR", "4001.SR", "2082.SR", "2223.SR", "4200.SR", "7203.SR"],
-    "contracts": ["ES=F", "NQ=F", "YM=F", "RTY=F", "EMD=F", "M2K=F", "GC=F", "SI=F", "HG=F", "PL=F", "PA=F", "CL=F", "BZ=F", "NG=F", "RB=F", "HO=F", "ZC=F", "ZW=F", "ZS=F", "ZM=F", "ZL=F", "KC=F", "SB=F", "CT=F", "CC=F", "LE=F", "HE=F", "6E=F", "6B=F", "6J=F", "6A=F", "6C=F", "6S=F", "6N=F", "ZB=F", "ZN=F", "ZF=F", "ZT=F"],
-    "forex": ["EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X", "USDCHF=X", "NZDUSD=X", "EURGBP=X", "EURJPY=X", "GBPJPY=X", "AUDJPY=X", "NZDJPY=X", "CADJPY=X", "CHFJPY=X", "EURCHF=X", "GBPCHF=X", "AUDCHF=X", "NZDCHF=X", "EURCAD=X", "GBPCAD=X", "AUDCAD=X", "NZDCAD=X", "EURAUD=X", "GBPAUD=X", "EURNZD=X", "GBPNZD=X", "AUDNZD=X", "USDMXN=X", "USDZAR=X", "USDTRY=X", "USDSEK=X", "USDNOK=X", "USDSGD=X", "USDHKD=X", "USDINR=X", "USDPLN=X", "USDCNH=X", "XAUUSD=X", "XAGUSD=X"],
+    "contracts": ["ES=F", "NQ=F", "YM=F", "RTY=F", "EMD=F", "M2K=F", "MES=F", "MNQ=F", "MYM=F", "MCL=F", "GC=F", "SI=F", "HG=F", "PL=F", "PA=F", "CL=F", "BZ=F", "NG=F", "RB=F", "HO=F", "ZC=F", "ZW=F", "ZS=F", "ZM=F", "ZL=F", "KC=F", "SB=F", "CT=F", "CC=F", "LE=F", "HE=F", "GF=F", "ZO=F", "ZR=F", "6E=F", "6B=F", "6J=F", "6A=F", "6C=F", "6S=F", "6N=F", "6M=F", "6R=F", "ZB=F", "ZN=F", "ZF=F", "ZT=F", "UB=F", "TN=F", "BTC=F", "ETH=F"],
+    "forex": ["EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X", "USDCHF=X", "NZDUSD=X", "EURGBP=X", "EURJPY=X", "GBPJPY=X", "AUDJPY=X", "NZDJPY=X", "CADJPY=X", "CHFJPY=X", "EURCHF=X", "GBPCHF=X", "AUDCHF=X", "NZDCHF=X", "EURCAD=X", "GBPCAD=X", "AUDCAD=X", "NZDCAD=X", "EURAUD=X", "GBPAUD=X", "EURNZD=X", "GBPNZD=X", "AUDNZD=X", "USDMXN=X", "USDZAR=X", "USDTRY=X", "USDSEK=X", "USDNOK=X", "USDSGD=X", "USDHKD=X", "USDINR=X", "USDPLN=X", "USDCNH=X", "USDTHB=X", "USDKRW=X", "USDPHP=X", "USDTWD=X", "USDCZK=X", "USDHUF=X", "USDRUB=X", "EURSEK=X", "EURNOK=X", "EURDKK=X", "EURPLN=X", "EURTRY=X", "EURMXN=X", "GBPSEK=X", "GBPNOK=X", "GBPCNH=X", "AUDSGD=X", "CADCHF=X", "CADSGD=X", "NZDSGD=X", "SGDJPY=X", "HKDJPY=X", "XAUUSD=X", "XAGUSD=X"],
 }
 YAHOO_LABELS = {
     "ES=F": "S&P 500 Futures", "NQ=F": "Nasdaq 100 Futures", "YM=F": "Dow Futures", "RTY=F": "Russell 2000 Futures",
@@ -730,9 +730,19 @@ def _load_us_symbols():
         else:
             discovered = []
             # Yahoo search is limited; combine independent searches to broaden coverage.
-            for query in ("US stocks", "NASDAQ stocks", "NYSE stocks",
-                          "US technology stocks", "US healthcare stocks",
-                          "US financial stocks", "US ETFs"):
+            for query in (
+                "US stocks", "NASDAQ stocks", "NYSE stocks", "NYSE American stocks",
+                "US technology stocks", "US healthcare stocks", "US financial stocks",
+                "US energy stocks", "US industrial stocks", "US consumer stocks",
+                "US semiconductor stocks", "US software stocks", "US biotechnology stocks",
+                "US banks stocks", "US regional banks stocks", "US insurance stocks",
+                "US aerospace defense stocks", "US transportation stocks", "US retail stocks",
+                "US real estate stocks", "US REIT stocks", "US utilities stocks",
+                "US communication services stocks", "US materials stocks",
+                "US dividend stocks", "US small cap stocks", "US mid cap stocks",
+                "US ETFs", "NASDAQ ETFs", "NYSE ETFs", "S&P 500 stocks",
+                "Russell 2000 stocks", "Dow Jones stocks", "US listed companies",
+            ):
                 try:
                     discovered.extend(_discover_yahoo_symbols(query, count=250))
                 except Exception as exc:
