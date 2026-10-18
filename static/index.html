@@ -359,7 +359,7 @@ async function loadMarketSignals(){
  if(!quotesBox||!ideasBox||!chartBox)return;
  $("marketQuotesSummary").textContent="جاري جلب الأسعار…";
  $("marketIdeasSummary").textContent="جاري تحليل الشموع والبحث عن فرص على فريم "+interval+"…";
- const quotePromise=getJson("/api/market/"+encodeURIComponent(currentMarket)+"?limit=100").catch(error=>({ok:false,items:[],message:error.message||"تعذر تحميل الأسعار"}));
+ const quotePromise=getJson("/api/market/"+encodeURIComponent(currentMarket)+"?limit=2000").catch(error=>({ok:false,items:[],message:error.message||"تعذر تحميل الأسعار"}));
  const ideasPromise=getJson("/api/signals/"+encodeURIComponent(currentMarket)+"?interval="+encodeURIComponent(interval)+"&limit=12").catch(error=>({ok:false,items:[],message:error.message||"تعذر تحليل الشموع"}));
  const [quoteData,ideaData]=await Promise.all([quotePromise,ideasPromise]);
  if(request!==marketViewRequest||page!=="market"||market!==currentMarket)return;
