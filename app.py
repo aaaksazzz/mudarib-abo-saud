@@ -1840,7 +1840,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         valid.sort(key=lambda row: (row[0], row[1]), reverse=True)
         # Keep cold-page loads responsive on the small service: scan a bounded
         # liquidity-ranked shortlist and use small worker batches to avoid overload.
-        symbols = list(dict.fromkeys(symbol for _, _, symbol in valid))[:24]
+        symbols = list(dict.fromkeys(symbol for _, _, symbol in valid))[:min(limit, 20)]
         for offset in range(0, len(symbols), 6):
             batch = symbols[offset:offset + 6]
             with ThreadPoolExecutor(max_workers=3) as pool:
@@ -1856,8 +1856,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
                         continue
                     if signal:
                         items.append(signal)
-            if len(items) >= min(limit, 3):
-                break
+            # Scan the full requested shortlist (up to 20 symbols) instead of stopping after 3 signals.
     except Exception as exc:
         failures += 1
         print(f"technical signal universe failed {market}/{interval}: {type(exc).__name__}: {exc}")
