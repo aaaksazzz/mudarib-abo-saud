@@ -1763,12 +1763,9 @@ def _technical_fallback_signal(market, symbol, interval):
         short_score = sum((entry < ema20, ema20 < ema50, 28 <= rsi <= 50, not macd_up, entry < recent_low, vol_ratio >= 1.05))
         max_risk_pct = {"15m": 0.03, "1h": 0.05, "4h": 0.08, "1d": 0.12, "1w": 0.20, "1M": 0.30}.get(interval, 0.03)
         max_risk = entry * max_risk_pct
-        # REVERSED STRATEGY (v1): invert the original setup direction, not merely
-        # the displayed BUY/SELL label. A bearish setup now produces a BUY with
-        # downside stop / upside targets; a bullish setup produces a SELL with
-        # upside stop / downside targets. Keep all levels derived from the same
-        # real candles and the same bounded ATR risk.
-        if short_trend and short_score >= 4 and short_score > long_score:
+        # Use the setup's actual direction: bullish setups are BUYs and
+        # bearish setups are SELLs. Stops and targets must match that direction.
+        if long_trend and long_score >= 4 and long_score > short_score:
             side, stop = "شراء", min(entry - atr * 1.5, recent_low)
             risk = entry - stop
             if risk <= 0:
@@ -1776,8 +1773,8 @@ def _technical_fallback_signal(market, symbol, interval):
             risk = min(risk, max_risk)
             stop = entry - risk
             targets = [entry + risk * n for n in (1, 2, 3)]
-            score = short_score
-        elif long_trend and long_score >= 4 and long_score > short_score:
+            score = long_score
+        elif short_trend and short_score >= 4 and short_score > long_score:
             side, stop = "بيع", max(entry + atr * 1.5, recent_high)
             risk = stop - entry
             if risk <= 0:
@@ -1787,7 +1784,7 @@ def _technical_fallback_signal(market, symbol, interval):
             targets = [entry - risk * n for n in (1, 2, 3)]
             if targets[-1] <= 0:
                 return None
-            score = long_score
+            score = short_score
         else:
             return None
         digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
