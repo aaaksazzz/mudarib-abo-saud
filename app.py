@@ -315,7 +315,7 @@ def alpha_market_tickers():
             return None
         return {"symbol": symbol, "price": price, "change_pct": change, "quote_volume": quote_volume}
     rows = []
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=24) as pool:
         for future in as_completed([pool.submit(fetch_ticker, symbol) for symbol in symbols]):
             try:
                 item = future.result()
@@ -846,7 +846,7 @@ def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
         else:
             # Query symbols concurrently so a slow quote cannot block the whole market page.
             data = []
-            with ThreadPoolExecutor(max_workers=8) as pool:
+            with ThreadPoolExecutor(max_workers=24) as pool:
                 futures = [pool.submit(fetch_yahoo_quote, symbol) for symbol in YAHOO_MARKETS[market]]
                 for future in as_completed(futures):
                     try:
@@ -1094,6 +1094,9 @@ def market_direction(market: str = Query("spot")):
     allowed = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
     if market not in allowed:
         return JSONResponse({"ok": False, "live": False, "message": "السوق غير مدعوم."}, status_code=422)
+    cached_direction = MARKET_DIRECTION_CACHE.get(market)
+    if cached_direction and time.time() - cached_direction[0] < MARKET_DIRECTION_CACHE_TTL:
+        return dict(cached_direction[1])
     try:
         response = market_data(market, limit=2000)
         if isinstance(response, JSONResponse):
@@ -1117,11 +1120,13 @@ def market_direction(market: str = Query("spot")):
         average = sum(changes) / len(changes)
         direction = "BULLISH" if average >= 0.15 and up > down else "BEARISH" if average <= -0.15 and down > up else "NEUTRAL"
         direction_ar = {"BULLISH": "صاعد", "BEARISH": "هابط", "NEUTRAL": "مختلط / محايد"}[direction]
-        return {"ok": True, "live": True, "market": market, "direction": direction,
-                "direction_ar": direction_ar, "price_change_pct": round(average, 3),
-                "assets_up": up, "assets_down": down, "assets_flat": flat,
-                "assets_sampled": len(changes), "updated_at": int(time.time()),
-                "message": "اتجاه وصفي محسوب من متوسط تغيّر الأسعار واتساع السوق، وليس توصية دخول."}
+        result = {"ok": True, "live": True, "market": market, "direction": direction,
+                  "direction_ar": direction_ar, "price_change_pct": round(average, 3),
+                  "assets_up": up, "assets_down": down, "assets_flat": flat,
+                  "assets_sampled": len(changes), "updated_at": int(time.time()),
+                  "message": "اتجاه وصفي محسوب من متوسط تغيّر الأسعار واتساع السوق، وليس توصية دخول."}
+        MARKET_DIRECTION_CACHE[market] = (time.time(), result)
+        return dict(result)
     except Exception as exc:
         print(f"market direction failed for {market}: {type(exc).__name__}: {exc}")
         return JSONResponse({"ok": False, "live": False, "market": market,
@@ -1520,7 +1525,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), lim
             raw_rows, source_errors = [], 0
             jobs = [(_fetch_public_idea_feed, (name, url)) for name, url in PUBLIC_TRADE_IDEA_FEEDS]
             jobs.extend((_fetch_telegram_public_channel, (channel,)) for channel in channels)
-            with ThreadPoolExecutor(max_workers=2) as pool:
+            with ThreadPoolExecutor(max_workers=8) as pool:
                 futures = [pool.submit(fn, *args) for fn, args in jobs]
                 for future in as_completed(futures):
                     try:

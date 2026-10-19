@@ -2,7 +2,7 @@
   "use strict";
   const $ = (id) => document.getElementById(id);
   const view = $("pageView");
-  const API_TIMEOUT = 12000;
+  const API_TIMEOUT = 45000;
   const markets = {
     spot:{slug:"spot",api:"spot",name:"سبوت Binance",sub:"العملات الفورية",icon:"◉",source:"Binance"},
     futures:{slug:"futures",api:"futures",name:"فيوتشر Binance",sub:"العقود الدائمة",icon:"⇅",source:"Binance"},
