@@ -175,11 +175,41 @@
     finally {button.disabled=false}
   }
   async function renderResults() {
-    view.innerHTML=pageHeader("نتائج الصفقات","سجل الإشارات التي رصدتها الخدمة، بدون احتساب نتائج غير مسجلة.","المتابعة")+
-      '<section class="panel"><div class="panel-head"><h2>ملخص النتائج</h2><button class="button small" id="refreshResults">تحديث</button></div><div id="resultStats" class="feature-grid"></div><div id="resultTable" style="margin-top:14px" class="loading">جاري تحميل النتائج…</div></section>'+
-      '<div class="notice">النتائج السابقة لا تضمن الأداء المستقبلي، وقد لا يكون السجل دائمًا إذا لم يُضبط التخزين الدائم في الخدمة.</div>';
-    const load=async()=>{const out=$("resultTable");out.innerHTML='<div class="loading">تحميل السجل…</div>';try{const d=await getJSON("/api/results?limit=100");const stats=[["إجمالي السجل",d.total??0],["صفقات مغلقة",d.closed??0],["أهداف محققة",d.wins??0],["صفقات خاسرة",d.losses??0],["نسبة النجاح",d.win_rate==null?"—":d.win_rate+"%"]];$("resultStats").innerHTML=stats.map(s=>'<div class="feature-card"><small>'+esc(s[0])+'</small><strong style="font-size:22px">'+esc(s[1])+'</strong></div>').join("");const items=d.items||[];out.innerHTML=items.length?'<div class="table-wrap"><table><thead><tr><th>الأصل</th><th>السوق / الفريم</th><th>الاتجاه</th><th>الدخول</th><th>النتيجة</th><th>الأداء</th></tr></thead><tbody>'+items.map(x=>'<tr><td dir="ltr">'+esc(x.symbol||"—")+'</td><td>'+esc(x.market||"—")+' / '+esc(x.interval||"—")+'</td><td>'+esc(x.side==="BUY"?"شراء":x.side==="SELL"?"بيع":x.side||"—")+'</td><td class="ltr">'+price(x.entry)+'</td><td>'+esc(x.result||"—")+'</td><td class="'+(Number(x.pnl_pct)>=0?"positive":"negative")+'">'+(x.pnl_pct==null?"—":pct(x.pnl_pct))+'</td></tr>').join("")+'</tbody></table></div>':empty("لا توجد نتائج مسجلة",d.message||"لم يتم تسجيل نتائج بعد.")}catch(err){out.innerHTML=empty("تعذر تحميل النتائج",err.message)}};
-    $("refreshResults").addEventListener("click",load);await load();
+    view.innerHTML=pageHeader("نتائج الصفقات","سجل حيّ للفرص التي رصدها الفحص، مع فصل المفتوح عن النتائج المحققة.","مركز الأداء")+
+      '<section class="panel results-panel"><div class="panel-head"><div><span class="eyebrow">TRADE JOURNAL</span><h2>لوحة الأداء</h2><p class="muted">تُسجّل الفرصة عند رصدها؛ ولا تُحسب رابحة أو خاسرة إلا بعد تسجيل TP أو SL.</p></div><button class="button primary small" id="refreshResults">↻ تحديث السجل</button></div><div id="resultStats" class="feature-grid results-stats"><div class="loading">جاري تحميل الملخص…</div></div><div id="resultTable" style="margin-top:18px" class="loading">جاري تحميل سجل الصفقات…</div></section>'+
+      '<div class="notice">السجل يتتبع الفرص الجديدة. قد تبقى الصفقة «مفتوحة» إلى أن تتم إضافة متابعة أسعار وتأكيد وصول الهدف أو وقف الخسارة؛ لا تعتبر الفرص المفتوحة نتائج ربح أو خسارة.</div>';
+    const load=async()=>{
+      const out=$("resultTable"),button=$("refreshResults");
+      out.innerHTML='<div class="loading">تحديث بيانات السجل…</div>';
+      if(button)button.disabled=true;
+      try {
+        const d=await getJSON("/api/results?limit=200");
+        const items=Array.isArray(d.items)?d.items:[];
+        const open=items.filter(x=>!["TP1","TP2","TP3","SL"].includes(String(x.result||"").toUpperCase())).length;
+        const stats=[
+          ["إجمالي الفرص",d.total??items.length,"◷"],
+          ["مفتوحة",open,"↻"],
+          ["مغلقة",d.closed??0,"✓"],
+          ["أهداف محققة",d.wins??0,"↗"],
+          ["وقف خسارة",d.losses??0,"↓"],
+          ["نسبة النجاح",d.win_rate==null?"—":d.win_rate+"%","%"]
+        ];
+        $("resultStats").innerHTML=stats.map((s,i)=>'<div class="feature-card result-stat result-stat-'+i+'"><span class="result-stat-icon">'+esc(s[2])+'</span><small>'+esc(s[0])+'</small><strong>'+esc(s[1])+'</strong></div>').join("");
+        out.innerHTML=items.length?'<div class="table-wrap"><table><thead><tr><th>الأصل</th><th>السوق / الفريم</th><th>الاتجاه</th><th>الدخول</th><th>وقف الخسارة</th><th>النتيجة</th><th>الأداء</th></tr></thead><tbody>'+items.map(x=>{
+          const status=String(x.result||"OPEN").toUpperCase();
+          const statusLabel=({OPEN:"مفتوحة",TP1:"هدف 1",TP2:"هدف 2",TP3:"هدف 3",SL:"وقف خسارة"})[status]||status;
+          const closed=["TP1","TP2","TP3","SL"].includes(status);
+          const side=x.side==="BUY"||x.side==="شراء"?"شراء":x.side==="SELL"||x.side==="بيع"?"بيع":x.side||"—";
+          const pnl=x.pnl_pct==null?"—":pct(x.pnl_pct);
+          return '<tr><td dir="ltr"><strong>'+esc(x.symbol||"—")+'</strong></td><td>'+esc(x.market||"—")+' / '+esc(x.interval||"—")+'</td><td>'+esc(side)+'</td><td class="ltr">'+price(x.entry)+'</td><td class="ltr">'+price(x.stop_loss)+'</td><td><span class="result-status '+(closed?"is-closed":"is-open")+'">'+esc(statusLabel)+'</span></td><td class="'+(Number(x.pnl_pct)>0?"positive":Number(x.pnl_pct)<0?"negative":"muted")+'">'+esc(pnl)+'</td></tr>';
+        }).join("")+'</tbody></table></div>':empty("السجل جاهز وينتظر أول فرصة","اذهب إلى صفحة أحد الأسواق وشغّل فحص الفرص. ستظهر الفرص المكتشفة هنا بعد الفحص، ولن تُحتسب نتيجة مالية قبل تأكيدها.");
+      } catch(err) {
+        out.innerHTML=empty("تعذر تحميل سجل النتائج",err.message||"تحقق من اتصال الخادم ثم حاول مرة أخرى.")+'<div style="margin-top:12px"><button class="button secondary" id="retryResults">إعادة المحاولة</button></div>';
+        $("retryResults")?.addEventListener("click",load);
+      } finally {if(button)button.disabled=false}
+    };
+    $("refreshResults").addEventListener("click",load);
+    await load();
   }
   async function renderNews() {
     view.innerHTML=pageHeader("أخبار الأسواق","الأخبار العامة تساعد على فهم السياق ولا تعتبر توصية تداول.","المتابعة")+
