@@ -1224,6 +1224,11 @@ PUBLIC_TRADE_IDEA_FEEDS = [
     ("Google News — Gold trade setups", "https://news.google.com/rss/search?q=XAUUSD+gold+trading+setup+entry+stop+loss+targets&hl=en-US&gl=US&ceid=US:en"),
     ("Google News — US stocks trade setups", "https://news.google.com/rss/search?q=US+stocks+trading+idea+entry+stop+loss+target&hl=en-US&gl=US&ceid=US:en"),
     ("Google News — Saudi stocks", "https://news.google.com/rss/search?q=Tadawul+Saudi+stocks+trading+idea+target&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News — Crypto short setups", "https://news.google.com/rss/search?q=crypto+short+setup+sell+signal+entry+stop+loss+take+profit&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News — Futures short setups", "https://news.google.com/rss/search?q=Bitcoin+futures+short+signal+entry+stop+loss+targets&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News — Forex sell setups", "https://news.google.com/rss/search?q=forex+sell+signal+short+setup+entry+stop+loss+target&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News — US stock short setups", "https://news.google.com/rss/search?q=US+stocks+short+sell+setup+entry+stop+loss+target&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News — Gold sell setups", "https://news.google.com/rss/search?q=XAUUSD+gold+sell+signal+short+entry+stop+loss+target&hl=en-US&gl=US&ceid=US:en"),
 ]
 # Public Telegram channel previews; no bot token/API key required.
 # Override/add public usernames with TELEGRAM_PUBLIC_CHANNELS="channel1,channel2".
@@ -1997,10 +2002,16 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
 
     items = []
     skipped = 0
+    source_buy_count = 0
+    source_sell_count = 0
     for source_item in external.get("items", []) if isinstance(external, dict) else []:
         if not isinstance(source_item, dict):
             continue
         original_side = str(source_item.get("direction") or "")
+        if original_side == "شراء":
+            source_buy_count += 1
+        elif original_side == "بيع":
+            source_sell_count += 1
         if original_side not in {"شراء", "بيع"}:
             skipped += 1
             continue
@@ -2134,6 +2145,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         "sources_checked": int((external or {}).get("sources_checked", 0)) if isinstance(external, dict) else 0,
         "sources_failed": int((external or {}).get("sources_failed", 0)) if isinstance(external, dict) else 0,
         "skipped_invalid_levels": skipped,
+        "source_buy_ideas": source_buy_count,
+        "source_sell_ideas": source_sell_count,
+        "inverted_buy_opportunities": sum(1 for item in items if item.get("direction") == "شراء"),
+        "inverted_sell_opportunities": sum(1 for item in items if item.get("direction") == "بيع"),
         "external_source_weight": 90, "site_analysis_weight": 10,
         "technical_fallback_used": False,
         "message": ("تم جلب أفكار عامة حديثة وعكس اتجاهها؛ أي أهداف ناقصة محسوبة من مخاطرة المصدر ومعلّمة بوضوح."
