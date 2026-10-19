@@ -228,7 +228,8 @@ YAHOO_CACHE_TTL = 45
 # Cache market-direction calculations and serialize cache misses to avoid duplicate scans.
 MARKET_DIRECTION_CACHE = {}
 MARKET_DIRECTION_LOCK = threading.Lock()
-MARKET_DIRECTION_CACHE_TTL = 15
+MARKET_DIRECTION_LOCKS = {market: threading.Lock() for market in ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex")}
+MARKET_DIRECTION_CACHE_TTL = 30
 ALPHA_CACHE = {"at": 0, "items": []}
 ALPHA_CACHE_TTL = 90
 CACHE = {}
@@ -315,7 +316,7 @@ def alpha_market_tickers():
             return None
         return {"symbol": symbol, "price": price, "change_pct": change, "quote_volume": quote_volume}
     rows = []
-    with ThreadPoolExecutor(max_workers=24) as pool:
+    with ThreadPoolExecutor(max_workers=8) as pool:
         for future in as_completed([pool.submit(fetch_ticker, symbol) for symbol in symbols]):
             try:
                 item = future.result()
@@ -846,7 +847,7 @@ def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
         else:
             # Query symbols concurrently so a slow quote cannot block the whole market page.
             data = []
-            with ThreadPoolExecutor(max_workers=24) as pool:
+            with ThreadPoolExecutor(max_workers=12) as pool:
                 futures = [pool.submit(fetch_yahoo_quote, symbol) for symbol in YAHOO_MARKETS[market]]
                 for future in as_completed(futures):
                     try:
@@ -856,6 +857,12 @@ def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
                     if item:
                         data.append(item)
             if not data:
+                if cached and cached[1]:
+                    stale_data = cached[1]
+                    return {"ok": True, "market": market, "live": False, "stale": True,
+                            "provider": "Yahoo Finance", "delayed": True,
+                            "updated_at": int(cached[0]), "items": stale_data[:limit],
+                            "message": "المصدر متعطل مؤقتًا؛ هذه آخر أسعار محفوظة وليست أسعارًا مباشرة."}
                 return JSONResponse({
                     "ok": False, "market": market, "live": False, "items": [],
                     "message": "تعذر جلب الأسعار من مزود السوق الآن. جرّب التحديث لاحقًا."
@@ -887,6 +894,11 @@ def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
             data = market_tickers(market)
             CACHE[market] = (now, data)
         except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+            if cached and cached[1]:
+                return {"ok": True, "market": market, "live": False, "stale": True,
+                        "provider": "Binance", "updated_at": int(cached[0]),
+                        "items": cached[1][:limit],
+                        "message": "مصدر الأسعار متعطل مؤقتًا؛ هذه آخر بيانات محفوظة وليست أسعارًا مباشرة."}
             return JSONResponse({
                 "ok": False, "market": market, "live": False, "items": [],
                 "message": "تعذر جلب الأسعار المباشرة الآن. حاول التحديث بعد قليل."
@@ -1094,44 +1106,71 @@ def market_direction(market: str = Query("spot")):
     allowed = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
     if market not in allowed:
         return JSONResponse({"ok": False, "live": False, "message": "السوق غير مدعوم."}, status_code=422)
-    cached_direction = MARKET_DIRECTION_CACHE.get(market)
-    if cached_direction and time.time() - cached_direction[0] < MARKET_DIRECTION_CACHE_TTL:
-        return dict(cached_direction[1])
-    try:
-        response = market_data(market, limit=2000)
-        if isinstance(response, JSONResponse):
-            return JSONResponse({"ok": False, "live": False, "market": market,
-                                 "message": "تعذر تحديد الاتجاه لأن بيانات الأسعار غير متاحة."}, status_code=503)
-        items = response.get("items", []) if isinstance(response, dict) else []
-        changes = []
-        for item in items:
-            try:
-                change = float(item.get("change_pct"))
-                if math.isfinite(change):
-                    changes.append(change)
-            except (TypeError, ValueError):
-                continue
-        if not changes:
-            return JSONResponse({"ok": False, "live": False, "market": market,
-                                 "message": "لا توجد تغيّرات سعرية كافية لتحديد اتجاه السوق."}, status_code=503)
-        up = sum(1 for value in changes if value > 0.10)
-        down = sum(1 for value in changes if value < -0.10)
-        flat = len(changes) - up - down
-        average = sum(changes) / len(changes)
-        direction = "BULLISH" if average >= 0.15 and up > down else "BEARISH" if average <= -0.15 and down > up else "NEUTRAL"
-        direction_ar = {"BULLISH": "صاعد", "BEARISH": "هابط", "NEUTRAL": "مختلط / محايد"}[direction]
-        result = {"ok": True, "live": True, "market": market, "direction": direction,
-                  "direction_ar": direction_ar, "price_change_pct": round(average, 3),
-                  "assets_up": up, "assets_down": down, "assets_flat": flat,
-                  "assets_sampled": len(changes), "updated_at": int(time.time()),
-                  "message": "اتجاه وصفي محسوب من متوسط تغيّر الأسعار واتساع السوق، وليس توصية دخول."}
-        MARKET_DIRECTION_CACHE[market] = (time.time(), result)
-        return dict(result)
-    except Exception as exc:
-        print(f"market direction failed for {market}: {type(exc).__name__}: {exc}")
-        return JSONResponse({"ok": False, "live": False, "market": market,
-                             "message": "تعذر تحديد اتجاه السوق مؤقتًا؛ مصدر الأسعار لم يرجع بيانات كافية."}, status_code=503)
 
+    now = time.time()
+    cached_direction = MARKET_DIRECTION_CACHE.get(market)
+    if cached_direction and now - cached_direction[0] < MARKET_DIRECTION_CACHE_TTL:
+        return dict(cached_direction[1])
+
+    # Prevent duplicate expensive scans for the same market without blocking other markets.
+    with MARKET_DIRECTION_LOCK:
+        market_lock = MARKET_DIRECTION_LOCKS.setdefault(market, threading.Lock())
+    with market_lock:
+        now = time.time()
+        cached_direction = MARKET_DIRECTION_CACHE.get(market)
+        if cached_direction and now - cached_direction[0] < MARKET_DIRECTION_CACHE_TTL:
+            return dict(cached_direction[1])
+        try:
+            response = market_data(market, limit=2000)
+            if isinstance(response, JSONResponse):
+                if cached_direction and cached_direction[1]:
+                    stale = dict(cached_direction[1])
+                    stale.update({"live": False, "stale": True,
+                                  "message": "تعذر تحديث الأسعار؛ نعرض آخر اتجاه محفوظ مؤقتًا."})
+                    return stale
+                return JSONResponse({"ok": False, "live": False, "market": market,
+                                     "message": "تعذر تحديد الاتجاه لأن بيانات الأسعار غير متاحة."}, status_code=503)
+            items = response.get("items", []) if isinstance(response, dict) else []
+            changes = []
+            for item in items:
+                try:
+                    change = float(item.get("change_pct"))
+                    if math.isfinite(change):
+                        changes.append(change)
+                except (TypeError, ValueError):
+                    continue
+            if not changes:
+                if cached_direction and cached_direction[1]:
+                    stale = dict(cached_direction[1])
+                    stale.update({"live": False, "stale": True,
+                                  "message": "لا توجد أسعار جديدة؛ نعرض آخر اتجاه محفوظ مؤقتًا."})
+                    return stale
+                return JSONResponse({"ok": False, "live": False, "market": market,
+                                     "message": "لا توجد تغيّرات سعرية كافية لتحديد اتجاه السوق."}, status_code=503)
+            up = sum(1 for value in changes if value > 0.10)
+            down = sum(1 for value in changes if value < -0.10)
+            flat = len(changes) - up - down
+            average = sum(changes) / len(changes)
+            direction = "BULLISH" if average >= 0.15 and up > down else "BEARISH" if average <= -0.15 and down > up else "NEUTRAL"
+            direction_ar = {"BULLISH": "صاعد", "BEARISH": "هابط", "NEUTRAL": "مختلط / محايد"}[direction]
+            result = {"ok": True, "live": bool(response.get("live", True)), "stale": bool(response.get("stale", False)),
+                      "market": market, "direction": direction, "direction_ar": direction_ar,
+                      "price_change_pct": round(average, 3), "assets_up": up, "assets_down": down,
+                      "assets_flat": flat, "assets_sampled": len(changes),
+                      "updated_at": int(response.get("updated_at") or time.time()),
+                      "message": response.get("message") or "اتجاه وصفي محسوب من متوسط تغيّر الأسعار واتساع السوق، وليس توصية دخول."}
+            # Cache successful snapshots, including stale snapshots, so a provider outage doesn't fan out requests.
+            MARKET_DIRECTION_CACHE[market] = (time.time(), result)
+            return dict(result)
+        except Exception as exc:
+            print(f"market direction failed for {market}: {type(exc).__name__}: {exc}")
+            if cached_direction and cached_direction[1]:
+                stale = dict(cached_direction[1])
+                stale.update({"live": False, "stale": True,
+                              "message": "تعذر تحديث اتجاه السوق؛ نعرض آخر نتيجة محفوظة مؤقتًا."})
+                return stale
+            return JSONResponse({"ok": False, "live": False, "market": market,
+                                 "message": "تعذر تحديد اتجاه السوق مؤقتًا؛ مصدر الأسعار لم يرجع بيانات كافية."}, status_code=503)
 
 
 PUBLIC_IDEAS_CACHE = {}
@@ -1525,7 +1564,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), lim
             raw_rows, source_errors = [], 0
             jobs = [(_fetch_public_idea_feed, (name, url)) for name, url in PUBLIC_TRADE_IDEA_FEEDS]
             jobs.extend((_fetch_telegram_public_channel, (channel,)) for channel in channels)
-            with ThreadPoolExecutor(max_workers=8) as pool:
+            with ThreadPoolExecutor(max_workers=6) as pool:
                 futures = [pool.submit(fn, *args) for fn, args in jobs]
                 for future in as_completed(futures):
                     try:
