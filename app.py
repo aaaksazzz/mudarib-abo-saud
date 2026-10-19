@@ -1480,7 +1480,7 @@ def _public_idea_levels(value):
     tp3 = find(r"(?:\bTP\s*[-_#]?\s*3\b|\bT\s*3\b|\btarget\s*[-_#]?\s*3\b|\btake\s*profit\s*[-_#]?\s*3\b|الهدف\s*(?:الثالث|3)|هدف\s*3)")
     return {"entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3}
 @app.get("/api/public-ideas")
-def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), limit: int = Query(20, ge=1, le=50), discover: bool = Query(False)):
+def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), limit: int = Query(20, ge=1, le=50), discover: bool = Query(False), refresh: bool = Query(False)):
     """Display only recent public ideas with a matching ticker, timeframe, direction, and ordered trade levels."""
     market = (market or "").strip().lower()
     interval = (interval or "auto").strip()
@@ -1493,7 +1493,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), lim
     cache_key = (market, interval, int(limit), bool(discover))
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
-        if cached and now - cached[0] < PUBLIC_IDEAS_CACHE_TTL:
+        if not refresh and cached and now - cached[0] < PUBLIC_IDEAS_CACHE_TTL:
             cached_response = {**cached[1], "cached": True}
             fresh_items = []
             for item in cached_response.get("items", []):
@@ -1929,7 +1929,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
     # Never fall back to the old EMA strategy when external sources have no eligible ideas.
     try:
         external = public_ideas(market=market, interval=interval, limit=min(50, max(limit * 3, limit)),
-                                discover=True)
+                                discover=True, refresh=refresh)
     except Exception as exc:
         print(f"external ideas failed {market}/{interval}: {type(exc).__name__}")
         external = {"ok": False, "items": [], "message": "تعذر الوصول إلى مصادر الأفكار العامة مؤقتًا."}
