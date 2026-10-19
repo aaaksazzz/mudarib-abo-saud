@@ -1134,7 +1134,9 @@ PUBLIC_IDEAS_CACHE_TTL = 300
 PUBLIC_IDEAS_LOCK = threading.RLock()
 # Shared raw-feed cache prevents every market/timeframe request from refetching all external sites.
 PUBLIC_TRADE_FEED_CACHE = {}
-PUBLIC_TRADE_FEED_CACHE_TTL = 300
+PUBLIC_TRADE_FEED_CACHE_TTL = 900
+# Serialize refreshes: concurrent market pages must not fan out identical RSS requests.
+PUBLIC_TRADE_FEED_FETCH_LOCK = threading.Lock()
 # Broad public-source discovery. Feeds are best-effort: inaccessible feeds are counted, never fabricated.
 PUBLIC_IDEA_FEEDS = [
     ("TradingView عربي", "https://ar.tradingview.com/feed/"),
@@ -1497,25 +1499,29 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), lim
 
     channels = _telegram_public_channels() if discover else []
     feed_cache_key = bool(discover)
-    feed_cached = PUBLIC_TRADE_FEED_CACHE.get(feed_cache_key)
-    if feed_cached and now - feed_cached["at"] < PUBLIC_TRADE_FEED_CACHE_TTL:
-        raw_rows = list(feed_cached["rows"])
-        source_errors = int(feed_cached["errors"])
-    else:
-        raw_rows, source_errors = [], 0
-        jobs = [(_fetch_public_idea_feed, (name, url)) for name, url in PUBLIC_TRADE_IDEA_FEEDS]
-        jobs.extend((_fetch_telegram_public_channel, (channel,)) for channel in channels)
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            futures = [pool.submit(fn, *args) for fn, args in jobs]
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                    if isinstance(result, list):
-                        raw_rows.extend(row for row in result if isinstance(row, dict))
-                except Exception as exc:
-                    source_errors += 1
-                    print(f"public idea source failed: {type(exc).__name__}: {exc}")
-        PUBLIC_TRADE_FEED_CACHE[feed_cache_key] = {"at": now, "rows": list(raw_rows), "errors": source_errors}
+    # Only one request per process refreshes shared feeds at a time. Re-check the
+    # cache after acquiring the lock because another request may have refreshed it.
+    with PUBLIC_TRADE_FEED_FETCH_LOCK:
+        feed_cached = PUBLIC_TRADE_FEED_CACHE.get(feed_cache_key)
+        if feed_cached and now - feed_cached["at"] < PUBLIC_TRADE_FEED_CACHE_TTL:
+            raw_rows = list(feed_cached["rows"])
+            source_errors = int(feed_cached["errors"])
+        else:
+            raw_rows, source_errors = [], 0
+            jobs = [(_fetch_public_idea_feed, (name, url)) for name, url in PUBLIC_TRADE_IDEA_FEEDS]
+            jobs.extend((_fetch_telegram_public_channel, (channel,)) for channel in channels)
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(fn, *args) for args in jobs]
+                for future in as_completed(futures):
+                    try:
+                        result = future.result()
+                        if isinstance(result, list):
+                            raw_rows.extend(row for row in result if isinstance(row, dict))
+                    except Exception as exc:
+                        source_errors += 1
+                        print(f"public idea source failed: {type(exc).__name__}: {exc}")
+            # Cache even an empty/partially failed result to prevent request storms.
+            PUBLIC_TRADE_FEED_CACHE[feed_cache_key] = {"at": int(time.time()), "rows": list(raw_rows), "errors": source_errors}
 
     stats = {"fetched": len(raw_rows), "recent": 0, "market": 0, "symbol": 0,
              "timeframe": 0, "direction_detected": 0, "duplicate": 0, "levels_missing_tp3": 0}
