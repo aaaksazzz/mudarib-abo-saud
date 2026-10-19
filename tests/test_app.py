@@ -235,10 +235,12 @@ def test_public_ideas_reads_direction_from_title_and_requires_all_ordered_levels
     response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
     assert response.status_code == 200
     data = response.json()
-    assert len(data["items"]) == 1
-    assert data["items"][0]["symbol"] == "BTCUSDT"
-    assert data["items"][0]["direction"] == "شراء"
+    assert len(data["items"]) == 2
+    assert {item["symbol"] for item in data["items"]} == {"BTCUSDT", "ETHUSDT"}
+    assert all(item["direction"] == "شراء" for item in data["items"])
     assert data["diagnostics"]["levels_missing_tp3"] >= 1
+    incomplete = next(item for item in data["items"] if item["symbol"] == "ETHUSDT")
+    assert incomplete["has_complete_levels"] is False
 
 def test_robots_sitemap_and_blog_are_available():
     robots = client.get("/robots.txt")
