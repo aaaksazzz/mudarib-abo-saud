@@ -980,8 +980,8 @@ def _fetch_candle_data_uncached(market: str, symbol: str, interval: str):
                 for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
     if market not in YAHOO_MARKETS and market != "tasi_index":
         return []
-    yahoo_interval = {"15m":"15m", "1h":"60m", "4h":"60m", "1d":"1d", "1w":"1wk", "1M":"1mo"}.get(interval)
-    yahoo_range = {"15m":"60d", "1h":"730d", "4h":"730d", "1d":"5y", "1w":"10y", "1M":"max"}.get(interval)
+    yahoo_interval = {"15m":"15m", "30m":"15m", "1h":"60m", "2h":"60m", "4h":"60m", "1d":"1d", "1w":"1wk", "1M":"1mo"}.get(interval)
+    yahoo_range = {"15m":"60d", "30m":"60d", "1h":"730d", "2h":"730d", "4h":"730d", "1d":"5y", "1w":"10y", "1M":"max"}.get(interval)
     if not yahoo_interval:
         return []
     # Yahoo has several public query hosts. The primary can return an empty chart
@@ -1015,12 +1015,13 @@ def _fetch_candle_data_uncached(market: str, symbol: str, interval: str):
             out.append({"time": int(stamp), "open": float(o), "high": float(h), "low": float(l), "close": float(c), "volume": float(v)})
         except (IndexError, TypeError, ValueError):
             continue
-    if interval == "4h":
+    if interval in {"30m", "2h", "4h"}:
         grouped = {}
+        bucket_seconds = {"30m": 1800, "2h": 7200, "4h": 14400}[interval]
         for candle in out:
-            bucket = candle["time"] // 14400
+            bucket = candle["time"] // bucket_seconds
             if bucket not in grouped:
-                grouped[bucket] = {"time": bucket*14400, "open": candle["open"], "high": candle["high"], "low": candle["low"], "close": candle["close"], "volume": candle["volume"]}
+                grouped[bucket] = {"time": bucket*bucket_seconds, "open": candle["open"], "high": candle["high"], "low": candle["low"], "close": candle["close"], "volume": candle["volume"]}
             else:
                 g = grouped[bucket]
                 g["high"] = max(g["high"], candle["high"])
@@ -1718,93 +1719,103 @@ def _ema_series(values, period):
     return result
 
 
-def _technical_fallback_signal(market, symbol, interval):
-    """Fallback from real candles using trend, momentum, volume, structure and ATR risk."""
-    candles = candle_data(market, symbol, interval)
-    if len(candles) < 80:
+def _ema_alignment(market, symbol, interval):
+    """Require EMA20/EMA50 alignment on three configured timeframes and a fresh cross on the lead timeframe."""
+    timeframe_sets = {
+        "15m": ("15m", "30m", "1h"),
+        "1h": ("1h", "2h", "4h"),
+        "2h": ("2h", "4h", "1d"),
+        "4h": ("4h", "1d", "1w"),
+        "1d": ("1d", "1w", "1M"),
+    }
+    frames = timeframe_sets.get(interval)
+    if not frames:
         return None
+    states = {}
+    for tf in frames:
+        candles = candle_data(market, symbol, tf)
+        closes = [float(c["close"]) for c in candles if c.get("close") is not None]
+        if len(closes) < 55 or not all(math.isfinite(v) and v > 0 for v in closes[-55:]):
+            return None
+        ema20 = _ema_series(closes, 20)
+        ema50 = _ema_series(closes, 50)
+        if len(ema20) < 2 or len(ema50) < 2 or None in (ema20[-1], ema50[-1], ema20[-2], ema50[-2]):
+            return None
+        states[tf] = {
+            "up": ema20[-1] > ema50[-1],
+            "down": ema20[-1] < ema50[-1],
+            "cross_up": ema20[-2] <= ema50[-2] and ema20[-1] > ema50[-1],
+            "cross_down": ema20[-2] >= ema50[-2] and ema20[-1] < ema50[-1],
+        }
+    lead = states[frames[0]]
+    if lead["cross_up"] and all(states[tf]["up"] for tf in frames[1:]):
+        return "شراء", frames
+    if lead["cross_down"] and all(states[tf]["down"] for tf in frames[1:]):
+        return "بيع", frames
+    return None
+
+
+def _technical_fallback_signal(market, symbol, interval):
+    """EMA20/50 multi-timeframe strategy: alignment on three frames plus a fresh lead-frame crossover."""
     try:
+        alignment = _ema_alignment(market, symbol, interval)
+        if not alignment:
+            return None
+        side, confirmation_frames = alignment
+        candles = candle_data(market, symbol, interval)
+        if len(candles) < 55:
+            return None
         closes = [float(c["close"]) for c in candles]
         highs = [float(c["high"]) for c in candles]
         lows = [float(c["low"]) for c in candles]
         volumes = [float(c.get("volume") or 0) for c in candles]
-        if not all(math.isfinite(x) and x > 0 for x in closes[-80:]):
-            return None
         entry = closes[-1]
-        e20, e50, e200 = _ema_series(closes, 20), _ema_series(closes, 50), _ema_series(closes, 200)
-        # EMA200 is used when the timeframe has enough history; shorter history is not fabricated.
-        ema200 = e200[-1] if e200 and e200[-1] is not None else None
-        ema20, ema50 = e20[-1], e50[-1]
-        if ema20 is None or ema50 is None:
+        if not math.isfinite(entry) or entry <= 0:
             return None
-        changes = [closes[i] - closes[i-1] for i in range(1, len(closes))]
-        gains = [max(0.0, x) for x in changes[-14:]]
-        losses = [max(0.0, -x) for x in changes[-14:]]
-        avg_gain = sum(gains) / max(1, len(gains))
-        avg_loss = sum(losses) / max(1, len(losses))
-        rsi = 100.0 if avg_loss == 0 and avg_gain > 0 else 50.0 if avg_loss == 0 else 100 - 100 / (1 + avg_gain / avg_loss)
         true_ranges = []
-        for i in range(max(1, len(candles)-14), len(candles)):
-            true_ranges.append(max(highs[i]-lows[i], abs(highs[i]-closes[i-1]), abs(lows[i]-closes[i-1])))
+        for k in range(max(1, len(candles)-14), len(candles)):
+            true_ranges.append(max(highs[k]-lows[k], abs(highs[k]-closes[k-1]), abs(lows[k]-closes[k-1])))
         atr = sum(true_ranges) / len(true_ranges) if true_ranges else entry * 0.01
         if not math.isfinite(atr) or atr <= 0:
             return None
-        recent_vol = sum(volumes[-20:]) / max(1, len(volumes[-20:]))
-        vol_ratio = volumes[-1] / recent_vol if recent_vol > 0 else 1.0
         recent_high = max(highs[-20:-1])
         recent_low = min(lows[-20:-1])
-        macd_fast, macd_slow = _ema_series(closes, 12), _ema_series(closes, 26)
-        macd_up = bool(macd_fast and macd_slow and macd_fast[-1] is not None and macd_slow[-1] is not None and macd_fast[-1] > macd_slow[-1])
-        # Keep EMA200 as a trend filter when enough history exists; do not
-        # count missing EMA200 as a failed signal on shorter-history instruments.
-        long_trend = entry > ema20 and ema20 > ema50 and (ema200 is None or entry > ema200)
-        short_trend = entry < ema20 and ema20 < ema50 and (ema200 is None or entry < ema200)
-        long_score = sum((entry > ema20, ema20 > ema50, 50 <= rsi <= 72, macd_up, entry > recent_high, vol_ratio >= 1.05))
-        short_score = sum((entry < ema20, ema20 < ema50, 28 <= rsi <= 50, not macd_up, entry < recent_low, vol_ratio >= 1.05))
-        max_risk_pct = {"15m": 0.03, "1h": 0.05, "4h": 0.08, "1d": 0.12, "1w": 0.20, "1M": 0.30}.get(interval, 0.03)
+        max_risk_pct = {"15m": 0.03, "1h": 0.05, "2h": 0.06, "4h": 0.08, "1d": 0.12}.get(interval, 0.03)
         max_risk = entry * max_risk_pct
-        # Use the setup's actual direction: bullish setups are BUYs and
-        # bearish setups are SELLs. Stops and targets must match that direction.
-        if long_trend and long_score >= 4 and long_score > short_score:
-            side, stop = "شراء", min(entry - atr * 1.5, recent_low)
-            risk = entry - stop
+        if side == "شراء":
+            stop = min(entry - atr * 1.5, recent_low)
+            risk = min(entry - stop, max_risk)
             if risk <= 0:
                 return None
-            risk = min(risk, max_risk)
             stop = entry - risk
             targets = [entry + risk * n for n in (1, 2, 3)]
-            score = long_score
-        elif short_trend and short_score >= 4 and short_score > long_score:
-            side, stop = "بيع", max(entry + atr * 1.5, recent_high)
-            risk = stop - entry
+        else:
+            stop = max(entry + atr * 1.5, recent_high)
+            risk = min(stop - entry, max_risk)
             if risk <= 0:
                 return None
-            risk = min(risk, max_risk)
             stop = entry + risk
             targets = [entry - risk * n for n in (1, 2, 3)]
             if targets[-1] <= 0:
                 return None
-            score = short_score
-        else:
-            return None
         digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
         fmt = lambda value: round(float(value), digits)
         return {
-            "source": "تحليل فني داخلي متعدد الأدوات",
-            "title": f"{side} {symbol} — تحليل فني متعدد الأدوات",
-            "description": "إشارة محسوبة من شموع السوق الفعلية؛ ليست توصية من شخص خارجي.",
+            "source": "EMA20/EMA50 — توافق ثلاثة فريمات",
+            "title": f"{side} {symbol} — توافق EMA20/50",
+            "description": "تقاطع EMA20/EMA50 على فريم الدخول، مع توافق الاتجاه على الفريمين الأعلى المحددين. المستويات محسوبة من الشموع الفعلية وATR.",
             "url": "", "published_at": int(time.time()), "market": market,
             "direction": side, "symbol": symbol, "interval": interval,
+            "confirmation_timeframes": list(confirmation_frames),
             "levels": {"entry": fmt(entry), "stop_loss": fmt(stop), "tp1": fmt(targets[0]),
                        "tp2": fmt(targets[1]), "tp3": fmt(targets[2])},
-            "has_complete_levels": True, "ai_score": round(score / 6 * 100),
-            "analysis_methods": ["EMA20/50/200", "RSI", "MACD", "ATR", "حجم التداول",
-                                 "اختراق القمم/القيعان", "بنية السعر"],
+            "has_complete_levels": True, "ai_score": 100,
+            "analysis_methods": ["EMA20", "EMA50", "تقاطع الفريم الرئيسي", "توافق ثلاثة فريمات", "ATR لإدارة المخاطر"],
             "age_hours": 0, "generated_by_site": True,
-            "raw_text": "تحليل آلي من بيانات الشموع العامة الفعلية."
+            "raw_text": "إشارة آلية من شموع السوق الفعلية؛ لا تمثل نسبة نجاح مثبتة."
         }
     except (KeyError, TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError) as exc:
-        print(f"technical fallback skipped {market}/{symbol}/{interval}: {type(exc).__name__}")
+        print(f"EMA20/50 signal skipped {market}/{symbol}/{interval}: {type(exc).__name__}")
         return None
 
 
