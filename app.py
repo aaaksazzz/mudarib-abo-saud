@@ -778,15 +778,20 @@ def fetch_yahoo_quote(symbol: str):
         price = float(price)
         previous = float(previous) if previous is not None else price
         quote_rows = (item.get("indicators", {}).get("quote") or [{}])[0]
+        closes = quote_rows.get("close") or []
         volumes = quote_rows.get("volume") or []
         valid_volumes = [v for v in volumes if v is not None]
         daily_volume = int(valid_volumes[-1]) if valid_volumes else int(meta.get("regularMarketVolume") or 0)
         dollar_volume = price * daily_volume
+        daily_turnovers = [float(c) * float(v) for c, v in zip(closes, volumes)
+                           if c is not None and v is not None and float(c) > 0 and float(v) >= 0]
+        avg_dollar_volume_5d = sum(daily_turnovers) / len(daily_turnovers) if daily_turnovers else 0.0
         return {
             "symbol": symbol, "name": YAHOO_LABELS.get(symbol, symbol.replace(".SR", "")),
             "price": price,
             "change_pct": ((price - previous) / previous * 100) if previous else 0.0,
             "volume": daily_volume, "quote_volume": dollar_volume, "dollar_volume": dollar_volume,
+            "avg_dollar_volume_5d": avg_dollar_volume_5d,
             "currency": meta.get("currency", ""),
             "exchange": meta.get("fullExchangeName") or meta.get("exchangeName") or "Yahoo Finance",
             "quote_time": meta.get("regularMarketTime"), "delayed": True,
@@ -830,14 +835,14 @@ def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
                     "ok": False, "market": market, "live": False, "items": [],
                     "message": "تعذر جلب الأسعار من مزود السوق الآن. جرّب التحديث لاحقًا."
                 }, status_code=503)
-            # US equities have a liquidity floor; retain the Saudi market universe without
-            # a dollar-volume cutoff so lower-volume Tadawul listings remain discoverable.
-            if market == "us":
-                data = [item for item in data if item.get("dollar_volume", 0) >= 1_000_000]
+            # US stocks and listed futures must average at least $1m in reported daily turnover.
+            # Saudi TASI is exempt. Spot FX is OTC and Yahoo does not provide consolidated FX volume.
+            if market in {"us", "contracts"}:
+                data = [item for item in data if item.get("avg_dollar_volume_5d", 0) >= 1_000_000]
                 if not data:
                     return {"ok": True, "market": market, "live": True, "provider": "Yahoo Finance",
                             "delayed": True, "updated_at": int(now), "items": [],
-                            "message": "لا توجد أسهم أمريكية مستوفية لسيولة مليون دولار يوميًا في البيانات المتاحة."}
+                            "message": "لا توجد أصول مستوفية لمتوسط سيولة يومية قدره مليون دولار في البيانات المتاحة."}
             data.sort(key=lambda x: x["change_pct"], reverse=True)
             YAHOO_CACHE[market] = (now, data)
         return {"ok": True, "market": market, "live": True, "provider": "Yahoo Finance",
