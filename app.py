@@ -1986,6 +1986,13 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         if risk <= 0:
             skipped += 1
             continue
+        # Safety guard: reject ideas whose mirrored stop would put an excessive
+        # fraction of entry capital at risk. These are price-distance percentages,
+        # not account-level loss estimates or guarantees.
+        stop_distance_pct = risk / entry * 100
+        if not math.isfinite(stop_distance_pct) or stop_distance_pct > 15.0:
+            skipped += 1
+            continue
         if original_side == "شراء":
             if not (old_stop < entry and all(v > entry for v in old_targets)):
                 skipped += 1
@@ -2058,6 +2065,19 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         })
         # Final guard: never display malformed or incorrectly ordered levels.
         if not _public_idea_levels_ordered(item):
+            skipped += 1
+            continue
+        # Keep the risk/reward geometry sensible after inversion as well.
+        try:
+            first_reward_pct = abs(float(item["levels"]["tp1"]) - entry) / entry * 100
+            mirrored_risk_pct = abs(float(item["levels"]["stop_loss"]) - entry) / entry * 100
+        except (KeyError, TypeError, ValueError, OverflowError):
+            skipped += 1
+            continue
+        if not math.isfinite(first_reward_pct) or not math.isfinite(mirrored_risk_pct):
+            skipped += 1
+            continue
+        if first_reward_pct < mirrored_risk_pct * 0.40:
             skipped += 1
             continue
         items.append(item)
