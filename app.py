@@ -1635,7 +1635,7 @@ def public_results(limit: int = Query(100, ge=1, le=500)):
     return {"ok": True, "items": rows, "total": len(rows), "open": open_count, "closed": len(closed),
             "wins": wins, "losses": losses, "profitable": profitable,
             "win_rate": round(wins / len(closed) * 100, 1) if closed else None,
-            "message": "محرك الصفقات الآلية متوقف؛ لا تُنشأ نتائج جديدة تلقائيًا."}
+            "message": "تُسجل الفرص عند الفحص، وتُحدّث حالة الهدف أو الوقف عند توفر سعر حديث من فحص السوق نفسه."}
 
 @app.get("/api/news")
 def public_news(market: str = Query("all"), limit: int = Query(50, ge=1, le=100),
@@ -1934,7 +1934,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
     }
     # Persist each newly discovered setup so the Results page has a real audit trail.
     # These are OPEN observations until price reaches a documented TP/SL; never count them as wins.
-    if result.get("items"):
+    if current_prices:
         try:
             with RESULTS_LOCK:
                 history = read_json_file(RESULTS_PATH, [])
