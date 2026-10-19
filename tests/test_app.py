@@ -92,23 +92,27 @@ def test_strategy_signal_endpoint_uses_only_real_candle_universe(monkeypatch):
     data = response.json()
     assert data["items"] == []
     assert data["scanned"] == 0
-    assert "شموع السوق الفعلية" in data["message"] or "لن نعرض" in data["message"]
+    assert "ما لقينا" in data["message"] or "لم تُنشأ" in data["message"]
 
 
 def test_signal_endpoint_scans_each_supported_market(monkeypatch):
-    # Each market must route through its own quote universe and keep market identity.
+    # The public idea supplies direction and levels; each market's own quote data
+    # contributes only the lightweight 10% context.
     supported = ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex")
     calls = []
     monkeypatch.setattr(app_module, "market_data", lambda market, limit=500: (
         calls.append(market) or {"ok": True, "items": [
-            {"symbol": "TEST", "price": 100, "change_pct": 2, "quote_volume": 2_000_000}
+            {"symbol": "TESTUSDT", "price": 100, "change_pct": 2, "quote_volume": 2_000_000}
         ]}
     ))
-    monkeypatch.setattr(app_module, "_technical_fallback_signal", lambda market, symbol, interval: {
-        "symbol": symbol, "market": market, "interval": interval, "direction": "شراء",
-        "levels": {"entry": 100, "stop_loss": 95, "tp1": 105, "tp2": 110, "tp3": 115},
-        "has_complete_levels": True, "ai_score": 90, "generated_by_site": True,
-    })
+    def fake_ideas(market, interval, limit, discover, refresh=False):
+        return {"ok": True, "items": [{
+            "market": market, "symbol": "TESTUSDT", "direction": "شراء",
+            "interval": interval, "published_at": int(time.time()),
+            "levels": {"entry": 100, "stop_loss": 95, "tp1": 105, "tp2": 110, "tp3": 115},
+            "source": "Test public source", "url": "https://example.com/idea",
+        }], "diagnostics": {"fetched": 1}, "sources_checked": 1, "sources_failed": 0}
+    monkeypatch.setattr(app_module, "public_ideas", fake_ideas)
     app_module.PUBLIC_IDEAS_CACHE.clear()
     for market in supported:
         response = client.get(f"/api/signals/{market}?interval=15m")
@@ -117,20 +121,26 @@ def test_signal_endpoint_scans_each_supported_market(monkeypatch):
         assert data["market"] == market
         assert data["count"] == 1
         assert data["items"][0]["market"] == market
+        assert data["items"][0]["direction"] == "بيع"
+        assert data["items"][0]["external_source_weight"] == 90
     assert calls == list(supported)
 
 
-def test_signal_endpoint_reports_market_provider_outage(monkeypatch):
+def test_signal_endpoint_handles_site_context_outage_without_fabricating_trades(monkeypatch):
     monkeypatch.setattr(app_module, "market_data", lambda market, limit=500: app_module.JSONResponse(
         {"ok": False, "message": "provider unavailable"}, status_code=503
     ))
+    monkeypatch.setattr(app_module, "public_ideas", lambda **kwargs: {
+        "ok": True, "items": [], "diagnostics": {"fetched": 0},
+        "sources_checked": 1, "sources_failed": 0,
+    })
     app_module.PUBLIC_IDEAS_CACHE.clear()
     response = client.get("/api/signals/forex?interval=15m")
     assert response.status_code == 200
     data = response.json()
-    assert data["ok"] is False
+    assert data["ok"] is True
     assert data["items"] == []
-    assert "provider unavailable" in data["message"]
+    assert data["site_analysis_weight"] == 10
 
 
 def test_technical_signal_uses_real_candles_and_emits_complete_levels(monkeypatch):
@@ -288,7 +298,7 @@ def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     js = (root / "app.js").read_text(encoding="utf-8")
     assert 'href="/markets/spot"' in html and 'href="/markets/futures"' in html
     assert 'async function loadSignals(m)' in js
-    assert '"/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedInterval)+"&limit=12"' in js
+    assert '"/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(frame)+"&limit=20&refresh=true"' in js
     assert 'data-frame="' in js and '"15m","1h","4h","1d","1w","1M"' in js
     assert 'async function loadChart(m,symbol)' in js
 
@@ -489,8 +499,8 @@ def test_home_refresh_does_not_rebuild_dashboard_twice():
     root = Path(__file__).resolve().parents[1] / "static"
     html = (root / "index.html").read_text(encoding="utf-8")
     js = (root / "app.js").read_text(encoding="utf-8")
-    assert '/static/app.css?v=20261018.2' in html
-    assert '/static/app.js?v=20261018.2' in html
+    assert '/static/app.css?v=20261019.2' in html
+    assert '/static/app.js?v=20261019.1' in html
     assert 'getJSON("/api/status")' in js
     assert 'setInterval(' not in js
 
