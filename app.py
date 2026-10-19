@@ -22,6 +22,31 @@ BASE = Path(__file__).resolve().parent
 app = FastAPI(title="التداول الذكي PRO", version="2.1.3")
 security = HTTPBasic(auto_error=False)
 
+def read_json_file(path, default=None):
+    """Read JSON safely and return a fresh default when the file is missing or malformed."""
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, json.JSONDecodeError, TypeError):
+        return default.copy() if isinstance(default, (dict, list)) else default
+
+def write_json_file(path, data):
+    """Atomically persist JSON and ensure the parent directory exists."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(target.name + ".tmp")
+    try:
+        with open(temporary, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, separators=(",", ":"))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, target)
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
 LOGIN_HTML = """<!doctype html>
 <html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow"><title>دخول | التداول الذكي PRO</title>
