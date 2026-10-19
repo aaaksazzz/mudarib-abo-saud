@@ -1427,21 +1427,31 @@ def _public_idea_symbol_matches_market(market, symbol, text_value=""):
     return False
 
 def _public_idea_levels_ordered(row):
-    """Return true only when all five real levels are positive and ordered for the side."""
+    """Validate explicit source entry/stop and at least one correctly-sided target.
+    Missing TP2/TP3 are allowed here and are clearly marked/calculated downstream.
+    """
     levels = row.get("levels") if isinstance(row.get("levels"), dict) else {}
     try:
         entry, stop = float(levels["entry"]), float(levels["stop_loss"])
-        tp1, tp2, tp3 = float(levels["tp1"]), float(levels["tp2"]), float(levels["tp3"])
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError, OverflowError):
         return False
-    values = (entry, stop, tp1, tp2, tp3)
-    if not all(math.isfinite(value) and value > 0 for value in values):
+    if not all(math.isfinite(value) and value > 0 for value in (entry, stop)):
         return False
     side = str(row.get("direction") or "")
+    targets = []
+    for key in ("tp1", "tp2", "tp3"):
+        try:
+            value = float(levels.get(key))
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if math.isfinite(value) and value > 0:
+            targets.append(value)
+    if not targets:
+        return False
     if side == "شراء":
-        return stop < entry < tp1 < tp2 < tp3
+        return stop < entry and all(value > entry for value in targets)
     if side == "بيع":
-        return tp3 < tp2 < tp1 < entry < stop
+        return stop > entry and all(value < entry for value in targets)
     return False
 
 
@@ -1590,10 +1600,14 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), lim
         stats["symbol"] += 1
 
         detected_interval = _public_idea_interval(text_all)
-        if not detected_interval:
+        # Most public ideas omit a timeframe. Do not discard an otherwise usable
+        # recent idea solely for that omission; keep the requested page interval as
+        # a display/filter context and explicitly disclose that the source omitted it.
+        interval_missing = not bool(detected_interval)
+        if detected_interval and interval != "auto" and detected_interval != interval:
             continue
-        if interval != "auto" and detected_interval != interval:
-            continue
+        if interval_missing:
+            detected_interval = interval if interval != "auto" else "غير محدد"
         stats["timeframe"] += 1
         if not side:
             continue
@@ -1614,8 +1628,9 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), lim
             "market": market, "direction": side or "غير محدد",
             "symbol": symbol or "غير محدد",
             "interval": detected_interval or (interval if interval != "auto" else "غير محدد"),
+            "interval_missing_in_source": interval_missing,
             "levels": levels, "age_hours": round(max(0, now - published) / 3600, 1),
-            "has_complete_levels": True,
+            "has_complete_levels": all(levels.get(key) is not None for key in ("entry", "stop_loss", "tp1", "tp2", "tp3")),
             "raw_text": (body or title)[:2400]
         })
         unique[identity] = clean
@@ -1949,31 +1964,66 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         try:
             entry = float(original_levels["entry"])
             old_stop = float(original_levels["stop_loss"])
-            old_targets = [float(original_levels[k]) for k in ("tp1", "tp2", "tp3")]
         except (KeyError, TypeError, ValueError, OverflowError):
             skipped += 1
             continue
+        old_targets = []
+        for key in ("tp1", "tp2", "tp3"):
+            try:
+                value = float(original_levels.get(key))
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if math.isfinite(value) and value > 0:
+                old_targets.append(value)
         nums = [entry, old_stop, *old_targets]
-        if not all(math.isfinite(x) and x > 0 for x in nums):
+        if not all(math.isfinite(x) and x > 0 for x in nums) or not old_targets:
             skipped += 1
             continue
-        # Invert the public idea and mirror its original risk/reward distances around entry.
+        # Invert the public idea around its entry. Explicit source targets are mirrored;
+        # missing target distances are supplemented from the source stop-risk (R), and
+        # are labelled as site-calculated rather than misrepresented as source levels.
+        risk = abs(entry - old_stop)
+        if risk <= 0:
+            skipped += 1
+            continue
         if original_side == "شراء":
-            if not (old_stop < entry < old_targets[0] < old_targets[1] < old_targets[2]):
+            if not (old_stop < entry and all(v > entry for v in old_targets)):
                 skipped += 1
                 continue
             side = "بيع"
-            stop = entry + (entry - old_stop)
-            targets = [entry - (v - entry) for v in old_targets]
-            targets.sort(reverse=True)
+            stop = entry + risk
+            target_distances = sorted({round(v - entry, 12) for v in old_targets if v > entry})
         else:
-            if not (old_targets[2] < old_targets[1] < old_targets[0] < entry < old_stop):
+            if not (old_stop > entry and all(v < entry for v in old_targets)):
                 skipped += 1
                 continue
             side = "شراء"
-            stop = entry - (old_stop - entry)
-            targets = [entry + (entry - v) for v in old_targets]
+            stop = entry - risk
+            target_distances = sorted({round(entry - v, 12) for v in old_targets if v < entry})
+        if not target_distances:
+            skipped += 1
+            continue
+        # Add conservative R-based distances only where the source supplied fewer than
+        # three distinct targets. No price is invented from a market quote; the math is
+        # anchored to the source's explicit entry and stop loss.
+        for multiple in (1.0, 2.0, 3.0, 4.0, 5.0):
+            if len(target_distances) >= 3:
+                break
+            candidate_distance = risk * multiple
+            if all(abs(candidate_distance - d) > max(risk * 0.02, 1e-12) for d in target_distances):
+                target_distances.append(candidate_distance)
+                target_distances.sort()
+        if len(target_distances) < 3:
+            skipped += 1
+            continue
+        target_distances = target_distances[:3]
+        targets = ([entry - d for d in target_distances]
+                   if side == "بيع" else [entry + d for d in target_distances])
+        levels_completed_by_site = any(original_levels.get(k) is None for k in ("tp1", "tp2", "tp3"))
+        if side == "شراء":
             targets.sort()
+        else:
+            targets.sort(reverse=True)
 
         symbol = str(source_item.get("symbol") or "").strip().upper()
         change = market_changes.get(symbol)
@@ -2000,6 +2050,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
             "signal_inverted": True,
             "generated_by_site": False,
             "has_complete_levels": True,
+            "levels_completed_by_site": levels_completed_by_site,
+            "level_source_note": ("المصدر قدّم بعض المستويات؛ المستويات الناقصة محسوبة رياضيًا من مسافة الدخول إلى وقف المصدر (R)، وليست منقولة عن المصدر."
+                                  if levels_completed_by_site else "المستويات من المصدر العام ثم عُكست حول الدخول."),
+            "source_timeframe_missing": bool(source_item.get("interval_missing_in_source")),
             "method": "external_public_ideas_90_site_context_10_inverted"
         })
         # Final guard: never display malformed or incorrectly ordered levels.
@@ -2018,9 +2072,9 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         "skipped_invalid_levels": skipped,
         "external_source_weight": 90, "site_analysis_weight": 10,
         "technical_fallback_used": False,
-        "message": ("تم جلب أفكار عامة وعكس اتجاهها مع الحفاظ على ترتيب مستويات الدخول والوقف والأهداف."
+        "message": ("تم جلب أفكار عامة حديثة وعكس اتجاهها؛ أي أهداف ناقصة محسوبة من مخاطرة المصدر ومعلّمة بوضوح."
                     if items else
-                    "ما لقينا أفكارًا عامة حديثة مكتملة المستويات لهذا السوق والفريم؛ ما راح ننشئ صفقات من الاستراتيجية القديمة.")
+                    "ما لقينا أفكارًا عامة حديثة فيها دخول ووقف وهدف واحد صالح على الأقل. قد تتأخر المصادر أو تحدّ الطلبات؛ لم تُنشأ صفقة بلا مرجع.")
     }
     with PUBLIC_IDEAS_LOCK:
         PUBLIC_IDEAS_CACHE[cache_key] = (now, result)
