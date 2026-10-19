@@ -272,8 +272,8 @@ def alpha_market_tickers():
         and item.get("quoteAsset") in ("USDT", "USDC") and item.get("symbol")
         and str(item.get("baseAsset") or item.get("symbol", "").replace("USDT", "").replace("USDC", "")).upper() not in STABLES
     ]
-    # Bound outbound calls on the small service; the result is cached and ranked by turnover.
-    symbols = list(dict.fromkeys(symbols))[:40]
+    # Inspect the full active Alpha universe; filter by 24h quote turnover below rather than truncating symbols.
+    symbols = list(dict.fromkeys(symbols))
     def fetch_ticker(symbol):
         from urllib.parse import urlencode
         data = fetch_json(ALPHA_BASE + "/ticker?" + urlencode({"symbol": symbol}), timeout=7)
