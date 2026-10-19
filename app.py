@@ -1334,13 +1334,14 @@ def _public_idea_interval(value):
     if re.search(r"(?<![A-Za-z0-9])1M(?![A-Za-z0-9])", value):
         return "1M"
     match = re.search(
-        r"\b(15m|15 min|15-minute|1h|1 hour|4h|4 hour|1d|daily|1 day|1w|weekly|monthly)\b|(?:فريم|إطار)\s*(15\s*د|ساعة|4\s*س|يومي|أسبوعي|شهري)",
+        r"\b(15m|15 min|15-minute|1h|1 hour|2h|2 hour|4h|4 hour|1d|daily|1 day|1w|weekly|monthly)\b|(?:فريم|إطار)\s*(15\s*د|ساعة|2\s*س|4\s*س|يومي|أسبوعي|شهري)",
         value, re.I)
     if not match:
         return ""
     token = match.group(0).lower().replace(" ", "")
     mapping = {"15m":"15m", "15min":"15m", "15-minute":"15m", "15د":"15m",
-               "1h":"1h", "1hour":"1h", "ساعة":"1h", "4h":"4h", "4hour":"4h", "4س":"4h",
+               "1h":"1h", "1hour":"1h", "ساعة":"1h", "2h":"2h", "2hour":"2h", "2س":"2h",
+               "4h":"4h", "4hour":"4h", "4س":"4h",
                "1d":"1d", "daily":"1d", "1day":"1d", "يومي":"1d",
                "1w":"1w", "weekly":"1w", "أسبوعي":"1w", "monthly":"1M", "شهري":"1M"}
     return mapping.get(token, "")
