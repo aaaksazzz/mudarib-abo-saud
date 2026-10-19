@@ -1824,8 +1824,8 @@ SCAN_CURSOR_LOCK = threading.Lock()
 
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(12, ge=1, le=20), refresh: bool = Query(False)):
-    """Generate market-specific trade setups from real OHLCV candles only; never show public-tip feeds."""
-    market = (market or "").lower()
+    """90% public external trade ideas, 10% lightweight site-market context, then invert BUY/SELL."""
+    market = (market or "").strip().lower()
     allowed_markets = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
     if market not in allowed_markets:
         return JSONResponse({"ok": False, "live": False, "items": [],
@@ -1833,197 +1833,129 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
     if interval not in {"15m", "1h", "2h", "4h", "1d"}:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "هذا الفريم ليس له استراتيجية دخول مفعّلة."}, status_code=422)
+
     now = int(time.time())
-    cache_key = ("ema2050_mtf_v2", market, interval, limit)
+    cache_key = ("external90_inverted_site10_v1", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if not refresh and cached and now - cached[0] < 90:
             return {**cached[1], "cached": True}
 
-    items = []
-    scanned = 0
-    failures = 0
-    universe = None
-    current_prices = {}
+    # External/public posts are the only source of trade direction and trade levels.
+    # Never fall back to the old EMA strategy when external sources have no eligible ideas.
     try:
-        universe = market_data(market, limit=2000)
-        # market_data may return a FastAPI JSONResponse on provider failure. Do not
-        # silently turn an outage into a successful "no signals" result.
-        if isinstance(universe, JSONResponse):
-            try:
-                detail = json.loads(universe.body.decode("utf-8"))
-                message = detail.get("message") or "تعذر جلب بيانات السوق من المصدر."
-            except (ValueError, TypeError, AttributeError):
-                message = "تعذر جلب بيانات السوق من المصدر."
-            result = {"ok": False, "live": False, "market": market, "interval": interval,
-                      "items": [], "count": 0, "scanned": 0, "scan_failures": 1,
-                      "technical_fallback_used": True, "message": message}
-            with PUBLIC_IDEAS_LOCK:
-                PUBLIC_IDEAS_CACHE[cache_key] = (now, result)
-            return result
-        candidates = universe.get("items", []) if isinstance(universe, dict) else []
-        if not candidates and isinstance(universe, dict) and universe.get("ok") is False:
-            result = {"ok": False, "live": False, "market": market, "interval": interval,
-                      "items": [], "count": 0, "scanned": 0, "scan_failures": 1,
-                      "technical_fallback_used": True,
-                      "message": universe.get("message") or "مصدر السوق لم يرجع بيانات قابلة للتحليل."}
-            with PUBLIC_IDEAS_LOCK:
-                PUBLIC_IDEAS_CACHE[cache_key] = (now, result)
-            return result
-        # Rank by available liquidity first, then movement. This avoids scanning only
-        # the most erratic assets and keeps the same market universe as the quote page.
-        valid = []
-        for candidate in candidates:
-            symbol = str(candidate.get("symbol") or "").strip().upper()
-            if not symbol:
-                continue
-            try:
-                change = abs(float(candidate.get("change_pct") or 0))
-                price = float(candidate.get("price") or 0)
-                liquidity = float(candidate.get("quote_volume") or candidate.get("dollar_volume") or 0)
-            except (TypeError, ValueError, OverflowError):
-                continue
-            if not math.isfinite(price) or price <= 0 or not math.isfinite(change):
-                continue
-            current_prices[symbol] = price
-            valid.append((liquidity if math.isfinite(liquidity) else 0.0, change, symbol))
-        valid.sort(key=lambda row: (row[0], row[1]), reverse=True)
-        # Rotate through the full market universe in bounded batches, rather than
-        # repeatedly scanning only the same first 20 symbols.
-        all_symbols = list(dict.fromkeys(symbol for _, _, symbol in valid))
-        batch_size = min(limit, 20, len(all_symbols))
-        with SCAN_CURSOR_LOCK:
-            start = SCAN_CURSORS.get((market, interval), 0) % max(1, len(all_symbols))
-            symbols = [all_symbols[(start + i) % len(all_symbols)] for i in range(batch_size)]
-            if all_symbols:
-                SCAN_CURSORS[(market, interval)] = (start + batch_size) % len(all_symbols)
-        for offset in range(0, len(symbols), 6):
-            batch = symbols[offset:offset + 6]
-            with ThreadPoolExecutor(max_workers=3) as pool:
-                futures = {pool.submit(_technical_fallback_signal, market, symbol, interval): symbol
-                           for symbol in batch}
-                for future in as_completed(futures):
-                    scanned += 1
-                    try:
-                        signal = future.result()
-                    except Exception as scan_exc:
-                        failures += 1
-                        print(f"technical signal skipped {market}/{futures[future]}/{interval}: {type(scan_exc).__name__}")
-                        continue
-                    if signal:
-                        items.append(signal)
-            # Scan the full requested shortlist (up to 20 symbols) instead of stopping after 3 signals.
+        external = public_ideas(market=market, interval=interval, limit=min(50, max(limit * 3, limit)),
+                                discover=True)
     except Exception as exc:
-        failures += 1
-        print(f"technical signal universe failed {market}/{interval}: {type(exc).__name__}: {exc}")
+        print(f"external ideas failed {market}/{interval}: {type(exc).__name__}")
+        external = {"ok": False, "items": [], "message": "تعذر الوصول إلى مصادر الأفكار العامة مؤقتًا."}
 
-    items.sort(key=lambda item: (item.get("ai_score") or 0, abs(float(item.get("levels", {}).get("tp1", 0) or 0) - float(item.get("levels", {}).get("entry", 0) or 0))), reverse=True)
-    result = {
-        "ok": True, "live": True, "market": market, "interval": interval,
-        "items": items[:limit], "count": len(items[:limit]),
-        "scanned": scanned, "scan_failures": failures,
-        "technical_fallback_used": True,
-        "message": ("فرص محسوبة من شموع السوق الفعلية." if items else
-                    (f"تم فحص {scanned} رمزًا، لكن ما اكتملت شروط الدخول على فريم {interval}." if scanned else
-                     "ما وصلت رموز قابلة للفحص من مصدر هذا السوق؛ تحقق من توفر بيانات الأسعار والشموع، ولن نعرض أسعارًا على أنها صفقات.")),
-    }
-    # Persist each newly discovered setup so the Results page has a real audit trail.
-    # These are OPEN observations until price reaches a documented TP/SL; never count them as wins.
-    if current_prices:
+    # The site's own market data contributes only a 10% contextual score; it cannot
+    # create a trade or replace missing source levels.
+    market_changes = {}
+    try:
+        snapshot = market_data(market, limit=2000)
+        if isinstance(snapshot, dict):
+            for row in snapshot.get("items", []):
+                symbol = str(row.get("symbol") or "").strip().upper()
+                try:
+                    change = float(row.get("change_pct"))
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if symbol and math.isfinite(change):
+                    market_changes[symbol] = change
+    except Exception as exc:
+        print(f"site context unavailable {market}: {type(exc).__name__}")
+
+    items = []
+    skipped = 0
+    for source_item in external.get("items", []) if isinstance(external, dict) else []:
+        if not isinstance(source_item, dict):
+            continue
+        original_side = str(source_item.get("direction") or "")
+        if original_side not in {"شراء", "بيع"}:
+            skipped += 1
+            continue
+        original_levels = source_item.get("levels") if isinstance(source_item.get("levels"), dict) else {}
         try:
-            with RESULTS_LOCK:
-                history = read_json_file(RESULTS_PATH, [])
-                if not isinstance(history, list):
-                    history = []
-                known = {
-                    (str(row.get("market", "")).lower(), str(row.get("symbol", "")).upper(),
-                     str(row.get("interval", "")), str(row.get("side", "")),
-                     str(row.get("entry", "")))
-                    for row in history if isinstance(row, dict)
-                }
-                # Update open records from current prices already fetched for this market scan.
-                for row in history:
-                    if not isinstance(row, dict) or str(row.get("market", "")).lower() != market:
-                        continue
-                    if str(row.get("result", "OPEN")).upper() in {"TP1", "TP2", "TP3", "SL"}:
-                        continue
-                    live_price = current_prices.get(str(row.get("symbol", "")).upper())
-                    try:
-                        entry = float(row.get("entry"))
-                        stop = float(row.get("stop_loss"))
-                        targets = [float(row.get(f"tp{i}")) for i in (1, 2, 3)]
-                        live_price = float(live_price)
-                        is_sell = str(row.get("side", "")).upper() in {"SELL", "بيع"}
-                        hit = None
-                        exit_price = None
-                        # If both stop and target were crossed, count the stop first; intrabar order is unknown.
-                        if (live_price >= stop if is_sell else live_price <= stop):
-                            hit, exit_price = "SL", stop
-                        else:
-                            for target_no in (3, 2, 1):
-                                target = targets[target_no - 1]
-                                if (live_price <= target if is_sell else live_price >= target):
-                                    hit, exit_price = f"TP{target_no}", target
-                                    break
-                        if hit:
-                            signed_move = ((exit_price - entry) / entry) * (-1 if is_sell else 1) * 100
-                            row.update({"result": hit, "pnl_pct": round(signed_move, 4),
-                                        "updated_at": now, "exit_price": exit_price})
-                    except (TypeError, ValueError, ZeroDivisionError, OverflowError):
-                        continue
-                for item in result["items"]:
-                    levels = item.get("levels") if isinstance(item.get("levels"), dict) else {}
-                    entry = levels.get("entry")
-                    symbol = str(item.get("symbol") or "").upper()
-                    side = str(item.get("direction") or item.get("side") or "")
-                    key = (market, symbol, interval, side, str(entry))
-                    if not symbol or entry is None or key in known:
-                        continue
-                    history.insert(0, {
-                        "market": market, "symbol": symbol, "interval": interval,
-                        "side": side, "entry": entry,
-                        "stop_loss": levels.get("stop_loss"), "tp1": levels.get("tp1"),
-                        "tp2": levels.get("tp2"), "tp3": levels.get("tp3"),
-                        "result": "OPEN", "pnl_pct": None,
-                        "created_at": now, "updated_at": now,
-                        "source": item.get("source") or "تحليل فني",
-                    })
-                    known.add(key)
-                write_json_file(RESULTS_PATH, history[:2000])
-        except Exception as history_exc:
-            print(f"signal history persistence failed {market}/{interval}: {type(history_exc).__name__}")
+            entry = float(original_levels["entry"])
+            old_stop = float(original_levels["stop_loss"])
+            old_targets = [float(original_levels[k]) for k in ("tp1", "tp2", "tp3")]
+        except (KeyError, TypeError, ValueError, OverflowError):
+            skipped += 1
+            continue
+        nums = [entry, old_stop, *old_targets]
+        if not all(math.isfinite(x) and x > 0 for x in nums):
+            skipped += 1
+            continue
+        # Invert the public idea and mirror its original risk/reward distances around entry.
+        if original_side == "شراء":
+            if not (old_stop < entry < old_targets[0] < old_targets[1] < old_targets[2]):
+                skipped += 1
+                continue
+            side = "بيع"
+            stop = entry + (entry - old_stop)
+            targets = [entry - (v - entry) for v in old_targets]
+            targets.sort(reverse=True)
+        else:
+            if not (old_targets[2] < old_targets[1] < old_targets[0] < entry < old_stop):
+                skipped += 1
+                continue
+            side = "شراء"
+            stop = entry - (old_stop - entry)
+            targets = [entry + (entry - v) for v in old_targets]
+            targets.sort()
+
+        symbol = str(source_item.get("symbol") or "").strip().upper()
+        change = market_changes.get(symbol)
+        site_supports_inverted_side = (
+            change is not None and ((side == "شراء" and change > 0) or (side == "بيع" and change < 0))
+        )
+        site_score = 10 if site_supports_inverted_side else 0
+        # External source remains 90% of the methodology; site context is only 10%.
+        score = 90 + site_score
+        item = dict(source_item)
+        item.update({
+            "direction": side,
+            "original_direction": original_side,
+            "title": f"{side} {symbol} — عكس فكرة مصدر عام",
+            "description": "90% فكرة تداول من مصدر عام، و10% سياق اتجاه السوق من بيانات الموقع؛ تم عكس اتجاه الفكرة وعكس مستوياتها حول الدخول.",
+            "levels": {
+                "entry": entry, "stop_loss": stop,
+                "tp1": targets[0], "tp2": targets[1], "tp3": targets[2]
+            },
+            "ai_score": score,
+            "site_context_score": site_score,
+            "external_source_weight": 90,
+            "site_analysis_weight": 10,
+            "signal_inverted": True,
+            "generated_by_site": False,
+            "has_complete_levels": True,
+            "method": "external_public_ideas_90_site_context_10_inverted"
+        })
+        # Final guard: never display malformed or incorrectly ordered levels.
+        if not _public_idea_levels_ordered(item):
+            skipped += 1
+            continue
+        items.append(item)
+
+    items.sort(key=lambda item: (item.get("ai_score", 90), item.get("published_at", 0)), reverse=True)
+    result = {
+        "ok": True, "live": bool(items), "market": market, "interval": interval,
+        "items": items[:limit], "count": len(items[:limit]),
+        "scanned": int((external or {}).get("diagnostics", {}).get("fetched", 0)) if isinstance(external, dict) else 0,
+        "sources_checked": int((external or {}).get("sources_checked", 0)) if isinstance(external, dict) else 0,
+        "sources_failed": int((external or {}).get("sources_failed", 0)) if isinstance(external, dict) else 0,
+        "skipped_invalid_levels": skipped,
+        "external_source_weight": 90, "site_analysis_weight": 10,
+        "technical_fallback_used": False,
+        "message": ("تم جلب أفكار عامة وعكس اتجاهها مع الحفاظ على ترتيب مستويات الدخول والوقف والأهداف."
+                    if items else
+                    "ما لقينا أفكارًا عامة حديثة مكتملة المستويات لهذا السوق والفريم؛ ما راح ننشئ صفقات من الاستراتيجية القديمة.")
+    }
     with PUBLIC_IDEAS_LOCK:
         PUBLIC_IDEAS_CACHE[cache_key] = (now, result)
     return result
-
-
-def read_json_file(path, default):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError):
-        return default
-
-
-def write_json_file(path, data):
-    """Atomically persist JSON using a unique temp file for concurrent requests."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # A shared fixed .tmp filename races when multiple signal endpoints save together.
-    # Unique names prevent one request from deleting another request's pending file.
-    tmp = path.with_name(
-        f".{path.name}.{os.getpid()}.{secrets.token_hex(8)}.tmp"
-    )
-    try:
-        with tmp.open("w", encoding="utf-8") as handle:
-            json.dump(data, handle, ensure_ascii=False, indent=2)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp, path)
-    finally:
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
-
 
 @app.get("/api/admin/sections")
 def admin_get_sections(credentials: HTTPBasicCredentials = Depends(security)):
