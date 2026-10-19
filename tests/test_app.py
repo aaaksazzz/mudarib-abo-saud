@@ -164,6 +164,10 @@ def test_live_signal_endpoint_never_uses_technical_fallback(monkeypatch):
 
 def test_signal_endpoint_accepts_daily_weekly_and_monthly_frames(monkeypatch):
     monkeypatch.setattr(app_module, "market_data", lambda market, limit=500: {"ok": True, "items": []})
+    monkeypatch.setattr(app_module, "public_ideas", lambda **kwargs: {
+        "ok": True, "items": [], "diagnostics": {"fetched": 0},
+        "sources_checked": 1, "sources_failed": 0,
+    })
     app_module.PUBLIC_IDEAS_CACHE.clear()
     for interval in ("1d", "1w", "1M"):
         response = client.get(f"/api/signals/spot?interval={interval}")
@@ -296,7 +300,7 @@ def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     js = (root / "app.js").read_text(encoding="utf-8")
     assert 'href="/markets/spot"' in html and 'href="/markets/futures"' in html
     assert 'async function loadSignals(m)' in js
-    assert '"/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(frame)+"&limit=20&refresh=true"' in js
+    assert '"/api/signals/"+encodeURIComponent(markets[key].api)+"?interval="+encodeURIComponent(frame)+"&limit=20&refresh=true"' in js
     assert 'data-frame="' in js and '"15m","1h","4h","1d","1w","1M"' in js
     assert 'async function loadChart(m,symbol)' in js
 
@@ -500,7 +504,10 @@ def test_home_refresh_does_not_rebuild_dashboard_twice():
     assert '/static/app.css?v=20261019.2' in html
     assert '/static/app.js?v=20261019.1' in html
     assert 'getJSON("/api/status")' in js
-    assert 'setInterval(' not in js
+    home_start = js.index("function renderHome()")
+    home_end = js.index("function renderMarketPage(", home_start)
+    assert 'if($("homeMarketDashboard"))return;' in js[home_start:home_end]
+    assert 'setInterval(' not in js[home_start:home_end]
 
 
 def test_saudi_market_keeps_symbols_below_usd_volume_cutoff(monkeypatch):
