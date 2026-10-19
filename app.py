@@ -1830,11 +1830,11 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
     if market not in allowed_markets:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "السوق غير مدعوم."}, status_code=404)
-    if interval not in INTERVALS:
+    if interval not in {"15m", "1h", "2h", "4h", "1d"}:
         return JSONResponse({"ok": False, "live": False, "items": [],
-                             "message": "الفريم غير مدعوم."}, status_code=422)
+                             "message": "هذا الفريم ليس له استراتيجية دخول مفعّلة."}, status_code=422)
     now = int(time.time())
-    cache_key = ("signal_cards_inverse_v1", market, interval, limit)
+    cache_key = ("ema2050_mtf_v2", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if not refresh and cached and now - cached[0] < 90:
