@@ -1929,6 +1929,41 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
                     (f"تم فحص {scanned} رمزًا، لكن ما اكتملت شروط الدخول على فريم {interval}." if scanned else
                      "ما وصلت رموز قابلة للفحص من مصدر هذا السوق؛ تحقق من توفر بيانات الأسعار والشموع، ولن نعرض أسعارًا على أنها صفقات.")),
     }
+    # Persist each newly discovered setup so the Results page has a real audit trail.
+    # These are OPEN observations until price reaches a documented TP/SL; never count them as wins.
+    if result.get("items"):
+        try:
+            with RESULTS_LOCK:
+                history = read_json_file(RESULTS_PATH, [])
+                if not isinstance(history, list):
+                    history = []
+                known = {
+                    (str(row.get("market", "")).lower(), str(row.get("symbol", "")).upper(),
+                     str(row.get("interval", "")), str(row.get("side", "")),
+                     str(row.get("entry", "")))
+                    for row in history if isinstance(row, dict)
+                }
+                for item in result["items"]:
+                    levels = item.get("levels") if isinstance(item.get("levels"), dict) else {}
+                    entry = levels.get("entry")
+                    symbol = str(item.get("symbol") or "").upper()
+                    side = str(item.get("direction") or item.get("side") or "")
+                    key = (market, symbol, interval, side, str(entry))
+                    if not symbol or entry is None or key in known:
+                        continue
+                    history.insert(0, {
+                        "market": market, "symbol": symbol, "interval": interval,
+                        "side": side, "entry": entry,
+                        "stop_loss": levels.get("stop_loss"), "tp1": levels.get("tp1"),
+                        "tp2": levels.get("tp2"), "tp3": levels.get("tp3"),
+                        "result": "OPEN", "pnl_pct": None,
+                        "created_at": now, "updated_at": now,
+                        "source": item.get("source") or "تحليل فني",
+                    })
+                    known.add(key)
+                write_json_file(RESULTS_PATH, history[:2000])
+        except Exception as history_exc:
+            print(f"signal history persistence failed {market}/{interval}: {type(history_exc).__name__}")
     with PUBLIC_IDEAS_LOCK:
         PUBLIC_IDEAS_CACHE[cache_key] = (now, result)
     return result
