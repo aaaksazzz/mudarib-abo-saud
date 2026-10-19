@@ -1623,6 +1623,7 @@ def public_results(limit: int = Query(100, ge=1, le=500)):
         rows = []
     rows = rows[:limit]
     closed = [row for row in rows if str(row.get("result", "")).upper() in {"TP1", "TP2", "TP3", "SL"}]
+    open_count = sum(1 for row in rows if str(row.get("result", "OPEN")).upper() not in {"TP1", "TP2", "TP3", "SL"})
     wins = sum(1 for row in closed if str(row.get("result", "")).upper() in {"TP1", "TP2", "TP3"})
     losses = sum(1 for row in closed if str(row.get("result", "")).upper() == "SL")
     def _numeric_pnl(row):
@@ -1631,7 +1632,7 @@ def public_results(limit: int = Query(100, ge=1, le=500)):
         except (TypeError, ValueError):
             return 0.0
     profitable = sum(1 for row in closed if _numeric_pnl(row) > 0)
-    return {"ok": True, "items": rows, "total": len(rows), "closed": len(closed),
+    return {"ok": True, "items": rows, "total": len(rows), "open": open_count, "closed": len(closed),
             "wins": wins, "losses": losses, "profitable": profitable,
             "win_rate": round(wins / len(closed) * 100, 1) if closed else None,
             "message": "محرك الصفقات الآلية متوقف؛ لا تُنشأ نتائج جديدة تلقائيًا."}
