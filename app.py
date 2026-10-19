@@ -685,60 +685,42 @@ def _discover_yahoo_symbols(query, suffix=None, count=250):
     return found
 
 def _load_saudi_symbols():
-    """Discover a broad Tadawul universe across main/parallel markets and sectors."""
+    """Load active TASI equities from a market directory; never apply a turnover filter."""
     now = time.time()
     with YAHOO_UNIVERSE_LOCK:
         cached = YAHOO_UNIVERSE_CACHE.get("saudi")
         if cached and now - cached[0] < YAHOO_UNIVERSE_CACHE_TTL:
-            discovered = cached[1]
+            discovered = set(cached[1])
         else:
             discovered = set()
-            # One generic Yahoo search often returns only a small handful of Saudi tickers.
-            # Combine several independent queries; keep only actual Saudi-listed .SR equities/ETFs.
-            queries = (
-                "Saudi Arabia stocks Tadawul",
-                "Saudi Exchange listed companies",
-                "Tadawul main market stocks",
-                "Nomu parallel market Saudi stocks",
-                ".SR Saudi stocks",
-                "Saudi banks stocks Tadawul",
-                "Saudi petrochemical stocks",
-                "Saudi insurance stocks Tadawul",
-                "Saudi REIT stocks Tadawul",
-                "Saudi cement stocks",
-                "Saudi healthcare stocks Tadawul",
-                "Saudi retail stocks Tadawul",
-                "Saudi industrial stocks Tadawul",
-                "Saudi telecom stocks Tadawul",
-                "Saudi utilities electricity stocks Tadawul",
-                "Saudi food agriculture stocks Tadawul",
-                "Saudi consumer goods stocks Tadawul",
-                "Saudi transportation logistics stocks Tadawul",
-                "Saudi construction building materials stocks Tadawul",
-                "Saudi real estate development stocks Tadawul",
-                "Saudi tourism hotels entertainment stocks Tadawul",
-                "Saudi media technology stocks Tadawul",
-                "Saudi mining metals stocks Tadawul",
-                "Saudi energy oil gas stocks Tadawul",
-                "Saudi investment holding companies Tadawul",
-                "Saudi financial services stocks Tadawul",
-                "Saudi capital market listed companies",
-                "Tadawul top gainers listed stocks",
-                "Tadawul small cap stocks",
-                "Tadawul Nomu listed companies",
-                "Saudi Exchange Nomu stocks",
-                "Saudi Arabia listed ETFs Tadawul",
-                "Saudi stocks 2026 Tadawul",
-            )
-            for query in queries:
-                try:
-                    discovered.update(_discover_yahoo_symbols(query, suffix=".SR", count=250))
-                except Exception as exc:
-                    print(f"Saudi symbol discovery failed for {query}: {type(exc).__name__}")
-            discovered = sorted(discovered)
-            YAHOO_UNIVERSE_CACHE["saudi"] = (now, discovered)
-        # Preserve the seed list if discovery is temporarily unavailable.
-        YAHOO_MARKETS["saudi"] = sorted(set(YAHOO_MARKETS["saudi"]) | set(discovered))
+            # Public company directory separates TASI from Nomu and supports up to 500 rows/page.
+            try:
+                from urllib.parse import urlencode
+                for offset in range(0, 1000, 500):
+                    query = urlencode({"market": "TASI", "limit": 500, "offset": offset})
+                    payload = fetch_json("https://api.sahmk.sa/api/v1/companies/?" + query, timeout=8)
+                    rows = payload.get("results", []) if isinstance(payload, dict) else []
+                    for row in rows:
+                        if not isinstance(row, dict):
+                            continue
+                        symbol = str(row.get("symbol") or "").strip()
+                        status = str(row.get("status") or "").strip().lower()
+                        market = str(row.get("market") or "").strip().upper()
+                        security_type = str(row.get("security_type") or "").strip().lower()
+                        if symbol.isdigit() and market == "TASI" and status == "active" and security_type == "equity":
+                            discovered.add(symbol + ".SR")
+                    total = int(payload.get("total") or 0) if isinstance(payload, dict) else 0
+                    if not rows or offset + len(rows) >= total:
+                        break
+            except Exception as exc:
+                print(f"TASI directory discovery failed: {type(exc).__name__}")
+            if not discovered:
+                discovered = {str(symbol) for symbol in YAHOO_MARKETS.get("saudi", [])
+                              if str(symbol).endswith(".SR") and str(symbol)[:-3].isdigit()
+                              and not str(symbol)[:-3].startswith("9")}
+            YAHOO_UNIVERSE_CACHE["saudi"] = (now, sorted(discovered))
+        if discovered:
+            YAHOO_MARKETS["saudi"] = sorted(discovered)
 
 def _load_us_symbols():
     """Broaden the US equity/ETF directory using several public Yahoo Finance searches."""
