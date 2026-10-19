@@ -1147,6 +1147,12 @@ PUBLIC_TRADE_IDEA_FEEDS = [
     ("Reddit — Forex", "https://www.reddit.com/r/Forex/.rss"),
     ("Reddit — Crypto Markets", "https://www.reddit.com/r/BitcoinMarkets/.rss"),
     ("Reddit — Stocks", "https://www.reddit.com/r/stocks/.rss"),
+    ("Google News — Crypto trade setups", "https://news.google.com/rss/search?q=crypto+trading+idea+entry+stop+loss+take+profit&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News — Futures trade setups", "https://news.google.com/rss/search?q=crypto+futures+signal+entry+stop+loss+take+profit&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News — Forex trade setups", "https://news.google.com/rss/search?q=forex+signal+entry+stop+loss+take+profit&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News — Gold trade setups", "https://news.google.com/rss/search?q=XAUUSD+gold+trading+setup+entry+stop+loss+targets&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News — US stocks trade setups", "https://news.google.com/rss/search?q=US+stocks+trading+idea+entry+stop+loss+target&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News — Saudi stocks", "https://news.google.com/rss/search?q=Tadawul+Saudi+stocks+trading+idea+target&hl=en-US&gl=US&ceid=US:en"),
 ]
 # Public Telegram channel previews; no bot token/API key required.
 # Override/add public usernames with TELEGRAM_PUBLIC_CHANNELS="channel1,channel2".
@@ -1488,6 +1494,22 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), lim
 
     stats = {"fetched": len(raw_rows), "recent": 0, "market": 0, "symbol": 0,
              "timeframe": 0, "direction_detected": 0, "duplicate": 0, "levels_missing_tp3": 0}
+    # Build the selected market's real symbol universe so public ideas are not limited
+    # to a tiny hand-maintained ticker list (especially US and Saudi equities).
+    known_market_symbols = set()
+    try:
+        universe = market_data(market, limit=2000)
+        if isinstance(universe, dict):
+            for asset in universe.get("items", []):
+                raw_symbol = str(asset.get("symbol") or "").strip().upper().replace("/", "")
+                if raw_symbol:
+                    known_market_symbols.add(raw_symbol)
+                    known_market_symbols.add(raw_symbol.removesuffix(".SR"))
+                    for quote in ("USDT", "USDC", "USD"):
+                        if raw_symbol.endswith(quote) and len(raw_symbol) > len(quote):
+                            known_market_symbols.add(raw_symbol[:-len(quote)])
+    except Exception as exc:
+        print(f"public idea universe unavailable {market}: {type(exc).__name__}")
     cutoff = now - PUBLIC_IDEA_MAX_AGE
     unique = {}
     for raw in raw_rows:
@@ -1503,8 +1525,8 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), lim
         text_all = (title + "\n" + body).strip()
         if not text_all:
             continue
-        if not _public_idea_market_match(market, text_all[:2400]):
-            continue
+        # Market matching is confirmed against the live market universe below, not only a short hard-coded ticker list.
+        market_text_match = _public_idea_market_match(market, text_all[:2400])
         stats["market"] += 1
 
         side = _public_idea_direction(text_all)
@@ -1515,9 +1537,24 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), lim
         pair_re = re.compile(r"(?<![A-Z0-9])([A-Z0-9]{2,15}(?:USDT|USDC|USD))\b", re.I)
         found = slash_pair or symbol_re.search(title) or pair_re.search(title) or symbol_re.search(body[:1600]) or pair_re.search(body[:1600])
         symbol = (found.group(1) if slash_pair else found.group(0)).upper() if found else ""
-        if not symbol or not _public_idea_symbol_matches_market(market, symbol, text_all[:2400]):
-            # A broad word such as "leverage" or "crypto" is not enough to identify a trade.
-            # Require a recognizable ticker that belongs to the selected market.
+        # If the hard-coded ticker regex misses a valid market asset, search the title
+        # for a ticker that actually exists in the selected market's live universe.
+        if not symbol:
+            candidates = re.findall(r"(?<![A-Z0-9])\$?([A-Z][A-Z0-9.-]{0,9}(?:\.SR)?)(?![A-Z0-9])", title.upper())
+            for candidate in candidates:
+                normalized = candidate.removesuffix(".SR")
+                if candidate in known_market_symbols or normalized in known_market_symbols:
+                    symbol = candidate
+                    break
+        normalized_symbol = symbol.replace("/", "").upper()
+        in_live_universe = (
+            normalized_symbol in known_market_symbols or
+            normalized_symbol.removesuffix(".SR") in known_market_symbols
+        )
+        if not symbol or not (in_live_universe or _public_idea_symbol_matches_market(market, symbol, text_all[:2400])):
+            # Require either membership in this market's live universe or a recognizable crypto pair.
+            continue
+        if not market_text_match and not in_live_universe:
             continue
         stats["symbol"] += 1
 
@@ -1831,9 +1868,9 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
     if market not in allowed_markets:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "السوق غير مدعوم."}, status_code=404)
-    if interval not in {"15m", "1h", "2h", "4h", "1d"}:
+    if interval not in {"15m", "1h", "2h", "4h", "1d", "1w", "1M"}:
         return JSONResponse({"ok": False, "live": False, "items": [],
-                             "message": "هذا الفريم ليس له استراتيجية دخول مفعّلة."}, status_code=422)
+                             "message": "الفريم غير مدعوم."}, status_code=422)
 
     now = int(time.time())
     cache_key = ("external90_inverted_site10_v1", market, interval, limit)
