@@ -209,11 +209,11 @@ ALPHA_CACHE_TTL = 90
 CACHE = {}
 CACHE_TTL = 20
 STABLES = {"USDC", "USDT", "BUSD", "FDUSD", "TUSD", "DAI", "USDP", "USDE", "USD1", "USDD", "USTC", "EUR", "EURC"}
-INTERVALS = {"15m", "1h", "4h", "1d", "1w", "1M"}
+INTERVALS = {"15m", "30m", "1h", "2h", "4h", "1d", "1w", "1M"}
 PUBLIC_IDEA_INTERVALS = INTERVALS | {"auto"}
 # A signal remains active only for its own chart timeframe.
-INTERVAL_SECONDS = {"15m": 15 * 60, "1h": 60 * 60, "4h": 4 * 60 * 60,
-                    "1d": 24 * 60 * 60, "1w": 7 * 24 * 60 * 60, "1M": 30 * 24 * 60 * 60}
+INTERVAL_SECONDS = {"15m": 15 * 60, "30m": 30 * 60, "1h": 60 * 60, "2h": 2 * 60 * 60,
+                    "4h": 4 * 60 * 60, "1d": 24 * 60 * 60, "1w": 7 * 24 * 60 * 60, "1M": 30 * 24 * 60 * 60}
 def fetch_json(url: str, timeout: int = 8):
     """Fetch JSON with ordered standby hosts for the public market-data providers."""
     from urllib.parse import urlsplit, urlunsplit
