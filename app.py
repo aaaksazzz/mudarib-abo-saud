@@ -1849,6 +1849,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
     scanned = 0
     failures = 0
     universe = None
+    current_prices = {}
     try:
         universe = market_data(market, limit=2000)
         # market_data may return a FastAPI JSONResponse on provider failure. Do not
@@ -1889,6 +1890,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
                 continue
             if not math.isfinite(price) or price <= 0 or not math.isfinite(change):
                 continue
+            current_prices[symbol] = price
             valid.append((liquidity if math.isfinite(liquidity) else 0.0, change, symbol))
         valid.sort(key=lambda row: (row[0], row[1]), reverse=True)
         # Rotate through the full market universe in bounded batches, rather than
@@ -1944,6 +1946,36 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
                      str(row.get("entry", "")))
                     for row in history if isinstance(row, dict)
                 }
+                # Update open records from current prices already fetched for this market scan.
+                for row in history:
+                    if not isinstance(row, dict) or str(row.get("market", "")).lower() != market:
+                        continue
+                    if str(row.get("result", "OPEN")).upper() in {"TP1", "TP2", "TP3", "SL"}:
+                        continue
+                    live_price = current_prices.get(str(row.get("symbol", "")).upper())
+                    try:
+                        entry = float(row.get("entry"))
+                        stop = float(row.get("stop_loss"))
+                        targets = [float(row.get(f"tp{i}")) for i in (1, 2, 3)]
+                        live_price = float(live_price)
+                        is_sell = str(row.get("side", "")).upper() in {"SELL", "بيع"}
+                        hit = None
+                        exit_price = None
+                        # If both stop and target were crossed, count the stop first; intrabar order is unknown.
+                        if (live_price >= stop if is_sell else live_price <= stop):
+                            hit, exit_price = "SL", stop
+                        else:
+                            for target_no in (3, 2, 1):
+                                target = targets[target_no - 1]
+                                if (live_price <= target if is_sell else live_price >= target):
+                                    hit, exit_price = f"TP{target_no}", target
+                                    break
+                        if hit:
+                            signed_move = ((exit_price - entry) / entry) * (-1 if is_sell else 1) * 100
+                            row.update({"result": hit, "pnl_pct": round(signed_move, 4),
+                                        "updated_at": now, "exit_price": exit_price})
+                    except (TypeError, ValueError, ZeroDivisionError, OverflowError):
+                        continue
                 for item in result["items"]:
                     levels = item.get("levels") if isinstance(item.get("levels"), dict) else {}
                     entry = levels.get("entry")
