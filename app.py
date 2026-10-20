@@ -2012,39 +2012,30 @@ SCAN_CURSOR_LOCK = threading.Lock()
 
 
 def _multi_method_technical_signal(market, symbol, interval):
-    """Moving-average stacking strategy: bullish alignment for buys, inverse alignment for sells."""
+    """Moving-average stacking strategy using only EMA20, EMA50, EMA100 and EMA200."""
     try:
         candles = candle_data(market, symbol, interval)
         if not isinstance(candles, list) or len(candles) < 205:
             return None
-        # Keep enough real candles to calculate EMA200 reliably.
         candles = candles[-210:]
         opens = [float(c["open"]) for c in candles]
         highs = [float(c["high"]) for c in candles]
         lows = [float(c["low"]) for c in candles]
         closes = [float(c["close"]) for c in candles]
-        volumes = [float(c.get("volume") or 0) for c in candles]
         if not all(math.isfinite(v) and v > 0 for arr in (opens, highs, lows, closes) for v in arr[-205:]):
             return None
         entry = closes[-1]
-        ema9 = _ema_series(closes, 9)
         ema20 = _ema_series(closes, 20)
         ema50 = _ema_series(closes, 50)
+        ema100 = _ema_series(closes, 100)
         ema200 = _ema_series(closes, 200)
-        if any(not seq or seq[-1] is None for seq in (ema9, ema20, ema50, ema200)):
+        if any(not seq or seq[-1] is None for seq in (ema20, ema50, ema100, ema200)):
             return None
-        e9, e20, e50, e200 = ema9[-1], ema20[-1], ema50[-1], ema200[-1]
-        # Strong trend: price and all averages stacked in the same direction.
-        bullish_strong = entry > e9 > e20 > e50 > e200
-        bearish_strong = entry < e9 < e20 < e50 < e200
-        # Normal trend: EMA20/50/200 aligned and price on the correct side of EMA20.
-        bullish = entry > e20 > e50 > e200
-        bearish = entry < e20 < e50 < e200
-        if bullish_strong:
-            side, strength = "شراء", "شراء قوي"
-        elif bearish_strong:
-            side, strength = "بيع", "بيع قوي"
-        elif bullish:
+        e20, e50, e100, e200 = ema20[-1], ema50[-1], ema100[-1], ema200[-1]
+
+        bullish = entry > e20 > e50 > e100 > e200
+        bearish = entry < e20 < e50 < e100 < e200
+        if bullish:
             side, strength = "شراء", "شراء"
         elif bearish:
             side, strength = "بيع", "بيع"
@@ -2057,7 +2048,6 @@ def _multi_method_technical_signal(market, symbol, interval):
         atr = sum(true_ranges) / len(true_ranges) if true_ranges else 0
         if not math.isfinite(atr) or atr <= 0 or entry <= 0:
             return None
-        # Use ATR-based risk and keep stop/targets on the correct side of entry.
         risk = min(atr * 1.5, entry * {"15m":0.03,"1h":0.05,"2h":0.06,"4h":0.08,"1d":0.12,"1w":0.18,"1M":0.25}.get(interval, 0.03))
         if not math.isfinite(risk) or risk <= 0:
             return None
@@ -2072,21 +2062,17 @@ def _multi_method_technical_signal(market, symbol, interval):
         digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
         fmt = lambda value: round(float(value), digits)
         return {
-            "source": "استراتيجية تراص المتوسطات EMA9/20/50/200",
+            "source": "استراتيجية تراص المتوسطات EMA20/50/100/200",
             "title": f"{strength} {symbol} — تراص المتوسطات",
-            "description": ("شراء قوي عند ترتيب السعر ثم EMA9 ثم EMA20 ثم EMA50 ثم EMA200 من الأعلى للأسفل."
-                           if strength == "شراء قوي" else
-                           "بيع قوي عند الترتيب المعاكس للمتوسطات والسعر."
-                           if strength == "بيع قوي" else
-                           "شراء عند اصطفاف EMA20 فوق EMA50 فوق EMA200 والسعر فوق EMA20."
+            "description": ("شراء عند ترتيب السعر ثم EMA20 ثم EMA50 ثم EMA100 ثم EMA200 من الأعلى للأسفل."
                            if side == "شراء" else
-                           "بيع عند اصطفاف EMA20 تحت EMA50 تحت EMA200 والسعر تحت EMA20."),
+                           "بيع عند الترتيب المعاكس: السعر ثم EMA20 ثم EMA50 ثم EMA100 ثم EMA200 من الأعلى للأسفل."),
             "url": "", "published_at": int(time.time()), "market": market,
             "direction": side, "signal_strength": strength, "symbol": symbol, "interval": interval,
             "levels": {"entry": fmt(entry), "stop_loss": fmt(stop), "tp1": fmt(targets[0]),
                        "tp2": fmt(targets[1]), "tp3": fmt(targets[2])},
-            "has_complete_levels": True, "ai_score": 95 if "قوي" in strength else 75,
-            "analysis_methods": ["EMA9", "EMA20", "EMA50", "EMA200", "ترتيب المتوسطات", "ATR لإدارة المخاطر"],
+            "has_complete_levels": True, "ai_score": 75,
+            "analysis_methods": ["EMA20", "EMA50", "EMA100", "EMA200", "ترتيب المتوسطات", "ATR لإدارة المخاطر"],
             "technical_methods_count": 4, "age_hours": 0,
             "generated_by_site": True, "signal_inverted": False,
             "raw_text": "إشارة محسوبة من شموع السوق الفعلية؛ لا تمثل نسبة نجاح مثبتة."
@@ -2094,7 +2080,6 @@ def _multi_method_technical_signal(market, symbol, interval):
     except (urllib.error.URLError, TimeoutError, OSError, KeyError, TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError) as exc:
         print(f"moving-average scan skipped {market}/{symbol}/{interval}: {type(exc).__name__}")
         return None
-
 
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(12, ge=1, le=20), refresh: bool = Query(False)):
