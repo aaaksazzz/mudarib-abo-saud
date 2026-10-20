@@ -2012,95 +2012,87 @@ SCAN_CURSOR_LOCK = threading.Lock()
 
 
 def _multi_method_technical_signal(market, symbol, interval):
-    """Price-action confluence from multiple technical methods, without EMA-only entry rules."""
+    """Moving-average stacking strategy: bullish alignment for buys, inverse alignment for sells."""
     try:
         candles = candle_data(market, symbol, interval)
-        if not isinstance(candles, list) or len(candles) < 30:
+        if not isinstance(candles, list) or len(candles) < 205:
             return None
-        candles = candles[-60:]
+        # Keep enough real candles to calculate EMA200 reliably.
+        candles = candles[-210:]
         opens = [float(c["open"]) for c in candles]
         highs = [float(c["high"]) for c in candles]
         lows = [float(c["low"]) for c in candles]
         closes = [float(c["close"]) for c in candles]
         volumes = [float(c.get("volume") or 0) for c in candles]
-        if not all(math.isfinite(v) and v > 0 for arr in (opens, highs, lows, closes) for v in arr[-30:]):
+        if not all(math.isfinite(v) and v > 0 for arr in (opens, highs, lows, closes) for v in arr[-205:]):
             return None
         entry = closes[-1]
-        o, c, h, l = opens[-1], closes[-1], highs[-1], lows[-1]
-        po, pc = opens[-2], closes[-2]
-        rh, rl = max(highs[-21:-1]), min(lows[-21:-1])
-        span = rh-rl
-        if entry <= 0 or span <= 0:
+        ema9 = _ema_series(closes, 9)
+        ema20 = _ema_series(closes, 20)
+        ema50 = _ema_series(closes, 50)
+        ema200 = _ema_series(closes, 200)
+        if any(not seq or seq[-1] is None for seq in (ema9, ema20, ema50, ema200)):
             return None
-        votes = {"شراء": [], "بيع": []}
-        # Dow / market structure
-        if max(highs[-5:]) > max(highs[-10:-5]) and min(lows[-5:]) > min(lows[-10:-5]):
-            votes["شراء"].append("هيكل داو/قمم وقيعان صاعدة")
-        if max(highs[-5:]) < max(highs[-10:-5]) and min(lows[-5:]) < min(lows[-10:-5]):
-            votes["بيع"].append("هيكل داو/قمم وقيعان هابطة")
-        # Breakout / breakdown
-        if entry > rh:
-            votes["شراء"].append("اختراق مقاومة")
-        if entry < rl:
-            votes["بيع"].append("كسر دعم")
-        # Candlestick patterns / strong candle
-        if c > o and pc < po and o <= pc and c >= po:
-            votes["شراء"].append("ابتلاع شرائي")
-        elif c > o and h > l and c-o >= (h-l)*0.65:
-            votes["شراء"].append("شمعة زخم شرائية")
-        if c < o and pc > po and o >= pc and c <= po:
-            votes["بيع"].append("ابتلاع بيعي")
-        elif c < o and h > l and o-c >= (h-l)*0.65:
-            votes["بيع"].append("شمعة زخم بيعية")
-        # Support/resistance rejection
-        cr = max(h-l, entry*0.000001)
-        if l <= rl+span*0.12 and min(o,c)-l >= cr*0.35 and c > l+cr*0.5:
-            votes["شراء"].append("رفض سعري من الدعم")
-        if h >= rh-span*0.12 and h-max(o,c) >= cr*0.35 and c < l+cr*0.5:
-            votes["بيع"].append("رفض سعري من المقاومة")
-        # Volume spread is confirmation, never a standalone trigger
-        avgvol = sum(volumes[-21:-1])/20 if len(volumes) >= 21 else 0
-        if avgvol > 0 and volumes[-1] >= avgvol*1.25:
-            if c > o:
-                votes["شراء"].append("تأكيد بالحجم")
-            elif c < o:
-                votes["بيع"].append("تأكيد بالحجم")
-        # Fibonacci retracement zone as one confluence factor
-        pos = (entry-rl)/span
-        if 0.382 <= pos <= 0.618:
-            if c > o:
-                votes["شراء"].append("منطقة فيبوناتشي")
-            elif c < o:
-                votes["بيع"].append("منطقة فيبوناتشي")
-        side = max(votes, key=lambda k: len(votes[k]))
-        count = len(votes[side])
-        if count < 3 or len(votes["شراء"]) == len(votes["بيع"]):
+        e9, e20, e50, e200 = ema9[-1], ema20[-1], ema50[-1], ema200[-1]
+        # Strong trend: price and all averages stacked in the same direction.
+        bullish_strong = entry > e9 > e20 > e50 > e200
+        bearish_strong = entry < e9 < e20 < e50 < e200
+        # Normal trend: EMA20/50/200 aligned and price on the correct side of EMA20.
+        bullish = entry > e20 > e50 > e200
+        bearish = entry < e20 < e50 < e200
+        if bullish_strong:
+            side, strength = "شراء", "شراء قوي"
+        elif bearish_strong:
+            side, strength = "بيع", "بيع قوي"
+        elif bullish:
+            side, strength = "شراء", "شراء"
+        elif bearish:
+            side, strength = "بيع", "بيع"
+        else:
             return None
-        swing_low, swing_high = min(lows[-10:]), max(highs[-10:])
-        rawrisk = entry-swing_low if side == "شراء" else swing_high-entry
-        avg_range = sum(max(highs[i]-lows[i], abs(highs[i]-closes[i-1]), abs(lows[i]-closes[i-1])) for i in range(len(candles)-14, len(candles)))/14
-        max_pct = {"15m":0.03,"1h":0.05,"2h":0.06,"4h":0.08,"1d":0.12,"1w":0.18,"1M":0.25}.get(interval,0.03)
-        risk = min(max(rawrisk, avg_range*1.2), entry*max_pct)
+
+        true_ranges = []
+        for k in range(max(1, len(candles)-14), len(candles)):
+            true_ranges.append(max(highs[k]-lows[k], abs(highs[k]-closes[k-1]), abs(lows[k]-closes[k-1])))
+        atr = sum(true_ranges) / len(true_ranges) if true_ranges else 0
+        if not math.isfinite(atr) or atr <= 0 or entry <= 0:
+            return None
+        # Use ATR-based risk and keep stop/targets on the correct side of entry.
+        risk = min(atr * 1.5, entry * {"15m":0.03,"1h":0.05,"2h":0.06,"4h":0.08,"1d":0.12,"1w":0.18,"1M":0.25}.get(interval, 0.03))
         if not math.isfinite(risk) or risk <= 0:
             return None
-        stop = entry-risk if side == "شراء" else entry+risk
-        targets = [entry+risk*x for x in (1,2,3)] if side == "شراء" else [entry-risk*x for x in (1,2,3)]
-        if min(targets) <= 0:
-            return None
+        if side == "شراء":
+            stop = entry - risk
+            targets = [entry + risk * n for n in (1, 2, 3)]
+        else:
+            stop = entry + risk
+            targets = [entry - risk * n for n in (1, 2, 3)]
+            if targets[-1] <= 0:
+                return None
         digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
-        fmt = lambda x: round(float(x), digits)
+        fmt = lambda value: round(float(value), digits)
         return {
-            "source":"تحليل فني متعدد المناهج",
-            "title":f"{side} {symbol} — توافق مناهج فنية",
-            "description":"هيكل داو وحركة السعر والاختراق/الكسر والشموع والدعم والمقاومة والحجم وفيبوناتشي.",
-            "url":"","published_at":int(time.time()),"market":market,"direction":side,"symbol":symbol,"interval":interval,
-            "levels":{"entry":fmt(entry),"stop_loss":fmt(stop),"tp1":fmt(targets[0]),"tp2":fmt(targets[1]),"tp3":fmt(targets[2])},
-            "has_complete_levels":True,"ai_score":min(100,round(count/6*100)),"technical_score":min(100,round(count/6*100)),
-            "analysis_methods":votes[side],"technical_methods_count":count,"age_hours":0,
-            "generated_by_site":True,"signal_inverted":False
+            "source": "استراتيجية تراص المتوسطات EMA9/20/50/200",
+            "title": f"{strength} {symbol} — تراص المتوسطات",
+            "description": ("شراء قوي عند ترتيب السعر ثم EMA9 ثم EMA20 ثم EMA50 ثم EMA200 من الأعلى للأسفل."
+                           if strength == "شراء قوي" else
+                           "بيع قوي عند الترتيب المعاكس للمتوسطات والسعر."
+                           if strength == "بيع قوي" else
+                           "شراء عند اصطفاف EMA20 فوق EMA50 فوق EMA200 والسعر فوق EMA20."
+                           if side == "شراء" else
+                           "بيع عند اصطفاف EMA20 تحت EMA50 تحت EMA200 والسعر تحت EMA20."),
+            "url": "", "published_at": int(time.time()), "market": market,
+            "direction": side, "signal_strength": strength, "symbol": symbol, "interval": interval,
+            "levels": {"entry": fmt(entry), "stop_loss": fmt(stop), "tp1": fmt(targets[0]),
+                       "tp2": fmt(targets[1]), "tp3": fmt(targets[2])},
+            "has_complete_levels": True, "ai_score": 95 if "قوي" in strength else 75,
+            "analysis_methods": ["EMA9", "EMA20", "EMA50", "EMA200", "ترتيب المتوسطات", "ATR لإدارة المخاطر"],
+            "technical_methods_count": 4, "age_hours": 0,
+            "generated_by_site": True, "signal_inverted": False,
+            "raw_text": "إشارة محسوبة من شموع السوق الفعلية؛ لا تمثل نسبة نجاح مثبتة."
         }
     except (urllib.error.URLError, TimeoutError, OSError, KeyError, TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError) as exc:
-        print(f"multi-method technical scan skipped {market}/{symbol}/{interval}: {type(exc).__name__}")
+        print(f"moving-average scan skipped {market}/{symbol}/{interval}: {type(exc).__name__}")
         return None
 
 
