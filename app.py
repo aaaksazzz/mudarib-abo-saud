@@ -2358,7 +2358,23 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
             journal = read_json_file(RESULTS_PATH, [])
             if not isinstance(journal, list):
                 journal = []
-            known = {str(row.get("trade_id")) for row in journal if isinstance(row, dict)}
+            # Remove stale OPEN opportunities after 24 hours, but preserve closed results.
+            max_open_age = 24 * 60 * 60
+            journal = [
+                row for row in journal
+                if isinstance(row, dict) and (
+                    str(row.get("result", "OPEN")).upper() in {"TP1", "TP2", "TP3", "SL"}
+                    or (now - int(row.get("created_at") or now)) <= max_open_age
+                )
+            ]
+            # One active record per market/symbol/timeframe/direction prevents every
+            # price refresh from creating another copy of the same old opportunity.
+            active_keys = {
+                (str(row.get("market") or ""), str(row.get("symbol") or "").upper(),
+                 str(row.get("interval") or ""), str(row.get("direction") or ""))
+                for row in journal
+                if str(row.get("result", "OPEN")).upper() not in {"TP1", "TP2", "TP3", "SL"}
+            }
             for item in result.get("items", []):
                 levels = item.get("levels") if isinstance(item.get("levels"), dict) else {}
                 symbol = str(item.get("symbol") or "").strip().upper()
@@ -2371,9 +2387,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
                     continue
                 if not symbol or direction not in {"شراء", "بيع"} or not all(math.isfinite(v) and v > 0 for v in (entry, stop, tp1, tp2, tp3)):
                     continue
-                trade_id = f"{market}:{symbol}:{interval}:{direction}:{round(entry, 10)}"
-                if trade_id in known:
+                active_key = (market, symbol, interval, direction)
+                if active_key in active_keys:
                     continue
+                trade_id = f"{market}:{symbol}:{interval}:{direction}:{now}"
                 journal.insert(0, {
                     "trade_id": trade_id, "market": market, "symbol": symbol,
                     "interval": interval, "direction": direction, "entry": entry,
@@ -2381,7 +2398,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
                     "result": "OPEN", "pnl_pct": 0, "created_at": now,
                     "source": item.get("source") or item.get("title") or "EMA / public scan"
                 })
-                known.add(trade_id)
+                active_keys.add(active_key)
             write_json_file(RESULTS_PATH, journal[:2000])
     except (OSError, TypeError, ValueError) as exc:
         print(f"signal persistence failed {market}/{interval}: {type(exc).__name__}")
