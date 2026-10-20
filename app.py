@@ -2033,20 +2033,14 @@ def _multi_method_technical_signal(market, symbol, interval):
             return None
         e20, e50, e100, e200 = ema20[-1], ema50[-1], ema100[-1], ema200[-1]
 
-        # Technical badges use only the four requested EMAs.
-        # Regular buy/sell also require price to be on the matching side of EMA200.
-        bullish_strong = entry > e20 > e50 > e100 > e200
-        bearish_strong = entry < e20 < e50 < e100 < e200
-        bullish = entry > e20 > e50 and entry > e200
-        bearish = entry < e20 < e50 and entry < e200
-        if bullish_strong:
+        # Emit a technical signal only when all four EMAs are fully aligned
+        # and the latest price is beyond EMA20 in the same direction.
+        bullish_aligned = entry > e20 > e50 > e100 > e200
+        bearish_aligned = entry < e20 < e50 < e100 < e200
+        if bullish_aligned:
             side, strength = "شراء", "شراء قوي"
-        elif bearish_strong:
+        elif bearish_aligned:
             side, strength = "بيع", "بيع قوي"
-        elif bullish:
-            side, strength = "شراء", "شراء"
-        elif bearish:
-            side, strength = "بيع", "بيع"
         else:
             return None
 
