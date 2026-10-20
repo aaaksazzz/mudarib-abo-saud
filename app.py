@@ -2033,9 +2033,16 @@ def _multi_method_technical_signal(market, symbol, interval):
             return None
         e20, e50, e100, e200 = ema20[-1], ema50[-1], ema100[-1], ema200[-1]
 
-        bullish = entry > e20 > e50 > e100 > e200
-        bearish = entry < e20 < e50 < e100 < e200
-        if bullish:
+        # Four technical badges, using only EMA20/50/100/200.
+        bullish_strong = entry > e20 > e50 > e100 > e200
+        bearish_strong = entry < e20 < e50 < e100 < e200
+        bullish = entry > e20 > e50 > e100
+        bearish = entry < e20 < e50 < e100
+        if bullish_strong:
+            side, strength = "شراء", "شراء قوي"
+        elif bearish_strong:
+            side, strength = "بيع", "بيع قوي"
+        elif bullish:
             side, strength = "شراء", "شراء"
         elif bearish:
             side, strength = "بيع", "بيع"
