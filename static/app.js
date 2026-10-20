@@ -20,6 +20,8 @@
   };
   const marketKey = pathToMarket[path];
   let selectedInterval = "15m";
+  let marketSignalRefreshTimer = null;
+  let marketSignalRefreshBusy = false;
   let lastMarketItems = [];
   let currentChartSymbol = "";
   let adminAuth = "";
@@ -88,13 +90,12 @@
         '<section class="market-hero"><div class="market-hero-copy"><span class="eyebrow">MARKET OVERVIEW · '+esc(m.source.toUpperCase())+'</span><h1>'+esc(m.name)+'</h1><p>'+esc(m.sub)+' — لوحة متابعة مستقلة لهذا السوق، مع فصل البيانات عن بقية الأسواق.</p><div class="market-hero-tags"><span class="market-live-dot">● متابعة السوق</span><span class="market-source-chip">المصدر: '+esc(m.source)+'</span></div></div><div class="market-hero-mark" aria-hidden="true">'+esc(m.icon)+'</div></section>'+
         '<section class="market-section market-overview-section"><div class="market-section-heading"><div><span class="section-kicker">01 / OVERVIEW</span><h2>صورة السوق</h2><p>ملخص حركة الأصول وآخر وقت لتحديث البيانات.</p></div><button class="button small market-refresh" id="refreshMarketDirection">↻ تحديث</button></div><div id="marketDirectionSummary" class="market-direction-host">'+empty("جاري قراءة السوق…","يتم تحميل ملخص مستقل لهذا السوق.")+'</div></section>'+
         '<section class="market-section market-opportunities-section"><div class="market-section-heading"><div><span class="section-kicker">02 / OPPORTUNITIES</span><h2>الفرص داخل السوق</h2><p>نتائج الفحص لهذا السوق فقط؛ لا يتم خلط الأصول مع أسواق أخرى.</p></div><span class="market-section-icon">⌁</span></div>'+
-          '<div class="market-scan-controls"><div class="market-frame-picker"><span class="market-frame-label">اختر فريم التداول</span><div class="frame-list market-frame-list" id="marketSignalFrames">'+[["15m","15 دقيقة"],["1h","ساعة"],["2h","ساعتان"],["4h","4 ساعات"],["1d","يومي"]].map((f,i)=>'<button type="button" class="frame market-frame-button '+(i===0?"active":"")+'" data-market-frame="'+f[0]+'"><strong>'+f[1]+'</strong><small>'+f[0]+'</small></button>').join("")+'</div></div><button class="button primary market-scan-button" id="loadSignals">⌕ فحص هذا الفريم</button><span class="market-scan-meta" id="signalMeta">اختر فريمًا ثم افحص الفرص الخاصة به.</span></div>'+
+          '<div class="market-scan-controls"><div class="market-frame-picker"><span class="market-frame-label">اختر فريم التداول</span><div class="frame-list market-frame-list" id="marketSignalFrames">'+[["15m","15 دقيقة"],["1h","ساعة"],["2h","ساعتان"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]].map((f,i)=>'<button type="button" class="frame market-frame-button '+(i===0?"active":"")+'" data-market-frame="'+f[0]+'"><strong>'+f[1]+'</strong><small>'+f[0]+'</small></button>').join("")+'</div></div><span class="market-auto-badge" id="signalAutoStatus">● الفحص التلقائي نشط</span><span class="market-scan-meta" id="signalMeta">يتم فحص هذا الفريم تلقائيًا وترتيب الفرص حسب التقييم.</span></div>'+
           '<div class="market-best-grid" id="marketBestSides"></div><div class="signal-grid market-signals" id="signalContent"></div></section>'+
         '<div class="market-disclaimer"><span>ⓘ</span><p>اتجاه السوق قراءة وصفية وليست توصية دخول. الإشارات تجريبية ولا تضمن الربح؛ تأكد من الأسعار والمخاطر قبل أي قرار.</p></div>'+
       '</div>';
     const loadDirection=async()=>{const out=$("marketDirectionSummary"),btn=$("refreshMarketDirection");btn.disabled=true;out.innerHTML='<div class="loading">جاري حساب اتجاه '+esc(m.name)+'…</div>';try{const d=await getJSON("/api/market-direction?market="+encodeURIComponent(m.api));if(!d.ok)throw new Error(d.message||"بيانات الاتجاه غير متاحة");const up=Number(d.assets_up||0),down=Number(d.assets_down||0),flat=Number(d.assets_flat||0),dir=d.direction_ar||"مختلط / محايد",color=d.direction==="BULLISH"?"var(--green)":d.direction==="BEARISH"?"var(--red)":"var(--gold)";out.innerHTML='<div class="market-direction-grid"><div class="feature-card direction-card direction-main"><small>التوجّه العام</small><strong style="color:'+color+'">'+esc(dir)+'</strong><span class="direction-caption">'+esc(m.name)+'</span></div><div class="feature-card direction-card"><small>متوسط التغيّر</small><strong>'+pct(d.price_change_pct)+'</strong><span class="direction-caption">حركة العينة</span></div><div class="feature-card direction-card"><small><i class="direction-dot up"></i> صاعد</small><strong style="color:var(--green)">'+up+'</strong><span class="direction-caption">أصل صاعد</span></div><div class="feature-card direction-card"><small><i class="direction-dot down"></i> هابط</small><strong style="color:var(--red)">'+down+'</strong><span class="direction-caption">أصل هابط</span></div><div class="feature-card direction-card"><small><i class="direction-dot flat"></i> مستقر</small><strong>'+flat+'</strong><span class="direction-caption">حركة محدودة</span></div><div class="feature-card direction-card"><small>الأصول المفحوصة</small><strong>'+esc(d.assets_sampled??up+down+flat)+'</strong><span class="direction-caption">ضمن العينة الحالية</span></div></div><p class="market-updated-at">آخر تحديث: '+timeText(d.updated_at)+(d.stale?' · بيانات محفوظة مؤقتًا وليست مباشرة':'')+'</p>';}catch(err){out.innerHTML=empty("تعذر تحديد توجّه السوق",err.message)}finally{btn.disabled=false}};
     $("refreshMarketDirection").addEventListener("click",loadDirection);
-    $("loadSignals").addEventListener("click",()=>loadSignals(m));
     $("marketSignalFrames").addEventListener("click",e=>{const b=e.target.closest("[data-market-frame]");if(!b)return;selectedInterval=b.dataset.marketFrame;$("marketSignalFrames").querySelectorAll("[data-market-frame]").forEach(x=>{const active=x===b;x.classList.toggle("active",active);x.setAttribute("aria-pressed",active?"true":"false")});$("loadSignals").textContent="⌕ فحص فريم "+b.querySelector("strong").textContent;loadSignals(m)});
     setInterval(()=>{if(document.visibilityState==="visible" && $("signalContent") && !$("loadSignals").disabled){loadSignals(m)}},(["us","saudi"].includes(m.api)?2:10)*60*1000);
     $("signalContent").addEventListener("click",e=>{const b=e.target.closest("[data-inline-chart]");if(!b)return;const card=b.closest(".signal-card"),symbol=b.dataset.symbol,frame=b.dataset.frame||selectedInterval,box=card&&card.querySelector("[data-chart-box]");if(!box)return;if(box.dataset.open==="1"){box.dataset.open="0";box.innerHTML="";b.textContent="عرض الشارت داخل الصفقة";return;}box.dataset.open="1";b.textContent="إخفاء الشارت";box.innerHTML='<div class="loading">تحميل الشارت…</div>';getJSON("/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(symbol)+"&interval="+encodeURIComponent(frame)).then(d=>{if(box.dataset.open==="1")box.innerHTML=drawCandles(d.items||[])}).catch(err=>{if(box.dataset.open==="1")box.innerHTML=empty("الشارت غير متاح",err.message)});});
@@ -156,8 +157,13 @@
       '<div class="toolbar" style="margin-top:12px"><button type="button" class="button small" data-inline-chart="1" data-symbol="'+esc(x.symbol||"")+'" data-frame="'+esc(x.interval||selectedInterval)+'">عرض الشارت داخل الصفقة</button></div><div data-chart-box data-open="0" style="margin-top:10px"></div><div class="muted" style="margin-top:10px">'+esc(x.status||"النسب تقديرية من سعر الدخول إلى الهدف/الوقف، قبل الرسوم والانزلاق")+'</div></article>';
   }
   async function loadSignals(m) {
-    const out=$("signalContent"),meta=$("signalMeta"),button=$("loadSignals");button.disabled=true;
-    out.innerHTML='<div class="loading">جاري فحص عينة محدودة من '+esc(m.name)+'…</div>';meta.textContent="فحص محدود · "+selectedInterval;
+    if(marketSignalRefreshBusy)return;
+    const out=$("signalContent"),meta=$("signalMeta"),status=$("signalAutoStatus");
+    if(!out||!meta)return;
+    marketSignalRefreshBusy=true;
+    if(status)status.textContent="● جاري الفحص التلقائي";
+    meta.textContent="جاري فحص "+selectedInterval+" وترتيب الفرص…";
+    if(!out.innerHTML.trim() || out.innerHTML.includes("جاري"))out.innerHTML='<div class="loading">جاري فحص الفرص تلقائيًا…</div>';
     try {
       const d=await getJSON("/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedInterval)+"&limit=20&refresh=true");
       const items=Array.isArray(d.items)?d.items.slice():[];
@@ -174,7 +180,7 @@
       const bestBuy=items.find(x=>["شراء","BUY","LONG"].includes(x.direction||x.side)),bestSell=items.find(x=>["بيع","SELL","SHORT"].includes(x.direction||x.side)),bestBox=$("marketBestSides");if(bestBox)bestBox.innerHTML='<div class="feature-card"><small>أفضل شراء</small><strong>'+esc(bestBuy?.symbol||"لا توجد فرصة")+'</strong><small>'+esc(bestBuy?(bestBuy.interval||selectedInterval)+" · تقييم "+(bestBuy.ai_score??bestBuy.confidence??"—")+"/100":"لم تظهر صفقة شراء مؤهلة")+'</small></div><div class="feature-card"><small>أفضل بيع</small><strong>'+esc(bestSell?.symbol||"لا توجد فرصة")+'</strong><small>'+esc(bestSell?(bestSell.interval||selectedInterval)+" · تقييم "+(bestSell.ai_score??bestSell.confidence??"—")+"/100":"لم تظهر صفقة بيع مؤهلة")+'</small></div>';
       out.innerHTML=items.length?items.map((x,i)=>signalCard(x,i)).join(""):empty("لا توجد فرص مؤهلة الآن",d.message||"لن نعرض صفقة بمستويات ناقصة أو غير مرتبة.");
     } catch(err) {out.innerHTML=empty("تعذر فحص الفرص",err.message);meta.textContent="فشل الفحص"}
-    finally {button.disabled=false}
+    finally {marketSignalRefreshBusy=false;if(status)status.textContent="● الفحص التلقائي نشط";}
   }
   async function renderResults() {
     view.innerHTML=pageHeader("نتائج الصفقات","سجل حيّ للفرص التي رصدها الفحص، مع فصل المفتوح عن النتائج المحققة.","مركز الأداء")+
