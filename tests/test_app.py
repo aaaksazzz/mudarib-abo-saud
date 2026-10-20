@@ -100,10 +100,10 @@ def test_strategy_signal_endpoint_does_not_create_trades_without_public_ideas(mo
 
 
 def test_signal_endpoint_scans_each_supported_market(monkeypatch):
-    # The public idea supplies direction and levels; each market's own quote data
-    # contributes only the lightweight 10% context.
+    # External ideas supply direction and levels; site technical analysis targets 50%.
     supported = ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex")
     calls = []
+    monkeypatch.setattr(app_module, "candle_data", lambda market, symbol, interval: [])
     monkeypatch.setattr(app_module, "market_data", lambda market, limit=500: (
         calls.append(market) or {"ok": True, "items": [
             {"symbol": "TESTUSDT", "price": 100, "change_pct": 2, "quote_volume": 2_000_000}
@@ -126,7 +126,7 @@ def test_signal_endpoint_scans_each_supported_market(monkeypatch):
         assert data["count"] == 1
         assert data["items"][0]["market"] == market
         assert data["items"][0]["direction"] == "بيع"
-        assert data["items"][0]["external_source_weight"] == 90
+        assert data["items"][0]["external_source_weight"] == 50
     assert calls == list(supported)
 
 
@@ -144,10 +144,11 @@ def test_signal_endpoint_handles_site_context_outage_without_fabricating_trades(
     data = response.json()
     assert data["ok"] is True
     assert data["items"] == []
-    assert data["site_analysis_weight"] == 10
+    assert data["site_analysis_weight"] == 50
 
 
-def test_live_signal_endpoint_never_uses_technical_fallback(monkeypatch):
+def test_live_signal_endpoint_skips_technical_candidates_without_real_candles(monkeypatch):
+    monkeypatch.setattr(app_module, "candle_data", lambda market, symbol, interval: [])
     monkeypatch.setattr(app_module, "market_data", lambda market, limit=500: {
         "ok": True, "items": [{"symbol": "BTCUSDT", "price": 100, "change_pct": 1}]
     })
