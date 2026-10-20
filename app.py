@@ -87,7 +87,7 @@ def _valid_site_session(token):
 SITE_PASSWORD_GATE = os.getenv("SITE_PASSWORD_GATE", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 def _market_session_token(expiry):
-    secret = os.getenv("MARKET_ACCESS_PASSWORD", "").encode("utf-8")
+    secret = (os.getenv("MARKET_ACCESS_PASSWORD") or os.getenv("SITE_PASSWORD", "2341")).encode("utf-8")
     msg = ("market:" + str(expiry)).encode("ascii")
     sig = hmac.new(secret, msg, hashlib.sha256).hexdigest()
     return str(expiry) + "." + sig
@@ -98,7 +98,7 @@ def _valid_market_session(token):
         expiry = int(expiry_text)
         if expiry < int(time.time()):
             return False
-        secret = os.getenv("MARKET_ACCESS_PASSWORD", "").encode("utf-8")
+        secret = (os.getenv("MARKET_ACCESS_PASSWORD") or os.getenv("SITE_PASSWORD", "2341")).encode("utf-8")
         if not secret:
             return False
         expected = _market_session_token(expiry).split(".", 1)[1]
@@ -127,9 +127,7 @@ async def site_password_gate(request: Request, call_next):
             pin = str(payload.get("pin", "")) if isinstance(payload, dict) else ""
         except Exception:
             pin = ""
-        expected_password = os.getenv("MARKET_ACCESS_PASSWORD", "")
-        if not expected_password:
-            return JSONResponse({"detail": "إعداد MARKET_ACCESS_PASSWORD مفقود في إعدادات الخدمة."}, status_code=503)
+        expected_password = (os.getenv("MARKET_ACCESS_PASSWORD") or os.getenv("SITE_PASSWORD", "2341"))
         if not secrets.compare_digest(pin, expected_password):
             return JSONResponse({"detail": "الرقم السري غير صحيح"}, status_code=401)
         expiry = int(time.time()) + 60 * 60 * 24 * 7
