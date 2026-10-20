@@ -2281,20 +2281,40 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
     live_rows = (snapshot.get("items", []) if isinstance(snapshot, dict) else [])
     if live_rows:
         cursor_key = (market, interval)
+        # Scan a larger rotating batch on every refresh, using a small worker pool
+        # to avoid making each market page wait on symbols one by one.
+        scan_batch_size = 20 if market in {"us", "saudi"} else 12
         with SCAN_CURSOR_LOCK:
             start = SCAN_CURSORS.get(cursor_key, 0) % len(live_rows)
-            SCAN_CURSORS[cursor_key] = (start + min(2, len(live_rows))) % len(live_rows)
-        scan_batch_size = 8 if market in {"us", "saudi"} else 4
+            SCAN_CURSORS[cursor_key] = (start + min(scan_batch_size, len(live_rows))) % len(live_rows)
         scan_rows = (live_rows[start:] + live_rows[:start])[:min(scan_batch_size, len(live_rows))]
         technical_symbols = {str(item.get("symbol") or "").strip().upper() for item in items}
         technical_added = 0
-        for row in scan_rows:
+        scan_jobs = []
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            future_rows = {
+                pool.submit(
+                    _multi_method_technical_signal, market,
+                    str(row.get("symbol") or "").strip().upper(), interval
+                ): row
+                for row in scan_rows
+                if str(row.get("symbol") or "").strip().upper()
+                and str(row.get("symbol") or "").strip().upper() not in technical_symbols
+            }
+            for future in as_completed(future_rows):
+                row = future_rows[future]
+                try:
+                    signal = future.result()
+                except Exception as exc:
+                    print(f"technical scan failed {market}/{interval}/{row.get('symbol')}: {type(exc).__name__}")
+                    signal = None
+                scan_jobs.append((row, signal))
+        for row, signal in scan_jobs:
             if technical_added >= technical_quota:
                 break
             symbol = str(row.get("symbol") or "").strip().upper()
-            if not symbol or symbol in technical_symbols:
+            if not symbol:
                 continue
-            signal = _multi_method_technical_signal(market, symbol, interval)
             if not isinstance(signal, dict):
                 continue
             signal_symbol = str(signal.get("symbol") or symbol).strip().upper()
