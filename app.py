@@ -2358,13 +2358,23 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
             journal = read_json_file(RESULTS_PATH, [])
             if not isinstance(journal, list):
                 journal = []
-            # Remove stale OPEN opportunities after 24 hours, but preserve closed results.
-            max_open_age = 24 * 60 * 60
+            # Expire open opportunities according to their own timeframe.
+            # Closed outcomes remain in the journal for performance history.
+            interval_lifetimes = {
+                "15m": 15 * 60,
+                "1h": 60 * 60,
+                "2h": 2 * 60 * 60,
+                "4h": 4 * 60 * 60,
+                "1d": 24 * 60 * 60,
+                "1w": 7 * 24 * 60 * 60,
+                "1M": 30 * 24 * 60 * 60,
+            }
             journal = [
                 row for row in journal
                 if isinstance(row, dict) and (
                     str(row.get("result", "OPEN")).upper() in {"TP1", "TP2", "TP3", "SL"}
-                    or (now - int(row.get("created_at") or now)) <= max_open_age
+                    or (now - int(row.get("created_at") or now))
+                    <= interval_lifetimes.get(str(row.get("interval") or ""), 24 * 60 * 60)
                 )
             ]
             # One active record per market/symbol/timeframe/direction prevents every
