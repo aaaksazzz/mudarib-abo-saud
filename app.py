@@ -2012,8 +2012,28 @@ SCAN_CURSOR_LOCK = threading.Lock()
 
 
 def _multi_method_technical_signal(market, symbol, interval):
-    """Moving-average stacking strategy using only EMA20, EMA50, EMA100 and EMA200."""
+    """Monthly trend filter plus local EMA alignment; monthly is context only, never a trade timeframe."""
     try:
+        if interval == "1M":
+            return None
+
+        # Monthly direction is the master bias for every tradable timeframe.
+        monthly = candle_data(market, symbol, "1M")
+        if not isinstance(monthly, list) or len(monthly) < 55:
+            return None
+        monthly = monthly[-120:]
+        monthly_closes = [float(c["close"]) for c in monthly]
+        monthly_ema20 = _ema_series(monthly_closes, 20)
+        monthly_ema50 = _ema_series(monthly_closes, 50)
+        if (not monthly_ema20 or not monthly_ema50 or
+                monthly_ema20[-1] is None or monthly_ema50[-1] is None or
+                monthly_ema20[-2] is None):
+            return None
+        monthly_bull = monthly_closes[-1] > monthly_ema20[-1] > monthly_ema50[-1] and monthly_ema20[-1] >= monthly_ema20[-2]
+        monthly_bear = monthly_closes[-1] < monthly_ema20[-1] < monthly_ema50[-1] and monthly_ema20[-1] <= monthly_ema20[-2]
+        if not monthly_bull and not monthly_bear:
+            return None
+
         candles = candle_data(market, symbol, interval)
         if not isinstance(candles, list) or len(candles) < 205:
             return None
@@ -2037,10 +2057,14 @@ def _multi_method_technical_signal(market, symbol, interval):
         # and the latest price is beyond EMA20 in the same direction.
         bullish_aligned = entry > e20 > e50 > e100 > e200
         bearish_aligned = entry < e20 < e50 < e100 < e200
-        if bullish_aligned:
-            side, strength = "شراء", "شراء قوي"
-        elif bearish_aligned:
-            side, strength = "بيع", "بيع قوي"
+        bullish_setup = entry > e20 > e50
+        bearish_setup = entry < e20 < e50
+        if monthly_bull and bullish_setup:
+            side = "شراء"
+            strength = "شراء قوي" if bullish_aligned else "شراء"
+        elif monthly_bear and bearish_setup:
+            side = "بيع"
+            strength = "بيع قوي" if bearish_aligned else "بيع"
         else:
             return None
 
@@ -2066,15 +2090,15 @@ def _multi_method_technical_signal(market, symbol, interval):
         return {
             "source": "استراتيجية تراص المتوسطات EMA20/50/100/200",
             "title": f"{strength} {symbol} — تراص المتوسطات",
-            "description": ("شراء عند ترتيب السعر ثم EMA20 ثم EMA50 ثم EMA100 ثم EMA200 من الأعلى للأسفل."
+            "description": ("الاتجاه الشهري صاعد، والإشارة متوافقة معه؛ شراء قوي عند تراص EMA20/50/100/200، وشراء عند توافق EMA20/50."
                            if side == "شراء" else
-                           "بيع عند الترتيب المعاكس: السعر ثم EMA20 ثم EMA50 ثم EMA100 ثم EMA200 من الأعلى للأسفل."),
+                           "الاتجاه الشهري هابط، والإشارة متوافقة معه؛ بيع قوي عند تراص EMA20/50/100/200، وبيع عند توافق EMA20/50."),
             "url": "", "published_at": int(time.time()), "market": market,
             "direction": side, "signal_strength": strength, "symbol": symbol, "interval": interval,
             "levels": {"entry": fmt(entry), "stop_loss": fmt(stop), "tp1": fmt(targets[0]),
                        "tp2": fmt(targets[1]), "tp3": fmt(targets[2])},
             "has_complete_levels": True, "ai_score": 75,
-            "analysis_methods": ["EMA20", "EMA50", "EMA100", "EMA200", "ترتيب المتوسطات", "ATR لإدارة المخاطر"],
+            "analysis_methods": ["اتجاه شهري EMA20/50", "EMA20", "EMA50", "EMA100", "EMA200", "توافق الفريم مع الشهري", "ATR لإدارة المخاطر"],
             "technical_methods_count": 4, "age_hours": 0,
             "generated_by_site": True, "signal_inverted": False,
             "raw_text": "إشارة محسوبة من شموع السوق الفعلية؛ لا تمثل نسبة نجاح مثبتة."
@@ -2091,7 +2115,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     if market not in allowed_markets:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "السوق غير مدعوم."}, status_code=404)
-    if interval not in {"15m", "1h", "2h", "4h", "1d", "1w", "1M"}:
+    if interval not in {"15m", "1h", "2h", "4h", "1d", "1w"}:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "الفريم غير مدعوم."}, status_code=422)
 
@@ -2429,7 +2453,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
 
 # Persistent background scanner: runs even when no visitor has a market page open.
 AUTO_SCAN_MARKETS = ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex")
-AUTO_SCAN_INTERVALS = ("15m", "1h", "2h", "4h", "1d", "1w", "1M")
+AUTO_SCAN_INTERVALS = ("15m", "1h", "2h", "4h", "1d", "1w")
 AUTO_SCAN_START_LOCK = threading.Lock()
 AUTO_SCAN_STARTED = False
 
