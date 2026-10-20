@@ -2084,7 +2084,7 @@ def _multi_method_technical_signal(market, symbol, interval):
         return None
 
 @app.get("/api/signals/{market}")
-def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(12, ge=1, le=20), refresh: bool = Query(False)):
+def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20), refresh: bool = Query(False)):
     """Blend 50% public external trade ideas and 50% live technical signals; invert external ideas only."""
     market = (market or "").strip().lower()
     allowed_markets = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
