@@ -1849,12 +1849,40 @@ def public_news(market: str = Query("all"), limit: int = Query(50, ge=1, le=100)
             matched = [m for m in accepted_markets if _public_idea_market_match(m, full_text)]
         if not matched:
             continue
-        direction = _public_idea_direction(full_text)
-        symbol_match = PUBLIC_SYMBOL_RE.search(full_text)
+        # News sentiment is not the same as a trading call. Classify only explicit
+        # directional language in the headline/feed text; mixed or weak evidence stays unclear.
+        sentiment_text = str(row.get("title") or "") + " " + str(row.get("description") or "") + " " + str(full_text or "")
+        sentiment_lower = sentiment_text.lower()
+        positive_terms = (
+            "beats expectations", "beat estimates", "raises guidance", "upgrade", "upgraded",
+            "profit rises", "revenue growth", "surges", "rallies", "gains", "bullish", "inflows",
+            "يتجاوز التوقعات", "تجاوز التوقعات", "رفع التوقعات", "ترقية", "نمو الأرباح",
+            "ارتفاع الأرباح", "يرتفع", "ارتفاع", "صعود", "مكاسب", "تدفقات داخلة"
+        )
+        negative_terms = (
+            "misses expectations", "missed estimates", "cuts guidance", "downgrade", "downgraded",
+            "profit falls", "revenue declines", "drops", "plunges", "selloff", "bearish", "outflows",
+            "below expectations", "يخفق في التوقعات", "دون التوقعات", "خفض التوقعات", "تخفيض",
+            "خسائر", "تراجع", "انخفاض", "هبوط", "يهبط", "يتراجع", "اختراق", "دعوى قضائية", "إفلاس"
+        )
+        positive_hit = any(term in sentiment_lower for term in positive_terms)
+        negative_hit = any(term in sentiment_lower for term in negative_terms)
+        if positive_hit and not negative_hit:
+            impact, impact_ar = "POSITIVE_POTENTIAL", "إيجابي محتمل"
+        elif negative_hit and not positive_hit:
+            impact, impact_ar = "NEGATIVE_POTENTIAL", "سلبي محتمل"
+        else:
+            impact, impact_ar = "UNCLEAR", "غير محسوم"
+        symbol_match = PUBLIC_SYMBOL_RE.search(sentiment_text)
         item = {k: v for k, v in row.items() if k != "_text"}
-        item.update({"market": market, "asset_labels": [symbol_match.group(0).upper()] if symbol_match else [],
-                     "direction": "BUY" if direction == "شراء" else "SELL" if direction == "بيع" else "UNCLEAR",
-                     "direction_ar": "إيجابي" if direction == "شراء" else "سلبي" if direction == "بيع" else "غير واضح"})
+        item.update({
+            "market": market,
+            "asset_labels": [symbol_match.group(0).upper()] if symbol_match else [],
+            "direction": impact,
+            "direction_ar": impact_ar,
+            "impact_label": impact_ar,
+            "impact_basis": "تصنيف لغوي أولي من نص الخبر؛ ليس إشارة تداول"
+        })
         unique[item.get("url") or item.get("title", "")] = item
     items = sorted(unique.values(), key=lambda x: int(x.get("published_at") or 0), reverse=True)[:limit]
     response = {"ok": True, "market": market, "items": items, "count": len(items),
