@@ -2327,6 +2327,51 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
                     if items else
                     "ما لقينا فرص مكتملة وصالحة في دفعة الفحص الحالية؛ لم تُنشأ صفقات وهمية.")
     }
+    # Persist the latest scan per market/timeframe so users can reopen the page
+    # without having to trigger a fresh scan.
+    try:
+        with RESULTS_LOCK:
+            saved_cache = read_json_file(SIGNALS_CACHE_PATH, {})
+            if not isinstance(saved_cache, dict):
+                saved_cache = {}
+            saved_cache[f"{market}:{interval}"] = {
+                "updated_at": now,
+                "items": result.get("items", []),
+                "count": result.get("count", 0),
+                "message": result.get("message", "")
+            }
+            write_json_file(SIGNALS_CACHE_PATH, saved_cache)
+            # Add each newly detected setup to the durable trade journal once.
+            journal = read_json_file(RESULTS_PATH, [])
+            if not isinstance(journal, list):
+                journal = []
+            known = {str(row.get("trade_id")) for row in journal if isinstance(row, dict)}
+            for item in result.get("items", []):
+                levels = item.get("levels") if isinstance(item.get("levels"), dict) else {}
+                symbol = str(item.get("symbol") or "").strip().upper()
+                direction = str(item.get("direction") or "")
+                try:
+                    entry = float(levels["entry"])
+                    stop = float(levels["stop_loss"])
+                    tp1, tp2, tp3 = (float(levels[k]) for k in ("tp1", "tp2", "tp3"))
+                except (KeyError, TypeError, ValueError, OverflowError):
+                    continue
+                if not symbol or direction not in {"شراء", "بيع"} or not all(math.isfinite(v) and v > 0 for v in (entry, stop, tp1, tp2, tp3)):
+                    continue
+                trade_id = f"{market}:{symbol}:{interval}:{direction}:{round(entry, 10)}"
+                if trade_id in known:
+                    continue
+                journal.insert(0, {
+                    "trade_id": trade_id, "market": market, "symbol": symbol,
+                    "interval": interval, "direction": direction, "entry": entry,
+                    "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3,
+                    "result": "OPEN", "pnl_pct": 0, "created_at": now,
+                    "source": item.get("source") or item.get("title") or "EMA / public scan"
+                })
+                known.add(trade_id)
+            write_json_file(RESULTS_PATH, journal[:2000])
+    except (OSError, TypeError, ValueError) as exc:
+        print(f"signal persistence failed {market}/{interval}: {type(exc).__name__}")
     with PUBLIC_IDEAS_LOCK:
         PUBLIC_IDEAS_CACHE[cache_key] = (now, result)
     return result
