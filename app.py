@@ -1012,7 +1012,7 @@ def _fetch_candle_data_uncached(market: str, symbol: str, interval: str):
                 for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
     if market in BINANCE:
         url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 210})
-        raw = fetch_json(url, timeout=8)
+        raw = fetch_json(url, timeout=2)
         return [{"time": int(k[0]) // 1000, "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
                 for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
     if market not in YAHOO_MARKETS and market != "tasi_index":
@@ -1947,7 +1947,7 @@ def _technical_fallback_signal(market, symbol, interval):
             "age_hours": 0, "generated_by_site": True,
             "raw_text": "إشارة آلية من شموع السوق الفعلية؛ لا تمثل نسبة نجاح مثبتة."
         }
-    except (KeyError, TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError) as exc:
+    except (urllib.error.URLError, TimeoutError, OSError, KeyError, TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError) as exc:
         print(f"EMA20/50 signal skipped {market}/{symbol}/{interval}: {type(exc).__name__}")
         return None
 
@@ -2044,7 +2044,7 @@ def _multi_method_technical_signal(market, symbol, interval):
             "analysis_methods":votes[side],"technical_methods_count":count,"age_hours":0,
             "generated_by_site":True,"signal_inverted":False
         }
-    except (KeyError, TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError) as exc:
+    except (urllib.error.URLError, TimeoutError, OSError, KeyError, TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError) as exc:
         print(f"multi-method technical scan skipped {market}/{symbol}/{interval}: {type(exc).__name__}")
         return None
 
@@ -2231,7 +2231,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         items.append(item)
 
     # Keep a balanced quota: up to half external ideas and half technical signals.
-    # Scan a rotating batch of 20 live market symbols per request to limit provider load.
+    # Scan a tiny rotating batch per request; candle providers can be slow or geographically blocked.
     external_quota = max(1, limit // 2)
     external_items = items[:external_quota]
     items = list(external_items)
@@ -2241,8 +2241,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         cursor_key = (market, interval)
         with SCAN_CURSOR_LOCK:
             start = SCAN_CURSORS.get(cursor_key, 0) % len(live_rows)
-            SCAN_CURSORS[cursor_key] = (start + min(20, len(live_rows))) % len(live_rows)
-        scan_rows = (live_rows[start:] + live_rows[:start])[:min(20, len(live_rows))]
+            SCAN_CURSORS[cursor_key] = (start + min(2, len(live_rows))) % len(live_rows)
+        scan_rows = (live_rows[start:] + live_rows[:start])[:min(2, len(live_rows))]
         technical_symbols = {str(item.get("symbol") or "").strip().upper() for item in items}
         technical_added = 0
         for row in scan_rows:
@@ -2290,7 +2290,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         "external_opportunities": sum(1 for item in items if not item.get("generated_by_site")),
         "message": ("تم دمج فرص المصادر العامة بعد عكس إشارتها مع الفرص الناتجة من التحليل الفني الفعلي بنسبة مستهدفة 50/50؛ العدد النهائي يعتمد على الفرص الصالحة المتاحة."
                     if items else
-                    "لم تظهر فرص مكتملة وصالحة من المصادر العامة أو التحليل الفني في دفعة الفحص الحالية؛ لم تُختلق صفقات.")
+                    "ما لقينا فرص مكتملة وصالحة في دفعة الفحص الحالية؛ لم تُنشأ صفقات وهمية.")
     }
     with PUBLIC_IDEAS_LOCK:
         PUBLIC_IDEAS_CACHE[cache_key] = (now, result)
