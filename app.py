@@ -1955,6 +1955,100 @@ def _technical_fallback_signal(market, symbol, interval):
 SCAN_CURSORS = {}
 SCAN_CURSOR_LOCK = threading.Lock()
 
+
+def _multi_method_technical_signal(market, symbol, interval):
+    """Price-action confluence from multiple technical methods, without EMA-only entry rules."""
+    try:
+        candles = candle_data(market, symbol, interval)
+        if not isinstance(candles, list) or len(candles) < 30:
+            return None
+        candles = candles[-60:]
+        opens = [float(c["open"]) for c in candles]
+        highs = [float(c["high"]) for c in candles]
+        lows = [float(c["low"]) for c in candles]
+        closes = [float(c["close"]) for c in candles]
+        volumes = [float(c.get("volume") or 0) for c in candles]
+        if not all(math.isfinite(v) and v > 0 for arr in (opens, highs, lows, closes) for v in arr[-30:]):
+            return None
+        entry = closes[-1]
+        o, c, h, l = opens[-1], closes[-1], highs[-1], lows[-1]
+        po, pc = opens[-2], closes[-2]
+        rh, rl = max(highs[-21:-1]), min(lows[-21:-1])
+        span = rh-rl
+        if entry <= 0 or span <= 0:
+            return None
+        votes = {"شراء": [], "بيع": []}
+        # Dow / market structure
+        if max(highs[-5:]) > max(highs[-10:-5]) and min(lows[-5:]) > min(lows[-10:-5]):
+            votes["شراء"].append("هيكل داو/قمم وقيعان صاعدة")
+        if max(highs[-5:]) < max(highs[-10:-5]) and min(lows[-5:]) < min(lows[-10:-5]):
+            votes["بيع"].append("هيكل داو/قمم وقيعان هابطة")
+        # Breakout / breakdown
+        if entry > rh:
+            votes["شراء"].append("اختراق مقاومة")
+        if entry < rl:
+            votes["بيع"].append("كسر دعم")
+        # Candlestick patterns / strong candle
+        if c > o and pc < po and o <= pc and c >= po:
+            votes["شراء"].append("ابتلاع شرائي")
+        elif c > o and h > l and c-o >= (h-l)*0.65:
+            votes["شراء"].append("شمعة زخم شرائية")
+        if c < o and pc > po and o >= pc and c <= po:
+            votes["بيع"].append("ابتلاع بيعي")
+        elif c < o and h > l and o-c >= (h-l)*0.65:
+            votes["بيع"].append("شمعة زخم بيعية")
+        # Support/resistance rejection
+        cr = max(h-l, entry*0.000001)
+        if l <= rl+span*0.12 and min(o,c)-l >= cr*0.35 and c > l+cr*0.5:
+            votes["شراء"].append("رفض سعري من الدعم")
+        if h >= rh-span*0.12 and h-max(o,c) >= cr*0.35 and c < l+cr*0.5:
+            votes["بيع"].append("رفض سعري من المقاومة")
+        # Volume spread is confirmation, never a standalone trigger
+        avgvol = sum(volumes[-21:-1])/20 if len(volumes) >= 21 else 0
+        if avgvol > 0 and volumes[-1] >= avgvol*1.25:
+            if c > o:
+                votes["شراء"].append("تأكيد بالحجم")
+            elif c < o:
+                votes["بيع"].append("تأكيد بالحجم")
+        # Fibonacci retracement zone as one confluence factor
+        pos = (entry-rl)/span
+        if 0.382 <= pos <= 0.618:
+            if c > o:
+                votes["شراء"].append("منطقة فيبوناتشي")
+            elif c < o:
+                votes["بيع"].append("منطقة فيبوناتشي")
+        side = max(votes, key=lambda k: len(votes[k]))
+        count = len(votes[side])
+        if count < 3 or len(votes["شراء"]) == len(votes["بيع"]):
+            return None
+        swing_low, swing_high = min(lows[-10:]), max(highs[-10:])
+        rawrisk = entry-swing_low if side == "شراء" else swing_high-entry
+        avg_range = sum(max(highs[i]-lows[i], abs(highs[i]-closes[i-1]), abs(lows[i]-closes[i-1])) for i in range(len(candles)-14, len(candles)))/14
+        max_pct = {"15m":0.03,"1h":0.05,"2h":0.06,"4h":0.08,"1d":0.12,"1w":0.18,"1M":0.25}.get(interval,0.03)
+        risk = min(max(rawrisk, avg_range*1.2), entry*max_pct)
+        if not math.isfinite(risk) or risk <= 0:
+            return None
+        stop = entry-risk if side == "شراء" else entry+risk
+        targets = [entry+risk*x for x in (1,2,3)] if side == "شراء" else [entry-risk*x for x in (1,2,3)]
+        if min(targets) <= 0:
+            return None
+        digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
+        fmt = lambda x: round(float(x), digits)
+        return {
+            "source":"تحليل فني متعدد المناهج",
+            "title":f"{side} {symbol} — توافق مناهج فنية",
+            "description":"هيكل داو وحركة السعر والاختراق/الكسر والشموع والدعم والمقاومة والحجم وفيبوناتشي.",
+            "url":"","published_at":int(time.time()),"market":market,"direction":side,"symbol":symbol,"interval":interval,
+            "levels":{"entry":fmt(entry),"stop_loss":fmt(stop),"tp1":fmt(targets[0]),"tp2":fmt(targets[1]),"tp3":fmt(targets[2])},
+            "has_complete_levels":True,"ai_score":min(100,round(count/6*100)),"technical_score":min(100,round(count/6*100)),
+            "analysis_methods":votes[side],"technical_methods_count":count,"age_hours":0,
+            "generated_by_site":True,"signal_inverted":False
+        }
+    except (KeyError, TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError) as exc:
+        print(f"multi-method technical scan skipped {market}/{symbol}/{interval}: {type(exc).__name__}")
+        return None
+
+
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(12, ge=1, le=20), refresh: bool = Query(False)):
     """Blend 50% public external trade ideas and 50% live technical signals; invert external ideas only."""
@@ -2157,7 +2251,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
             symbol = str(row.get("symbol") or "").strip().upper()
             if not symbol or symbol in technical_symbols:
                 continue
-            signal = _technical_fallback_signal(market, symbol, interval)
+            signal = _multi_method_technical_signal(market, symbol, interval)
             if not isinstance(signal, dict):
                 continue
             signal_symbol = str(signal.get("symbol") or symbol).strip().upper()
@@ -2170,8 +2264,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
                 "site_context_score": None,
                 "signal_inverted": False,
                 "generated_by_site": True,
-                "description": "50% تحليل فني من شموع السوق الفعلية: تقاطع EMA20/EMA50 وتوافق ثلاثة فريمات ووقف/أهداف محسوبة باستخدام ATR. و50% مخصصة لأفكار المصادر العامة.",
-                "method": "technical_analysis_50_external_public_ideas_50",
+                "description": "50% تحليل فني متعدد المناهج من حركة السعر والشموع والهيكل والاختراق والدعم والمقاومة والحجم وفيبوناتشي، و50% مخصصة لأفكار المصادر العامة.",
+                "method": "multi_method_technical50_external_public_ideas50",
                 "level_source_note": "الدخول من آخر شمعة فعلية، ووقف الخسارة والأهداف محسوبة من ATR ومخاطرة محددة؛ ليست مستويات من مصدر خارجي."
             })
             items.append(signal)
