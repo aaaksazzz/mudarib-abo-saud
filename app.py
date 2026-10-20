@@ -2034,11 +2034,11 @@ def _multi_method_technical_signal(market, symbol, interval):
         e20, e50, e100, e200 = ema20[-1], ema50[-1], ema100[-1], ema200[-1]
 
         # Technical badges use only the four requested EMAs.
-        # Strong = complete alignment; regular = short-term EMA20/EMA50 alignment.
+        # Regular buy/sell also require price to be on the matching side of EMA200.
         bullish_strong = entry > e20 > e50 > e100 > e200
         bearish_strong = entry < e20 < e50 < e100 < e200
-        bullish = entry > e20 > e50
-        bearish = entry < e20 < e50
+        bullish = entry > e20 > e50 and entry > e200
+        bearish = entry < e20 < e50 and entry < e200
         if bullish_strong:
             side, strength = "شراء", "شراء قوي"
         elif bearish_strong:
