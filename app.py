@@ -1662,7 +1662,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), lim
             published = int(raw.get("published_at") or 0)
         except (TypeError, ValueError):
             published = 0
-        if published < cutoff or published > now + 300:
+        if published < cutoff or published > now:
             continue
         stats["recent"] += 1
         title = str(raw.get("title") or "").strip()
@@ -1841,7 +1841,7 @@ def public_news(market: str = Query("all"), limit: int = Query(50, ge=1, le=100)
     unique = {}
     for row in gathered:
         published = int(row.get("published_at") or 0)
-        if published < cutoff or published > now + 300:
+        if published < cutoff or published > now:
             continue
         full_text = row.get("_text", "")
         matched = [m for m in accepted_markets if _public_idea_market_match(m, full_text)]
