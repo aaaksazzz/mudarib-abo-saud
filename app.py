@@ -2299,10 +2299,12 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         # Scan a larger rotating batch on every refresh, using a small worker pool
         # to avoid making each market page wait on symbols one by one.
         scan_batch_size = 20 if market in {"us", "saudi"} else 12
+        scanned_count = 0
         with SCAN_CURSOR_LOCK:
             start = SCAN_CURSORS.get(cursor_key, 0) % len(live_rows)
             SCAN_CURSORS[cursor_key] = (start + min(scan_batch_size, len(live_rows))) % len(live_rows)
         scan_rows = (live_rows[start:] + live_rows[:start])[:min(scan_batch_size, len(live_rows))]
+        scanned_count = len(scan_rows)
         technical_symbols = {str(item.get("symbol") or "").strip().upper() for item in items}
         technical_added = 0
         scan_jobs = []
@@ -2359,7 +2361,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     result = {
         "ok": True, "live": bool(items), "market": market, "interval": interval,
         "items": items[:limit], "count": len(items[:limit]),
-        "scanned": int((external or {}).get("diagnostics", {}).get("fetched", 0)) if isinstance(external, dict) else 0,
+        "scanned": scanned_count,
         "sources_checked": int((external or {}).get("sources_checked", 0)) if isinstance(external, dict) else 0,
         "sources_failed": int((external or {}).get("sources_failed", 0)) if isinstance(external, dict) else 0,
         "skipped_invalid_levels": skipped,
