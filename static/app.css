@@ -52,3 +52,10 @@
 .button:active,.icon-button:active{transform:scale(.98)}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
 @media(max-width:620px){.hero{padding:25px 19px;border-radius:21px}.hero h1{font-size:31px}.hero-actions{display:grid;grid-template-columns:1fr}.hero-actions .button{justify-content:center}.market-grid{gap:10px}}
+
+/* Compact market direction summary */
+.market-direction-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.market-direction-grid .direction-card{min-width:0;gap:4px;padding:10px 12px;border-radius:11px}
+.market-direction-grid .direction-card small{font-size:10px;line-height:1.35}
+.market-direction-grid .direction-card strong{font-size:16px;line-height:1.35;overflow-wrap:anywhere}
+@media(max-width:620px){.market-direction-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.market-direction-grid .direction-card{padding:9px}.market-direction-grid .direction-card strong{font-size:14px}}
