@@ -2427,6 +2427,38 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         PUBLIC_IDEAS_CACHE[cache_key] = (now, result)
     return result
 
+# Persistent background scanner: runs even when no visitor has a market page open.
+AUTO_SCAN_MARKETS = ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex")
+AUTO_SCAN_INTERVALS = ("15m", "1h", "2h", "4h", "1d", "1w", "1M")
+AUTO_SCAN_START_LOCK = threading.Lock()
+AUTO_SCAN_STARTED = False
+
+def _auto_scan_worker():
+    """Continuously rotate through every supported market/timeframe with bounded concurrency."""
+    position = 0
+    jobs = [(market, interval) for interval in AUTO_SCAN_INTERVALS for market in AUTO_SCAN_MARKETS]
+    while True:
+        market, interval = jobs[position % len(jobs)]
+        position += 1
+        try:
+            signal_cards(market, interval=interval, limit=20, refresh=True)
+            print(f"auto scan completed: {market}/{interval}")
+        except Exception as exc:
+            print(f"auto scan failed {market}/{interval}: {type(exc).__name__}")
+        # Keep pressure low on the small hosting instance; rotate to a different pair next.
+        time.sleep(15)
+
+@app.on_event("startup")
+def start_auto_scan_worker():
+    global AUTO_SCAN_STARTED
+    with AUTO_SCAN_START_LOCK:
+        if AUTO_SCAN_STARTED:
+            return
+        worker = threading.Thread(target=_auto_scan_worker, name="market-auto-scanner", daemon=True)
+        worker.start()
+        AUTO_SCAN_STARTED = True
+        print("automatic market scanner started")
+
 @app.get("/api/admin/sections")
 def admin_get_sections(credentials: HTTPBasicCredentials = Depends(security)):
     require_admin(credentials)
