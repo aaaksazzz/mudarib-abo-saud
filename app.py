@@ -2220,8 +2220,16 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
             change is not None and ((side == "شراء" and change > 0) or (side == "بيع" and change < 0))
         )
         site_score = 10 if site_supports_inverted_side else 0
-        # This candidate represents the external/public 50% of the combined methodology.
-        score = 50 + site_score
+        # Rank by observable setup quality, not a made-up win probability:
+        # reward/risk geometry, freshness of the public idea, and market-context alignment.
+        first_rr = target_distances[0] / risk if risk > 0 else 0.0
+        try:
+            age_hours = max(0.0, float(source_item.get("age_hours", 24)))
+        except (TypeError, ValueError, OverflowError):
+            age_hours = 24.0
+        rr_points = min(20.0, max(0.0, first_rr) * 5.0)
+        freshness_points = max(0.0, 15.0 * (1.0 - min(age_hours, 24.0) / 24.0))
+        score = int(round(min(100.0, 50.0 + rr_points + freshness_points + site_score)))
         item = dict(source_item)
         item.update({
             "direction": side,
@@ -2292,8 +2300,13 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
             signal_symbol = str(signal.get("symbol") or symbol).strip().upper()
             if signal_symbol in technical_symbols or not _public_idea_levels_ordered(signal):
                 continue
+            # Preserve the technical engine's computed score when available.
+            try:
+                technical_score = int(max(0, min(100, float(signal.get("ai_score", 50)))))
+            except (TypeError, ValueError, OverflowError):
+                technical_score = 50
             signal.update({
-                "ai_score": 50,
+                "ai_score": technical_score,
                 "external_source_weight": 50,
                 "site_analysis_weight": 50,
                 "site_context_score": None,
