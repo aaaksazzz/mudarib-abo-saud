@@ -2096,20 +2096,14 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                              "message": "الفريم غير مدعوم."}, status_code=422)
 
     now = int(time.time())
-    cache_key = ("external50_technical50_v2", market, interval, limit)
+    cache_key = ("technical_only_v1", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if not refresh and cached and now - cached[0] < 90:
             return {**cached[1], "cached": True}
 
-    # Half of the final list comes from external/public ideas (direction inverted).
-    # The other half comes from the site technical engine using real candles and ATR levels.
-    try:
-        external = public_ideas(market=market, interval=interval, limit=min(50, max(limit * 3, limit)),
-                                discover=True, refresh=refresh)
-    except Exception as exc:
-        print(f"external ideas failed {market}/{interval}: {type(exc).__name__}")
-        external = {"ok": False, "items": [], "message": "تعذر الوصول إلى مصادر الأفكار العامة مؤقتًا."}
+    # Technical-only mode: public/external idea feeds are intentionally not used.
+    external = {"ok": True, "items": [], "diagnostics": {"fetched": 0}, "sources_checked": 0, "sources_failed": 0}
 
     # Live site-market data provides technical candidates and contextual confirmation.
     market_changes = {}
@@ -2272,12 +2266,9 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             continue
         items.append(item)
 
-    # Keep a balanced quota: up to half external ideas and half technical signals.
-    # Scan a tiny rotating batch per request; candle providers can be slow or geographically blocked.
-    external_quota = max(1, limit // 2)
-    external_items = items[:external_quota]
-    items = list(external_items)
-    technical_quota = max(1, limit - len(external_items))
+    # Fill the requested list from technical signals only; no public idea sources.
+    items = []
+    technical_quota = limit
     live_rows = (snapshot.get("items", []) if isinstance(snapshot, dict) else [])
     if live_rows:
         cursor_key = (market, interval)
@@ -2327,13 +2318,13 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 technical_score = 50
             signal.update({
                 "ai_score": technical_score,
-                "external_source_weight": 50,
-                "site_analysis_weight": 50,
+                "external_source_weight": 0,
+                "site_analysis_weight": 100,
                 "site_context_score": None,
                 "signal_inverted": False,
                 "generated_by_site": True,
-                "description": "50% تحليل فني متعدد المناهج من حركة السعر والشموع والهيكل والاختراق والدعم والمقاومة والحجم وفيبوناتشي، و50% مخصصة لأفكار المصادر العامة.",
-                "method": "multi_method_technical50_external_public_ideas50",
+                "description": "فرصة ناتجة من التحليل الفني وبيانات السوق الفعلية فقط؛ لا تعتمد على مصادر أفكار عامة.",
+                "method": "technical_only_multi_method",
                 "level_source_note": "الدخول من آخر شمعة فعلية، ووقف الخسارة والأهداف محسوبة من ATR ومخاطرة محددة؛ ليست مستويات من مصدر خارجي."
             })
             items.append(signal)
@@ -2352,13 +2343,13 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "source_sell_ideas": source_sell_count,
         "inverted_buy_opportunities": sum(1 for item in items if item.get("direction") == "شراء"),
         "inverted_sell_opportunities": sum(1 for item in items if item.get("direction") == "بيع"),
-        "external_source_weight": 50, "site_analysis_weight": 50,
-        "technical_fallback_used": any(item.get("generated_by_site") for item in items),
-        "technical_opportunities": sum(1 for item in items if item.get("generated_by_site")),
-        "external_opportunities": sum(1 for item in items if not item.get("generated_by_site")),
-        "message": ("تم دمج فرص المصادر العامة بعد عكس إشارتها مع الفرص الناتجة من التحليل الفني الفعلي بنسبة مستهدفة 50/50؛ العدد النهائي يعتمد على الفرص الصالحة المتاحة."
+        "external_source_weight": 0, "site_analysis_weight": 100,
+        "technical_fallback_used": False,
+        "technical_opportunities": len(items),
+        "external_opportunities": 0,
+        "message": ("تم الفحص بالتحليل الفني وبيانات السوق فقط؛ العدد النهائي يعتمد على تحقق شروط الإشارة."
                     if items else
-                    "ما لقينا فرص مكتملة وصالحة في دفعة الفحص الحالية؛ لم تُنشأ صفقات وهمية.")
+                    "ما لقينا فرصًا فنية مكتملة في دفعة الفحص الحالية؛ لم تُنشأ صفقات وهمية.")
     }
     # Persist the latest scan per market/timeframe so users can reopen the page
     # without having to trigger a fresh scan.
@@ -2426,7 +2417,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                     "interval": interval, "direction": direction, "entry": entry,
                     "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3,
                     "result": "OPEN", "pnl_pct": 0, "created_at": now,
-                    "source": item.get("source") or item.get("title") or "EMA / public scan"
+                    "source": item.get("method") or "technical-only scan"
                 })
                 active_keys.add(active_key)
             write_json_file(RESULTS_PATH, journal[:2000])
