@@ -2297,7 +2297,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(1
         with SCAN_CURSOR_LOCK:
             start = SCAN_CURSORS.get(cursor_key, 0) % len(live_rows)
             SCAN_CURSORS[cursor_key] = (start + min(2, len(live_rows))) % len(live_rows)
-        scan_rows = (live_rows[start:] + live_rows[:start])[:min(2, len(live_rows))]
+        scan_batch_size = 8 if market in {"us", "saudi"} else 4
+        scan_rows = (live_rows[start:] + live_rows[:start])[:min(scan_batch_size, len(live_rows))]
         technical_symbols = {str(item.get("symbol") or "").strip().upper() for item in items}
         technical_added = 0
         for row in scan_rows:
