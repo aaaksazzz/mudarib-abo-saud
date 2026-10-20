@@ -221,10 +221,46 @@
     await load();
   }
   async function renderNews() {
-    view.innerHTML=pageHeader("أخبار الأسواق","الأخبار العامة تساعد على فهم السياق ولا تعتبر توصية تداول.","المتابعة")+
-      '<section class="panel"><div class="panel-head"><h2>تصفية الأخبار</h2><select id="newsMarket" class="frame" aria-label="اختر السوق"><option value="all">كل الأسواق</option><option value="crypto">العملات الرقمية</option><option value="us">الأسهم الأمريكية</option><option value="saudi">السوق السعودي</option><option value="forex">الفوركس والذهب</option><option value="contracts">العقود الأمريكية</option><option value="spot">سبوت</option><option value="futures">فيوتشر</option></select></div><div id="newsContent" class="loading">اختر السوق أو انتظر تحميل الأخبار…</div></section>';
-    const load=async()=>{const out=$("newsContent");out.innerHTML='<div class="loading">جاري تحميل الأخبار…</div>';try{const d=await getJSON("/api/news?market="+encodeURIComponent($("newsMarket").value)+"&limit=30");const items=d.items||[];out.innerHTML=items.length?'<div class="feature-grid">'+items.map(x=>'<article class="feature-card"><span>◉</span><strong>'+esc(x.title||x.headline||"خبر سوق")+'</strong><small>'+esc(x.market||x.source||"مصدر عام")+' · '+timeText(x.published_at)+'</small><p class="muted">'+esc(x.description||x.summary||"")+'</p></article>').join("")+'</div>':empty("لا توجد أخبار مطابقة",d.message||"قد تكون المصادر غير متاحة مؤقتًا.")}catch(err){out.innerHTML=empty("تعذر تحميل الأخبار",err.message)}};
-    $("newsMarket").addEventListener("change",load);await load();
+    view.innerHTML=pageHeader("أخبار الأسواق","كل خبر يوضح السوق المتأثر والأصل المذكور والأثر المحتمل، مع رابط للمصدر. تصنيف الأثر آلي وأولي وليس توصية شراء أو بيع.","المتابعة")+
+      '<section class="panel"><div class="panel-head"><h2>اختر السوق</h2><select id="newsMarket" class="frame" aria-label="اختر السوق"><option value="all">كل الأسواق</option><option value="crypto">العملات الرقمية</option><option value="us">الأسهم الأمريكية</option><option value="saudi">السوق السعودي</option><option value="forex">الفوركس والذهب</option><option value="contracts">العقود الأمريكية</option><option value="spot">سبوت</option><option value="futures">فيوتشر</option></select><button id="newsRefresh" class="btn" type="button">↻ تحديث الأخبار</button></div><div class="notice" style="margin:12px 0">الإيجابي/السلبي يعني الأثر المحتمل من نص الخبر فقط؛ لا يعني أن الأصل سيرتفع أو ينخفض حتمًا. إذا لم يذكر الخبر أصلًا واضحًا سيظهر «الأصل غير محدد» بدل التخمين.</div><div id="newsSummary" class="stats-grid"></div><div id="newsContent" class="loading">جاري تجهيز الأخبار…</div></section>';
+    const marketNames={all:"كل الأسواق",crypto:"العملات الرقمية",us:"الأسهم الأمريكية",saudi:"السوق السعودي",forex:"الفوركس والذهب",contracts:"العقود الأمريكية",spot:"سبوت",futures:"فيوتشر",alpha:"Binance Alpha"};
+    const escAttr=s=>esc(String(s||"")).replace(/"/g,"&quot;");
+    const load=async(refresh=false)=>{
+      const out=$("newsContent"),summary=$("newsSummary"),market=$("newsMarket").value;
+      out.innerHTML='<div class="loading">جاري تحميل الأخبار من المصادر العامة…</div>';
+      summary.innerHTML="";
+      try{
+        const d=await getJSON("/api/news?market="+encodeURIComponent(market)+"&limit=40"+(refresh?"&refresh=1":""));
+        const items=Array.isArray(d.items)?d.items:[];
+        const positive=items.filter(x=>/إيجابي|positive/i.test(x.direction_ar||"")).length;
+        const negative=items.filter(x=>/سلبي|negative/i.test(x.direction_ar||"")).length;
+        const unclear=items.length-positive-negative;
+        summary.innerHTML=[
+          ["الأخبار المعروضة",items.length],
+          ["أثر إيجابي محتمل",positive],
+          ["أثر سلبي محتمل",negative],
+          ["الأثر غير محسوم",unclear]
+        ].map(x=>'<article class="stat-card"><small>'+esc(x[0])+'</small><strong>'+esc(x[1])+'</strong></article>').join("");
+        if(!items.length){out.innerHTML=empty("ما فيه أخبار مطابقة",d.message||"جرّب سوقًا آخر أو حدّث الأخبار.");return;}
+        out.innerHTML='<div class="feature-grid">'+items.map(x=>{
+          const labels=Array.isArray(x.asset_labels)?x.asset_labels.filter(Boolean):[];
+          const direction=String(x.direction_ar||"غير واضح");
+          const positiveLike=/إيجابي|positive/i.test(direction);
+          const negativeLike=/سلبي|negative/i.test(direction);
+          const impact=positiveLike?"أثر إيجابي محتمل":negativeLike?"أثر سلبي محتمل":"الأثر غير محسوم";
+          const badgeColor=positiveLike?"#16a34a":negativeLike?"#dc2626":"#64748b";
+          const assets=labels.length?labels.join("، "):"الأصل غير محدد في الخبر";
+          const source=String(x.source||"مصدر الخبر");
+          const url=String(x.url||"");
+          const sourceLink=/^https:\/\//i.test(url)?'<a class="read" href="'+escAttr(url)+'" target="_blank" rel="noopener noreferrer">قراءة المصدر ↗</a>':"";
+          const published=x.published_at?timeText(x.published_at):"وقت النشر غير متوفر";
+          return '<article class="feature-card post" style="display:flex;flex-direction:column;gap:9px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><span class="badge">'+esc(marketNames[x.market]||marketNames[market]||"السوق")+'</span><span style="font-size:12px;font-weight:800;color:'+badgeColor+'">'+esc(impact)+'</span></div><strong style="font-size:16px;line-height:1.7">'+esc(x.title||x.headline||"خبر سوق")+'</strong><div class="muted" style="font-size:12px">الأصل المذكور: <b>'+esc(assets)+'</b></div><p class="muted">'+esc(x.description||x.summary||"لا يتوفر ملخص إضافي من المصدر.")+'</p><small class="muted">'+esc(source)+' · '+esc(published)+'</small>'+sourceLink+'</article>';
+        }).join("")+'</div>';
+      }catch(err){summary.innerHTML="";out.innerHTML=empty("تعذر تحميل الأخبار",err.message||"تحقق من اتصال الخدمة ثم أعد المحاولة.");}
+    };
+    $("newsMarket").addEventListener("change",()=>load(false));
+    $("newsRefresh").addEventListener("click",()=>load(true));
+    await load(false);
   }
   function renderAnalysis() {
     const items=[["حركة السعر","قراءة القمم والقيعان، الاتجاه، ومناطق الدعم والمقاومة."],["الاتجاه متعدد الفريمات","مقارنة الإطار الأكبر بفريم الدخول لتجنب التعارض."],["السيولة وبنية السوق","شرح مفاهيم BOS وCHOCH ومناطق السيولة بصورة تعليمية."],["إدارة المخاطر","تحديد نقطة إبطال الفكرة وحساب المخاطرة قبل التفكير في الهدف."],["الحجم والزخم","استخدام الحجم والزخم كسياق مساعد، لا كضمان مستقل."],["النماذج السعرية","فهم النماذج مع انتظار تأكيد سعري بدل توقع النتيجة مسبقًا."]];
