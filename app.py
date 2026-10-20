@@ -107,7 +107,8 @@ def _valid_market_session(token):
         return False
 
 def _is_market_protected_path(path):
-    if path.startswith(("/markets/", "/market/")) or path in {"/trades", "/radar", "/gold"}:
+    # Legacy URLs remain redirects; the canonical market page and data stay locked.
+    if path.startswith("/markets/"):
         return True
     return path.startswith((
         "/api/market/", "/api/market-direction", "/api/signals/",
