@@ -63,7 +63,7 @@ input:focus{border-color:#e8b84b}button{width:100%;height:50px;margin-top:16px;b
 <button type="submit">دخول</button><div id="error" role="alert"></div></form><div class="hint">صفحة دخول محمية</div></main>
 <script>
 document.getElementById('login').addEventListener('submit',async function(e){e.preventDefault();const pin=document.getElementById('pin').value;const err=document.getElementById('error');err.textContent='';
-try{const r=await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})});if(r.ok){location.reload();return}err.textContent='الرقم السري غير صحيح';document.getElementById('pin').select()}catch(_){err.textContent='تعذر الاتصال، حاول مرة أخرى'}});
+try{const r=await fetch('/market-unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})});if(r.ok){location.reload();return}err.textContent='الرقم السري غير صحيح';document.getElementById('pin').select()}catch(_){err.textContent='تعذر الاتصال، حاول مرة أخرى'}});
 </script></body></html>"""
 
 def _site_session_token(expiry):
@@ -86,14 +86,73 @@ def _valid_site_session(token):
 # Public market pages and SEO routes are open by default. Enable the optional site-wide PIN gate only deliberately.
 SITE_PASSWORD_GATE = os.getenv("SITE_PASSWORD_GATE", "false").strip().lower() in {"1", "true", "yes", "on"}
 
+def _market_session_token(expiry):
+    secret = os.getenv("MARKET_ACCESS_PASSWORD", "").encode("utf-8")
+    msg = ("market:" + str(expiry)).encode("ascii")
+    sig = hmac.new(secret, msg, hashlib.sha256).hexdigest()
+    return str(expiry) + "." + sig
+
+def _valid_market_session(token):
+    try:
+        expiry_text, supplied = token.split(".", 1)
+        expiry = int(expiry_text)
+        if expiry < int(time.time()):
+            return False
+        secret = os.getenv("MARKET_ACCESS_PASSWORD", "").encode("utf-8")
+        if not secret:
+            return False
+        expected = _market_session_token(expiry).split(".", 1)[1]
+        return secrets.compare_digest(supplied, expected)
+    except (ValueError, TypeError):
+        return False
+
+def _is_market_protected_path(path):
+    if path.startswith(("/markets/", "/market/")) or path in {"/trades", "/radar", "/gold"}:
+        return True
+    return path.startswith((
+        "/api/market/", "/api/market-direction", "/api/signals/",
+        "/api/public-ideas", "/api/trade-chart-data", "/api/tasi/analysis",
+        "/api/universe-counts"
+    ))
+
 @app.middleware("http")
 async def site_password_gate(request: Request, call_next):
+    path = request.url.path
+
+    # Verify the market PIN on the server and protect market data APIs as well as pages.
+    if path == "/market-unlock" and request.method == "POST":
+        try:
+            payload = await request.json()
+            pin = str(payload.get("pin", "")) if isinstance(payload, dict) else ""
+        except Exception:
+            pin = ""
+        expected_password = os.getenv("MARKET_ACCESS_PASSWORD", "")
+        if not expected_password:
+            return JSONResponse({"detail": "إعداد MARKET_ACCESS_PASSWORD مفقود في إعدادات الخدمة."}, status_code=503)
+        if not secrets.compare_digest(pin, expected_password):
+            return JSONResponse({"detail": "الرقم السري غير صحيح"}, status_code=401)
+        expiry = int(time.time()) + 60 * 60 * 24 * 7
+        response = JSONResponse({"ok": True})
+        response.set_cookie("market_session", _market_session_token(expiry),
+                            httponly=True, secure=True, samesite="lax", path="/",
+                            max_age=60 * 60 * 24 * 7)
+        return response
+
+    if path == "/health" or (path.startswith("/static/") and not path.lower().endswith((".html", ".htm"))):
+        return await call_next(request)
+
+    if _is_market_protected_path(path):
+        if not _valid_market_session(request.cookies.get("market_session", "")):
+            if path.startswith("/api/") or request.method not in ("GET", "HEAD"):
+                return JSONResponse({"detail": "أدخل الرقم السري لفتح الأسواق."}, status_code=401)
+            return HTMLResponse(LOGIN_HTML, status_code=200)
+
+    # Optional legacy whole-site gate remains independent of the markets-only gate.
     if not SITE_PASSWORD_GATE:
         return await call_next(request)
 
-    path = request.url.path
-    if path in ("/health", "/login"):
-        if path == "/login" and request.method == "POST":
+    if path == "/login":
+        if request.method == "POST":
             try:
                 payload = await request.json()
                 pin = str(payload.get("pin", "")) if isinstance(payload, dict) else ""
@@ -112,9 +171,6 @@ async def site_password_gate(request: Request, call_next):
 
     token = request.cookies.get("site_session", "")
     if _valid_site_session(token):
-        return await call_next(request)
-
-    if path.startswith("/static/") and not path.lower().endswith((".html", ".htm")):
         return await call_next(request)
 
     if path.startswith("/api/") or request.method not in ("GET", "HEAD"):
