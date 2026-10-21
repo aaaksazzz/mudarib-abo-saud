@@ -319,19 +319,23 @@
     load();
   }
   function renderProtectedSection(title, renderer) {
+    const unlockKey = "stpProtectedSectionsUnlockedAt";
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
     try {
-      if (sessionStorage.getItem("stpProtectedSectionsUnlocked") === "1") {
+      const unlockedAt = Number(localStorage.getItem(unlockKey) || 0);
+      if (unlockedAt > 0 && Date.now() - unlockedAt < sevenDaysMs) {
         renderer();
         return;
       }
+      if (unlockedAt > 0) localStorage.removeItem(unlockKey);
     } catch (_) {}
     view.innerHTML = pageHeader(title, "هذا القسم مقفل برقم سري.","قسم محمي") +
-      '<section class="panel" style="max-width:460px;margin:24px auto"><div style="text-align:center;font-size:34px;margin-bottom:8px">🔒</div><h2 style="text-align:center">إدخال الرقم السري</h2><p class="muted" style="text-align:center;margin:8px 0 18px">أدخل الرقم لفتح القسم المحمي.</p><form id="protectedSectionForm" style="display:grid;gap:12px"><label class="field">الرقم السري<input id="protectedSectionPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" required placeholder="••••" style="text-align:center;letter-spacing:.35em;font-size:22px"></label><button class="button primary" type="submit">فتح القسم</button></form><div id="protectedSectionMessage" class="muted" role="alert" style="margin-top:10px;text-align:center"></div></section>';
+      '<section class="panel" style="max-width:460px;margin:24px auto"><div style="text-align:center;font-size:34px;margin-bottom:8px">🔒</div><h2 style="text-align:center">إدخال الرقم السري</h2><p class="muted" style="text-align:center;margin:8px 0 18px">بعد الفتح يبقى القسم مفتوحًا لمدة 7 أيام، ثم يُقفل تلقائيًا.</p><form id="protectedSectionForm" style="display:grid;gap:12px"><label class="field">الرقم السري<input id="protectedSectionPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" required placeholder="••••" style="text-align:center;letter-spacing:.35em;font-size:22px"></label><button class="button primary" type="submit">فتح القسم</button></form><div id="protectedSectionMessage" class="muted" role="alert" style="margin-top:10px;text-align:center"></div></section>';
     $("protectedSectionForm").addEventListener("submit", e => {
       e.preventDefault();
       const pin = $("protectedSectionPin").value;
       if (pin === "2341") {
-        try { sessionStorage.setItem("stpProtectedSectionsUnlocked", "1"); } catch (_) {}
+        try { localStorage.setItem(unlockKey, String(Date.now())); } catch (_) {}
         renderer();
       } else {
         $("protectedSectionMessage").textContent = "الرقم السري غير صحيح.";
