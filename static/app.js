@@ -347,7 +347,7 @@
   async function render() {
     activateDrawer();
     if(path==="/"){renderHome();return}
-    if(marketKey){renderMarketPage(marketKey);return}
+    if(marketKey){if(marketKey==="futures"){renderProtectedSection("فيوتشر Binance",()=>renderMarketPage(marketKey));return}renderMarketPage(marketKey);return}
     if(path==="/market-direction"){renderMarketDirection();return}
     if(path==="/results"){await renderResults();return}
     if(path==="/news"){renderProtectedSection("أخبار الأسواق",()=>{renderNews().catch(err=>{view.innerHTML=pageHeader("أخبار الأسواق","تعذر تحميل الأخبار.","الأخبار")+empty("تعذر عرض الأخبار",err.message)})});return}
