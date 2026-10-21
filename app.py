@@ -2125,7 +2125,7 @@ def _multi_method_technical_signal(market, symbol, interval):
             "analysis_methods": ["EMA200 مقابل EMA50 لتحديد الاتجاه", "السعر مقابل EMA20",
                                  "ميل EMA20", "اتجاه الشمعة الأخيرة", "ATR لإدارة المخاطر"],
             "technical_methods_count": 4, "technical_method_scope_note": "هذه الإشارة تستخدم أربعة فحوص فنية؛ لا تدّعي تشغيل 200 منهج.", "age_hours": 0,
-            "generated_by_site": True, "signal_inverted": True,
+            "generated_by_site": True, "signal_inverted": False,
             "raw_text": "إشارة محسوبة من شموع السوق الفعلية؛ لا تمثل نسبة نجاح مثبتة."
         }
     except (urllib.error.URLError, TimeoutError, OSError, KeyError, TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError) as exc:
@@ -2134,7 +2134,7 @@ def _multi_method_technical_signal(market, symbol, interval):
 
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20), refresh: bool = Query(False)):
-    """Blend 90% inverted public ideas and 10% inverted local technical signals."""
+    """Blend public ideas and local technical signals without reversing their directions."""
     market = (market or "").strip().lower()
     allowed_markets = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
     if market not in allowed_markets:
@@ -2151,7 +2151,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         if not refresh and cached and now - cached[0] < 90:
             return {**cached[1], "cached": True}
 
-    # 90% public ideas from open sources (last 24h); 10% local technical confirmation.
+    # 90% public ideas from open sources (last 24h); 10% local technical confirmation, original direction.
     try:
         external = public_ideas(market, interval, limit=50, discover=True, refresh=refresh)
         if not isinstance(external, dict):
@@ -2213,33 +2213,27 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         if not all(math.isfinite(x) and x > 0 for x in nums) or not old_targets:
             skipped += 1
             continue
-        # Invert the public idea around its entry. Explicit source targets are mirrored;
-        # missing target distances are supplemented from the source stop-risk (R), and
-        # are labelled as site-calculated rather than misrepresented as source levels.
+        # Use the public idea in its original direction; never invert buy/sell.
         risk = abs(entry - old_stop)
         if risk <= 0:
             skipped += 1
             continue
-        # Safety guard: reject ideas whose mirrored stop would put an excessive
-        # fraction of entry capital at risk. These are price-distance percentages,
-        # not account-level loss estimates or guarantees.
         stop_distance_pct = risk / entry * 100
         if not math.isfinite(stop_distance_pct) or stop_distance_pct > 15.0:
             skipped += 1
             continue
-        if original_side == "شراء":
+        side = original_side
+        if side == "شراء":
             if not (old_stop < entry and all(v > entry for v in old_targets)):
                 skipped += 1
                 continue
-            side = "بيع"
-            stop = entry + risk
+            stop = old_stop
             target_distances = sorted({round(v - entry, 12) for v in old_targets if v > entry})
         else:
             if not (old_stop > entry and all(v < entry for v in old_targets)):
                 skipped += 1
                 continue
-            side = "شراء"
-            stop = entry - risk
+            stop = old_stop
             target_distances = sorted({round(entry - v, 12) for v in old_targets if v < entry})
         if not target_distances:
             skipped += 1
@@ -2268,10 +2262,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
 
         symbol = str(source_item.get("symbol") or "").strip().upper()
         change = market_changes.get(symbol)
-        site_supports_inverted_side = (
+        site_supports_original_side = (
             change is not None and ((side == "شراء" and change > 0) or (side == "بيع" and change < 0))
         )
-        site_score = 10 if site_supports_inverted_side else 0
+        site_score = 10 if site_supports_original_side else 0
         # Rank by observable setup quality, not a made-up win probability:
         # reward/risk geometry, freshness of the public idea, and market-context alignment.
         first_rr = target_distances[0] / risk if risk > 0 else 0.0
@@ -2286,8 +2280,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         item.update({
             "direction": side,
             "original_direction": original_side,
-            "title": f"{side} {symbol} — عكس فكرة مصدر عام",
-            "description": "فرصة من فكرة تداول عامة منشورة خلال آخر 24 ساعة؛ عُكس اتجاه الفكرة وفق إعداد الاستراتيجية، مع تأكيد فني محلي محدود بنسبة 10%.",
+            "title": f"{side} {symbol} — فكرة مصدر عام بالاتجاه الأصلي",
+            "description": "فرصة من فكرة تداول عامة منشورة خلال آخر 24 ساعة؛ اتجاه الشراء أو البيع محفوظ كما ورد في المصدر، مع تأكيد فني محلي محدود بنسبة 10%.",
             "levels": {
                 "entry": entry, "stop_loss": stop,
                 "tp1": targets[0], "tp2": targets[1], "tp3": targets[2]
@@ -2301,9 +2295,9 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             "has_complete_levels": True,
             "levels_completed_by_site": levels_completed_by_site,
             "level_source_note": ("المصدر قدّم بعض المستويات؛ المستويات الناقصة محسوبة رياضيًا من مسافة الدخول إلى وقف المصدر (R)، وليست منقولة عن المصدر."
-                                  if levels_completed_by_site else "المستويات من المصدر العام ثم عُكست حول الدخول."),
+                                  if levels_completed_by_site else "المستويات محفوظة من المصدر العام دون عكس."),
             "source_timeframe_missing": bool(source_item.get("interval_missing_in_source")),
-            "method": "external_public_ideas_90_technical_analysis_10_inverted"
+            "method": "external_public_ideas_90_technical_analysis_10"
         })
         # Final guard: never display malformed or incorrectly ordered levels.
         if not _public_idea_levels_ordered(item):
@@ -2376,43 +2370,30 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 technical_score = int(max(0, min(100, float(signal.get("ai_score", 50)))))
             except (TypeError, ValueError, OverflowError):
                 technical_score = 50
-            # Invert local technical signals too, keeping all prices on the correct side of entry.
+            # Keep the technical engine's original direction and price levels.
             raw_direction = str(signal.get("direction") or "")
             levels = signal.get("levels") if isinstance(signal.get("levels"), dict) else {}
             try:
                 entry = float(levels["entry"])
-                old_stop = float(levels["stop_loss"])
-                old_targets = [float(levels[k]) for k in ("tp1", "tp2", "tp3")]
+                stop = float(levels["stop_loss"])
+                targets = [float(levels[k]) for k in ("tp1", "tp2", "tp3")]
             except (KeyError, TypeError, ValueError, OverflowError):
                 continue
-            if raw_direction not in {"شراء", "بيع"} or not all(math.isfinite(v) and v > 0 for v in [entry, old_stop, *old_targets]):
+            if raw_direction not in {"شراء", "بيع"} or not all(math.isfinite(v) and v > 0 for v in [entry, stop, *targets]):
                 continue
-            risk = abs(entry - old_stop)
-            if risk <= 0:
-                continue
-            if raw_direction == "شراء":
-                inverted_direction = "بيع"
-                stop = entry + risk
-                targets = sorted([entry - abs(target - entry) for target in old_targets], reverse=True)
-            else:
-                inverted_direction = "شراء"
-                stop = entry - risk
-                targets = sorted([entry + abs(target - entry) for target in old_targets])
-            if stop <= 0 or any(target <= 0 for target in targets):
-                continue
-            signal["direction"] = inverted_direction
-            signal["title"] = f"{inverted_direction} {signal_symbol} — إشارة فنية معكوسة"
+            signal["direction"] = raw_direction
+            signal["title"] = f"{raw_direction} {signal_symbol} — إشارة فنية"
             signal["levels"] = {"entry": entry, "stop_loss": stop, "tp1": targets[0], "tp2": targets[1], "tp3": targets[2]}
             signal.update({
                 "ai_score": technical_score,
                 "external_source_weight": 0,
                 "site_analysis_weight": 100,
                 "site_context_score": None,
-                "signal_inverted": True,
+                "signal_inverted": False,
                 "generated_by_site": True,
-                "description": "فرصة من التحليل الفني المحلي بعد عكس اتجاه الإشارة، ضمن الحصة المحدودة البالغة نحو 10% من النتائج.",
-                "method": "technical_confirmation_10pct_inverted",
-                "level_source_note": "الدخول من آخر شمعة فعلية؛ وقف الخسارة والأهداف عُكست رياضيًا حول الدخول من مستويات التحليل الفني المحلي."
+                "description": "فرصة من التحليل الفني المحلي بالاتجاه الأصلي دون عكس الإشارة، ضمن الحصة المحدودة البالغة نحو 10% من النتائج.",
+                "method": "technical_confirmation_10pct",
+                "level_source_note": "الدخول ووقف الخسارة والأهداف من التحليل الفني المحلي دون عكس."
             })
             if not _public_idea_levels_ordered(signal):
                 continue
