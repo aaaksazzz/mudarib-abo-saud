@@ -2062,10 +2062,11 @@ def _multi_method_technical_signal(market, symbol, interval):
             return None
         e20, e50, e100, e200 = (seq[-1] for seq in series)
 
-        # Require the complete four-EMA stack and price on the correct side of EMA20.
-        if e200 < e100 < e50 < e20 and entry > e20:
+        # EMA200 sets the allowed trade direction on every supported market/timeframe.
+        # Entry confirmation must agree with that direction; never invert a signal.
+        if entry > e200 and e200 < e100 < e50 < e20 and entry > e20:
             side = "شراء"
-        elif e200 > e100 > e50 > e20 and entry < e20:
+        elif entry < e200 and e200 > e100 > e50 > e20 and entry < e20:
             side = "بيع"
         else:
             return None
@@ -2097,15 +2098,15 @@ def _multi_method_technical_signal(market, symbol, interval):
         digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
         fmt = lambda value: round(float(value), digits)
         return {
-            "source": "استراتيجية ترتيب EMA200/EMA100/EMA50/EMA20",
-            "title": f"{side} {symbol} — ترتيب المتوسطات الأربعة",
+            "source": "EMA200 direction + EMA100/EMA50/EMA20 confirmation",
+            "title": f"{'شراء قوي' if side == 'شراء' else 'بيع قوي'} {symbol} — اتجاه EMA200 مؤكد",
             "description": (
-                "شراء: EMA200 < EMA100 < EMA50 < EMA20 والسعر فوق EMA20."
+                "شراء قوي فقط: السعر فوق EMA200 وترتيب المتوسطات EMA200 < EMA100 < EMA50 < EMA20 والسعر فوق EMA20."
                 if side == "شراء" else
-                "بيع: EMA200 > EMA100 > EMA50 > EMA20 والسعر تحت EMA20."
-            ) + " وقف الخسارة والأهداف محسوبة من ATR وباتجاه الصفقة.",
+                "بيع قوي فقط: السعر تحت EMA200 وترتيب المتوسطات EMA200 > EMA100 > EMA50 > EMA20 والسعر تحت EMA20."
+            ) + " لا تُعرض صفقة عكس اتجاه EMA200. وقف الخسارة والأهداف محسوبة من ATR.",
             "url": "", "published_at": int(time.time()), "market": market,
-            "direction": side, "signal_strength": side, "symbol": symbol, "interval": interval,
+            "direction": side, "signal_strength": ("شراء قوي" if side == "شراء" else "بيع قوي"), "symbol": symbol, "interval": interval,
             "levels": {"entry": fmt(entry), "stop_loss": fmt(stop), "tp1": fmt(targets[0]),
                        "tp2": fmt(targets[1]), "tp3": fmt(targets[2])},
             "has_complete_levels": True, "ai_score": 75,
@@ -2194,7 +2195,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         if not all(math.isfinite(x) and x > 0 for x in nums) or not old_targets:
             skipped += 1
             continue
-        # Validate original geometry, then invert the trade direction.
+        # Keep the source trade direction; never invert it against EMA200 or the source.
         risk = abs(entry - old_stop)
         if risk <= 0:
             skipped += 1
@@ -2213,7 +2214,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 skipped += 1
                 continue
             target_distances = sorted({round(entry - v, 12) for v in old_targets if v < entry})
-        side = "بيع" if original_side == "شراء" else "شراء"
+        side = original_side
         if not target_distances:
             skipped += 1
             continue
@@ -2259,7 +2260,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             "signal_strength": signal_strength,
             "original_direction": original_side,
             "title": f"{side} {symbol} — فكرة من مصدر خارجي",
-            "description": "فكرة خارجية معكوسة الاتجاه؛ أُعيد حساب وقف الخسارة والأهداف حول سعر الدخول.",
+            "description": "فكرة خارجية بنفس اتجاه المصدر؛ أُعيد ترتيب مستوياتها والتحقق من سلامتها دون عكس الإشارة.",
             "levels": {
                 "entry": entry, "stop_loss": stop,
                 "tp1": targets[0], "tp2": targets[1], "tp3": targets[2]
@@ -2268,7 +2269,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             "site_context_score": site_score,
             "external_source_weight": 90,
             "site_analysis_weight": 10,
-            "signal_inverted": True,
+            "signal_inverted": False,
             "generated_by_site": False,
             "has_complete_levels": True,
             "levels_completed_by_site": levels_completed_by_site,
