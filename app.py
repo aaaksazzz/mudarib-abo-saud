@@ -2136,7 +2136,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                              "message": "الفريم غير مدعوم."}, status_code=422)
 
     now = int(time.time())
-    cache_key = ("tp3_profit_rank_v1", market, interval, limit)
+    cache_key = ("canonical_market_direction_v2", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if not refresh and cached and now - cached[0] < 90:
