@@ -1,4 +1,5 @@
 import math
+import os
 import time
 
 from fastapi.testclient import TestClient
@@ -6,7 +7,35 @@ from fastapi.testclient import TestClient
 import app as app_module
 from app import app, write_json_file
 
-client = TestClient(app)
+# Protected market pages and APIs require a valid seven-day session in production.
+# Use HTTPS in tests so the Secure cookie behaves like the deployed service.
+client = TestClient(app, base_url="https://testserver")
+client.cookies.set(
+    "market_session",
+    app_module._market_session_token(int(time.time()) + 60 * 60),
+    secure=True,
+    path="/",
+)
+
+
+def test_news_and_tasi_analysis_pages_require_market_pin():
+    anonymous = TestClient(app, base_url="https://testserver")
+    for path in ("/news", "/tasi-analysis"):
+        response = anonymous.get(path)
+        assert response.status_code == 200
+        assert "أدخل الرقم السري للمتابعة" in response.text
+    api_response = anonymous.get("/api/news?market=spot")
+    assert api_response.status_code == 401
+
+
+def test_market_pin_session_lasts_seven_days():
+    anonymous = TestClient(app, base_url="https://testserver")
+    response = anonymous.post("/market-unlock", json={"pin": os.getenv("MARKET_ACCESS_PASSWORD") or os.getenv("SITE_PASSWORD", "2341")})
+    assert response.status_code == 200
+    cookie = response.headers.get("set-cookie", "")
+    assert "max-age=604800" in cookie.lower()
+    assert "httponly" in cookie.lower()
+    assert "secure" in cookie.lower()
 
 
 def test_health_endpoint_is_available():
