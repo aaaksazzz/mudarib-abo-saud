@@ -2136,20 +2136,14 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                              "message": "الفريم غير مدعوم."}, status_code=422)
 
     now = int(time.time())
-    cache_key = ("normal_four_signal_types_v1", market, interval, limit)
+    cache_key = ("site_only_four_signal_types_v1", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if not refresh and cached and now - cached[0] < 90:
             return {**cached[1], "cached": True}
 
-    # Use public ideas in their original direction; technical analysis only supplements missing opportunities.
-    try:
-        external = public_ideas(market, interval, limit=50, discover=True, refresh=refresh)
-        if not isinstance(external, dict):
-            external = {"ok": False, "items": [], "sources_checked": 0, "sources_failed": 1}
-    except Exception as exc:
-        print(f"public ideas scan failed {market}/{interval}: {type(exc).__name__}")
-        external = {"ok": False, "items": [], "sources_checked": 0, "sources_failed": 1}
+    # Site-only mode: do not query or ingest ideas from external websites.
+    external = {"ok": True, "items": [], "sources_checked": 0, "sources_failed": 0}
 
     # Live site-market data provides technical candidates and contextual confirmation.
     market_changes = {}
@@ -2171,7 +2165,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     skipped = 0
     source_buy_count = 0
     source_sell_count = 0
-    external_quota = max(0, limit - max(1, round(limit * 0.10)))
+    external_quota = 0
     for source_item in external.get("items", []) if isinstance(external, dict) else []:
         if len(items) >= external_quota:
             break
@@ -2307,14 +2301,14 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         items.append(item)
 
     # Fill only the remaining ~10% with local technical signals.
-    technical_quota = max(1, round(limit * 0.10))
+    technical_quota = limit
     live_rows = (snapshot.get("items", []) if isinstance(snapshot, dict) else [])
     scanned_count = 0
     if live_rows:
         cursor_key = (market, interval)
         # Scan a larger rotating batch on every refresh, using a small worker pool
         # to avoid making each market page wait on symbols one by one.
-        scan_batch_size = 20 if market in {"us", "saudi"} else 12
+        scan_batch_size = min(60, len(live_rows))
         scanned_count = 0
         with SCAN_CURSOR_LOCK:
             start = SCAN_CURSORS.get(cursor_key, 0) % len(live_rows)
@@ -2401,7 +2395,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "source_sell_ideas": source_sell_count,
         "buy_opportunities": sum(1 for item in items if item.get("direction") == "شراء"),
         "sell_opportunities": sum(1 for item in items if item.get("direction") == "بيع"),
-        "external_source_weight": 90, "site_analysis_weight": 10,
+        "external_source_weight": 0, "site_analysis_weight": 100,
         "technical_fallback_used": False,
         "technical_opportunities": sum(1 for item in items if item.get("generated_by_site")),
         "external_opportunities": sum(1 for item in items if not item.get("generated_by_site")),
