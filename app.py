@@ -1082,10 +1082,11 @@ def _fetch_candle_data_uncached(market: str, symbol: str, interval: str):
     # before declaring the TASI/index chart unavailable.
     result = []
     last_error = None
-    for host in ("query1.finance.yahoo.com", "query3.finance.yahoo.com"):
+    for host in ("query1.finance.yahoo.com", "query2.finance.yahoo.com", "query3.finance.yahoo.com"):
         url = "https://" + host + "/v8/finance/chart/" + quote(symbol, safe="") + "?" + urlencode({"interval": yahoo_interval, "range": yahoo_range})
         try:
-            payload = fetch_json(url, timeout=4)
+            # Public index feeds can be slower than single-stock quote feeds.
+            payload = fetch_json(url, timeout=8)
             result = (payload.get("chart") or {}).get("result") or []
             if result:
                 break
