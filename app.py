@@ -2066,28 +2066,29 @@ def _multi_method_technical_signal(market, symbol, interval):
             return None
         e20, e50, e200 = ema20[-1], ema50[-1], ema200[-1]
 
-        # The requested EMA200/EMA50 relationship selects the direction to evaluate.
+        # Determine the raw technical direction from EMA200/EMA50 and price action.
         if e200 < e50:
-            side = "شراء"
+            raw_side = "شراء"
             confirmations = [
-                entry > e20,                    # price above short-term trend
-                e20 > ema20[-2],                # short-term average rising
-                closes[-1] > opens[-1],         # latest candle bullish
+                entry > e20,
+                e20 > ema20[-2],
+                closes[-1] > opens[-1],
             ]
         elif e200 > e50:
-            side = "بيع"
+            raw_side = "بيع"
             confirmations = [
-                entry < e20,                    # price below short-term trend
-                e20 < ema20[-2],                # short-term average falling
-                closes[-1] < opens[-1],         # latest candle bearish
+                entry < e20,
+                e20 < ema20[-2],
+                closes[-1] < opens[-1],
             ]
         else:
             return None
 
-        # Do not emit a trade unless all direction-specific confirmation checks pass.
+        # Confirm the original setup, then invert its trade direction as requested.
         if not all(confirmations):
             return None
-        strength = "شراء قوي" if side == "شراء" else "بيع قوي"
+        side = "بيع" if raw_side == "شراء" else "شراء"
+        strength = "بيع قوي" if side == "بيع" else "شراء قوي"
 
         true_ranges = []
         for k in range(max(1, len(candles)-14), len(candles)):
@@ -2109,12 +2110,12 @@ def _multi_method_technical_signal(market, symbol, interval):
         digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
         fmt = lambda value: round(float(value), digits)
         return {
-            "source": "EMA200/EMA50 مع تأكيد شروط الاتجاه",
+            "source": "عكس إشارة EMA200/EMA50 بعد تأكيد شروط الاتجاه",
             "title": f"{strength} {symbol} — تأكيد EMA200/EMA50",
             "description": (
-                "EMA200 أسفل EMA50، والسعر أعلى EMA20 والمتوسط القصير صاعد والشمعة الأخيرة إيجابية."
-                if side == "شراء" else
-                "EMA200 أعلى EMA50، والسعر أسفل EMA20 والمتوسط القصير هابط والشمعة الأخيرة سلبية."
+                "تم عكس إشارة الشراء الفنية إلى بيع بعد تأكيد شروط الاتجاه الأصلية."
+                if side == "بيع" else
+                "تم عكس إشارة البيع الفنية إلى شراء بعد تأكيد شروط الاتجاه الأصلية."
             ),
             "url": "", "published_at": int(time.time()), "market": market,
             "direction": side, "signal_strength": strength, "symbol": symbol, "interval": interval,
@@ -2123,8 +2124,8 @@ def _multi_method_technical_signal(market, symbol, interval):
             "has_complete_levels": True, "ai_score": 75,
             "analysis_methods": ["EMA200 مقابل EMA50 لتحديد الاتجاه", "السعر مقابل EMA20",
                                  "ميل EMA20", "اتجاه الشمعة الأخيرة", "ATR لإدارة المخاطر"],
-            "technical_methods_count": 4, "age_hours": 0,
-            "generated_by_site": True, "signal_inverted": False,
+            "technical_methods_count": 4, "technical_method_scope_note": "هذه الإشارة تستخدم أربعة فحوص فنية؛ لا تدّعي تشغيل 200 منهج.", "age_hours": 0,
+            "generated_by_site": True, "signal_inverted": True,
             "raw_text": "إشارة محسوبة من شموع السوق الفعلية؛ لا تمثل نسبة نجاح مثبتة."
         }
     except (urllib.error.URLError, TimeoutError, OSError, KeyError, TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError) as exc:
@@ -2133,7 +2134,7 @@ def _multi_method_technical_signal(market, symbol, interval):
 
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20), refresh: bool = Query(False)):
-    """Blend 50% public external trade ideas and 50% live technical signals; invert external ideas only."""
+    """Blend 90% inverted public ideas and 10% inverted local technical signals."""
     market = (market or "").strip().lower()
     allowed_markets = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
     if market not in allowed_markets:
