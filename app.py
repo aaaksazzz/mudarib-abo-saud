@@ -111,7 +111,8 @@ def _is_market_protected_path(path):
     if path.startswith("/markets/"):
         return True
     return path.startswith((
-        "/api/market/", "/api/market-direction", "/api/signals/",
+        "/news", "/tasi-analysis",
+        "/api/news", "/api/market/", "/api/market-direction", "/api/signals/",
         "/api/public-ideas", "/api/trade-chart-data", "/api/tasi/analysis",
         "/api/universe-counts"
     ))
@@ -2308,7 +2309,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         cursor_key = (market, interval)
         # Scan a larger rotating batch on every refresh, using a small worker pool
         # to avoid making each market page wait on symbols one by one.
-        scan_batch_size = min(60, len(live_rows))
+        scan_batch_size = min(20, len(live_rows))
         scanned_count = 0
         with SCAN_CURSOR_LOCK:
             start = SCAN_CURSORS.get(cursor_key, 0) % len(live_rows)
