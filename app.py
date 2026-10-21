@@ -2039,39 +2039,35 @@ SCAN_CURSOR_LOCK = threading.Lock()
 
 
 def _multi_method_technical_signal(market, symbol, interval):
-    """Natural trend strategy: EMA200 < EMA100 < EMA50 < EMA20 and price above EMA20 for BUY; reverse for SELL."""
+    """EMA200-only direction: strong buy above EMA200, strong sell below EMA200."""
     try:
         candles = candle_data(market, symbol, interval)
-        if not isinstance(candles, list) or len(candles) < 205:
+        if not isinstance(candles, list) or len(candles) < 200:
             return None
         candles = candles[-210:]
-        opens = [float(c["open"]) for c in candles]
         highs = [float(c["high"]) for c in candles]
         lows = [float(c["low"]) for c in candles]
         closes = [float(c["close"]) for c in candles]
-        if not all(math.isfinite(v) and v > 0 for arr in (opens, highs, lows, closes) for v in arr[-205:]):
+        if not all(math.isfinite(v) and v > 0 for arr in (highs, lows, closes) for v in arr[-200:]):
             return None
 
         entry = closes[-1]
-        ema20 = _ema_series(closes, 20)
-        ema50 = _ema_series(closes, 50)
-        ema100 = _ema_series(closes, 100)
         ema200 = _ema_series(closes, 200)
-        series = (ema20, ema50, ema100, ema200)
-        if any(not seq or len(seq) < 2 or seq[-1] is None or seq[-2] is None for seq in series):
+        if not ema200 or ema200[-1] is None or not math.isfinite(ema200[-1]):
             return None
-        e20, e50, e100, e200 = (seq[-1] for seq in series)
+        e200 = float(ema200[-1])
 
-        # EMA200 sets the allowed trade direction on every supported market/timeframe.
-        # Entry confirmation must agree with that direction; never invert a signal.
-        if entry > e200 and e200 < e100 < e50 < e20 and entry > e20:
+        # EMA200 is the sole direction filter. No EMA20/50/100 alignment conditions.
+        if entry > e200:
             side = "شراء"
-        elif entry < e200 and e200 > e100 > e50 > e20 and entry < e20:
+            strength = "شراء قوي"
+        elif entry < e200:
             side = "بيع"
+            strength = "بيع قوي"
         else:
             return None
 
-        # ATR-based risk levels are computed in the same direction as the signal.
+        # Calculate matching risk levels from actual candles; direction stays aligned with EMA200.
         true_ranges = []
         for k in range(max(1, len(candles) - 14), len(candles)):
             true_ranges.append(max(
@@ -2098,26 +2094,27 @@ def _multi_method_technical_signal(market, symbol, interval):
         digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
         fmt = lambda value: round(float(value), digits)
         return {
-            "source": "EMA200 direction + EMA100/EMA50/EMA20 confirmation",
-            "title": f"{'شراء قوي' if side == 'شراء' else 'بيع قوي'} {symbol} — اتجاه EMA200 مؤكد",
+            "source": "EMA200 فقط",
+            "title": f"{strength} {symbol} — السعر مقابل EMA200",
             "description": (
-                "شراء قوي فقط: السعر فوق EMA200 وترتيب المتوسطات EMA200 < EMA100 < EMA50 < EMA20 والسعر فوق EMA20."
+                f"شراء قوي فقط لأن السعر {fmt(entry)} أعلى من EMA200 ({fmt(e200)})."
                 if side == "شراء" else
-                "بيع قوي فقط: السعر تحت EMA200 وترتيب المتوسطات EMA200 > EMA100 > EMA50 > EMA20 والسعر تحت EMA20."
-            ) + " لا تُعرض صفقة عكس اتجاه EMA200. وقف الخسارة والأهداف محسوبة من ATR.",
+                f"بيع قوي فقط لأن السعر {fmt(entry)} أدنى من EMA200 ({fmt(e200)})."
+            ) + " لا توجد شروط اتجاه إضافية؛ مستويات الوقف والأهداف محسوبة من ATR.",
             "url": "", "published_at": int(time.time()), "market": market,
-            "direction": side, "signal_strength": ("شراء قوي" if side == "شراء" else "بيع قوي"), "symbol": symbol, "interval": interval,
+            "direction": side, "signal_strength": strength, "symbol": symbol, "interval": interval,
+            "ema200": fmt(e200),
             "levels": {"entry": fmt(entry), "stop_loss": fmt(stop), "tp1": fmt(targets[0]),
                        "tp2": fmt(targets[1]), "tp3": fmt(targets[2])},
             "has_complete_levels": True, "ai_score": 75,
-            "analysis_methods": ["EMA200", "EMA100", "EMA50", "EMA20", "السعر مقابل EMA20", "ATR لإدارة المخاطر"],
-            "technical_methods_count": 6,
-            "technical_method_scope_note": "شروط الاتجاه مبنية على ترتيب المتوسطات الأربعة والسعر؛ لا تدّعي تشغيل 200 منهج.",
+            "analysis_methods": ["EMA200 لتحديد الاتجاه", "ATR لإدارة المخاطر"],
+            "technical_methods_count": 2,
+            "technical_method_scope_note": "اتجاه الصفقة يحدده EMA200 وحده.",
             "age_hours": 0, "generated_by_site": True, "signal_inverted": False,
             "raw_text": "إشارة محسوبة من شموع السوق الفعلية؛ لا تمثل نسبة نجاح مثبتة."
         }
     except (urllib.error.URLError, TimeoutError, OSError, KeyError, TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError) as exc:
-        print(f"four-EMA scan skipped {market}/{symbol}/{interval}: {type(exc).__name__}")
+        print(f"EMA200-only scan skipped {market}/{symbol}/{interval}: {type(exc).__name__}")
         return None
 
 @app.get("/api/signals/{market}")
