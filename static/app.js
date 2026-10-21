@@ -170,17 +170,24 @@
     if(!out.innerHTML.trim() || out.innerHTML.includes("جاري"))out.innerHTML='<div class="loading">جاري فحص الفرص تلقائيًا…</div>';
     try {
       const d=await getJSON("/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedInterval)+"&limit=20&refresh=true");
-      const items=Array.isArray(d.items)?d.items.slice():[];
-      // Rank the medals by the source's own confidence score when available.
-      items.sort((a,b)=>{
-        const score=x=>{const n=Number(x.ai_score??x.confidence);return Number.isFinite(n)?n:null};
-        const aa=score(a),bb=score(b);
-        if(aa===null&&bb===null)return 0;
-        if(aa===null)return 1;
-        if(bb===null)return -1;
-        return bb-aa;
+      const rawItems=Array.isArray(d.items)?d.items:[];
+      // Reject malformed crypto symbols and incorrectly ordered price levels before rendering.
+      const cryptoMarket=["spot","futures","alpha"].includes(m.api);
+      const items=rawItems.filter(x=>{
+        if(!x||typeof x!=="object")return false;
+        const symbol=String(x.symbol||"").trim().toUpperCase();
+        if(!symbol||(cryptoMarket&&!/^[A-Z0-9]+$/.test(symbol)))return false;
+        const side=String(x.direction||x.side||"");
+        const levels=x.levels&&typeof x.levels==="object"?x.levels:{};
+        const nums=["entry","stop_loss","tp1","tp2","tp3"].map(k=>Number(levels[k]));
+        if(!nums.every(v=>Number.isFinite(v)&&v>0))return false;
+        const [entry,stop,tp1,tp2,tp3]=nums;
+        if(side==="شراء"||side==="BUY"||side==="LONG")return stop<entry&&entry<tp1&&tp1<=tp2&&tp2<=tp3;
+        if(side==="بيع"||side==="SELL"||side==="SHORT")return stop>entry&&entry>tp1&&tp1>=tp2&&tp2>=tp3;
+        return false;
       });
-      meta.textContent="فُحص "+(d.scanned??"—")+" أصل على "+selectedInterval+" · "+items.length+" فرصة · ينتقل تلقائيًا من الأسرع للأبطأ";
+      // Keep the server's quality/risk-reward order; sorting by score alone hid its ranking.
+      meta.textContent="فُحص "+(d.scanned??"—")+" أصل على "+selectedInterval+" · "+items.length+" فرصة صالحة · ينتقل تلقائيًا من الأسرع للأبطأ";
       const bestBuy=items.find(x=>["شراء","BUY","LONG"].includes(x.direction||x.side)),bestSell=items.find(x=>["بيع","SELL","SHORT"].includes(x.direction||x.side)),bestBox=$("marketBestSides");if(bestBox)bestBox.innerHTML='<div class="feature-card"><small>أفضل شراء</small><strong>'+esc(bestBuy?.symbol||"لا توجد فرصة")+'</strong><small>'+esc(bestBuy?(bestBuy.interval||selectedInterval)+" · تقييم "+(bestBuy.ai_score??bestBuy.confidence??"—")+"/100":"لم تظهر صفقة شراء مؤهلة")+'</small></div><div class="feature-card"><small>أفضل بيع</small><strong>'+esc(bestSell?.symbol||"لا توجد فرصة")+'</strong><small>'+esc(bestSell?(bestSell.interval||selectedInterval)+" · تقييم "+(bestSell.ai_score??bestSell.confidence??"—")+"/100":"لم تظهر صفقة بيع مؤهلة")+'</small></div>';
       out.innerHTML=items.length?items.map((x,i)=>signalCard(x,i)).join(""):empty("لا توجد فرص مؤهلة الآن",d.message||"لن نعرض صفقة بمستويات ناقصة أو غير مرتبة.");
     } catch(err) {out.innerHTML=empty("تعذر فحص الفرص",err.message);meta.textContent="فشل الفحص"}
