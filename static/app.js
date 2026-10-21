@@ -318,15 +318,37 @@
     $("directionMarket").addEventListener("change",load);
     load();
   }
+  function renderProtectedSection(title, renderer) {
+    try {
+      if (sessionStorage.getItem("stpProtectedSectionsUnlocked") === "1") {
+        renderer();
+        return;
+      }
+    } catch (_) {}
+    view.innerHTML = pageHeader(title, "هذا القسم مقفل برقم سري.","قسم محمي") +
+      '<section class="panel" style="max-width:460px;margin:24px auto"><div style="text-align:center;font-size:34px;margin-bottom:8px">🔒</div><h2 style="text-align:center">إدخال الرقم السري</h2><p class="muted" style="text-align:center;margin:8px 0 18px">أدخل الرقم لفتح القسم المحمي.</p><form id="protectedSectionForm" style="display:grid;gap:12px"><label class="field">الرقم السري<input id="protectedSectionPin" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" required placeholder="••••" style="text-align:center;letter-spacing:.35em;font-size:22px"></label><button class="button primary" type="submit">فتح القسم</button></form><div id="protectedSectionMessage" class="muted" role="alert" style="margin-top:10px;text-align:center"></div></section>';
+    $("protectedSectionForm").addEventListener("submit", e => {
+      e.preventDefault();
+      const pin = $("protectedSectionPin").value;
+      if (pin === "2341") {
+        try { sessionStorage.setItem("stpProtectedSectionsUnlocked", "1"); } catch (_) {}
+        renderer();
+      } else {
+        $("protectedSectionMessage").textContent = "الرقم السري غير صحيح.";
+        $("protectedSectionPin").value = "";
+        $("protectedSectionPin").focus();
+      }
+    });
+  }
   async function render() {
     activateDrawer();
     if(path==="/"){renderHome();return}
     if(marketKey){renderMarketPage(marketKey);return}
     if(path==="/market-direction"){renderMarketDirection();return}
     if(path==="/results"){await renderResults();return}
-    if(path==="/news"){await renderNews();return}
+    if(path==="/news"){renderProtectedSection("أخبار الأسواق",()=>{renderNews().catch(err=>{view.innerHTML=pageHeader("أخبار الأسواق","تعذر تحميل الأخبار.","الأخبار")+empty("تعذر عرض الأخبار",err.message)})});return}
     if(path==="/analysis"){renderAnalysis();return}
-    if(path==="/tasi-analysis"){await renderTasi();return}
+    if(path==="/tasi-analysis"){renderProtectedSection("تحليل تاسي العام",()=>{renderTasi().catch(err=>{view.innerHTML=pageHeader("تحليل تاسي العام","تعذر تحميل التحليل.","السوق السعودي")+empty("تعذر عرض تحليل تاسي",err.message)})});return}
     if(path==="/account"){renderAccount();return}
     if(path==="/admin"){renderAdmin();return}
     // Blog pages are server-rendered and should never be replaced by this shell.
