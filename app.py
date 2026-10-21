@@ -284,11 +284,11 @@ YAHOO_CACHE_TTL = 45
 MARKET_DIRECTION_CACHE = {}
 MARKET_DIRECTION_LOCK = threading.Lock()
 MARKET_DIRECTION_LOCKS = {market: threading.Lock() for market in ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex")}
-MARKET_DIRECTION_CACHE_TTL = 30
+MARKET_DIRECTION_CACHE_TTL = 15
 ALPHA_CACHE = {"at": 0, "items": []}
 ALPHA_CACHE_TTL = 90
 CACHE = {}
-CACHE_TTL = 20
+CACHE_TTL = 10
 STABLES = {"USDC", "USDT", "BUSD", "FDUSD", "TUSD", "DAI", "USDP", "USDE", "USD1", "USDD", "USTC", "EUR", "EURC"}
 INTERVALS = {"15m", "30m", "1h", "2h", "4h", "1d", "1w", "1M"}
 PUBLIC_IDEA_INTERVALS = INTERVALS | {"auto"}
@@ -445,7 +445,7 @@ def _fetch_market_tickers_uncached(market):
 
 
 MARKET_TICKERS_CACHE = {}
-MARKET_TICKERS_CACHE_TTL = 15
+MARKET_TICKERS_CACHE_TTL = 10
 
 
 def market_tickers(market):
@@ -1052,7 +1052,7 @@ def risk_position_size(
 
 
 SIGNAL_CACHE = {}
-SIGNAL_CACHE_TTL = 90
+SIGNAL_CACHE_TTL = 30
 
 
 def _fetch_candle_data_uncached(market: str, symbol: str, interval: str):
@@ -1125,7 +1125,7 @@ def _fetch_candle_data_uncached(market: str, symbol: str, interval: str):
 
 
 CANDLE_DATA_CACHE = {}
-CANDLE_DATA_CACHE_TTL = 180
+CANDLE_DATA_CACHE_TTL = 30
 CANDLE_DATA_CACHE_MAX_ENTRIES = 240
 CANDLE_DATA_CACHE_LOCK = threading.RLock()
 
