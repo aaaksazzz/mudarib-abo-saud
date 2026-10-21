@@ -2136,7 +2136,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                              "message": "الفريم غير مدعوم."}, status_code=422)
 
     now = int(time.time())
-    cache_key = ("site_only_four_signal_types_v1", market, interval, limit)
+    cache_key = ("tp3_profit_rank_v1", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if not refresh and cached and now - cached[0] < 90:
@@ -2383,7 +2383,34 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             technical_symbols.add(signal_symbol)
             technical_added += 1
 
-    items.sort(key=lambda item: (item.get("ai_score", 50), item.get("published_at", 0)), reverse=True)
+    def _tp3_profit_rank(item):
+        """Rank by projected TP3 return percentage first, then reward/risk and quality."""
+        levels = item.get("levels") if isinstance(item.get("levels"), dict) else {}
+        try:
+            entry = float(levels["entry"])
+            stop = float(levels["stop_loss"])
+            tp3 = float(levels["tp3"])
+            side = str(item.get("direction") or "")
+            if not all(math.isfinite(v) and v > 0 for v in (entry, stop, tp3)):
+                return (-1.0, -1.0, -1, 0)
+            if side == "شراء" and tp3 > entry and stop < entry:
+                reward_pct = (tp3 - entry) / entry * 100.0
+                risk_pct = (entry - stop) / entry * 100.0
+            elif side == "بيع" and tp3 < entry and stop > entry:
+                reward_pct = (entry - tp3) / entry * 100.0
+                risk_pct = (stop - entry) / entry * 100.0
+            else:
+                return (-1.0, -1.0, -1, 0)
+            rr = reward_pct / risk_pct if risk_pct > 0 else 0.0
+            score = float(item.get("ai_score", 50) or 0)
+            published = int(item.get("published_at", 0) or 0)
+            return (reward_pct, rr, score, published)
+        except (KeyError, TypeError, ValueError, OverflowError, ZeroDivisionError):
+            return (-1.0, -1.0, -1, 0)
+
+    # TP3's projected percentage return is the primary ranking criterion.
+    # This is a target-distance estimate, not a guaranteed or backtested profit.
+    items.sort(key=_tp3_profit_rank, reverse=True)
     result = {
         "ok": True, "live": bool(items), "market": market, "interval": interval,
         "items": items[:limit], "count": len(items[:limit]),
