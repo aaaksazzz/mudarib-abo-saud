@@ -283,10 +283,8 @@
           const badgeColor=positiveLike?"#16a34a":negativeLike?"#dc2626":"#64748b";
           const assets=labels.length?labels.join("، "):"الأصل غير محدد في الخبر";
           const source=String(x.source||"مصدر الخبر");
-          const url=String(x.url||"");
-          const sourceLink=/^https:\/\//i.test(url)?'<a class="read" href="'+escAttr(url)+'" target="_blank" rel="noopener noreferrer">قراءة المصدر ↗</a>':"";
           const published=x.published_at?timeText(x.published_at):"وقت النشر غير متوفر";
-          return '<article class="news-card"><div class="news-card-top"><span class="badge">'+esc(marketNames[x.market]||marketNames[market]||"السوق")+'</span><span class="news-impact" style="color:'+badgeColor+'">'+esc(impact)+'</span></div><strong class="news-title">'+esc(x.title||x.headline||"خبر سوق")+'</strong><div class="news-asset">الأصل المذكور: <b>'+esc(assets)+'</b></div><p class="muted">'+esc(x.description||x.summary||"لا يتوفر ملخص إضافي من المصدر.")+'</p><small class="news-meta">'+esc(source)+' · '+esc(published)+'</small>'+sourceLink+'</article>';
+          return '<article class="news-card"><div class="news-card-top"><span class="badge">'+esc(marketNames[x.market]||marketNames[market]||"السوق")+'</span><span class="news-impact" style="color:'+badgeColor+'">'+esc(impact)+'</span></div><strong class="news-title">'+esc(x.title||x.headline||"خبر سوق")+'</strong><div class="news-asset">الأصل المذكور: <b>'+esc(assets)+'</b></div><p class="muted">'+esc(x.description||x.summary||"لا يتوفر ملخص إضافي من المصدر.")+'</p><small class="news-meta">'+esc(source)+' · '+esc(published)+'</small></article>';
         }).join("")+'</div>';
       }catch(err){summary.innerHTML="";out.innerHTML=empty("تعذر تحميل الأخبار",err.message||"تحقق من اتصال الخدمة ثم أعد المحاولة.");}
     };
