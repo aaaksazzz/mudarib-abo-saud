@@ -13,7 +13,6 @@ client = TestClient(app, base_url="https://testserver")
 client.cookies.set(
     "market_session",
     app_module._market_session_token(int(time.time()) + 60 * 60),
-    secure=True,
     path="/",
 )
 
