@@ -2409,6 +2409,24 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     # Keep only coherent, renderable trade plans. Never repair or invent missing levels here.
     items = [item for item in items if _signal_is_displayable(item)]
 
+    # Enforce market-wide direction: bullish markets show buys only; bearish markets show sells only.
+    # In a neutral/mixed market, stand aside rather than mixing opposing directions.
+    trend_values = list(market_changes.values())
+    trend_up = sum(1 for value in trend_values if value > 0.10)
+    trend_down = sum(1 for value in trend_values if value < -0.10)
+    trend_average = (sum(trend_values) / len(trend_values)) if trend_values else 0.0
+    market_trend = ("صاعد" if trend_average >= 0.15 and trend_up > trend_down
+                    else "هابط" if trend_average <= -0.15 and trend_down > trend_up
+                    else "محايد")
+    if market_trend == "صاعد":
+        items = [item for item in items if item.get("direction") == "شراء"]
+    elif market_trend == "هابط":
+        items = [item for item in items if item.get("direction") == "بيع"]
+    else:
+        items = []
+
+
+
     def _tp3_profit_rank(item):
         """Prefer risk/reward and signal quality; use TP3 return to break ties."""
         levels = item.get("levels") if isinstance(item.get("levels"), dict) else {}
@@ -2439,6 +2457,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     items.sort(key=_tp3_profit_rank, reverse=True)
     result = {
         "ok": True, "live": bool(items), "market": market, "interval": interval,
+        "market_trend": market_trend,
         "items": items[:limit], "count": len(items[:limit]),
         "scanned": scanned_count,
         "sources_checked": int((external or {}).get("sources_checked", 0)) if isinstance(external, dict) else 0,
@@ -2453,9 +2472,11 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "technical_opportunities": sum(1 for item in items if item.get("generated_by_site")),
         "external_opportunities": sum(1 for item in items if not item.get("generated_by_site")),
         "max_age_hours": 24,
-        "message": ("الفرص مولدة من بيانات السوق والتحليل الفني داخل الموقع فقط، دون توصيات خارجية."
+        "message": ("الفرص مصفّاة حسب اتجاه السوق العام: شراء في الصعود فقط وبيع في الهبوط فقط."
                     if items else
-                    "لم تتوفر حاليًا إشارات فنية مكتملة من بيانات الموقع؛ لم تُنشأ صفقات وهمية.")
+                    ("اتجاه السوق محايد/مختلط؛ تم إيقاف عرض الصفقات حتى يتضح الاتجاه."
+                     if market_trend == "محايد" else
+                     "لا توجد فرص مكتملة في اتجاه السوق الحالي؛ لم تُنشأ صفقات وهمية."))
     }
     # Persist the latest scan per market/timeframe so users can reopen the page
     # without having to trigger a fresh scan.
