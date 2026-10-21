@@ -101,7 +101,7 @@
     $("marketSignalFrames").addEventListener("click",e=>{const b=e.target.closest("[data-market-frame]");if(!b)return;selectedInterval=b.dataset.marketFrame;scanCycleIndex=scanIntervalOrder.indexOf(selectedInterval);if(scanCycleIndex<0)scanCycleIndex=0;$("marketSignalFrames").querySelectorAll("[data-market-frame]").forEach(x=>{const active=x===b;x.classList.toggle("active",active);x.setAttribute("aria-pressed",active?"true":"false")});loadSignals(m)});
     if(marketSignalRefreshTimer)clearInterval(marketSignalRefreshTimer);
     marketSignalRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible" && $("signalContent") && $("signalMeta") && $("pageView").innerHTML.includes(esc(m.name)) && !marketSignalRefreshBusy){scanCycleIndex=(scanCycleIndex+1)%scanIntervalOrder.length;selectedInterval=scanIntervalOrder[scanCycleIndex];$("marketSignalFrames").querySelectorAll("[data-market-frame]").forEach(x=>{const active=x.dataset.marketFrame===selectedInterval;x.classList.toggle("active",active);x.setAttribute("aria-pressed",active?"true":"false")});loadDirection();loadSignals(m)}},30*1000);
-    $("signalContent").addEventListener("click",e=>{const b=e.target.closest("[data-inline-chart]");if(!b)return;const card=b.closest(".signal-card"),symbol=b.dataset.symbol,frame=b.dataset.frame||selectedInterval,box=card&&card.querySelector("[data-chart-box]");if(!box)return;if(box.dataset.open==="1"){box.dataset.open="0";box.innerHTML="";b.textContent="عرض الشارت داخل الصفقة";return;}box.dataset.open="1";b.textContent="إخفاء الشارت";box.innerHTML='<div class="loading">تحميل الشارت…</div>';getJSON("/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(symbol)+"&interval="+encodeURIComponent(frame)).then(d=>{if(box.dataset.open==="1")box.innerHTML=drawCandles(d.items||[])}).catch(err=>{if(box.dataset.open==="1")box.innerHTML=empty("الشارت غير متاح",err.message)});});
+    $("signalContent").addEventListener("click",e=>{const b=e.target.closest("[data-inline-chart]");if(!b)return;const card=b.closest(".signal-card"),symbol=b.dataset.symbol,frame=b.dataset.frame||selectedInterval,box=card&&card.querySelector("[data-chart-box]");if(!box)return;if(box.dataset.open==="1"){box.dataset.open="0";box.innerHTML="";b.textContent="عرض الشارت داخل الصفقة";return;}box.dataset.open="1";b.textContent="إخفاء الشارت";box.innerHTML='<div class="loading">تحميل الشارت…</div>';getJSON("/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(symbol)+"&interval="+encodeURIComponent(frame)).then(d=>{if(box.dataset.open==="1")box.innerHTML=drawCandles(d.items||[],{entry,stop_loss:stop,tp1,tp2,tp3})}).catch(err=>{if(box.dataset.open==="1")box.innerHTML=empty("الشارت غير متاح",err.message)});});
     loadDirection();
     // Load the latest opportunities automatically when a market page opens.
     // The server persists every completed scan, so users do not need to press Scan.
@@ -122,14 +122,30 @@
     } catch(err) {out.innerHTML=empty("تعذر تحميل الأسعار",err.message);meta.textContent="تعذر تحميل الأصول";setStatus("مصدر غير متاح",false)}
     finally {$("loadQuotes").disabled=false;$("refreshQuotes").disabled=false}
   }
-  function drawCandles(items) {
+  function drawCandles(items, levels={}) {
     const rows=(items||[]).filter(c=>[c.open,c.high,c.low,c.close].every(v=>Number.isFinite(Number(v))&&Number(v)>0));
     if(rows.length<2)return empty("بيانات الشموع غير كافية","لم يرسم الموقع أي شموع تقديرية.");
-    const W=900,H=300,pad=28,lo=Math.min(...rows.map(c=>Number(c.low))),hi=Math.max(...rows.map(c=>Number(c.high))),range=hi-lo||1;
-    const y=v=>pad+(hi-Number(v))/range*(H-pad*2),step=(W-pad*2)/rows.length,bodyW=Math.max(2,Math.min(9,step*.58));
-    const grid=[0,.25,.5,.75,1].map(t=>{const yy=pad+(H-pad*2)*t;return '<line x1="'+pad+'" y1="'+yy+'" x2="'+(W-pad)+'" y2="'+yy+'" stroke="#26364d" stroke-width="1"/>'}).join("");
-    const candles=rows.map((c,i)=>{const x=pad+step*i+step/2,up=Number(c.close)>=Number(c.open),color=up?"#43d6a1":"#ff7184",top=y(Math.max(Number(c.open),Number(c.close))),bottom=y(Math.min(Number(c.open),Number(c.close))),height=Math.max(1,bottom-top);return '<line x1="'+x+'" y1="'+y(c.high)+'" x2="'+x+'" y2="'+y(c.low)+'" stroke="'+color+'" stroke-width="1.3"/><rect x="'+(x-bodyW/2)+'" y="'+top+'" width="'+bodyW+'" height="'+height+'" fill="'+color+'" rx=".5"/>'}).join("");
-    return '<div style="width:100%;overflow:hidden"><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="مخطط شموع حقيقية دون إظهار تدريج الأسعار" style="width:100%;height:auto;display:block;background:#0a1321;border-radius:12px">'+grid+candles+'</svg></div><div class="muted" style="margin-top:8px">عدد الشموع: '+rows.length+' · المصدر الفعلي · تدريج الأسعار مخفي</div>';
+    const W=1000,H=380,left=28,right=190,topPad=24,bottomPad=28;
+    const priceLevels=[
+      {label:"TP3",value:levels.tp3,color:"#38d996"},
+      {label:"TP2",value:levels.tp2,color:"#38d996"},
+      {label:"TP1",value:levels.tp1,color:"#38d996"},
+      {label:"الدخول",value:levels.entry,color:"#f5c451"},
+      {label:"وقف",value:levels.stop_loss??levels.stop,color:"#ff7184"}
+    ].filter(v=>Number.isFinite(Number(v.value))&&Number(v.value)>0);
+    const rawLow=Math.min(...rows.map(c=>Number(c.low)),...priceLevels.map(v=>Number(v.value)));
+    const rawHigh=Math.max(...rows.map(c=>Number(c.high)),...priceLevels.map(v=>Number(v.value)));
+    const padding=(rawHigh-rawLow)*.06||Math.max(rawHigh*.01,.00000001);
+    const lo=Math.max(Number.MIN_VALUE,rawLow-padding),hi=rawHigh+padding,range=hi-lo||1;
+    const plotRight=W-right,plotWidth=plotRight-left,plotHeight=H-topPad-bottomPad;
+    const y=v=>topPad+(hi-Number(v))/range*plotHeight;
+    const step=plotWidth/rows.length,bodyW=Math.max(2,Math.min(9,step*.58));
+    const grid=[0,.25,.5,.75,1].map(t=>{const yy=topPad+plotHeight*t,priceValue=hi-range*t;return '<line x1="'+left+'" y1="'+yy+'" x2="'+plotRight+'" y2="'+yy+'" stroke="#26364d" stroke-width="1"/><text x="'+(plotRight-5)+'" y="'+(yy-4)+'" fill="#8fa2bd" font-size="11" text-anchor="end">'+esc(price(priceValue))+'</text>'}).join("");
+    const candles=rows.map((c,i)=>{const x=left+step*i+step/2,up=Number(c.close)>=Number(c.open),color=up?"#43d6a1":"#ff7184",candleTop=y(Math.max(Number(c.open),Number(c.close))),bottom=y(Math.min(Number(c.open),Number(c.close))),height=Math.max(1,bottom-candleTop);return '<line x1="'+x+'" y1="'+y(c.high)+'" x2="'+x+'" y2="'+y(c.low)+'" stroke="'+color+'" stroke-width="1.3"/><rect x="'+(x-bodyW/2)+'" y="'+candleTop+'" width="'+bodyW+'" height="'+height+'" fill="'+color+'" rx=".5"/>'}).join("");
+    const levelLines=priceLevels.map(level=>{const yy=y(level.value);return '<line x1="'+left+'" y1="'+yy+'" x2="'+(W-8)+'" y2="'+yy+'" stroke="'+level.color+'" stroke-width="1.7" stroke-dasharray="7 4"/><rect x="'+(plotRight+8)+'" y="'+(yy-10)+'" width="'+(right-20)+'" height="20" rx="5" fill="'+level.color+'"/><text x="'+(plotRight+14)+'" y="'+(yy+4)+'" fill="#07111e" font-size="11" font-weight="700">'+esc(level.label)+' '+esc(price(level.value))+'</text>'}).join("");
+    const last=Number(rows[rows.length-1].close);
+    const currentLine='<line x1="'+left+'" y1="'+y(last)+'" x2="'+plotRight+'" y2="'+y(last)+'" stroke="#8da5ff" stroke-width="1.4" stroke-dasharray="3 4"/>';
+    return '<div style="width:100%;overflow:hidden"><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="شموع سعرية فعلية مع خط السعر الحالي والدخول ووقف الخسارة والأهداف" style="width:100%;height:auto;display:block;background:#0a1321;border-radius:12px">'+grid+currentLine+candles+levelLines+'</svg></div><div class="muted" style="margin-top:8px">آخر إغلاق: <b dir="ltr">'+esc(price(last))+'</b> · '+rows.length+' شمعة فعلية · خطوط الدخول والوقف والأهداف من بيانات الصفقة</div>';
   }
   async function loadChart(m,symbol) {
     currentChartSymbol=symbol;
