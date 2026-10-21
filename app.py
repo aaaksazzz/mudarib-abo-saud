@@ -2040,26 +2040,9 @@ SCAN_CURSOR_LOCK = threading.Lock()
 
 
 def _multi_method_technical_signal(market, symbol, interval):
-    """Monthly trend filter plus local EMA alignment; monthly is context only, never a trade timeframe."""
+    """EMA200/EMA50 direction filter, followed by price-action confirmation and ATR risk levels."""
     try:
         if interval == "1M":
-            return None
-
-        # Monthly direction is the master bias for every tradable timeframe.
-        monthly = candle_data(market, symbol, "1M")
-        if not isinstance(monthly, list) or len(monthly) < 55:
-            return None
-        monthly = monthly[-120:]
-        monthly_closes = [float(c["close"]) for c in monthly]
-        monthly_ema20 = _ema_series(monthly_closes, 20)
-        monthly_ema50 = _ema_series(monthly_closes, 50)
-        if (not monthly_ema20 or not monthly_ema50 or
-                monthly_ema20[-1] is None or monthly_ema50[-1] is None or
-                monthly_ema20[-2] is None):
-            return None
-        monthly_bull = monthly_closes[-1] > monthly_ema20[-1] > monthly_ema50[-1] and monthly_ema20[-1] >= monthly_ema20[-2]
-        monthly_bear = monthly_closes[-1] < monthly_ema20[-1] < monthly_ema50[-1] and monthly_ema20[-1] <= monthly_ema20[-2]
-        if not monthly_bull and not monthly_bear:
             return None
 
         candles = candle_data(market, symbol, interval)
@@ -2070,31 +2053,41 @@ def _multi_method_technical_signal(market, symbol, interval):
         highs = [float(c["high"]) for c in candles]
         lows = [float(c["low"]) for c in candles]
         closes = [float(c["close"]) for c in candles]
+        volumes = [float(c.get("volume") or 0) for c in candles]
         if not all(math.isfinite(v) and v > 0 for arr in (opens, highs, lows, closes) for v in arr[-205:]):
             return None
+
         entry = closes[-1]
         ema20 = _ema_series(closes, 20)
         ema50 = _ema_series(closes, 50)
-        ema100 = _ema_series(closes, 100)
         ema200 = _ema_series(closes, 200)
-        if any(not seq or seq[-1] is None for seq in (ema20, ema50, ema100, ema200)):
+        if any(not seq or len(seq) < 2 or seq[-1] is None or seq[-2] is None
+               for seq in (ema20, ema50, ema200)):
             return None
-        e20, e50, e100, e200 = ema20[-1], ema50[-1], ema100[-1], ema200[-1]
+        e20, e50, e200 = ema20[-1], ema50[-1], ema200[-1]
 
-        # Emit a technical signal only when all four EMAs are fully aligned
-        # and the latest price is beyond EMA20 in the same direction.
-        bullish_aligned = entry > e20 > e50 > e100 > e200
-        bearish_aligned = entry < e20 < e50 < e100 < e200
-        bullish_setup = entry > e20 > e50
-        bearish_setup = entry < e20 < e50
-        if monthly_bull and bullish_setup:
+        # The requested EMA200/EMA50 relationship selects the direction to evaluate.
+        if e200 < e50:
             side = "شراء"
-            strength = "شراء قوي" if bullish_aligned else "شراء"
-        elif monthly_bear and bearish_setup:
+            confirmations = [
+                entry > e20,                    # price above short-term trend
+                e20 > ema20[-2],                # short-term average rising
+                closes[-1] > opens[-1],         # latest candle bullish
+            ]
+        elif e200 > e50:
             side = "بيع"
-            strength = "بيع قوي" if bearish_aligned else "بيع"
+            confirmations = [
+                entry < e20,                    # price below short-term trend
+                e20 < ema20[-2],                # short-term average falling
+                closes[-1] < opens[-1],         # latest candle bearish
+            ]
         else:
             return None
+
+        # Do not emit a trade unless all direction-specific confirmation checks pass.
+        if not all(confirmations):
+            return None
+        strength = "شراء قوي" if side == "شراء" else "بيع قوي"
 
         true_ranges = []
         for k in range(max(1, len(candles)-14), len(candles)):
@@ -2102,7 +2095,7 @@ def _multi_method_technical_signal(market, symbol, interval):
         atr = sum(true_ranges) / len(true_ranges) if true_ranges else 0
         if not math.isfinite(atr) or atr <= 0 or entry <= 0:
             return None
-        risk = min(atr * 1.5, entry * {"15m":0.03,"1h":0.05,"2h":0.06,"4h":0.08,"1d":0.12,"1w":0.18,"1M":0.25}.get(interval, 0.03))
+        risk = min(atr * 1.5, entry * {"15m":0.03,"1h":0.05,"2h":0.06,"4h":0.08,"1d":0.12,"1w":0.18}.get(interval, 0.03))
         if not math.isfinite(risk) or risk <= 0:
             return None
         if side == "شراء":
@@ -2116,17 +2109,20 @@ def _multi_method_technical_signal(market, symbol, interval):
         digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
         fmt = lambda value: round(float(value), digits)
         return {
-            "source": "استراتيجية تراص المتوسطات EMA20/50/100/200",
-            "title": f"{strength} {symbol} — تراص المتوسطات",
-            "description": ("الاتجاه الشهري صاعد، والإشارة متوافقة معه؛ شراء قوي عند تراص EMA20/50/100/200، وشراء عند توافق EMA20/50."
-                           if side == "شراء" else
-                           "الاتجاه الشهري هابط، والإشارة متوافقة معه؛ بيع قوي عند تراص EMA20/50/100/200، وبيع عند توافق EMA20/50."),
+            "source": "EMA200/EMA50 مع تأكيد شروط الاتجاه",
+            "title": f"{strength} {symbol} — تأكيد EMA200/EMA50",
+            "description": (
+                "EMA200 أسفل EMA50، والسعر أعلى EMA20 والمتوسط القصير صاعد والشمعة الأخيرة إيجابية."
+                if side == "شراء" else
+                "EMA200 أعلى EMA50، والسعر أسفل EMA20 والمتوسط القصير هابط والشمعة الأخيرة سلبية."
+            ),
             "url": "", "published_at": int(time.time()), "market": market,
             "direction": side, "signal_strength": strength, "symbol": symbol, "interval": interval,
             "levels": {"entry": fmt(entry), "stop_loss": fmt(stop), "tp1": fmt(targets[0]),
                        "tp2": fmt(targets[1]), "tp3": fmt(targets[2])},
             "has_complete_levels": True, "ai_score": 75,
-            "analysis_methods": ["اتجاه شهري EMA20/50", "EMA20", "EMA50", "EMA100", "EMA200", "توافق الفريم مع الشهري", "ATR لإدارة المخاطر"],
+            "analysis_methods": ["EMA200 مقابل EMA50 لتحديد الاتجاه", "السعر مقابل EMA20",
+                                 "ميل EMA20", "اتجاه الشمعة الأخيرة", "ATR لإدارة المخاطر"],
             "technical_methods_count": 4, "age_hours": 0,
             "generated_by_site": True, "signal_inverted": False,
             "raw_text": "إشارة محسوبة من شموع السوق الفعلية؛ لا تمثل نسبة نجاح مثبتة."
