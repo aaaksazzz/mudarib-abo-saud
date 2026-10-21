@@ -777,24 +777,15 @@ def _load_saudi_symbols():
             discovered = set(cached[1])
         else:
             discovered = set()
-            # Public company directory separates TASI from Nomu and supports up to 500 rows/page.
+            # Prefer Yahoo's public Saudi-equity directory; the third-party directory
+            # endpoint was repeatedly returning HTTP errors on the hosted service.
             try:
-                from urllib.parse import urlencode
-                for offset in range(0, 1000, 500):
-                    query = urlencode({"market": "TASI", "limit": 500, "offset": offset})
-                    payload = fetch_json("https://api.sahmk.sa/api/v1/companies/?" + query, timeout=8)
-                    rows = payload.get("results", []) if isinstance(payload, dict) else []
-                    for row in rows:
-                        if not isinstance(row, dict):
-                            continue
-                        symbol = str(row.get("symbol") or "").strip()
-                        status = str(row.get("status") or "").strip().lower()
-                        market = str(row.get("market") or "").strip().upper()
-                        security_type = str(row.get("security_type") or "").strip().lower()
-                        if symbol.isdigit() and market == "TASI" and status == "active" and security_type == "equity":
-                            discovered.add(symbol + ".SR")
-                    total = int(payload.get("total") or 0) if isinstance(payload, dict) else 0
-                    if not rows or offset + len(rows) >= total:
+                for query in ("Saudi Arabia stocks", "Tadawul listed companies", "TASI stocks"):
+                    try:
+                        discovered.update(_discover_yahoo_symbols(query, suffix=".SR", count=250))
+                    except Exception as exc:
+                        print(f"TASI Yahoo discovery failed: {type(exc).__name__}")
+                    if len(discovered) >= 100:
                         break
             except Exception as exc:
                 print(f"TASI directory discovery failed: {type(exc).__name__}")
@@ -2202,7 +2193,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         if not all(math.isfinite(x) and x > 0 for x in nums) or not old_targets:
             skipped += 1
             continue
-        # Preserve the source's normal direction and validate its actual levels.
+        # Validate original geometry, then invert the trade direction.
         risk = abs(entry - old_stop)
         if risk <= 0:
             skipped += 1
@@ -2211,8 +2202,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         if not math.isfinite(stop_distance_pct) or stop_distance_pct > 15.0:
             skipped += 1
             continue
-        side = original_side
-        if side == "شراء":
+        if original_side == "شراء":
             if not old_stop < entry or any(v <= entry for v in old_targets):
                 skipped += 1
                 continue
@@ -2222,6 +2212,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 skipped += 1
                 continue
             target_distances = sorted({round(entry - v, 12) for v in old_targets if v < entry})
+        side = "بيع" if original_side == "شراء" else "شراء"
         if not target_distances:
             skipped += 1
             continue
@@ -2240,7 +2231,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         target_distances = target_distances[:3]
         targets = ([entry + d for d in target_distances]
                    if side == "شراء" else [entry - d for d in target_distances])
-        stop = old_stop
+        stop = entry + risk if side == "بيع" else entry - risk
         targets.sort(reverse=(side == "بيع"))
 
         symbol = str(source_item.get("symbol") or "").strip().upper()
@@ -2267,7 +2258,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             "signal_strength": signal_strength,
             "original_direction": original_side,
             "title": f"{side} {symbol} — فكرة من مصدر خارجي",
-            "description": "فكرة من مصدر خارجي مع الحفاظ على اتجاه المصدر ومستوياته الأصلية.",
+            "description": "فكرة خارجية معكوسة الاتجاه؛ أُعيد حساب وقف الخسارة والأهداف حول سعر الدخول.",
             "levels": {
                 "entry": entry, "stop_loss": stop,
                 "tp1": targets[0], "tp2": targets[1], "tp3": targets[2]
@@ -2276,14 +2267,14 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             "site_context_score": site_score,
             "external_source_weight": 90,
             "site_analysis_weight": 10,
-            "signal_inverted": False,
+            "signal_inverted": True,
             "generated_by_site": False,
             "has_complete_levels": True,
             "levels_completed_by_site": levels_completed_by_site,
-            "level_source_note": ("تم استكمال الأهداف الناقصة حسابيًا من مسافة المخاطرة (R)، مع الحفاظ على اتجاه المصدر."
-                                  if levels_completed_by_site else "تم الحفاظ على اتجاه الصفقة ومستويات المصدر الأصلية دون عكس."),
+            "level_source_note": ("تم استكمال الأهداف الناقصة حسابيًا من مسافة المخاطرة (R)، ثم عكس الاتجاه وإعادة حساب الوقف."
+                                  if levels_completed_by_site else "عُكس اتجاه المصدر وأعيد حساب الوقف والأهداف بمسافات المخاطرة نفسها."),
             "source_timeframe_missing": bool(source_item.get("interval_missing_in_source")),
-            "method": "external_public_ideas_normal_direction_90_technical_analysis_10"
+            "method": "external_public_ideas_inverted_direction_90_technical_analysis_10"
         })
         # Final guard: never display malformed or incorrectly ordered levels.
         if not _public_idea_levels_ordered(item):
@@ -2356,30 +2347,49 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 technical_score = int(max(0, min(100, float(signal.get("ai_score", 50)))))
             except (TypeError, ValueError, OverflowError):
                 technical_score = 50
-            # Keep the technical engine's original direction and price levels.
+            # Invert BUY<->SELL and rebuild risk levels, not just the displayed label.
             raw_direction = str(signal.get("direction") or "")
             levels = signal.get("levels") if isinstance(signal.get("levels"), dict) else {}
             try:
                 entry = float(levels["entry"])
-                stop = float(levels["stop_loss"])
-                targets = [float(levels[k]) for k in ("tp1", "tp2", "tp3")]
+                old_stop = float(levels["stop_loss"])
+                old_targets = [float(levels[k]) for k in ("tp1", "tp2", "tp3")]
             except (KeyError, TypeError, ValueError, OverflowError):
                 continue
-            if raw_direction not in {"شراء", "بيع"} or not all(math.isfinite(v) and v > 0 for v in [entry, stop, *targets]):
+            original_values = [entry, old_stop, *old_targets]
+            if raw_direction not in {"شراء", "بيع"} or not all(math.isfinite(v) and v > 0 for v in original_values):
                 continue
-            signal["direction"] = raw_direction
-            signal["title"] = f"{raw_direction} {signal_symbol} — إشارة فنية"
+            if raw_direction == "شراء":
+                if not old_stop < entry or not (entry < old_targets[0] <= old_targets[1] <= old_targets[2]):
+                    continue
+                distances = sorted(v - entry for v in old_targets)
+                inverted_direction = "بيع"
+            else:
+                if not old_stop > entry or not (entry > old_targets[0] >= old_targets[1] >= old_targets[2]):
+                    continue
+                distances = sorted(entry - v for v in old_targets)
+                inverted_direction = "شراء"
+            risk = abs(entry - old_stop)
+            if risk <= 0:
+                continue
+            targets = ([entry - d for d in distances] if inverted_direction == "بيع"
+                       else [entry + d for d in distances])
+            targets.sort(reverse=(inverted_direction == "بيع"))
+            stop = entry + risk if inverted_direction == "بيع" else entry - risk
+            signal["direction"] = inverted_direction
+            signal["title"] = f"{inverted_direction} {signal_symbol} — إشارة فنية معكوسة"
             signal["levels"] = {"entry": entry, "stop_loss": stop, "tp1": targets[0], "tp2": targets[1], "tp3": targets[2]}
             signal.update({
                 "ai_score": technical_score,
                 "external_source_weight": 0,
                 "site_analysis_weight": 100,
                 "site_context_score": None,
-                "signal_inverted": False,
+                "signal_inverted": True,
+                "original_direction": raw_direction,
                 "generated_by_site": True,
-                "description": "فرصة من التحليل الفني المحلي بالاتجاه الأصلي دون عكس الإشارة، ضمن الحصة المحدودة البالغة نحو 10% من النتائج.",
-                "method": "technical_confirmation_10pct",
-                "level_source_note": "الدخول ووقف الخسارة والأهداف من التحليل الفني المحلي دون عكس."
+                "description": "إشارة فنية معكوسة: شراء يصبح بيعًا والبيع يصبح شراءً، مع إعادة حساب الوقف والأهداف.",
+                "method": "technical_confirmation_inverted",
+                "level_source_note": "أُعيد حساب وقف الخسارة والأهداف حول الدخول بعد عكس اتجاه الإشارة."
             })
             if not _public_idea_levels_ordered(signal):
                 continue
@@ -2413,10 +2423,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     # Keep only coherent, renderable trade plans. Never repair or invent missing levels here.
     items = [item for item in items if _signal_is_displayable(item)]
 
-    # Enforce market-wide direction: bullish markets show buys only; bearish markets show sells only.
-    # In a neutral/mixed market, stand aside rather than mixing opposing directions.
-    # Use the same canonical market-direction endpoint as the overview card.
-    # This prevents the signal list and visible market trend from using separate snapshots.
+    # Inverted strategy: bullish market => SELL only; bearish market => BUY only.
     direction_snapshot = market_direction(market)
     direction_code = direction_snapshot.get("direction") if isinstance(direction_snapshot, dict) else None
     market_trend = {
@@ -2425,12 +2432,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "NEUTRAL": "محايد"
     }.get(direction_code, "محايد")
     if direction_code == "BULLISH":
-        items = [item for item in items if item.get("direction") == "شراء"]
-    elif direction_code == "BEARISH":
         items = [item for item in items if item.get("direction") == "بيع"]
+    elif direction_code == "BEARISH":
+        items = [item for item in items if item.get("direction") == "شراء"]
     else:
-        # If the canonical trend is unavailable or mixed, fail closed rather than
-        # displaying a direction that may conflict with the market overview.
         items = []
 
 
