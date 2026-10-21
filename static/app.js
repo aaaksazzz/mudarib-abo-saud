@@ -139,6 +139,7 @@
   function signalCard(x, rank=0) {
     const l=x.levels||{};
     const side=x.direction||x.side||"غير محدد";
+    const strength=x.signal_strength||side;
     const buy=["شراء","BUY","LONG"].includes(side);
     const entry=Number(l.entry??x.entry);
     const pctTo=(target, favorable)=> {
@@ -149,7 +150,7 @@
     };
     const medal=rank===0?"🥇 ذهبي":rank===1?"🥈 فضي":rank===2?"🥉 برونزي":"🏅 #"+(rank+1);
     const stop=l.stop_loss??x.stop_loss,tp1=l.tp1??x.tp1,tp2=l.tp2??x.tp2,tp3=l.tp3??x.tp3;
-    return '<article class="signal-card"><div class="signal-top"><span class="tag" style="font-weight:800;border:1px solid #c79b35;background:linear-gradient(135deg,#35270a,#9b7622);color:#fff0b3">'+medal+'</span><b class="signal-symbol">'+esc(x.symbol||"—")+'</b><span class="tag '+(buy?"buy":"sell")+'">'+esc(side)+'</span><span class="tag">'+esc(x.interval||selectedInterval)+'</span><span class="tag">تقييم آلي '+esc(x.ai_score??x.confidence??"—")+'/100</span></div>'+
+    return '<article class="signal-card"><div class="signal-top"><span class="tag" style="font-weight:800;border:1px solid #c79b35;background:linear-gradient(135deg,#35270a,#9b7622);color:#fff0b3">'+medal+'</span><b class="signal-symbol">'+esc(x.symbol||"—")+'</b><span class="tag '+(buy?"buy":"sell")+'">'+esc(strength)+'</span><span class="tag">'+esc(x.interval||selectedInterval)+'</span><span class="tag">تقييم آلي '+esc(x.ai_score??x.confidence??"—")+'/100</span></div>'+
       '<div class="entry-line"><span>الدخول</span><strong>'+price(entry)+'</strong></div><div class="levels-grid">'+
       '<div class="level stop"><small>وقف الخسارة</small><strong>'+price(stop)+'</strong><small class="negative">خسارة محتملة '+pctTo(stop,false)+'</small></div>'+
       '<div class="level target"><small>الهدف الأول</small><strong>'+price(tp1)+'</strong><small class="positive">ربح محتمل '+pctTo(tp1,true)+'</small></div>'+
