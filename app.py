@@ -2084,7 +2084,7 @@ def _multi_method_technical_signal(market, symbol, interval):
         else:
             return None
 
-        # Confirm the original setup, then invert its trade direction as requested.
+        # Confirm the setup, then invert the final trade direction.
         if not all(confirmations):
             return None
         side = "بيع" if raw_side == "شراء" else "شراء"
@@ -2110,12 +2110,12 @@ def _multi_method_technical_signal(market, symbol, interval):
         digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
         fmt = lambda value: round(float(value), digits)
         return {
-            "source": "عكس إشارة EMA200/EMA50 بعد تأكيد شروط الاتجاه",
+            "source": "استراتيجية معكوسة: عكس إشارة EMA200/EMA50",
             "title": f"{strength} {symbol} — تأكيد EMA200/EMA50",
             "description": (
-                "تم عكس إشارة الشراء الفنية إلى بيع بعد تأكيد شروط الاتجاه الأصلية."
+                "الاستراتيجية معكوسة: تحولت إشارة الشراء الأصلية إلى بيع."
                 if side == "بيع" else
-                "تم عكس إشارة البيع الفنية إلى شراء بعد تأكيد شروط الاتجاه الأصلية."
+                "الاستراتيجية معكوسة: تحولت إشارة البيع الأصلية إلى شراء."
             ),
             "url": "", "published_at": int(time.time()), "market": market,
             "direction": side, "signal_strength": strength, "symbol": symbol, "interval": interval,
@@ -2125,7 +2125,7 @@ def _multi_method_technical_signal(market, symbol, interval):
             "analysis_methods": ["EMA200 مقابل EMA50 لتحديد الاتجاه", "السعر مقابل EMA20",
                                  "ميل EMA20", "اتجاه الشمعة الأخيرة", "ATR لإدارة المخاطر"],
             "technical_methods_count": 4, "technical_method_scope_note": "هذه الإشارة تستخدم أربعة فحوص فنية؛ لا تدّعي تشغيل 200 منهج.", "age_hours": 0,
-            "generated_by_site": True, "signal_inverted": False,
+            "generated_by_site": True, "signal_inverted": True,
             "raw_text": "إشارة محسوبة من شموع السوق الفعلية؛ لا تمثل نسبة نجاح مثبتة."
         }
     except (urllib.error.URLError, TimeoutError, OSError, KeyError, TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError) as exc:
@@ -2134,7 +2134,7 @@ def _multi_method_technical_signal(market, symbol, interval):
 
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20), refresh: bool = Query(False)):
-    """Blend public ideas and local technical signals without reversing their directions."""
+    """Blend public ideas and local technical signals after reversing every trade direction."""
     market = (market or "").strip().lower()
     allowed_markets = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
     if market not in allowed_markets:
@@ -2151,7 +2151,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         if not refresh and cached and now - cached[0] < 90:
             return {**cached[1], "cached": True}
 
-    # 90% public ideas from open sources (last 24h); 10% local technical confirmation, original direction.
+    # 90% public ideas from open sources (last 24h); 10% local technical signals. Reverse every direction.
     try:
         external = public_ideas(market, interval, limit=50, discover=True, refresh=refresh)
         if not isinstance(external, dict):
@@ -2213,7 +2213,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         if not all(math.isfinite(x) and x > 0 for x in nums) or not old_targets:
             skipped += 1
             continue
-        # Use the public idea in its original direction; never invert buy/sell.
+        # Validate source geometry, then mirror direction and levels around entry.
         risk = abs(entry - old_stop)
         if risk <= 0:
             skipped += 1
@@ -2222,19 +2222,22 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         if not math.isfinite(stop_distance_pct) or stop_distance_pct > 15.0:
             skipped += 1
             continue
-        side = original_side
-        if side == "شراء":
+        if original_side == "شراء":
             if not (old_stop < entry and all(v > entry for v in old_targets)):
                 skipped += 1
                 continue
-            stop = old_stop
             target_distances = sorted({round(v - entry, 12) for v in old_targets if v > entry})
+            side = "بيع"
         else:
             if not (old_stop > entry and all(v < entry for v in old_targets)):
                 skipped += 1
                 continue
-            stop = old_stop
             target_distances = sorted({round(entry - v, 12) for v in old_targets if v < entry})
+            side = "شراء"
+        stop = entry + risk if side == "بيع" else entry - risk
+        if stop <= 0:
+            skipped += 1
+            continue
         if not target_distances:
             skipped += 1
             continue
@@ -2262,10 +2265,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
 
         symbol = str(source_item.get("symbol") or "").strip().upper()
         change = market_changes.get(symbol)
-        site_supports_original_side = (
+        site_supports_reversed_side = (
             change is not None and ((side == "شراء" and change > 0) or (side == "بيع" and change < 0))
         )
-        site_score = 10 if site_supports_original_side else 0
+        site_score = 10 if site_supports_reversed_side else 0
         # Rank by observable setup quality, not a made-up win probability:
         # reward/risk geometry, freshness of the public idea, and market-context alignment.
         first_rr = target_distances[0] / risk if risk > 0 else 0.0
@@ -2280,8 +2283,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         item.update({
             "direction": side,
             "original_direction": original_side,
-            "title": f"{side} {symbol} — فكرة مصدر عام بالاتجاه الأصلي",
-            "description": "فرصة من فكرة تداول عامة منشورة خلال آخر 24 ساعة؛ اتجاه الشراء أو البيع محفوظ كما ورد في المصدر، مع تأكيد فني محلي محدود بنسبة 10%.",
+            "title": f"{side} {symbol} — فكرة عامة بعد عكس الاتجاه",
+            "description": "الاستراتيجية معكوسة بالكامل: تم قلب اتجاه المصدر، وعكس وقف الخسارة والأهداف حول سعر الدخول مع الحفاظ على مسافاتها.",
             "levels": {
                 "entry": entry, "stop_loss": stop,
                 "tp1": targets[0], "tp2": targets[1], "tp3": targets[2]
@@ -2294,8 +2297,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             "generated_by_site": False,
             "has_complete_levels": True,
             "levels_completed_by_site": levels_completed_by_site,
-            "level_source_note": ("المصدر قدّم بعض المستويات؛ المستويات الناقصة محسوبة رياضيًا من مسافة الدخول إلى وقف المصدر (R)، وليست منقولة عن المصدر."
-                                  if levels_completed_by_site else "المستويات محفوظة من المصدر العام دون عكس."),
+            "level_source_note": ("اتجاه الصفقة ومستويات الوقف والأهداف معكوسة؛ المستويات الناقصة محسوبة رياضيًا من مسافات المصدر (R)."
+                                  if levels_completed_by_site else "تم عكس اتجاه الصفقة والوقف والأهداف حسابيًا حول سعر الدخول."),
             "source_timeframe_missing": bool(source_item.get("interval_missing_in_source")),
             "method": "external_public_ideas_90_technical_analysis_10"
         })
@@ -2303,7 +2306,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         if not _public_idea_levels_ordered(item):
             skipped += 1
             continue
-        # Keep the risk/reward geometry sensible after inversion as well.
+        # Verify risk/reward geometry after inversion.
         try:
             first_reward_pct = abs(float(item["levels"]["tp1"]) - entry) / entry * 100
             mirrored_risk_pct = abs(float(item["levels"]["stop_loss"]) - entry) / entry * 100
