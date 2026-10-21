@@ -1727,7 +1727,7 @@ def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), lim
             stats["duplicate"] += 1
             continue
         clean = {key: value for key, value in raw.items() if not key.startswith("_")}
-        clean["url"] = ""
+        clean["url"] = url
         clean.update({
             "market": market, "direction": side or "غير محدد",
             "symbol": symbol or "غير محدد",
@@ -2144,7 +2144,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                              "message": "الفريم غير مدعوم."}, status_code=422)
 
     now = int(time.time())
-    cache_key = ("technical_only_v1", market, interval, limit)
+    cache_key = ("external_90_10_v2", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if not refresh and cached and now - cached[0] < 90:
