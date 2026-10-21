@@ -2389,14 +2389,23 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     # Keep only coherent, renderable trade plans. Never repair or invent missing levels here.
     items = [item for item in items if _signal_is_displayable(item)]
 
-    # The four-EMA stack determines each symbol's direction; market-wide direction is context only.
+    # Link every displayed signal to this market's overall direction.
+    # Bullish market => buys only; bearish market => sells only; neutral/unavailable => no signals.
     direction_snapshot = market_direction(market)
     direction_code = direction_snapshot.get("direction") if isinstance(direction_snapshot, dict) else None
     market_trend = {
         "BULLISH": "صاعد",
         "BEARISH": "هابط",
-        "NEUTRAL": "محايد"
-    }.get(direction_code, "محايد")
+        "NEUTRAL": "مختلط / محايد"
+    }.get(direction_code, "غير متاح")
+
+    if direction_code == "BULLISH":
+        items = [item for item in items if str(item.get("direction") or "") == "شراء"]
+    elif direction_code == "BEARISH":
+        items = [item for item in items if str(item.get("direction") or "") == "بيع"]
+    else:
+        # Do not show trades against an unclear or unavailable market-wide direction.
+        items = []
 
 
 
