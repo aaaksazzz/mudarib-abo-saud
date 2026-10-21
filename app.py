@@ -2383,8 +2383,34 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             technical_symbols.add(signal_symbol)
             technical_added += 1
 
+    def _signal_is_displayable(item):
+        """Reject malformed crypto symbols and price levels before caching or journaling."""
+        if not isinstance(item, dict):
+            return False
+        symbol = str(item.get("symbol") or "").strip().upper()
+        if not symbol:
+            return False
+        if market in {"spot", "futures", "alpha"} and not re.fullmatch(r"[A-Z0-9]+", symbol):
+            return False
+        levels = item.get("levels") if isinstance(item.get("levels"), dict) else {}
+        try:
+            entry, stop, tp1, tp2, tp3 = (float(levels[k]) for k in ("entry", "stop_loss", "tp1", "tp2", "tp3"))
+        except (KeyError, TypeError, ValueError, OverflowError):
+            return False
+        if not all(math.isfinite(v) and v > 0 for v in (entry, stop, tp1, tp2, tp3)):
+            return False
+        side = str(item.get("direction") or "")
+        if side == "شراء":
+            return stop < entry < tp1 <= tp2 <= tp3
+        if side == "بيع":
+            return stop > entry > tp1 >= tp2 >= tp3
+        return False
+
+    # Keep only coherent, renderable trade plans. Never repair or invent missing levels here.
+    items = [item for item in items if _signal_is_displayable(item)]
+
     def _tp3_profit_rank(item):
-        """Rank by projected TP3 return percentage first, then reward/risk and quality."""
+        """Prefer risk/reward and signal quality; use TP3 return to break ties."""
         levels = item.get("levels") if isinstance(item.get("levels"), dict) else {}
         try:
             entry = float(levels["entry"])
@@ -2392,7 +2418,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             tp3 = float(levels["tp3"])
             side = str(item.get("direction") or "")
             if not all(math.isfinite(v) and v > 0 for v in (entry, stop, tp3)):
-                return (-1.0, -1.0, -1, 0)
+                return (-1.0, -1.0, -1.0, 0)
             if side == "شراء" and tp3 > entry and stop < entry:
                 reward_pct = (tp3 - entry) / entry * 100.0
                 risk_pct = (entry - stop) / entry * 100.0
@@ -2400,16 +2426,16 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 reward_pct = (entry - tp3) / entry * 100.0
                 risk_pct = (stop - entry) / entry * 100.0
             else:
-                return (-1.0, -1.0, -1, 0)
+                return (-1.0, -1.0, -1.0, 0)
             rr = reward_pct / risk_pct if risk_pct > 0 else 0.0
             score = float(item.get("ai_score", 50) or 0)
             published = int(item.get("published_at", 0) or 0)
-            return (reward_pct, rr, score, published)
+            return (rr, score, reward_pct, published)
         except (KeyError, TypeError, ValueError, OverflowError, ZeroDivisionError):
-            return (-1.0, -1.0, -1, 0)
+            return (-1.0, -1.0, -1.0, 0)
 
-    # TP3's projected percentage return is the primary ranking criterion.
-    # This is a target-distance estimate, not a guaranteed or backtested profit.
+    # Rank risk/reward first, then the available quality score, then TP3 return.
+    # These are estimates, not guaranteed or backtested profits.
     items.sort(key=_tp3_profit_rank, reverse=True)
     result = {
         "ok": True, "live": bool(items), "market": market, "interval": interval,
