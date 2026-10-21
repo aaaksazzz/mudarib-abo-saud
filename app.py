@@ -673,6 +673,7 @@ def retired_trade_boards_redirect():
     return RedirectResponse(url="/markets/spot", status_code=308)
 
 
+@app.get("/market-direction", response_class=HTMLResponse)
 @app.get("/markets/spot", response_class=HTMLResponse)
 @app.get("/markets/futures", response_class=HTMLResponse)
 @app.get("/markets/contracts", response_class=HTMLResponse)
@@ -692,6 +693,7 @@ def section_page(request: Request):
     # Give each shareable section its own canonical URL and search snippet.
     # The SPA shell is shared, but search engines must not see every section as "/".
     section_seo = {
+        "/market-direction": ("توجهات الأسواق | التداول الذكي PRO", "عرض اتجاهات الأسواق حسب البيانات العامة المتاحة لكل سوق."),
         "/analysis": ("مناهج التحليل الفني | التداول الذكي PRO", "مكتبة مناهج التحليل الفني: حركة السعر، SMC، ICT، السيولة، النماذج، وإدارة المخاطر."),
         "/tasi-analysis": ("تحليل المؤشر العام لتاسي | التداول الذكي PRO", "تحليل اتجاه المؤشر العام للسوق السعودي تاسي، تغيراته ومستوياته الفنية عبر عدة أطر زمنية."),
         "/markets/spot": ("سوق السبوت | التداول الذكي PRO", "متابعة أسعار Binance Spot وفرص السوق حسب الفريم، مع توضيح أن الإشارات آلية أولية وليست ضمانًا للربح."),
