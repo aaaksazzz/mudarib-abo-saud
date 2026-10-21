@@ -2041,8 +2041,6 @@ SCAN_CURSOR_LOCK = threading.Lock()
 def _multi_method_technical_signal(market, symbol, interval):
     """Natural trend strategy: EMA200 < EMA100 < EMA50 < EMA20 and price above EMA20 for BUY; reverse for SELL."""
     try:
-        if interval == "1M":
-            return None
         candles = candle_data(market, symbol, interval)
         if not isinstance(candles, list) or len(candles) < 205:
             return None
@@ -2083,7 +2081,7 @@ def _multi_method_technical_signal(market, symbol, interval):
         atr = sum(true_ranges) / len(true_ranges) if true_ranges else 0
         if not math.isfinite(atr) or atr <= 0 or entry <= 0:
             return None
-        risk_cap = entry * {"15m": 0.03, "1h": 0.05, "2h": 0.06, "4h": 0.08, "1d": 0.12, "1w": 0.18}.get(interval, 0.03)
+        risk_cap = entry * {"15m": 0.03, "30m": 0.04, "1h": 0.05, "2h": 0.06, "4h": 0.08, "1d": 0.12, "1w": 0.18, "1M": 0.25}.get(interval, 0.03)
         risk = min(atr * 1.5, risk_cap)
         if not math.isfinite(risk) or risk <= 0:
             return None
@@ -2129,7 +2127,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     if market not in allowed_markets:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "السوق غير مدعوم."}, status_code=404)
-    if interval not in {"15m", "1h", "2h", "4h", "1d", "1w"}:
+    if interval not in INTERVALS:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "الفريم غير مدعوم."}, status_code=422)
 
@@ -2534,7 +2532,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
 
 # Persistent background scanner: runs even when no visitor has a market page open.
 AUTO_SCAN_MARKETS = ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex")
-AUTO_SCAN_INTERVALS = ("15m", "1h", "2h", "4h", "1d", "1w")
+AUTO_SCAN_INTERVALS = ("15m", "30m", "1h", "2h", "4h", "1d", "1w", "1M")
 AUTO_SCAN_START_LOCK = threading.Lock()
 AUTO_SCAN_STARTED = False
 
