@@ -2150,8 +2150,14 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         if not refresh and cached and now - cached[0] < 90:
             return {**cached[1], "cached": True}
 
-    # Technical-only mode: public/external idea feeds are intentionally not used.
-    external = {"ok": True, "items": [], "diagnostics": {"fetched": 0}, "sources_checked": 0, "sources_failed": 0}
+    # 90% public ideas from open sources (last 24h); 10% local technical confirmation.
+    try:
+        external = public_ideas(market, interval, limit=50, discover=True, refresh=refresh)
+        if not isinstance(external, dict):
+            external = {"ok": False, "items": [], "sources_checked": 0, "sources_failed": 1}
+    except Exception as exc:
+        print(f"public ideas scan failed {market}/{interval}: {type(exc).__name__}")
+        external = {"ok": False, "items": [], "sources_checked": 0, "sources_failed": 1}
 
     # Live site-market data provides technical candidates and contextual confirmation.
     market_changes = {}
@@ -2173,7 +2179,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     skipped = 0
     source_buy_count = 0
     source_sell_count = 0
+    external_quota = max(0, limit - max(1, round(limit * 0.10)))
     for source_item in external.get("items", []) if isinstance(external, dict) else []:
+        if len(items) >= external_quota:
+            break
         if not isinstance(source_item, dict):
             continue
         original_side = str(source_item.get("direction") or "")
@@ -2277,15 +2286,15 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             "direction": side,
             "original_direction": original_side,
             "title": f"{side} {symbol} — عكس فكرة مصدر عام",
-            "description": "50% أفكار تداول من المصادر العامة بعد عكس اتجاهها، و50% تحليل فني من بيانات الشموع الفعلية عبر محرك الموقع.",
+            "description": "فرصة من فكرة تداول عامة منشورة خلال آخر 24 ساعة؛ عُكس اتجاه الفكرة وفق إعداد الاستراتيجية، مع تأكيد فني محلي محدود بنسبة 10%.",
             "levels": {
                 "entry": entry, "stop_loss": stop,
                 "tp1": targets[0], "tp2": targets[1], "tp3": targets[2]
             },
             "ai_score": score,
             "site_context_score": site_score,
-            "external_source_weight": 50,
-            "site_analysis_weight": 50,
+            "external_source_weight": 90,
+            "site_analysis_weight": 10,
             "signal_inverted": True,
             "generated_by_site": False,
             "has_complete_levels": True,
@@ -2293,7 +2302,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             "level_source_note": ("المصدر قدّم بعض المستويات؛ المستويات الناقصة محسوبة رياضيًا من مسافة الدخول إلى وقف المصدر (R)، وليست منقولة عن المصدر."
                                   if levels_completed_by_site else "المستويات من المصدر العام ثم عُكست حول الدخول."),
             "source_timeframe_missing": bool(source_item.get("interval_missing_in_source")),
-            "method": "external_public_ideas_50_technical_analysis_50_inverted"
+            "method": "external_public_ideas_90_technical_analysis_10_inverted"
         })
         # Final guard: never display malformed or incorrectly ordered levels.
         if not _public_idea_levels_ordered(item):
@@ -2314,9 +2323,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             continue
         items.append(item)
 
-    # Fill the requested list from technical signals only; no public idea sources.
-    items = []
-    technical_quota = limit
+    # Fill only the remaining ~10% with local technical signals.
+    technical_quota = max(1, round(limit * 0.10))
     live_rows = (snapshot.get("items", []) if isinstance(snapshot, dict) else [])
     if live_rows:
         cursor_key = (market, interval)
@@ -2373,8 +2381,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 "site_context_score": None,
                 "signal_inverted": False,
                 "generated_by_site": True,
-                "description": "فرصة ناتجة من التحليل الفني وبيانات السوق الفعلية فقط؛ لا تعتمد على مصادر أفكار عامة.",
-                "method": "technical_only_multi_method",
+                "description": "فرصة من التحليل الفني المحلي، ضمن الحصة المحدودة البالغة نحو 10% من النتائج.",
+                "method": "technical_confirmation_10pct",
                 "level_source_note": "الدخول من آخر شمعة فعلية، ووقف الخسارة والأهداف محسوبة من ATR ومخاطرة محددة؛ ليست مستويات من مصدر خارجي."
             })
             items.append(signal)
@@ -2393,13 +2401,14 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "source_sell_ideas": source_sell_count,
         "inverted_buy_opportunities": sum(1 for item in items if item.get("direction") == "شراء"),
         "inverted_sell_opportunities": sum(1 for item in items if item.get("direction") == "بيع"),
-        "external_source_weight": 0, "site_analysis_weight": 100,
+        "external_source_weight": 90, "site_analysis_weight": 10,
         "technical_fallback_used": False,
-        "technical_opportunities": len(items),
-        "external_opportunities": 0,
-        "message": ("تم الفحص بالتحليل الفني وبيانات السوق فقط؛ العدد النهائي يعتمد على تحقق شروط الإشارة."
+        "technical_opportunities": sum(1 for item in items if item.get("generated_by_site")),
+        "external_opportunities": sum(1 for item in items if not item.get("generated_by_site")),
+        "max_age_hours": 24,
+        "message": ("تم البحث في الأفكار العامة المنشورة خلال آخر 24 ساعة، مع حصة تحليل فني محلي تقارب 10%؛ العدد يعتمد على توفر أفكار مكتملة وصالحة."
                     if items else
-                    "ما لقينا فرصًا فنية مكتملة في دفعة الفحص الحالية؛ لم تُنشأ صفقات وهمية.")
+                    "لم تتوفر في هذه الجولة فرص عامة حديثة بمستويات صالحة أو فرص فنية مؤكدة؛ لم تُنشأ صفقات وهمية.")
     }
     # Persist the latest scan per market/timeframe so users can reopen the page
     # without having to trigger a fresh scan.
