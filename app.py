@@ -2327,6 +2327,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     # Fill only the remaining ~10% with local technical signals.
     technical_quota = max(1, round(limit * 0.10))
     live_rows = (snapshot.get("items", []) if isinstance(snapshot, dict) else [])
+    scanned_count = 0
     if live_rows:
         cursor_key = (market, interval)
         # Scan a larger rotating batch on every refresh, using a small worker pool
@@ -2375,17 +2376,46 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 technical_score = int(max(0, min(100, float(signal.get("ai_score", 50)))))
             except (TypeError, ValueError, OverflowError):
                 technical_score = 50
+            # Invert local technical signals too, keeping all prices on the correct side of entry.
+            raw_direction = str(signal.get("direction") or "")
+            levels = signal.get("levels") if isinstance(signal.get("levels"), dict) else {}
+            try:
+                entry = float(levels["entry"])
+                old_stop = float(levels["stop_loss"])
+                old_targets = [float(levels[k]) for k in ("tp1", "tp2", "tp3")]
+            except (KeyError, TypeError, ValueError, OverflowError):
+                continue
+            if raw_direction not in {"شراء", "بيع"} or not all(math.isfinite(v) and v > 0 for v in [entry, old_stop, *old_targets]):
+                continue
+            risk = abs(entry - old_stop)
+            if risk <= 0:
+                continue
+            if raw_direction == "شراء":
+                inverted_direction = "بيع"
+                stop = entry + risk
+                targets = sorted([entry - abs(target - entry) for target in old_targets], reverse=True)
+            else:
+                inverted_direction = "شراء"
+                stop = entry - risk
+                targets = sorted([entry + abs(target - entry) for target in old_targets])
+            if stop <= 0 or any(target <= 0 for target in targets):
+                continue
+            signal["direction"] = inverted_direction
+            signal["title"] = f"{inverted_direction} {signal_symbol} — إشارة فنية معكوسة"
+            signal["levels"] = {"entry": entry, "stop_loss": stop, "tp1": targets[0], "tp2": targets[1], "tp3": targets[2]}
             signal.update({
                 "ai_score": technical_score,
                 "external_source_weight": 0,
                 "site_analysis_weight": 100,
                 "site_context_score": None,
-                "signal_inverted": False,
+                "signal_inverted": True,
                 "generated_by_site": True,
-                "description": "فرصة من التحليل الفني المحلي، ضمن الحصة المحدودة البالغة نحو 10% من النتائج.",
-                "method": "technical_confirmation_10pct",
-                "level_source_note": "الدخول من آخر شمعة فعلية، ووقف الخسارة والأهداف محسوبة من ATR ومخاطرة محددة؛ ليست مستويات من مصدر خارجي."
+                "description": "فرصة من التحليل الفني المحلي بعد عكس اتجاه الإشارة، ضمن الحصة المحدودة البالغة نحو 10% من النتائج.",
+                "method": "technical_confirmation_10pct_inverted",
+                "level_source_note": "الدخول من آخر شمعة فعلية؛ وقف الخسارة والأهداف عُكست رياضيًا حول الدخول من مستويات التحليل الفني المحلي."
             })
+            if not _public_idea_levels_ordered(signal):
+                continue
             items.append(signal)
             technical_symbols.add(signal_symbol)
             technical_added += 1
