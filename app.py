@@ -2399,13 +2399,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "NEUTRAL": "مختلط / محايد"
     }.get(direction_code, "غير متاح")
 
-    if direction_code == "BULLISH":
-        items = [item for item in items if str(item.get("direction") or "") == "شراء"]
-    elif direction_code == "BEARISH":
-        items = [item for item in items if str(item.get("direction") or "") == "بيع"]
-    else:
-        # Do not show trades against an unclear or unavailable market-wide direction.
-        items = []
+    # Show both buy and sell signals; market-wide direction is informational only.
 
 
 
