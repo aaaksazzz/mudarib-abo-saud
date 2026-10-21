@@ -2039,11 +2039,10 @@ SCAN_CURSOR_LOCK = threading.Lock()
 
 
 def _multi_method_technical_signal(market, symbol, interval):
-    """EMA200/EMA50 direction filter, followed by price-action confirmation and ATR risk levels."""
+    """Natural trend strategy: EMA200 < EMA100 < EMA50 < EMA20 and price above EMA20 for BUY; reverse for SELL."""
     try:
         if interval == "1M":
             return None
-
         candles = candle_data(market, symbol, interval)
         if not isinstance(candles, list) or len(candles) < 205:
             return None
@@ -2052,41 +2051,40 @@ def _multi_method_technical_signal(market, symbol, interval):
         highs = [float(c["high"]) for c in candles]
         lows = [float(c["low"]) for c in candles]
         closes = [float(c["close"]) for c in candles]
-        volumes = [float(c.get("volume") or 0) for c in candles]
         if not all(math.isfinite(v) and v > 0 for arr in (opens, highs, lows, closes) for v in arr[-205:]):
             return None
 
         entry = closes[-1]
         ema20 = _ema_series(closes, 20)
         ema50 = _ema_series(closes, 50)
+        ema100 = _ema_series(closes, 100)
         ema200 = _ema_series(closes, 200)
-        if any(not seq or len(seq) < 2 or seq[-1] is None or seq[-2] is None
-               for seq in (ema20, ema50, ema200)):
+        series = (ema20, ema50, ema100, ema200)
+        if any(not seq or len(seq) < 2 or seq[-1] is None or seq[-2] is None for seq in series):
             return None
-        e20, e50, e200 = ema20[-1], ema50[-1], ema200[-1]
+        e20, e50, e100, e200 = (seq[-1] for seq in series)
 
-        # Normal direction: align price and moving averages with the prevailing trend.
-        if e20 > e50 > e200:
+        # Require the complete four-EMA stack and price on the correct side of EMA20.
+        if e200 < e100 < e50 < e20 and entry > e20:
             side = "شراء"
-            confirmations = [entry > e20, e20 > ema20[-2], closes[-1] > opens[-1]]
-        elif e20 < e50 < e200:
+        elif e200 > e100 > e50 > e20 and entry < e20:
             side = "بيع"
-            confirmations = [entry < e20, e20 < ema20[-2], closes[-1] < opens[-1]]
         else:
             return None
 
-        confirmation_count = sum(bool(x) for x in confirmations)
-        if confirmation_count < 2:
-            return None
-        strength = ("شراء قوي" if side == "شراء" else "بيع قوي") if confirmation_count == 3 else side
-
+        # ATR-based risk levels are computed in the same direction as the signal.
         true_ranges = []
-        for k in range(max(1, len(candles)-14), len(candles)):
-            true_ranges.append(max(highs[k]-lows[k], abs(highs[k]-closes[k-1]), abs(lows[k]-closes[k-1])))
+        for k in range(max(1, len(candles) - 14), len(candles)):
+            true_ranges.append(max(
+                highs[k] - lows[k],
+                abs(highs[k] - closes[k-1]),
+                abs(lows[k] - closes[k-1])
+            ))
         atr = sum(true_ranges) / len(true_ranges) if true_ranges else 0
         if not math.isfinite(atr) or atr <= 0 or entry <= 0:
             return None
-        risk = min(atr * 1.5, entry * {"15m":0.03,"1h":0.05,"2h":0.06,"4h":0.08,"1d":0.12,"1w":0.18}.get(interval, 0.03))
+        risk_cap = entry * {"15m": 0.03, "1h": 0.05, "2h": 0.06, "4h": 0.08, "1d": 0.12, "1w": 0.18}.get(interval, 0.03)
+        risk = min(atr * 1.5, risk_cap)
         if not math.isfinite(risk) or risk <= 0:
             return None
         if side == "شراء":
@@ -2097,29 +2095,30 @@ def _multi_method_technical_signal(market, symbol, interval):
             targets = [entry - risk * n for n in (1, 2, 3)]
             if targets[-1] <= 0:
                 return None
+
         digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
         fmt = lambda value: round(float(value), digits)
         return {
-            "source": "استراتيجية الاتجاه الطبيعي EMA20/EMA50/EMA200",
-            "title": f"{strength} {symbol} — توافق المتوسطات",
+            "source": "استراتيجية ترتيب EMA200/EMA100/EMA50/EMA20",
+            "title": f"{side} {symbol} — ترتيب المتوسطات الأربعة",
             "description": (
-                "اتجاه طبيعي مع توافق EMA20 وEMA50 وEMA200 وتأكيد حركة السعر."
-                if confirmation_count == 3 else
-                "إشارة اتجاه مبدئية بتوافق المتوسطات مع تأكيدين فنيين؛ القوة أقل من الإشارة القوية."
-            ),
+                "شراء: EMA200 < EMA100 < EMA50 < EMA20 والسعر فوق EMA20."
+                if side == "شراء" else
+                "بيع: EMA200 > EMA100 > EMA50 > EMA20 والسعر تحت EMA20."
+            ) + " وقف الخسارة والأهداف محسوبة من ATR وباتجاه الصفقة.",
             "url": "", "published_at": int(time.time()), "market": market,
-            "direction": side, "signal_strength": strength, "symbol": symbol, "interval": interval,
+            "direction": side, "signal_strength": side, "symbol": symbol, "interval": interval,
             "levels": {"entry": fmt(entry), "stop_loss": fmt(stop), "tp1": fmt(targets[0]),
                        "tp2": fmt(targets[1]), "tp3": fmt(targets[2])},
             "has_complete_levels": True, "ai_score": 75,
-            "analysis_methods": ["EMA200 مقابل EMA50 لتحديد الاتجاه", "السعر مقابل EMA20",
-                                 "ميل EMA20", "اتجاه الشمعة الأخيرة", "ATR لإدارة المخاطر"],
-            "technical_methods_count": 4, "technical_method_scope_note": "هذه الإشارة تستخدم أربعة فحوص فنية؛ لا تدّعي تشغيل 200 منهج.", "age_hours": 0,
-            "generated_by_site": True, "signal_inverted": False,
+            "analysis_methods": ["EMA200", "EMA100", "EMA50", "EMA20", "السعر مقابل EMA20", "ATR لإدارة المخاطر"],
+            "technical_methods_count": 6,
+            "technical_method_scope_note": "شروط الاتجاه مبنية على ترتيب المتوسطات الأربعة والسعر؛ لا تدّعي تشغيل 200 منهج.",
+            "age_hours": 0, "generated_by_site": True, "signal_inverted": False,
             "raw_text": "إشارة محسوبة من شموع السوق الفعلية؛ لا تمثل نسبة نجاح مثبتة."
         }
     except (urllib.error.URLError, TimeoutError, OSError, KeyError, TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError) as exc:
-        print(f"moving-average scan skipped {market}/{symbol}/{interval}: {type(exc).__name__}")
+        print(f"four-EMA scan skipped {market}/{symbol}/{interval}: {type(exc).__name__}")
         return None
 
 @app.get("/api/signals/{market}")
@@ -2351,54 +2350,16 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 technical_score = int(max(0, min(100, float(signal.get("ai_score", 50)))))
             except (TypeError, ValueError, OverflowError):
                 technical_score = 50
-            # Invert BUY<->SELL and rebuild risk levels, not just the displayed label.
-            raw_direction = str(signal.get("direction") or "")
-            levels = signal.get("levels") if isinstance(signal.get("levels"), dict) else {}
-            try:
-                entry = float(levels["entry"])
-                old_stop = float(levels["stop_loss"])
-                old_targets = [float(levels[k]) for k in ("tp1", "tp2", "tp3")]
-            except (KeyError, TypeError, ValueError, OverflowError):
-                continue
-            original_values = [entry, old_stop, *old_targets]
-            if raw_direction not in {"شراء", "بيع"} or not all(math.isfinite(v) and v > 0 for v in original_values):
-                continue
-            if raw_direction == "شراء":
-                if not old_stop < entry or not (entry < old_targets[0] <= old_targets[1] <= old_targets[2]):
-                    continue
-                distances = sorted(v - entry for v in old_targets)
-                inverted_direction = "بيع"
-            else:
-                if not old_stop > entry or not (entry > old_targets[0] >= old_targets[1] >= old_targets[2]):
-                    continue
-                distances = sorted(entry - v for v in old_targets)
-                inverted_direction = "شراء"
-            risk = abs(entry - old_stop)
-            if risk <= 0:
-                continue
-            targets = ([entry - d for d in distances] if inverted_direction == "بيع"
-                       else [entry + d for d in distances])
-            targets.sort(reverse=(inverted_direction == "بيع"))
-            stop = entry + risk if inverted_direction == "بيع" else entry - risk
-            signal["direction"] = inverted_direction
-            original_strength = str(signal.get("signal_strength") or raw_direction)
-            signal["signal_strength"] = (
-                ("بيع قوي" if inverted_direction == "بيع" else "شراء قوي")
-                if "قوي" in original_strength else inverted_direction
-            )
-            signal["title"] = f"{inverted_direction} {signal_symbol} — إشارة فنية معكوسة"
-            signal["levels"] = {"entry": entry, "stop_loss": stop, "tp1": targets[0], "tp2": targets[1], "tp3": targets[2]}
+            # Keep the technical engine's original direction and its matching ATR levels.
             signal.update({
-                "ai_score": technical_score,
                 "external_source_weight": 0,
                 "site_analysis_weight": 100,
                 "site_context_score": None,
-                "signal_inverted": True,
-                "original_direction": raw_direction,
+                "signal_inverted": False,
                 "generated_by_site": True,
-                "description": "إشارة فنية معكوسة: شراء يصبح بيعًا والبيع يصبح شراءً، مع إعادة حساب الوقف والأهداف.",
-                "method": "technical_confirmation_inverted",
-                "level_source_note": "أُعيد حساب وقف الخسارة والأهداف حول الدخول بعد عكس اتجاه الإشارة."
+                "description": str(signal.get("description") or "إشارة فنية بترتيب المتوسطات الأربعة والاتجاه الطبيعي."),
+                "method": "four_ema_natural_direction",
+                "level_source_note": "اتجاه الإشارة ومستويات الوقف والأهداف محسوبة وفق ترتيب المتوسطات الطبيعي."
             })
             if not _public_idea_levels_ordered(signal):
                 continue
@@ -2432,7 +2393,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     # Keep only coherent, renderable trade plans. Never repair or invent missing levels here.
     items = [item for item in items if _signal_is_displayable(item)]
 
-    # Inverted strategy: bullish market => SELL only; bearish market => BUY only.
+    # The four-EMA stack determines each symbol's direction; market-wide direction is context only.
     direction_snapshot = market_direction(market)
     direction_code = direction_snapshot.get("direction") if isinstance(direction_snapshot, dict) else None
     market_trend = {
@@ -2440,12 +2401,6 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "BEARISH": "هابط",
         "NEUTRAL": "محايد"
     }.get(direction_code, "محايد")
-    if direction_code == "BULLISH":
-        items = [item for item in items if item.get("direction") == "بيع"]
-    elif direction_code == "BEARISH":
-        items = [item for item in items if item.get("direction") == "شراء"]
-    else:
-        items = []
 
 
 
