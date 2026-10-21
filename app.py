@@ -2400,9 +2400,9 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "technical_opportunities": sum(1 for item in items if item.get("generated_by_site")),
         "external_opportunities": sum(1 for item in items if not item.get("generated_by_site")),
         "max_age_hours": 24,
-        "message": ("تم البحث في الأفكار العامة المنشورة خلال آخر 24 ساعة، مع حصة تحليل فني محلي تقارب 10%؛ العدد يعتمد على توفر أفكار مكتملة وصالحة."
+        "message": ("الفرص مولدة من بيانات السوق والتحليل الفني داخل الموقع فقط، دون توصيات خارجية."
                     if items else
-                    "لم تتوفر في هذه الجولة فرص عامة حديثة بمستويات صالحة أو فرص فنية مؤكدة؛ لم تُنشأ صفقات وهمية.")
+                    "لم تتوفر حاليًا إشارات فنية مكتملة من بيانات الموقع؛ لم تُنشأ صفقات وهمية.")
     }
     # Persist the latest scan per market/timeframe so users can reopen the page
     # without having to trigger a fresh scan.
