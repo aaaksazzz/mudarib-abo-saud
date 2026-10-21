@@ -2381,6 +2381,11 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             targets.sort(reverse=(inverted_direction == "بيع"))
             stop = entry + risk if inverted_direction == "بيع" else entry - risk
             signal["direction"] = inverted_direction
+            original_strength = str(signal.get("signal_strength") or raw_direction)
+            signal["signal_strength"] = (
+                ("بيع قوي" if inverted_direction == "بيع" else "شراء قوي")
+                if "قوي" in original_strength else inverted_direction
+            )
             signal["title"] = f"{inverted_direction} {signal_symbol} — إشارة فنية معكوسة"
             signal["levels"] = {"entry": entry, "stop_loss": stop, "tp1": targets[0], "tp2": targets[1], "tp3": targets[2]}
             signal.update({
