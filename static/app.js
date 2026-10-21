@@ -19,6 +19,8 @@
     "/markets/forex-gold":"forex"
   };
   const marketKey = pathToMarket[path];
+  const scanIntervalOrder = ["15m","1h","2h","4h","1d","1w"];
+  let scanCycleIndex = 0;
   let selectedInterval = "15m";
   let marketSignalRefreshTimer = null;
   let marketSignalRefreshBusy = false;
@@ -96,9 +98,9 @@
       '</div>';
     const loadDirection=async()=>{const out=$("marketDirectionSummary"),btn=$("refreshMarketDirection");btn.disabled=true;out.innerHTML='<div class="loading">جاري حساب اتجاه '+esc(m.name)+'…</div>';try{const d=await getJSON("/api/market-direction?market="+encodeURIComponent(m.api));if(!d.ok)throw new Error(d.message||"بيانات الاتجاه غير متاحة");const up=Number(d.assets_up||0),down=Number(d.assets_down||0),flat=Number(d.assets_flat||0),dir=d.direction_ar||"مختلط / محايد",color=d.direction==="BULLISH"?"var(--green)":d.direction==="BEARISH"?"var(--red)":"var(--gold)";out.innerHTML='<div class="market-direction-grid"><div class="feature-card direction-card direction-main"><small>التوجّه العام</small><strong style="color:'+color+'">'+esc(dir)+'</strong><span class="direction-caption">'+esc(m.name)+'</span></div><div class="feature-card direction-card"><small>متوسط التغيّر</small><strong>'+pct(d.price_change_pct)+'</strong><span class="direction-caption">حركة العينة</span></div><div class="feature-card direction-card"><small><i class="direction-dot up"></i> صاعد</small><strong style="color:var(--green)">'+up+'</strong><span class="direction-caption">أصل صاعد</span></div><div class="feature-card direction-card"><small><i class="direction-dot down"></i> هابط</small><strong style="color:var(--red)">'+down+'</strong><span class="direction-caption">أصل هابط</span></div><div class="feature-card direction-card"><small><i class="direction-dot flat"></i> مستقر</small><strong>'+flat+'</strong><span class="direction-caption">حركة محدودة</span></div><div class="feature-card direction-card"><small>الأصول المفحوصة</small><strong>'+esc(d.assets_sampled??up+down+flat)+'</strong><span class="direction-caption">ضمن العينة الحالية</span></div></div><p class="market-updated-at">آخر تحديث: '+timeText(d.updated_at)+(d.stale?' · بيانات محفوظة مؤقتًا وليست مباشرة':'')+'</p>';}catch(err){out.innerHTML=empty("تعذر تحديد توجّه السوق",err.message)}finally{btn.disabled=false}};
     $("refreshMarketDirection").addEventListener("click",loadDirection);
-    $("marketSignalFrames").addEventListener("click",e=>{const b=e.target.closest("[data-market-frame]");if(!b)return;selectedInterval=b.dataset.marketFrame;$("marketSignalFrames").querySelectorAll("[data-market-frame]").forEach(x=>{const active=x===b;x.classList.toggle("active",active);x.setAttribute("aria-pressed",active?"true":"false")});loadSignals(m)});
+    $("marketSignalFrames").addEventListener("click",e=>{const b=e.target.closest("[data-market-frame]");if(!b)return;selectedInterval=b.dataset.marketFrame;scanCycleIndex=scanIntervalOrder.indexOf(selectedInterval);if(scanCycleIndex<0)scanCycleIndex=0;$("marketSignalFrames").querySelectorAll("[data-market-frame]").forEach(x=>{const active=x===b;x.classList.toggle("active",active);x.setAttribute("aria-pressed",active?"true":"false")});loadSignals(m)});
     if(marketSignalRefreshTimer)clearInterval(marketSignalRefreshTimer);
-    marketSignalRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible" && $("signalContent") && $("signalMeta") && $("pageView").innerHTML.includes(esc(m.name))){loadDirection();loadSignals(m)}},30*1000);
+    marketSignalRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible" && $("signalContent") && $("signalMeta") && $("pageView").innerHTML.includes(esc(m.name)) && !marketSignalRefreshBusy){scanCycleIndex=(scanCycleIndex+1)%scanIntervalOrder.length;selectedInterval=scanIntervalOrder[scanCycleIndex];$("marketSignalFrames").querySelectorAll("[data-market-frame]").forEach(x=>{const active=x.dataset.marketFrame===selectedInterval;x.classList.toggle("active",active);x.setAttribute("aria-pressed",active?"true":"false")});loadDirection();loadSignals(m)}},30*1000);
     $("signalContent").addEventListener("click",e=>{const b=e.target.closest("[data-inline-chart]");if(!b)return;const card=b.closest(".signal-card"),symbol=b.dataset.symbol,frame=b.dataset.frame||selectedInterval,box=card&&card.querySelector("[data-chart-box]");if(!box)return;if(box.dataset.open==="1"){box.dataset.open="0";box.innerHTML="";b.textContent="عرض الشارت داخل الصفقة";return;}box.dataset.open="1";b.textContent="إخفاء الشارت";box.innerHTML='<div class="loading">تحميل الشارت…</div>';getJSON("/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(symbol)+"&interval="+encodeURIComponent(frame)).then(d=>{if(box.dataset.open==="1")box.innerHTML=drawCandles(d.items||[])}).catch(err=>{if(box.dataset.open==="1")box.innerHTML=empty("الشارت غير متاح",err.message)});});
     loadDirection();
     // Load the latest opportunities automatically when a market page opens.
@@ -164,7 +166,7 @@
     if(!out||!meta)return;
     marketSignalRefreshBusy=true;
     if(status)status.textContent="● جاري الفحص التلقائي";
-    meta.textContent="جاري فحص "+selectedInterval+" وترتيب الفرص…";
+    meta.textContent="فحص متتابع يبدأ بالسريع: "+selectedInterval+" ثم الأبطأ…";
     if(!out.innerHTML.trim() || out.innerHTML.includes("جاري"))out.innerHTML='<div class="loading">جاري فحص الفرص تلقائيًا…</div>';
     try {
       const d=await getJSON("/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedInterval)+"&limit=20&refresh=true");
@@ -178,7 +180,7 @@
         if(bb===null)return -1;
         return bb-aa;
       });
-      meta.textContent="تم فحص "+(d.scanned??"—")+" أصل · "+items.length+" فرصة · الترتيب حسب الثقة المتاحة";
+      meta.textContent="فُحص "+(d.scanned??"—")+" أصل على "+selectedInterval+" · "+items.length+" فرصة · ينتقل تلقائيًا من الأسرع للأبطأ";
       const bestBuy=items.find(x=>["شراء","BUY","LONG"].includes(x.direction||x.side)),bestSell=items.find(x=>["بيع","SELL","SHORT"].includes(x.direction||x.side)),bestBox=$("marketBestSides");if(bestBox)bestBox.innerHTML='<div class="feature-card"><small>أفضل شراء</small><strong>'+esc(bestBuy?.symbol||"لا توجد فرصة")+'</strong><small>'+esc(bestBuy?(bestBuy.interval||selectedInterval)+" · تقييم "+(bestBuy.ai_score??bestBuy.confidence??"—")+"/100":"لم تظهر صفقة شراء مؤهلة")+'</small></div><div class="feature-card"><small>أفضل بيع</small><strong>'+esc(bestSell?.symbol||"لا توجد فرصة")+'</strong><small>'+esc(bestSell?(bestSell.interval||selectedInterval)+" · تقييم "+(bestSell.ai_score??bestSell.confidence??"—")+"/100":"لم تظهر صفقة بيع مؤهلة")+'</small></div>';
       out.innerHTML=items.length?items.map((x,i)=>signalCard(x,i)).join(""):empty("لا توجد فرص مؤهلة الآن",d.message||"لن نعرض صفقة بمستويات ناقصة أو غير مرتبة.");
     } catch(err) {out.innerHTML=empty("تعذر فحص الفرص",err.message);meta.textContent="فشل الفحص"}
