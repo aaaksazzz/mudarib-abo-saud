@@ -789,6 +789,10 @@ def _load_saudi_symbols():
                         break
             except Exception as exc:
                 print(f"TASI directory discovery failed: {type(exc).__name__}")
+            # Keep TASI common equities only; exclude Nomu codes beginning with 9.
+            discovered = {str(symbol) for symbol in discovered
+                          if str(symbol).endswith(".SR") and str(symbol)[:-3].isdigit()
+                          and not str(symbol)[:-3].startswith("9")}
             if not discovered:
                 discovered = {str(symbol) for symbol in YAHOO_MARKETS.get("saudi", [])
                               if str(symbol).endswith(".SR") and str(symbol)[:-3].isdigit()
@@ -2303,7 +2307,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         cursor_key = (market, interval)
         # Scan a larger rotating batch on every refresh, using a small worker pool
         # to avoid making each market page wait on symbols one by one.
-        scan_batch_size = min(20, len(live_rows))
+        scan_batch_size = min(8, len(live_rows))
         scanned_count = 0
         with SCAN_CURSOR_LOCK:
             start = SCAN_CURSORS.get(cursor_key, 0) % len(live_rows)
@@ -2313,7 +2317,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         technical_symbols = {str(item.get("symbol") or "").strip().upper() for item in items}
         technical_added = 0
         scan_jobs = []
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=2) as pool:
             future_rows = {
                 pool.submit(
                     _multi_method_technical_signal, market,
@@ -2587,7 +2591,7 @@ def _auto_scan_worker():
         except Exception as exc:
             print(f"auto scan failed {market}/{interval}: {type(exc).__name__}")
         # Keep pressure low on the small hosting instance; rotate to a different pair next.
-        time.sleep(15)
+        time.sleep(25)
 
 @app.on_event("startup")
 def start_auto_scan_worker():
