@@ -56,7 +56,7 @@
   function pageHeader(title, desc, crumb="الرئيسية") {
     return '<div class="section-heading"><div><span class="eyebrow">'+esc(crumb)+'</span><h1 class="page-title">'+esc(title)+'</h1><p class="page-intro">'+esc(desc)+'</p></div></div>';
   }
-  function footerNotice(text) { return '<p class="muted">'+esc(text)+'</p>'; }
+  function footerNotice(text) { return '<p class="news-summary">'+esc(text)+'</p>'; }
   function activateDrawer() {
     const drawer=$("drawer"), backdrop=$("backdrop"), toggle=$("menuToggle");
     const open=()=>{drawer.classList.add("open");backdrop.hidden=false;drawer.setAttribute("aria-hidden","false");toggle.setAttribute("aria-expanded","true");document.body.style.overflow="hidden"};
@@ -242,7 +242,7 @@
           ["الأثر غير محسوم",unclear]
         ].map(x=>'<article class="stat-card"><small>'+esc(x[0])+'</small><strong>'+esc(x[1])+'</strong></article>').join("");
         if(!items.length){out.innerHTML=empty("ما فيه أخبار مطابقة",d.message||"جرّب سوقًا آخر أو حدّث الأخبار.");return;}
-        out.innerHTML='<div class="feature-grid">'+items.map(x=>{
+        out.innerHTML='<div class="news-grid">'+items.slice(0,24).map(x=>{
           const labels=Array.isArray(x.asset_labels)?x.asset_labels.filter(Boolean):[];
           const direction=String(x.direction_ar||"غير واضح");
           const positiveLike=/إيجابي|positive/i.test(direction);
@@ -254,7 +254,7 @@
           const url=String(x.url||"");
           const sourceLink=/^https:\/\//i.test(url)?'<a class="read" href="'+escAttr(url)+'" target="_blank" rel="noopener noreferrer">قراءة المصدر ↗</a>':"";
           const published=x.published_at?timeText(x.published_at):"وقت النشر غير متوفر";
-          return '<article class="feature-card post" style="display:flex;flex-direction:column;gap:9px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><span class="badge">'+esc(marketNames[x.market]||marketNames[market]||"السوق")+'</span><span style="font-size:12px;font-weight:800;color:'+badgeColor+'">'+esc(impact)+'</span></div><strong style="font-size:16px;line-height:1.7">'+esc(x.title||x.headline||"خبر سوق")+'</strong><div class="muted" style="font-size:12px">الأصل المذكور: <b>'+esc(assets)+'</b></div><p class="muted">'+esc(x.description||x.summary||"لا يتوفر ملخص إضافي من المصدر.")+'</p><small class="muted">'+esc(source)+' · '+esc(published)+'</small>'+sourceLink+'</article>';
+          return '<article class="news-card"><div class="news-card-top"><span class="badge">'+esc(marketNames[x.market]||marketNames[market]||"السوق")+'</span><span class="news-impact" style="color:'+badgeColor+'">'+esc(impact)+'</span></div><strong class="news-title">'+esc(x.title||x.headline||"خبر سوق")+'</strong><div class="news-asset">الأصل المذكور: <b>'+esc(assets)+'</b></div><p class="muted">'+esc(x.description||x.summary||"لا يتوفر ملخص إضافي من المصدر.")+'</p><small class="news-meta">'+esc(source)+' · '+esc(published)+'</small>'+sourceLink+'</article>';
         }).join("")+'</div>';
       }catch(err){summary.innerHTML="";out.innerHTML=empty("تعذر تحميل الأخبار",err.message||"تحقق من اتصال الخدمة ثم أعد المحاولة.");}
     };
