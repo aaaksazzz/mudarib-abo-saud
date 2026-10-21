@@ -2411,18 +2411,22 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
 
     # Enforce market-wide direction: bullish markets show buys only; bearish markets show sells only.
     # In a neutral/mixed market, stand aside rather than mixing opposing directions.
-    trend_values = list(market_changes.values())
-    trend_up = sum(1 for value in trend_values if value > 0.10)
-    trend_down = sum(1 for value in trend_values if value < -0.10)
-    trend_average = (sum(trend_values) / len(trend_values)) if trend_values else 0.0
-    market_trend = ("صاعد" if trend_average >= 0.15 and trend_up > trend_down
-                    else "هابط" if trend_average <= -0.15 and trend_down > trend_up
-                    else "محايد")
-    if market_trend == "صاعد":
+    # Use the same canonical market-direction endpoint as the overview card.
+    # This prevents the signal list and visible market trend from using separate snapshots.
+    direction_snapshot = market_direction(market)
+    direction_code = direction_snapshot.get("direction") if isinstance(direction_snapshot, dict) else None
+    market_trend = {
+        "BULLISH": "صاعد",
+        "BEARISH": "هابط",
+        "NEUTRAL": "محايد"
+    }.get(direction_code, "محايد")
+    if direction_code == "BULLISH":
         items = [item for item in items if item.get("direction") == "شراء"]
-    elif market_trend == "هابط":
+    elif direction_code == "BEARISH":
         items = [item for item in items if item.get("direction") == "بيع"]
     else:
+        # If the canonical trend is unavailable or mixed, fail closed rather than
+        # displaying a direction that may conflict with the market overview.
         items = []
 
 
