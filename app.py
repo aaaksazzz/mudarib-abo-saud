@@ -2453,11 +2453,12 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             rr = reward_pct / risk_pct if risk_pct > 0 else 0.0
             score = float(item.get("ai_score", 50) or 0)
             published = int(item.get("published_at", 0) or 0)
-            return (rr, score, reward_pct, published)
+            # Rank by TP3 potential return first, then risk/reward, then score.
+            return (reward_pct, rr, score, published)
         except (KeyError, TypeError, ValueError, OverflowError, ZeroDivisionError):
             return (-1.0, -1.0, -1.0, 0)
 
-    # Rank risk/reward first, then the available quality score, then TP3 return.
+    # Rank by TP3 potential percentage return first, then risk/reward and signal score.
     # These are estimates, not guaranteed or backtested profits.
     items.sort(key=_tp3_profit_rank, reverse=True)
     result = {
