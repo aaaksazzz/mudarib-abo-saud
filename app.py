@@ -2038,8 +2038,8 @@ SCAN_CURSORS = {}
 SCAN_CURSOR_LOCK = threading.Lock()
 
 
-def _multi_method_technical_signal(market, symbol, interval):
-    """EMA200-only direction: strong buy above EMA200, strong sell below EMA200."""
+def _multi_method_technical_signal(market, symbol, interval, live_price=None):
+    """Use the latest market quote as entry when available; EMA200 determines direction."""
     try:
         candles = candle_data(market, symbol, interval)
         if not isinstance(candles, list) or len(candles) < 200:
@@ -2051,7 +2051,13 @@ def _multi_method_technical_signal(market, symbol, interval):
         if not all(math.isfinite(v) and v > 0 for arr in (highs, lows, closes) for v in arr[-200:]):
             return None
 
-        entry = closes[-1]
+        # Prefer the latest quote from the market snapshot over the last candle close.
+        # Fall back to candle close only when the snapshot has no valid quote.
+        try:
+            quoted_price = float(live_price)
+        except (TypeError, ValueError, OverflowError):
+            quoted_price = 0.0
+        entry = quoted_price if math.isfinite(quoted_price) and quoted_price > 0 else closes[-1]
         ema200 = _ema_series(closes, 200)
         if not ema200 or ema200[-1] is None or not math.isfinite(ema200[-1]):
             return None
@@ -2316,7 +2322,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             future_rows = {
                 pool.submit(
                     _multi_method_technical_signal, market,
-                    str(row.get("symbol") or "").strip().upper(), interval
+                    str(row.get("symbol") or "").strip().upper(), interval,
+                    row.get("price")
                 ): row
                 for row in scan_rows
                 if str(row.get("symbol") or "").strip().upper()
