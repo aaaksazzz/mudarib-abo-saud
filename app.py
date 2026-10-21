@@ -2126,7 +2126,7 @@ def _multi_method_technical_signal(market, symbol, interval):
 
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20), refresh: bool = Query(False)):
-    """Blend public ideas and local technical signals using their normal trade direction."""
+    """Build local technical signals and filter them by the canonical market direction."""
     market = (market or "").strip().lower()
     allowed_markets = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
     if market not in allowed_markets:
@@ -2277,8 +2277,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             "generated_by_site": False,
             "has_complete_levels": True,
             "levels_completed_by_site": levels_completed_by_site,
-            "level_source_note": ("اتجاه الصفقة ومستويات الوقف والأهداف معكوسة؛ المستويات الناقصة محسوبة رياضيًا من مسافات المصدر (R)."
-                                  if levels_completed_by_site else "تم عكس اتجاه الصفقة والوقف والأهداف حسابيًا حول سعر الدخول."),
+            "level_source_note": ("تم استكمال الأهداف الناقصة حسابيًا من مسافة المخاطرة (R)، مع الحفاظ على اتجاه المصدر."
+                                  if levels_completed_by_site else "تم الحفاظ على اتجاه الصفقة ومستويات المصدر الأصلية دون عكس."),
             "source_timeframe_missing": bool(source_item.get("interval_missing_in_source")),
             "method": "external_public_ideas_normal_direction_90_technical_analysis_10"
         })
