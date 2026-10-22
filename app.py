@@ -2057,12 +2057,7 @@ def _ai_review_signal_batch(items, market, interval):
 
 
 def _ai_generate_market_signals(market, interval, market_rows, limit=20):
-    """Generate hypotheses from raw candles only, with no indicators and no external trade ideas."""
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
-    if not api_key:
-        return [], False, "التحليل بالذكاء الاصطناعي متوقف: أضف OPENAI_API_KEY إلى إعدادات الخدمة."
-
+    """Generate local price-action candidates from raw OHLCV; no API, indicators, or LLM."""
     def _candidate_from_row(row):
         if not isinstance(row, dict):
             return None
@@ -2071,14 +2066,18 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
             return None
         try:
             candles = candle_data(market, symbol, interval, force_refresh=True)
-        except Exception:
+        except Exception as exc:
+            print(f"local candle analysis unavailable {market}/{symbol}: {type(exc).__name__}")
             return None
         raw = []
         for candle in candles[-30:] if isinstance(candles, list) else []:
             try:
                 x = {k: float(candle[k]) for k in ("open", "high", "low", "close")}
                 x["volume"] = float(candle.get("volume") or 0)
-                if all(math.isfinite(v) and v > 0 for v in x.values() if v != 0):
+                if (all(math.isfinite(x[k]) and x[k] > 0 for k in ("open", "high", "low", "close"))
+                    and x["high"] >= max(x["open"], x["close"])
+                    and x["low"] <= min(x["open"], x["close"])
+                    and x["high"] >= x["low"]):
                     raw.append(x)
             except (KeyError, TypeError, ValueError, OverflowError):
                 continue
@@ -2086,13 +2085,67 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
             return None
         try:
             price = float(row.get("price") or raw[-1]["close"])
-            change = float(row.get("change_pct") or 0)
         except (TypeError, ValueError, OverflowError):
-            price, change = raw[-1]["close"], 0
-        return {"symbol": symbol, "price": price, "change_pct": change, "candles": raw}
-
-    # Bound per-request work to protect the small production container from overload.
-    # Scan up to 20 unique assets per pass and avoid dozens of simultaneous requests.
+            price = raw[-1]["close"]
+        close = raw[-1]["close"]
+        if not math.isfinite(price) or price <= 0 or close <= 0 or abs(price - close) / close > 0.08:
+            return None
+        recent, prior = raw[-3:], raw[-11:-3]
+        if len(prior) < 8:
+            return None
+        prior_high, prior_low = max(c["high"] for c in prior), min(c["low"] for c in prior)
+        up = sum(c["close"] > c["open"] for c in recent)
+        down = sum(c["close"] < c["open"] for c in recent)
+        last = raw[-1]
+        candle_range = max(last["high"] - last["low"], close * 0.001)
+        close_position = (last["close"] - last["low"]) / candle_range
+        side, score = None, 0
+        avg_volume = sum(c["volume"] for c in prior[-3:]) / 3
+        if close > prior_high and up >= 2 and close_position >= 0.60:
+            side, score = "شراء", min(88, 58 + 7 * up + (5 if last["volume"] > avg_volume else 0))
+        elif close < prior_low and down >= 2 and close_position <= 0.40:
+            side, score = "بيع", min(88, 58 + 7 * down + (5 if last["volume"] > avg_volume else 0))
+        if not side or score < 65:
+            return None
+        swing = raw[-8:]
+        min_risk = max(close * 0.002, abs(last["high"] - last["low"]) * 0.5)
+        if side == "شراء":
+            stop = min(c["low"] for c in swing)
+            risk = max(close - stop, min_risk)
+            stop = close - risk
+            entry, tp1, tp2, tp3 = close, close + risk, close + risk * 1.6, close + risk * 2.2
+            if not stop < entry < tp1 < tp2 < tp3:
+                return None
+        else:
+            stop = max(c["high"] for c in swing)
+            risk = max(stop - close, min_risk)
+            stop = close + risk
+            entry, tp1, tp2, tp3 = close, close - risk, close - risk * 1.6, close - risk * 2.2
+            if not stop > entry > tp1 > tp2 > tp3 or tp3 <= 0:
+                return None
+        digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
+        now = int(time.time())
+        lifetime = {"15m": 900, "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400, "1w": 604800, "1M": 2592000}.get(interval, 900)
+        rationale = ("اختراق قمة نطاق الشموع السابقة مع تأكيد من أجسام الشموع الأخيرة."
+                     if side == "شراء" else "كسر قاع نطاق الشموع السابقة مع تأكيد من أجسام الشموع الأخيرة.")
+        return {
+            "symbol": symbol, "direction": side, "original_direction": side,
+            "title": f"{side} {symbol} — تحليل حركة السعر",
+            "description": rationale + " تحليل قواعدي من الشموع الخام، وليس نموذج ذكاء اصطناعي لغوي.",
+            "source": "محرك تحليل محلي لحركة السعر", "url": "",
+            "published_at": now, "created_at": now, "age_hours": 0,
+            "market": market, "interval": interval, "expires_at": now + lifetime,
+            "valid_for_seconds": lifetime, "price_updated_at": now, "price_fresh": True,
+            "freshness_label": "السعر مطابق تقريبًا لآخر شمعة", "live_price": round(price, digits),
+            "levels": {"entry": round(entry, digits), "stop_loss": round(stop, digits),
+                       "tp1": round(tp1, digits), "tp2": round(tp2, digits), "tp3": round(tp3, digits)},
+            "ai_score": score, "ai_reviewed": False, "generated_by_ai": False,
+            "ai_review": {"summary_ar": rationale, "risk_ar": "تحليل قواعدي غير مضمون؛ قد يفشل الاختراق أو يحدث انعكاس سريع.",
+                          "verdict": "تحليل محلي", "score_type": "درجة تحقق شروط حركة السعر وليست احتمال ربح"},
+            "external_source_weight": 0, "site_analysis_weight": 100, "signal_inverted": False,
+            "has_complete_levels": True, "level_source_note": "المستويات محسوبة من آخر شموع السوق الخام؛ ليست توصية خارجية.",
+            "method": "local_raw_candle_price_action_no_api"
+        }
     unique_rows, seen = [], set()
     for row in market_rows if isinstance(market_rows, list) else []:
         symbol = str(row.get("symbol") or "").strip().upper() if isinstance(row, dict) else ""
@@ -2106,85 +2159,15 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
         futures = [pool.submit(_candidate_from_row, row) for row in unique_rows]
         for future in as_completed(futures):
             try:
-                candidate = future.result()
-                if candidate:
-                    candidates.append(candidate)
-            except Exception:
-                continue
+                item = future.result()
+                if item:
+                    candidates.append(item)
+            except Exception as exc:
+                print(f"local signal candidate failed {market}: {type(exc).__name__}")
+    candidates.sort(key=lambda item: item.get("ai_score", 0), reverse=True)
     if not candidates:
-        return [], False, "لا توجد بيانات شموع خام كافية للتحليل."
-
-    prompt = (
-        "حلل بيانات الأسعار والشموع الخام التالية فقط، ولا تستخدم توصيات خارجية أو مؤشرات فنية أو متوسطات أو RSI أو MACD أو ATR أو أي مؤشرات. "
-        "استدل من حركة السعر المباشرة، القمم والقيعان، الرفض والاختراق الظاهر، وتغير الحجم الخام. لا تخترع فرصة إذا الأدلة ضعيفة. "
-        "أخرج JSON فقط: {\"signals\":[{\"symbol\":\"...\",\"direction\":\"شراء\",\"entry\":1,\"stop_loss\":0.9,\"tp1\":1.1,\"tp2\":1.2,\"tp3\":1.3,\"score\":60,\"rationale_ar\":\"...\",\"risk_ar\":\"...\"}]}. "
-        "استخدم فقط رموز البيانات المرفقة. مستويات الشراء يجب أن تحقق stop_loss < entry < tp1 <= tp2 <= tp3؛ والبيع stop_loss > entry > tp1 >= tp2 >= tp3. "
-        "score من 0 إلى 100 لقوة الأدلة وليس احتمال الربح. المستويات تقديرية وليست مضمونة. أعد عددًا قليلًا من الفرص الواضحة أو قائمة فارغة. البيانات: "
-        + json.dumps({"market": market, "timeframe": interval, "candidates": candidates}, ensure_ascii=False)
-    )
-    body = json.dumps({
-        "model": model,
-        "messages": [
-            {"role": "system", "content": "أنت محلل أسواق حذر. لا تستخدم مؤشرات فنية ولا تدّع ضمان الربح. أخرج JSON صحيحًا فقط."},
-            {"role": "user", "content": prompt}
-        ],
-        "response_format": {"type": "json_object"}, "temperature": 0.15, "max_tokens": 3000
-    }).encode("utf-8")
-    req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=body,
-        headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"}, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=25) as response:
-            parsed = json.loads(response.read(1_000_000).decode("utf-8", errors="replace"))
-        result = json.loads(parsed["choices"][0]["message"]["content"])
-        allowed = {x["symbol"] for x in candidates}
-        output = []
-        for s in result.get("signals", []) if isinstance(result.get("signals"), list) else []:
-            if not isinstance(s, dict):
-                continue
-            symbol, side = str(s.get("symbol") or "").strip().upper(), str(s.get("direction") or "")
-            if symbol not in allowed or side not in {"شراء", "بيع"}:
-                continue
-            try:
-                entry, stop = float(s["entry"]), float(s["stop_loss"])
-                tp1, tp2, tp3 = (float(s[k]) for k in ("tp1", "tp2", "tp3"))
-                score = int(max(0, min(100, float(s.get("score", 50)))))
-            except (KeyError, TypeError, ValueError, OverflowError):
-                continue
-            vals = (entry, stop, tp1, tp2, tp3)
-            if not all(math.isfinite(v) and v > 0 for v in vals):
-                continue
-            if side == "شراء" and not stop < entry < tp1 <= tp2 <= tp3:
-                continue
-            if side == "بيع" and not stop > entry > tp1 >= tp2 >= tp3:
-                continue
-            digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
-            output.append({
-                "symbol": symbol, "direction": side, "original_direction": side,
-                "title": f"{side} {symbol} — تحليل ذكاء اصطناعي",
-                "description": str(s.get("rationale_ar") or "تحليل حركة السعر الخام دون مؤشرات فنية.")[:700],
-                "source": "تحليل الذكاء الاصطناعي لبيانات السوق الخام", "url": "",
-                "published_at": int(time.time()), "created_at": int(time.time()), "age_hours": 0,
-                "market": market, "interval": interval,
-                "expires_at": int(time.time()) + {"15m": 900, "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400, "1w": 604800, "1M": 2592000}.get(interval, 900),
-                "valid_for_seconds": {"15m": 900, "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400, "1w": 604800, "1M": 2592000}.get(interval, 900),
-                "price_updated_at": int(time.time()),
-                "price_fresh": True, "freshness_label": "سعر محدث وقت التحليل",
-                "live_price": round(next((float(x.get("price")) for x in candidates if x.get("symbol") == symbol and x.get("price")), entry), digits),
-                "levels": {"entry": round(entry, digits), "stop_loss": round(stop, digits),
-                           "tp1": round(tp1, digits), "tp2": round(tp2, digits), "tp3": round(tp3, digits)},
-                "ai_score": score, "ai_reviewed": True, "generated_by_ai": True,
-                "ai_review": {"summary_ar": str(s.get("rationale_ar") or "")[:500],
-                              "risk_ar": str(s.get("risk_ar") or "قد يخفق التحليل؛ راقب تقلب السوق.")[:400],
-                              "verdict": "حذر", "score_type": "قوة الأدلة وليست نسبة ربح"},
-                "external_source_weight": 0, "site_analysis_weight": 100,
-                "signal_inverted": False, "has_complete_levels": True,
-                "level_source_note": "مستويات تقديرية من تحليل الذكاء الاصطناعي، وليست من توصية خارجية.",
-                "method": "ai_raw_price_action_no_indicators"
-            })
-        return output[:limit], True, "تحليل ذكاء اصطناعي للشموع الخام دون مؤشرات فنية."
-    except (urllib.error.URLError, TimeoutError, OSError, KeyError, TypeError, ValueError, IndexError) as exc:
-        print(f"AI market analysis unavailable {market}/{interval}: {type(exc).__name__}")
-        return [], False, "تعذر إكمال تحليل الذكاء الاصطناعي؛ تحقق من المفتاح والاتصال وحدود الاستخدام."
+        return [], True, "اكتمل فحص الشموع محليًا؛ لم تتحقق شروط اختراق واضحة كفاية لعرض صفقة."
+    return candidates[:limit], True, "تحليل محلي للشموع الخام دون API أو مؤشرات فنية؛ ليس نموذج ذكاء اصطناعي لغوي."
 
 
 @app.get("/api/signals/{market}")
