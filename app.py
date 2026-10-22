@@ -1527,6 +1527,7 @@ def _public_idea_symbol_matches_market(market, symbol, text_value=""):
     if market == "contracts":
         contract_bases = {str(item).removesuffix("=F") for item in YAHOO_MARKETS.get("contracts", [])}
         return symbol in contract_bases or symbol in {"DXY", "VIX"}
+    if market == "forex":
         return symbol in {"EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF",
                           "NZDUSD", "EURGBP", "EURJPY", "GBPJPY", "XAUUSD", "XAGUSD",
                           "GOLD", "SILVER", "DXY"}
