@@ -2181,7 +2181,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     skipped = 0
     source_buy_count = 0
     source_sell_count = 0
-    external_quota = limit
+    external_quota = max(0, min(limit, int(math.ceil(limit * 0.90))))
     for source_item in external.get("items", []) if isinstance(external, dict) else []:
         if len(items) >= external_quota:
             break
@@ -2286,8 +2286,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             },
             "ai_score": score,
             "site_context_score": site_score,
-            "external_source_weight": 100,
-            "site_analysis_weight": 0,
+            "external_source_weight": 90,
+            "site_analysis_weight": 10,
             "signal_inverted": False,
             "generated_by_site": False,
             "has_complete_levels": True,
@@ -2295,7 +2295,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             "level_source_note": ("تم استكمال الأهداف الناقصة حسابيًا من مسافة المخاطرة (R)، مع الحفاظ على اتجاه المصدر."
                                   if levels_completed_by_site else "حُسبت المستويات الناقصة بمسافات المخاطرة نفسها مع الحفاظ على اتجاه المصدر."),
             "source_timeframe_missing": bool(source_item.get("interval_missing_in_source")),
-            "method": "external_public_ideas_only_no_technical_analysis"
+            "method": "external_public_ideas_90_all_technical_methods_10"
         })
         # Final guard: never display malformed or incorrectly ordered levels.
         if not _public_idea_levels_ordered(item):
@@ -2316,11 +2316,11 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             continue
         items.append(item)
 
-    # External-only mode: do not generate local technical-analysis trade signals.
-    technical_quota = 0
+    # Reserve up to 10% of the displayed opportunities for multi-method technical analysis.
+    technical_quota = max(1, int(math.ceil(limit * 0.10)))
     live_rows = (snapshot.get("items", []) if isinstance(snapshot, dict) else [])
     scanned_count = 0
-    if False and live_rows:  # Disabled: user requested public recommendations only, no technical signals.
+    if live_rows:
         cursor_key = (market, interval)
         # Scan a larger rotating batch on every refresh, using a small worker pool
         # to avoid making each market page wait on symbols one by one.
@@ -2467,12 +2467,12 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "source_sell_ideas": source_sell_count,
         "buy_opportunities": sum(1 for item in items if item.get("direction") == "شراء"),
         "sell_opportunities": sum(1 for item in items if item.get("direction") == "بيع"),
-        "external_source_weight": 100, "site_analysis_weight": 0,
-        "technical_fallback_used": False,
+        "external_source_weight": 90, "site_analysis_weight": 10,
+        "technical_fallback_used": bool(any(item.get("generated_by_site") for item in items)),
         "technical_opportunities": sum(1 for item in items if item.get("generated_by_site")),
         "external_opportunities": sum(1 for item in items if not item.get("generated_by_site")),
         "max_age_hours": 24,
-        "message": ("توصيات عامة من المصادر الخارجية المتاحة خلال آخر 24 ساعة فقط؛ لا تُنشأ إشارات من تحليل فني داخلي، ويُحفظ اتجاه المصدر الأصلي."
+        "message": ("توصيات عامة من مصادر متاحة خلال آخر 24 ساعة تمثل نحو 90%، مع فرص من تحليل فني متعدد المناهج تمثل نحو 10%؛ اتجاه المصدر لا يُعكس."
                     if items else
                     ("اتجاه السوق محايد/مختلط؛ تم إيقاف عرض الصفقات حتى يتضح الاتجاه."
                      if market_trend == "محايد" else
