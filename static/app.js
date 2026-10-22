@@ -252,11 +252,12 @@
     const out=$("signalContent"),meta=$("signalMeta"),status=$("signalAutoStatus");
     if(!out||!meta)return;
     marketSignalRefreshBusy=true;
+    const key=Object.keys(markets).find(k=>markets[k]===m)||"futures",frame=selectedInterval;
     if(status)status.textContent="● جاري الفحص التلقائي";
     meta.textContent="فحص متتابع يبدأ بالسريع: "+selectedInterval+" ثم الأبطأ…";
     if(!out.innerHTML.trim() || out.innerHTML.includes("جاري"))out.innerHTML='<div class="loading">جاري فحص الفرص تلقائيًا…</div>';
     try {
-      const d=m.api==="futures"?await getJSON("/api/public-ideas?market=futures&interval=auto&limit=50&discover=true&refresh=true"):await getJSON("/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedInterval)+"&limit=20&refresh=true");
+      const d=m.api==="futures"?await getJSON("/api/public-ideas?market=futures&interval=auto&limit=50&discover=true&refresh=true"):await getJSON("/api/signals/"+encodeURIComponent(markets[key].api)+"?interval="+encodeURIComponent(frame)+"&limit=20&refresh=true");
       let rawItems=Array.isArray(d.items)?d.items:[];
       if(m.api==="futures") {
         const recent=rawItems.filter(x=>x&&x.has_complete_levels&&x.levels&&x.levels.tp1&&x.levels.tp2&&x.levels.tp3);
