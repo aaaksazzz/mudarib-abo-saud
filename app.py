@@ -2203,7 +2203,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 return {**cached[1], "cached": True}
             PUBLIC_IDEAS_CACHE.pop(cache_key, None)
 
-    # AI-only mode: raw price candles; no public signal ingestion and no technical indicators.
+    # Local-only mode: raw price candles; no public signal ingestion, external API, or indicators.
     # Bypass in-process quote and candle caches on every scan for fresh analysis inputs.
     try:
         CACHE.pop(market, None)
@@ -2221,7 +2221,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     try:
         snapshot = market_data(market, limit=2000)
     except Exception as exc:
-        print(f"market data unavailable for AI analysis {market}: {type(exc).__name__}")
+        print(f"market data unavailable for local analysis {market}: {type(exc).__name__}")
     snapshot_ok = isinstance(snapshot, dict)
     market_rows = snapshot.get("items", []) if snapshot_ok else []
     if not snapshot_ok or not snapshot.get("live", False) or snapshot.get("stale", False):
@@ -2326,8 +2326,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "buy_opportunities": sum(1 for item in items if item.get("direction") == "شراء"),
         "sell_opportunities": sum(1 for item in items if item.get("direction") == "بيع"),
         "external_source_weight": 0, "site_analysis_weight": 100,
-        "ai_enabled": bool(os.getenv("OPENAI_API_KEY")),
-        "ai_review_completed": ai_review_completed,
+        "ai_enabled": False,
+        "ai_review_completed": False,
+        "analysis_completed": bool(ai_review_completed),
+        "analysis_engine": "local_raw_candle_price_action_no_api",
         "technical_fallback_used": False,
         "technical_opportunities": 0,
         "external_opportunities": 0,
