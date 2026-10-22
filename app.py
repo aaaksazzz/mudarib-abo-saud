@@ -148,6 +148,58 @@ async def site_password_gate(request: Request, call_next):
                 return JSONResponse({"detail": "أدخل الرقم السري لفتح الأسواق."}, status_code=401)
             return HTMLResponse(LOGIN_HTML, status_code=200)
 
+    # Enforce admin-configured section visibility consistently for both pages and APIs.
+    # "subscription" remains blocked until a real membership system exists.
+    section_id = None
+    page_sections = {
+        "/markets/spot": "spot", "/markets/futures": "futures",
+        "/markets/alpha": "alpha", "/markets/contracts": "contracts",
+        "/markets/us-stocks": "us", "/markets/saudi": "saudi",
+        "/markets/forex-gold": "forex", "/tasi-analysis": "tasi",
+        "/results": "results", "/news": "news", "/analysis": "analysis",
+        "/blog": "blog",
+    }
+    if path in page_sections:
+        section_id = page_sections[path]
+    elif path.startswith("/blog/"):
+        section_id = "blog"
+    elif path.startswith("/api/market/"):
+        requested_market = path.rsplit("/", 1)[-1].lower()
+        section_id = requested_market if requested_market in {
+            "spot", "futures", "alpha", "contracts", "us", "saudi", "forex"
+        } else None
+    elif path.startswith("/api/signals/"):
+        requested_market = path.rsplit("/", 1)[-1].lower()
+        section_id = requested_market if requested_market in {
+            "spot", "futures", "alpha", "contracts", "us", "saudi", "forex"
+        } else None
+    elif path in {"/api/results"}:
+        section_id = "results"
+    elif path in {"/api/news"}:
+        section_id = "news"
+    elif path in {"/api/tasi/analysis"}:
+        section_id = "tasi"
+    elif path in {"/api/market-direction", "/api/public-ideas", "/api/trade-chart-data", "/api/universe-counts"}:
+        requested_market = str(request.query_params.get("market") or "").lower()
+        section_id = requested_market if requested_market in {
+            "spot", "futures", "alpha", "contracts", "us", "saudi", "forex"
+        } else None
+
+    if section_id:
+        section_mode = _section_settings().get(section_id, "public")
+        if section_mode in {"closed", "subscription"}:
+            detail = "هذا القسم مغلق مؤقتًا." if section_mode == "closed" else "هذا القسم مخصص للمشتركين."
+            if path.startswith("/api/"):
+                return JSONResponse({"ok": False, "detail": detail}, status_code=403)
+            return HTMLResponse(
+                "<!doctype html><html lang='ar' dir='rtl'><meta charset='utf-8'>"
+                "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+                "<title>القسم غير متاح | التداول الذكي PRO</title>"
+                "<body style='background:#080d18;color:#edf3ff;font:16px Tahoma;padding:28px'>"
+                "<h1>القسم غير متاح حاليًا</h1><p>" + detail + "</p><a style='color:#8dbaff' href='/'>العودة للرئيسية</a></body></html>",
+                status_code=403
+            )
+
     # Optional legacy whole-site gate remains independent of the markets-only gate.
     if not SITE_PASSWORD_GATE:
         return await call_next(request)
