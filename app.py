@@ -1136,12 +1136,12 @@ CANDLE_DATA_CACHE_MAX_ENTRIES = 240
 CANDLE_DATA_CACHE_LOCK = threading.RLock()
 
 
-def candle_data(market: str, symbol: str, interval: str):
+def candle_data(market: str, symbol: str, interval: str, force_refresh: bool = False):
     key = (market, symbol, interval)
     now = time.time()
     with CANDLE_DATA_CACHE_LOCK:
         cached = CANDLE_DATA_CACHE.get(key)
-        if cached and now - cached[0] < CANDLE_DATA_CACHE_TTL:
+        if cached and not force_refresh and now - cached[0] < CANDLE_DATA_CACHE_TTL:
             return [dict(candle) for candle in cached[1]]
         if cached:
             CANDLE_DATA_CACHE.pop(key, None)
@@ -2096,7 +2096,7 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
             continue
         seen.add(symbol)
         try:
-            candles = candle_data(market, symbol, interval)
+            candles = candle_data(market, symbol, interval, force_refresh=True)
         except Exception:
             continue
         raw = []
@@ -2169,7 +2169,10 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
                 "title": f"{side} {symbol} — تحليل ذكاء اصطناعي",
                 "description": str(s.get("rationale_ar") or "تحليل حركة السعر الخام دون مؤشرات فنية.")[:700],
                 "source": "تحليل الذكاء الاصطناعي لبيانات السوق الخام", "url": "",
-                "published_at": int(time.time()), "age_hours": 0, "market": market, "interval": interval,
+                "published_at": int(time.time()), "created_at": int(time.time()), "age_hours": 0,
+                "market": market, "interval": interval, "price_updated_at": int(time.time()),
+                "price_fresh": True, "freshness_label": "سعر محدث وقت التحليل",
+                "live_price": round(next((float(x.get("price")) for x in candidates if x.get("symbol") == symbol and x.get("price")), entry), digits),
                 "levels": {"entry": round(entry, digits), "stop_loss": round(stop, digits),
                            "tp1": round(tp1, digits), "tp2": round(tp2, digits), "tp3": round(tp3, digits)},
                 "ai_score": score, "ai_reviewed": True, "generated_by_ai": True,
@@ -2207,13 +2210,29 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             return {**cached[1], "cached": True}
 
     # AI-only mode: raw price candles; no public signal ingestion and no technical indicators.
+    # Bypass in-process quote and candle caches on every scan for fresh analysis inputs.
+    try:
+        CACHE.pop(market, None)
+    except Exception:
+        pass
+    try:
+        MARKET_TICKERS_CACHE.pop(market, None)
+    except Exception:
+        pass
+    try:
+        YAHOO_CACHE.pop(market, None)
+    except Exception:
+        pass
     snapshot = {}
     try:
         snapshot = market_data(market, limit=2000)
     except Exception as exc:
         print(f"market data unavailable for AI analysis {market}: {type(exc).__name__}")
     market_rows = snapshot.get("items", []) if isinstance(snapshot, dict) else []
-    items, ai_review_completed, ai_message = _ai_generate_market_signals(market, interval, market_rows, limit)
+    if not snapshot.get("live", False) or snapshot.get("stale", False):
+        items, ai_review_completed, ai_message = [], False, "الأسعار ليست محدثة من المصدر الآن؛ أوقفنا إنشاء صفقات جديدة حتى لا تظهر فرصة قديمة."
+    else:
+        items, ai_review_completed, ai_message = _ai_generate_market_signals(market, interval, market_rows, limit)
     skipped = 0
     scanned_count = min(len(market_rows), 12)
     source_buy_count = sum(1 for item in items if item.get("direction") == "شراء")
