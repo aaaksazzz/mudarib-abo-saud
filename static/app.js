@@ -174,7 +174,7 @@
     };
     const medal=rank===0?"🥇 ذهبي":rank===1?"🥈 فضي":rank===2?"🥉 برونزي":"🏅 #"+(rank+1);
     const stop=l.stop_loss??x.stop_loss,tp1=l.tp1??x.tp1,tp2=l.tp2??x.tp2,tp3=l.tp3??x.tp3;
-    return '<article class="signal-card"><div class="signal-top"><span class="tag" style="font-weight:800;border:1px solid #c79b35;background:linear-gradient(135deg,#35270a,#9b7622);color:#fff0b3">'+medal+'</span><b class="signal-symbol">'+esc(x.symbol||"—")+'</b><span class="tag '+(buy?"buy":"sell")+'">'+esc(strength)+'</span><span class="tag">'+esc(x.interval||selectedInterval)+'</span><span class="tag">تقييم آلي '+esc(x.ai_score??x.confidence??"—")+'/100</span></div>'+
+    return '<article class="signal-card"><div class="signal-top"><span class="tag" style="font-weight:800;border:1px solid #c79b35;background:linear-gradient(135deg,#35270a,#9b7622);color:#fff0b3">'+medal+'</span><b class="signal-symbol">'+esc(x.symbol||"—")+'</b><span class="tag '+(buy?"buy":"sell")+'">'+esc(strength)+'</span><span class="tag">'+esc(x.interval||selectedInterval)+'</span><span class="tag">تقييم الأدلة '+esc(x.ai_score??x.confidence??"—")+'/100</span></div>'+
       '<div class="entry-line"><span>الدخول</span><strong>'+price(entry)+'</strong></div><div class="levels-grid">'+
       '<div class="level stop"><small>وقف الخسارة</small><strong>'+price(stop)+'</strong><small class="negative">خسارة محتملة '+pctTo(stop,false)+'</small></div>'+
       '<div class="level target"><small>الهدف الأول</small><strong>'+price(tp1)+'</strong><small class="positive">ربح محتمل '+pctTo(tp1,true)+'</small></div>'+
@@ -189,9 +189,9 @@
     if(!out||!meta)return;
     marketSignalRefreshBusy=true;
     const frame=selectedInterval;
-    if(status)status.textContent="● جاري تحليل الذكاء الاصطناعي";
+    if(status)status.textContent="● جاري فحص الشموع محليًا";
     meta.textContent="تحليل حركة السعر والشموع الخام دون مؤشرات فنية أو توصيات خارجية — "+frame;
-    if(!out.innerHTML.trim() || out.innerHTML.includes("جاري"))out.innerHTML='<div class="loading">جاري تحليل بيانات السوق بالذكاء الاصطناعي…</div>';
+    if(!out.innerHTML.trim() || out.innerHTML.includes("جاري"))out.innerHTML='<div class="loading">جاري فحص بيانات الشموع وحركة السعر…</div>';
     try {
       const d=await getJSON("/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(frame)+"&limit=20");
       const cryptoMarket=["spot","futures","alpha"].includes(m.api);
@@ -199,7 +199,7 @@
         if(!x||typeof x!=="object")return false;
         const symbol=String(x.symbol||"").trim().toUpperCase();
         if(!symbol||(cryptoMarket&&!/^[A-Z0-9]+$/.test(symbol)))return false;
-        if(x.generated_by_ai!==true)return false;
+        if(x.generated_by_ai!==true && x.method!=="local_raw_candle_price_action_no_api")return false;
         if(x.market&&x.market!==m.api)return false;
         if(x.interval&&x.interval!==frame)return false;
         const levels=x.levels&&typeof x.levels==="object"?x.levels:{};
@@ -215,11 +215,11 @@
       const bestSell=items.find(x=>["بيع","SELL","SHORT"].includes(x.direction||x.side));
       const bestBox=$("marketBestSides");
       if(bestBox)bestBox.innerHTML='<div class="feature-card"><small>أفضل شراء</small><strong>'+esc(bestBuy?.symbol||"لا توجد فرصة")+'</strong><small>'+esc(bestBuy?(bestBuy.interval||frame)+" · تقييم الأدلة "+(bestBuy.ai_score??"—")+"/100":"لا توجد فرصة شراء واضحة الآن")+'</small></div><div class="feature-card"><small>أفضل بيع</small><strong>'+esc(bestSell?.symbol||"لا توجد فرصة")+'</strong><small>'+esc(bestSell?(bestSell.interval||frame)+" · تقييم الأدلة "+(bestSell.ai_score??"—")+"/100":"لا توجد فرصة بيع واضحة الآن")+'</small></div>';
-      meta.textContent="تحليل AI فقط · "+(d.scanned??0)+" أصلًا جرى فحصه · "+items.length+" فرصة صالحة · "+frame;
-      out.innerHTML=items.length?items.map((x,i)=>signalCard(x,i)).join(""):empty("لا توجد فرص واضحة الآن",d.message||"لم يجد الذكاء الاصطناعي فرصة مكتملة بشروط صالحة. لن نختلق صفقة.");
+      meta.textContent="محرك تحليل محلي دون API · "+(d.scanned??0)+" أصلًا جرى فحصه · "+items.length+" فرصة صالحة · "+frame;
+      out.innerHTML=items.length?items.map((x,i)=>signalCard(x,i)).join(""):empty("لا توجد فرص واضحة الآن",d.message||"لم تتحقق شروط حركة السعر لفرصة مكتملة. لن نختلق صفقة.");
     } catch(err) {
-      out.innerHTML=empty("تعذر تحليل السوق",err.message||"تحقق من اتصال بيانات السوق وإعدادات خدمة الذكاء الاصطناعي.");
-      meta.textContent="فشل تحليل الذكاء الاصطناعي";
+      out.innerHTML=empty("تعذر تحليل السوق",err.message||"تحقق من اتصال بيانات السوق.");
+      meta.textContent="تعذر إكمال التحليل المحلي";
     } finally {
       marketSignalRefreshBusy=false;
       if(status)status.textContent="● الفحص التلقائي نشط";
