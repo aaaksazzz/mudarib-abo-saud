@@ -2081,6 +2081,112 @@ def _ai_review_signal_batch(items, market, interval):
         return items, False
 
 
+def _ai_generate_market_signals(market, interval, market_rows, limit=20):
+    """Generate hypotheses from raw candles only, with no indicators and no external trade ideas."""
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        return [], False, "الذكاء الاصطناعي غير مفعّل؛ أضف OPENAI_API_KEY في Northflank."
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+    candidates, seen = [], set()
+    for row in market_rows if isinstance(market_rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        symbol = str(row.get("symbol") or "").strip().upper()
+        if not symbol or symbol in seen:
+            continue
+        seen.add(symbol)
+        try:
+            candles = candle_data(market, symbol, interval)
+        except Exception:
+            continue
+        raw = []
+        for candle in candles[-30:] if isinstance(candles, list) else []:
+            try:
+                x = {k: float(candle[k]) for k in ("open", "high", "low", "close")}
+                x["volume"] = float(candle.get("volume") or 0)
+                if all(math.isfinite(v) and v > 0 for v in x.values() if v != 0):
+                    raw.append(x)
+            except (KeyError, TypeError, ValueError, OverflowError):
+                continue
+        if len(raw) < 12:
+            continue
+        try:
+            price = float(row.get("price") or raw[-1]["close"])
+            change = float(row.get("change_pct") or 0)
+        except (TypeError, ValueError, OverflowError):
+            price, change = raw[-1]["close"], 0
+        candidates.append({"symbol": symbol, "price": price, "change_pct": change, "candles": raw})
+        if len(candidates) >= min(12, max(4, limit)):
+            break
+    if not candidates:
+        return [], False, "لا توجد بيانات شموع خام كافية لتحليل الذكاء الاصطناعي."
+    prompt = (
+        "حلل بيانات الأسعار والشموع الخام التالية فقط، ولا تستخدم توصيات خارجية أو مؤشرات فنية أو متوسطات أو RSI أو MACD أو ATR أو أي مؤشرات. "
+        "استدل من حركة السعر المباشرة، القمم والقيعان، الرفض والاختراق الظاهر، وتغير الحجم الخام. لا تخترع فرصة إذا الأدلة ضعيفة. "
+        "أخرج JSON فقط: {\"signals\":[{\"symbol\":\"...\",\"direction\":\"شراء\",\"entry\":1,\"stop_loss\":0.9,\"tp1\":1.1,\"tp2\":1.2,\"tp3\":1.3,\"score\":60,\"rationale_ar\":\"...\",\"risk_ar\":\"...\"}]}. "
+        "استخدم فقط رموز البيانات المرفقة. مستويات الشراء يجب أن تحقق stop_loss < entry < tp1 <= tp2 <= tp3؛ والبيع stop_loss > entry > tp1 >= tp2 >= tp3. "
+        "score من 0 إلى 100 لقوة الأدلة وليس احتمال الربح. المستويات تقديرية وليست مضمونة. أعد عددًا قليلًا من الفرص الواضحة أو قائمة فارغة. البيانات: "
+        + json.dumps({"market": market, "timeframe": interval, "candidates": candidates}, ensure_ascii=False)
+    )
+    body = json.dumps({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "أنت محلل أسواق حذر. لا تستخدم مؤشرات فنية ولا تدّع ضمان الربح. أخرج JSON صحيحًا فقط."},
+            {"role": "user", "content": prompt}
+        ],
+        "response_format": {"type": "json_object"}, "temperature": 0.15, "max_tokens": 3000
+    }).encode("utf-8")
+    req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=body,
+        headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=25) as response:
+            parsed = json.loads(response.read(1_000_000).decode("utf-8", errors="replace"))
+        result = json.loads(parsed["choices"][0]["message"]["content"])
+        allowed = {x["symbol"] for x in candidates}
+        output = []
+        for s in result.get("signals", []) if isinstance(result.get("signals"), list) else []:
+            if not isinstance(s, dict):
+                continue
+            symbol, side = str(s.get("symbol") or "").strip().upper(), str(s.get("direction") or "")
+            if symbol not in allowed or side not in {"شراء", "بيع"}:
+                continue
+            try:
+                entry, stop = float(s["entry"]), float(s["stop_loss"])
+                tp1, tp2, tp3 = (float(s[k]) for k in ("tp1", "tp2", "tp3"))
+                score = int(max(0, min(100, float(s.get("score", 50)))))
+            except (KeyError, TypeError, ValueError, OverflowError):
+                continue
+            vals = (entry, stop, tp1, tp2, tp3)
+            if not all(math.isfinite(v) and v > 0 for v in vals):
+                continue
+            if side == "شراء" and not stop < entry < tp1 <= tp2 <= tp3:
+                continue
+            if side == "بيع" and not stop > entry > tp1 >= tp2 >= tp3:
+                continue
+            digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
+            output.append({
+                "symbol": symbol, "direction": side, "original_direction": side,
+                "title": f"{side} {symbol} — تحليل ذكاء اصطناعي",
+                "description": str(s.get("rationale_ar") or "تحليل حركة السعر الخام دون مؤشرات فنية.")[:700],
+                "source": "تحليل الذكاء الاصطناعي لبيانات السوق الخام", "url": "",
+                "published_at": int(time.time()), "age_hours": 0, "market": market, "interval": interval,
+                "levels": {"entry": round(entry, digits), "stop_loss": round(stop, digits),
+                           "tp1": round(tp1, digits), "tp2": round(tp2, digits), "tp3": round(tp3, digits)},
+                "ai_score": score, "ai_reviewed": True, "generated_by_ai": True,
+                "ai_review": {"summary_ar": str(s.get("rationale_ar") or "")[:500],
+                              "risk_ar": str(s.get("risk_ar") or "قد يخفق التحليل؛ راقب تقلب السوق.")[:400],
+                              "verdict": "حذر", "score_type": "قوة الأدلة وليست نسبة ربح"},
+                "external_source_weight": 0, "site_analysis_weight": 100,
+                "signal_inverted": False, "has_complete_levels": True,
+                "level_source_note": "مستويات تقديرية من تحليل الذكاء الاصطناعي، وليست من توصية خارجية.",
+                "method": "ai_raw_price_action_no_indicators"
+            })
+        return output[:limit], True, "تحليل ذكاء اصطناعي للشموع الخام دون مؤشرات فنية."
+    except (urllib.error.URLError, TimeoutError, OSError, KeyError, TypeError, ValueError, IndexError) as exc:
+        print(f"AI market analysis unavailable {market}/{interval}: {type(exc).__name__}")
+        return [], False, "تعذر إكمال تحليل الذكاء الاصطناعي؛ تحقق من المفتاح والاتصال وحدود الاستخدام."
+
+
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20), refresh: bool = Query(False)):
     """Review recent public trade ideas with AI; technical indicators and generated technical signals are disabled."""
@@ -2100,167 +2206,18 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         if not refresh and cached and now - cached[0] < 90:
             return {**cached[1], "cached": True}
 
-    # Public-source mode: discover recent public trade ideas and Telegram channels.
-    # The public_ideas pipeline filters market, symbol, direction, timestamp, and level geometry.
-    external = public_ideas(market=market, interval=interval, limit=limit, discover=True, refresh=refresh)
-
-    # Live site-market data provides technical candidates and contextual confirmation.
-    market_changes = {}
+    # AI-only mode: raw price candles; no public signal ingestion and no technical indicators.
+    snapshot = {}
     try:
         snapshot = market_data(market, limit=2000)
-        if isinstance(snapshot, dict):
-            for row in snapshot.get("items", []):
-                symbol = str(row.get("symbol") or "").strip().upper()
-                try:
-                    change = float(row.get("change_pct"))
-                except (TypeError, ValueError, OverflowError):
-                    continue
-                if symbol and math.isfinite(change):
-                    market_changes[symbol] = change
     except Exception as exc:
-        print(f"site context unavailable {market}: {type(exc).__name__}")
-
-    items = []
+        print(f"market data unavailable for AI analysis {market}: {type(exc).__name__}")
+    market_rows = snapshot.get("items", []) if isinstance(snapshot, dict) else []
+    items, ai_review_completed, ai_message = _ai_generate_market_signals(market, interval, market_rows, limit)
     skipped = 0
-    source_buy_count = 0
-    source_sell_count = 0
-    external_quota = max(0, min(limit, int(limit)))
-    for source_item in external.get("items", []) if isinstance(external, dict) else []:
-        if len(items) >= external_quota:
-            break
-        if not isinstance(source_item, dict):
-            continue
-        original_side = str(source_item.get("direction") or "")
-        if original_side == "شراء":
-            source_buy_count += 1
-        elif original_side == "بيع":
-            source_sell_count += 1
-        if original_side not in {"شراء", "بيع"}:
-            skipped += 1
-            continue
-        original_levels = source_item.get("levels") if isinstance(source_item.get("levels"), dict) else {}
-        try:
-            entry = float(original_levels["entry"])
-            old_stop = float(original_levels["stop_loss"])
-        except (KeyError, TypeError, ValueError, OverflowError):
-            skipped += 1
-            continue
-        old_targets = []
-        for key in ("tp1", "tp2", "tp3"):
-            try:
-                value = float(original_levels.get(key))
-            except (TypeError, ValueError, OverflowError):
-                continue
-            if math.isfinite(value) and value > 0:
-                old_targets.append(value)
-        nums = [entry, old_stop, *old_targets]
-        if not all(math.isfinite(x) and x > 0 for x in nums) or not old_targets:
-            skipped += 1
-            continue
-        # Keep the source trade direction; never invert it against EMA200 or the source.
-        risk = abs(entry - old_stop)
-        if risk <= 0:
-            skipped += 1
-            continue
-        stop_distance_pct = risk / entry * 100
-        if not math.isfinite(stop_distance_pct) or stop_distance_pct > 15.0:
-            skipped += 1
-            continue
-        if original_side == "شراء":
-            if not old_stop < entry or any(v <= entry for v in old_targets):
-                skipped += 1
-                continue
-            target_distances = sorted({round(v - entry, 12) for v in old_targets if v > entry})
-        else:
-            if not old_stop > entry or any(v >= entry for v in old_targets):
-                skipped += 1
-                continue
-            target_distances = sorted({round(entry - v, 12) for v in old_targets if v < entry})
-        side = original_side
-        if not target_distances:
-            skipped += 1
-            continue
-        levels_completed_by_site = len(target_distances) < 3
-        # If a public idea omits targets, complete them from its own stated risk distance.
-        for multiple in (1.0, 2.0, 3.0, 4.0, 5.0):
-            if len(target_distances) >= 3:
-                break
-            candidate_distance = risk * multiple
-            if all(abs(candidate_distance - d) > max(risk * 0.02, 1e-12) for d in target_distances):
-                target_distances.append(candidate_distance)
-                target_distances.sort()
-        if len(target_distances) < 3:
-            skipped += 1
-            continue
-        target_distances = target_distances[:3]
-        targets = ([entry + d for d in target_distances]
-                   if side == "شراء" else [entry - d for d in target_distances])
-        stop = entry + risk if side == "بيع" else entry - risk
-        targets.sort(reverse=(side == "بيع"))
-
-        symbol = str(source_item.get("symbol") or "").strip().upper()
-        change = market_changes.get(symbol)
-        site_supports_source_direction = (
-            change is not None and ((side == "شراء" and change > 0) or (side == "بيع" and change < 0))
-        )
-        site_score = 10 if site_supports_source_direction else 0
-        # Rank by observable setup quality, not a made-up win probability:
-        # reward/risk geometry, freshness of the public idea, and market-context alignment.
-        first_rr = target_distances[0] / risk if risk > 0 else 0.0
-        try:
-            age_hours = max(0.0, float(source_item.get("age_hours", 24)))
-        except (TypeError, ValueError, OverflowError):
-            age_hours = 24.0
-        rr_points = min(20.0, max(0.0, first_rr) * 5.0)
-        freshness_points = max(0.0, 15.0 * (1.0 - min(age_hours, 24.0) / 24.0))
-        score = int(round(min(100.0, 50.0 + rr_points + freshness_points + site_score)))
-        item = dict(source_item)
-        source_score = int(max(0, min(100, float(source_item.get("ai_score", 50) or 50))))
-        signal_strength = ("شراء قوي" if side == "شراء" else "بيع قوي") if source_score >= 80 else side
-        item.update({
-            "direction": side,
-            "signal_strength": signal_strength,
-            "original_direction": original_side,
-            "title": f"{side} {symbol} — فكرة من مصدر خارجي",
-            "description": "فكرة خارجية بنفس اتجاه المصدر؛ أُعيد ترتيب مستوياتها والتحقق من سلامتها دون عكس الإشارة.",
-            "levels": {
-                "entry": entry, "stop_loss": stop,
-                "tp1": targets[0], "tp2": targets[1], "tp3": targets[2]
-            },
-            "ai_score": score,
-            "site_context_score": site_score,
-            "external_source_weight": 100,
-            "site_analysis_weight": 0,
-            "signal_inverted": False,
-            "generated_by_site": False,
-            "has_complete_levels": True,
-            "levels_completed_by_site": levels_completed_by_site,
-            "level_source_note": ("تم استكمال الأهداف الناقصة حسابيًا من مسافة المخاطرة (R)، مع الحفاظ على اتجاه المصدر."
-                                  if levels_completed_by_site else "حُسبت المستويات الناقصة بمسافات المخاطرة نفسها مع الحفاظ على اتجاه المصدر."),
-            "source_timeframe_missing": bool(source_item.get("interval_missing_in_source")),
-            "method": "public_ideas_ai_review_no_indicators"
-        })
-        # Final guard: never display malformed or incorrectly ordered levels.
-        if not _public_idea_levels_ordered(item):
-            skipped += 1
-            continue
-        # Verify risk/reward geometry while preserving source direction.
-        try:
-            first_reward_pct = abs(float(item["levels"]["tp1"]) - entry) / entry * 100
-            mirrored_risk_pct = abs(float(item["levels"]["stop_loss"]) - entry) / entry * 100
-        except (KeyError, TypeError, ValueError, OverflowError):
-            skipped += 1
-            continue
-        if not math.isfinite(first_reward_pct) or not math.isfinite(mirrored_risk_pct):
-            skipped += 1
-            continue
-        if first_reward_pct < mirrored_risk_pct * 0.40:
-            skipped += 1
-            continue
-        items.append(item)
-
-    # No indicator-based or locally generated trades: use public ideas only.
-    scanned_count = 0
+    scanned_count = min(len(market_rows), 12)
+    source_buy_count = sum(1 for item in items if item.get("direction") == "شراء")
+    source_sell_count = sum(1 for item in items if item.get("direction") == "بيع")
 
     def _signal_is_displayable(item):
         """Reject malformed crypto symbols and price levels before caching or journaling."""
@@ -2328,11 +2285,6 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         except (KeyError, TypeError, ValueError, OverflowError, ZeroDivisionError):
             return (-1.0, -1.0, -1.0, 0)
 
-    # One AI review batch per market scan; the model may explain quality but cannot alter direction or prices.
-    items, ai_review_completed = _ai_review_signal_batch(items, market, interval)
-    if ai_review_completed:
-        items = [item for item in items if (item.get("ai_review") or {}).get("verdict") != "مرفوضة"]
-
     # Rank by TP3 potential percentage return first, then risk/reward and AI evidence score.
     # These are estimates, not guaranteed or backtested profits.
     items.sort(key=_tp3_profit_rank, reverse=True)
@@ -2344,18 +2296,18 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "sources_checked": int((external or {}).get("sources_checked", 0)) if isinstance(external, dict) else 0,
         "sources_failed": int((external or {}).get("sources_failed", 0)) if isinstance(external, dict) else 0,
         "skipped_invalid_levels": skipped,
-        "source_buy_ideas": source_buy_count,
-        "source_sell_ideas": source_sell_count,
+        "source_buy_ideas": 0,
+        "source_sell_ideas": 0,
         "buy_opportunities": sum(1 for item in items if item.get("direction") == "شراء"),
         "sell_opportunities": sum(1 for item in items if item.get("direction") == "بيع"),
-        "external_source_weight": 100, "site_analysis_weight": 0,
+        "external_source_weight": 0, "site_analysis_weight": 100,
         "ai_enabled": bool(os.getenv("OPENAI_API_KEY")),
         "ai_review_completed": ai_review_completed,
         "technical_fallback_used": False,
         "technical_opportunities": 0,
-        "external_opportunities": sum(1 for item in items if not item.get("generated_by_site")),
-        "max_age_hours": 24,
-        "message": ("توصيات عامة من مصادر متاحة خلال آخر 24 ساعة، بدون مؤشرات فنية. " + ("تمت مراجعتها بالذكاء الاصطناعي." if os.getenv("OPENAI_API_KEY") else "الذكاء الاصطناعي غير مفعّل: أضف OPENAI_API_KEY في إعدادات Northflank."))
+        "external_opportunities": 0,
+        "max_age_hours": 0,
+        "message": ai_message
                     if items else
                     ("اتجاه السوق محايد/مختلط؛ تم إيقاف عرض الصفقات حتى يتضح الاتجاه."
                      if market_trend == "محايد" else
