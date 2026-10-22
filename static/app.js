@@ -182,6 +182,50 @@
       '<div class="level target"><small>الهدف الثالث</small><strong>'+price(tp3)+'</strong><small class="positive">ربح محتمل '+pctTo(tp3,true)+'</small></div></div>'+
       '<div class="toolbar" style="margin-top:12px"><button type="button" class="button small" data-inline-chart="1" data-symbol="'+esc(x.symbol||"")+'" data-frame="'+esc(x.interval||selectedInterval)+'" data-entry="'+esc(entry)+'" data-stop="'+esc(stop)+'" data-tp1="'+esc(tp1)+'" data-tp2="'+esc(tp2)+'" data-tp3="'+esc(tp3)+'">عرض الشارت داخل الصفقة</button></div><div data-chart-box data-open="0" style="margin-top:10px"></div><div class="muted" style="margin-top:10px">'+esc(x.status||"النسب تقديرية من سعر الدخول إلى الهدف/الوقف، قبل الرسوم والانزلاق")+'</div></article>';
   }
+  function reversePublicIdea(item) {
+    const original=String(item.direction||"");
+    const buy=["شراء","BUY","LONG"].includes(original);
+    const l=item.levels||{};
+    const entry=Number(l.entry),oldStop=Number(l.stop_loss);
+    const targets=["tp1","tp2","tp3"].map(k=>Number(l[k]));
+    if(!Number.isFinite(entry)||entry<=0||!Number.isFinite(oldStop)||!targets.every(v=>Number.isFinite(v)&&v>0))return null;
+    const side=buy?"بيع":"شراء";
+    const stop=buy?entry+(entry-oldStop):entry-(oldStop-entry);
+    const mirrored=targets.map(v=>buy?entry-(v-entry):entry+(entry-v)).sort((a,b)=>buy?b-a:a-b);
+    const ordered=buy?(stop>entry&&mirrored.every(v=>v<entry)):(stop<entry&&mirrored.every(v=>v>entry));
+    if(!ordered||mirrored.some(v=>!Number.isFinite(v)||v<=0))return null;
+    return {...item,direction:side,side,original_direction:original,levels:{entry,stop_loss:stop,tp1:mirrored[0],tp2:mirrored[1],tp3:mirrored[2]},
+      status:"صفقة معكوسة عن المصدر العام؛ المستويات انعكاس حسابي حول الدخول وليست توصية موثقة. المصدر: "+String(item.source||"مصدر عام")};
+  }
+  function analyzePublicCandles(rows) {
+    if(!Array.isArray(rows)||rows.length<35)return {score:null,methods:[],note:"شموع غير كافية للتحليل الفني"};
+    const close=rows.map(r=>Number(r.close??r.c)).filter(Number.isFinite);
+    const high=rows.map(r=>Number(r.high??r.h)).filter(Number.isFinite);
+    const low=rows.map(r=>Number(r.low??r.l)).filter(Number.isFinite);
+    const volume=rows.map(r=>Number(r.volume??r.v??0));
+    if(close.length<35||high.length!==close.length||low.length!==close.length)return {score:null,methods:[],note:"تعذر قراءة الشموع"};
+    const ema=(period)=>{let a=close[0],k=2/(period+1);for(let i=1;i<close.length;i++)a=close[i]*k+a*(1-k);return a};
+    const change=close.at(-1)-close.at(-2);
+    let gains=0,losses=0;for(let i=Math.max(1,close.length-14);i<close.length;i++){const d=close[i]-close[i-1];if(d>0)gains+=d;else losses-=d;}
+    const rsi=losses===0?100:100-100/(1+(gains/14)/(losses/14));
+    const mean=close.slice(-20).reduce((a,b)=>a+b,0)/20;
+    const sd=Math.sqrt(close.slice(-20).reduce((a,b)=>a+(b-mean)**2,0)/20);
+    const avgVol=volume.slice(-21,-1).reduce((a,b)=>a+b,0)/20;
+    const lastVol=volume.at(-1)||0;
+    const methods=[];
+    const add=(name,dir,why)=>methods.push({name,dir,why});
+    add("اتجاه EMA 20/50",ema(20)>ema(50)?"شراء":"بيع",ema(20)>ema(50)?"EMA20 أعلى EMA50":"EMA20 أدنى EMA50");
+    add("فلتر EMA200",ema(20)>ema(Math.min(200,close.length))?"شراء":"بيع",close.at(-1)>ema(Math.min(200,close.length))?"السعر فوق المتوسط الطويل":"السعر تحت المتوسط الطويل");
+    add("RSI 14",rsi>=55?"شراء":rsi<=45?"بيع":"محايد","RSI "+rsi.toFixed(1));
+    add("MACD مبسط",ema(12)>ema(26)?"شراء":"بيع","EMA12 مقابل EMA26");
+    add("بولنجر 20",close.at(-1)>mean+sd?"شراء":close.at(-1)<mean-sd?"بيع":"محايد","موقع السعر من نطاق ±1 انحراف");
+    add("زخم الشمعة",change>0?"شراء":"بيع",change>0?"الإغلاق أعلى من السابق":"الإغلاق أدنى من السابق");
+    add("حجم التداول",lastVol>avgVol*1.2?(change>0?"شراء":"بيع"):"محايد","حجم آخر شمعة "+(avgVol>0?(lastVol/avgVol).toFixed(2)+"× المتوسط":"غير متاح"));
+    const recentHigh=Math.max(...high.slice(-20)),recentLow=Math.min(...low.slice(-20));
+    add("اختراق دعم/مقاومة",close.at(-1)>=recentHigh?"شراء":close.at(-1)<=recentLow?"بيع":"محايد","نطاق أعلى/أدنى 20 شمعة");
+    const up=methods.filter(m=>m.dir==="شراء").length,down=methods.filter(m=>m.dir==="بيع").length;
+    return {score:Math.round(Math.max(up,down)/methods.length*100),methods,note:""+up+" مناهج تميل للشراء · "+down+" تميل للبيع · البقية محايدة"};
+  }
   async function loadSignals(m) {
     if(marketSignalRefreshBusy)return;
     const out=$("signalContent"),meta=$("signalMeta"),status=$("signalAutoStatus");
@@ -191,8 +235,15 @@
     meta.textContent="فحص متتابع يبدأ بالسريع: "+selectedInterval+" ثم الأبطأ…";
     if(!out.innerHTML.trim() || out.innerHTML.includes("جاري"))out.innerHTML='<div class="loading">جاري فحص الفرص تلقائيًا…</div>';
     try {
-      const d=await getJSON("/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedInterval)+"&limit=20&refresh=true");
-      const rawItems=Array.isArray(d.items)?d.items:[];
+      const d=m.api==="futures"?await getJSON("/api/public-ideas?market=futures&interval=auto&limit=50&discover=true&refresh=true"):await getJSON("/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedInterval)+"&limit=20&refresh=true");
+      let rawItems=Array.isArray(d.items)?d.items:[];
+      if(m.api==="futures") {
+        const recent=rawItems.filter(x=>x&&x.has_complete_levels&&x.levels&&x.levels.tp1&&x.levels.tp2&&x.levels.tp3);
+        const reversed=[];
+        for(const x of recent.slice(0,20)){const y=reversePublicIdea(x);if(y)reversed.push(y);}
+        const analyzed=await Promise.all(reversed.map(async x=>{try{const chart=await getJSON("/api/trade-chart-data?market=futures&symbol="+encodeURIComponent(x.symbol)+"&interval="+encodeURIComponent(selectedInterval));const a=analyzePublicCandles(chart.items||[]);return {...x,ai_score:a.score??"—",confidence:a.score??"—",technical_analysis:a,status:x.status+" · "+a.note+" · "+a.methods.map(m=>m.name+": "+m.dir).join("، ")};}catch(_){return {...x,ai_score:"—",confidence:"—",status:x.status+" · تعذر تحميل الشموع للتحليل المستقل"};}}));
+        rawItems=analyzed;
+      }
       // Reject malformed crypto symbols and incorrectly ordered price levels before rendering.
       const cryptoMarket=["spot","futures","alpha"].includes(m.api);
       const items=rawItems.filter(x=>{
