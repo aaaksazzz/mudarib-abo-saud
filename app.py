@@ -2700,22 +2700,22 @@ def _futures_pro_number_values(text):
 
 
 def _futures_pro_parse_post(source, post_html):
-    post_match = re.search(r'data-post=["\\']([^"\\']+)["\\']', post_html)
+    post_match = re.search(r'data-post=["\']([^"\']+)["\']', post_html)
     if not post_match:
         return None
     post_id = post_match.group(1)
     text_match = re.search(
-        r'<div class=["\\'][^"\\']*tgme_widget_message_text[^"\\']*["\\'][^>]*>(.*?)</div>',
+        r'<div class=["\'][^"\']*tgme_widget_message_text[^"\']*["\'][^>]*>(.*?)</div>',
         post_html, re.S | re.I
     )
-    time_match = re.search(r'<time[^>]*datetime=["\\']([^"\\']+)["\\']', post_html, re.I)
+    time_match = re.search(r'<time[^>]*datetime=["\']([^"\']+)["\']', post_html, re.I)
     if not text_match or not time_match:
         return None
-    raw_text = re.sub(r"<br\\s*/?>", "\n", text_match.group(1), flags=re.I)
+    raw_text = re.sub(r"<br\s*/?>", "\n", text_match.group(1), flags=re.I)
     raw_text = re.sub(r"<[^>]+>", " ", raw_text)
-    body = html_lib.unescape(raw_text).replace("\\xa0", " ")
-    body = re.sub(r"[ \\t\\r]+", " ", body)
-    body = re.sub(r"\\n\\s*\\n+", "\n", body).strip()
+    body = html_lib.unescape(raw_text).replace("\xa0", " ")
+    body = re.sub(r"[ \t\r]+", " ", body)
+    body = re.sub(r"\n\s*\n+", "\n", body).strip()
     try:
         published = datetime.fromisoformat(time_match.group(1).replace("Z", "+00:00"))
         if published.tzinfo is None:
@@ -2727,26 +2727,26 @@ def _futures_pro_parse_post(source, post_html):
     if published_ts > now + 300 or published_ts < now - 24 * 60 * 60:
         return None
 
-    symbol_match = re.search(r"(?:#|\\$)?\\b([A-Z0-9]{2,15})\\s*[/_-]\\s*USDT\\b|\\b([A-Z0-9]{2,15})USDT\\b", body, re.I)
+    symbol_match = re.search(r"(?:#|\$)?\b([A-Z0-9]{2,15})\s*[/_-]\s*USDT\b|\b([A-Z0-9]{2,15})USDT\b", body, re.I)
     if not symbol_match:
         return None
     symbol = (symbol_match.group(1) or symbol_match.group(2) or "").upper() + "USDT"
     if symbol in {"USDTUSDT", "USDCUSDT", "BUSDUSDT", "TUSDUSDT", "FDUSDUSDT"}:
         return None
-    direction_match = re.search(r"\\b(LONG|SHORT|BUY|SELL)\\b|\\b(شراء|بيع)\\b", body, re.I)
+    direction_match = re.search(r"\b(LONG|SHORT|BUY|SELL)\b|\b(شراء|بيع)\b", body, re.I)
     if not direction_match:
         return None
     direction_text = (direction_match.group(1) or direction_match.group(2) or "").upper()
     side = "شراء" if direction_text in {"LONG", "BUY", "شراء"} else "بيع"
 
-    entry_match = re.search(r"(?:ENTRY(?:\\s*(?:PRICE|POINT|ZONE|TARGETS?))?|BUY\\s*(?:ZONE|PRICE)?|SELL\\s*(?:ZONE|PRICE)?)\\s*[:=@-]\\s*([^\\n;|]+)", body, re.I)
+    entry_match = re.search(r"(?:ENTRY(?:\s*(?:PRICE|POINT|ZONE|TARGETS?))?|BUY\s*(?:ZONE|PRICE)?|SELL\s*(?:ZONE|PRICE)?)\s*[:=@-]\s*([^\n;|]+)", body, re.I)
     if not entry_match:
-        entry_match = re.search(r"(?:Entry|Buy|Sell)\\s+([0-9][0-9,.]*(?:\\s*[-–]\\s*[0-9][0-9,.]*)?)", body, re.I)
+        entry_match = re.search(r"(?:Entry|Buy|Sell)\s+([0-9][0-9,.]*(?:\s*[-–]\s*[0-9][0-9,.]*)?)", body, re.I)
     if not entry_match:
         return None
     entries = _futures_pro_number_values(entry_match.group(1))[:2]
 
-    stop_match = re.search(r"(?:STOP\\s*LOSS|STOPLOSS|STOP\\s*TARGETS?|\\bSL\\b)\\s*[:=@-]\\s*([^\\n;|]+)", body, re.I)
+    stop_match = re.search(r"(?:STOP\s*LOSS|STOPLOSS|STOP\s*TARGETS?|\bSL\b)\s*[:=@-]\s*([^\n;|]+)", body, re.I)
     if not stop_match:
         return None
     stops = _futures_pro_number_values(stop_match.group(1))
@@ -2754,11 +2754,11 @@ def _futures_pro_parse_post(source, post_html):
         return None
 
     target_values = []
-    for target_match in re.finditer(r"(?:TAKE\\s*PROFIT(?:\\s*TARGETS?)?|TAKE-PROFIT(?:\\s*TARGETS?)?|TARGETS?|TP\\s*\\d*)\\s*[:=@-]?\\s*([^\\n;|]+)", body, re.I):
+    for target_match in re.finditer(r"(?:TAKE\s*PROFIT(?:\s*TARGETS?)?|TAKE-PROFIT(?:\s*TARGETS?)?|TARGETS?|TP\s*\d*)\s*[:=@-]?\s*([^\n;|]+)", body, re.I):
         target_values.extend(_futures_pro_number_values(target_match.group(1)))
     if not target_values:
         target_values = []
-        for target_match in re.finditer(r"\\bTP\\s*\\d+\\s*[:=@-]\\s*([0-9][0-9,.]*)", body, re.I):
+        for target_match in re.finditer(r"\bTP\s*\d+\s*[:=@-]\s*([0-9][0-9,.]*)", body, re.I):
             target_values.extend(_futures_pro_number_values(target_match.group(1)))
     targets = []
     for value in target_values:
@@ -2800,7 +2800,7 @@ def _futures_pro_fetch_source(source):
     )
     with urllib.request.urlopen(request, timeout=8) as response:
         page = response.read(2_000_000).decode("utf-8", errors="replace")
-    chunks = re.split(r'<div class=["\\'][^"\\']*tgme_widget_message_wrap[^"\\']*["\\'][^>]*>', page, flags=re.I)
+    chunks = re.split(r'<div class=["\'][^"\']*tgme_widget_message_wrap[^"\']*["\'][^>]*>', page, flags=re.I)
     items = []
     for chunk in chunks:
         if "tgme_widget_message_text" not in chunk or "data-post=" not in chunk:
