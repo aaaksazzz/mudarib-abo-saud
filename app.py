@@ -2170,7 +2170,10 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
                 "description": str(s.get("rationale_ar") or "تحليل حركة السعر الخام دون مؤشرات فنية.")[:700],
                 "source": "تحليل الذكاء الاصطناعي لبيانات السوق الخام", "url": "",
                 "published_at": int(time.time()), "created_at": int(time.time()), "age_hours": 0,
-                "market": market, "interval": interval, "price_updated_at": int(time.time()),
+                "market": market, "interval": interval,
+                "expires_at": int(time.time()) + {"15m": 900, "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400, "1w": 604800, "1M": 2592000}.get(interval, 900),
+                "valid_for_seconds": {"15m": 900, "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400, "1w": 604800, "1M": 2592000}.get(interval, 900),
+                "price_updated_at": int(time.time()),
                 "price_fresh": True, "freshness_label": "سعر محدث وقت التحليل",
                 "live_price": round(next((float(x.get("price")) for x in candidates if x.get("symbol") == symbol and x.get("price")), entry), digits),
                 "levels": {"entry": round(entry, digits), "stop_loss": round(stop, digits),
@@ -2203,11 +2206,25 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                              "message": "الفريم غير مدعوم."}, status_code=422)
 
     now = int(time.time())
+    # Each trade plan expires after one candle interval.
+    interval_lifetimes = {
+        "15m": 15 * 60, "1h": 60 * 60, "2h": 2 * 60 * 60,
+        "4h": 4 * 60 * 60, "1d": 24 * 60 * 60,
+        "1w": 7 * 24 * 60 * 60, "1M": 30 * 24 * 60 * 60,
+    }
+    timeframe_lifetime = interval_lifetimes.get(interval, 15 * 60)
     cache_key = ("canonical_market_direction_v2", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if not refresh and cached and now - cached[0] < 90:
-            return {**cached[1], "cached": True}
+            cached_items = [
+                item for item in cached[1].get("items", [])
+                if isinstance(item, dict)
+                and now < int(item.get("expires_at") or (int(item.get("created_at") or now) + timeframe_lifetime))
+            ]
+            if len(cached_items) == len(cached[1].get("items", [])):
+                return {**cached[1], "cached": True}
+            PUBLIC_IDEAS_CACHE.pop(cache_key, None)
 
     # AI-only mode: raw price candles; no public signal ingestion and no technical indicators.
     # Bypass in-process quote and candle caches on every scan for fresh analysis inputs.
@@ -2261,8 +2278,12 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             return stop > entry > tp1 >= tp2 >= tp3
         return False
 
-    # Keep only coherent, renderable trade plans. Never repair or invent missing levels here.
-    items = [item for item in items if _signal_is_displayable(item)]
+    # Keep only coherent, renderable, unexpired trade plans.
+    items = [
+        item for item in items
+        if _signal_is_displayable(item)
+        and now < int(item.get("expires_at") or (int(item.get("created_at") or now) + timeframe_lifetime))
+    ]
 
     # Link every displayed signal to this market's overall direction.
     # Bullish market => buys only; bearish market => sells only; neutral/unavailable => no signals.
@@ -2346,17 +2367,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             journal = read_json_file(RESULTS_PATH, [])
             if not isinstance(journal, list):
                 journal = []
-            # Expire open opportunities according to their own timeframe.
-            # Closed outcomes remain in the journal for performance history.
-            interval_lifetimes = {
-                "15m": 15 * 60,
-                "1h": 60 * 60,
-                "2h": 2 * 60 * 60,
-                "4h": 4 * 60 * 60,
-                "1d": 24 * 60 * 60,
-                "1w": 7 * 24 * 60 * 60,
-                "1M": 30 * 24 * 60 * 60,
-            }
+            # Open opportunities expire after one matching timeframe; closed outcomes remain for history.
             journal = [
                 row for row in journal
                 if isinstance(row, dict) and (
