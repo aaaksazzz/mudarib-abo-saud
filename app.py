@@ -1290,6 +1290,14 @@ PUBLIC_TRADE_IDEA_FEEDS = [
     ("Google News — Forex sell setups", "https://news.google.com/rss/search?q=forex+sell+signal+short+setup+entry+stop+loss+target&hl=en-US&gl=US&ceid=US:en"),
     ("Google News — US stock short setups", "https://news.google.com/rss/search?q=US+stocks+short+sell+setup+entry+stop+loss+target&hl=en-US&gl=US&ceid=US:en"),
     ("Google News — Gold sell setups", "https://news.google.com/rss/search?q=XAUUSD+gold+sell+signal+short+entry+stop+loss+target&hl=en-US&gl=US&ceid=US:en"),
+    ("Reddit — CryptoCurrency", "https://www.reddit.com/r/CryptoCurrency/.rss"),
+    ("Reddit — CryptoMarkets", "https://www.reddit.com/r/CryptoMarkets/.rss"),
+    ("Reddit — FuturesTrading", "https://www.reddit.com/r/FuturesTrading/.rss"),
+    ("Reddit — Altcoin", "https://www.reddit.com/r/altcoin/.rss"),
+    ("Google News — Altcoin futures", "https://news.google.com/rss/search?q=altcoin+futures+long+short+entry+stop+loss+take+profit&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News — BTC technical setup", "https://news.google.com/rss/search?q=BTCUSDT+technical+setup+entry+stop+loss+take+profit&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News — ETH futures setup", "https://news.google.com/rss/search?q=ETHUSDT+futures+signal+entry+stop+loss+targets&hl=en-US&gl=US&ceid=US:en"),
+    ("Google News — crypto scalping", "https://news.google.com/rss/search?q=crypto+scalping+signal+entry+stop+loss+targets&hl=en-US&gl=US&ceid=US:en"),
 ]
 # Public Telegram channel previews; no bot token/API key required.
 # Override/add public usernames with TELEGRAM_PUBLIC_CHANNELS="channel1,channel2".
@@ -1332,12 +1340,13 @@ def _telegram_public_channels():
             name = name.strip().lstrip("@")
             if name.replace("_", "").isalnum() and name not in channels:
                 channels.append(name)
-    # Search only two high-yield terms in parallel; never crawl a directory without bounds.
+    # Discover public channels across crypto, futures, forex, gold and Arabic queries,
+    # while keeping the number of concurrent directory requests bounded.
     discovered = []
     try:
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            futures = [pool.submit(_telegram_directory_search, term)
-                       for term in ("crypto trading signals", "forex signals")]
+        terms = TELEGRAM_DISCOVERY_TERMS[:6]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = [pool.submit(_telegram_directory_search, term) for term in terms]
             for future in as_completed(futures):
                 try:
                     discovered.extend(sorted(future.result()))
@@ -1348,8 +1357,8 @@ def _telegram_public_channels():
     for name in discovered:
         if name not in channels:
             channels.append(name)
-    # At most eight channel previews are fetched per refresh; results are cached 30 minutes.
-    result = channels[:8]
+    # At most sixteen public channel previews are fetched per refresh; results are cached 30 minutes.
+    result = channels[:16]
     with TELEGRAM_DISCOVERY_LOCK:
         TELEGRAM_DISCOVERY_CACHE.update({"at": now, "channels": result})
     return result
