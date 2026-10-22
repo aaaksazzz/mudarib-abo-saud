@@ -243,6 +243,7 @@
       if(bestBox)bestBox.innerHTML='<div class="feature-card"><small>أفضل شراء</small><strong>'+esc(bestBuy?.symbol||"لا توجد فرصة")+'</strong><small>'+esc(bestBuy?(bestBuy.interval||frame)+" · تقييم الأدلة "+(bestBuy.ai_score??"—")+"/100":"لا توجد فرصة شراء واضحة الآن")+'</small></div><div class="feature-card"><small>أفضل بيع</small><strong>'+esc(bestSell?.symbol||"لا توجد فرصة")+'</strong><small>'+esc(bestSell?(bestSell.interval||frame)+" · تقييم الأدلة "+(bestSell.ai_score??"—")+"/100":"لا توجد فرصة بيع واضحة الآن")+'</small></div>';
       meta.textContent=(d.ai_provider_configured?"مراجعة ذكاء اصطناعي مفعّلة":"التحليل المحلي متاح؛ مراجعة الذكاء الاصطناعي تحتاج مفتاح مزوّد")+" · "+(d.scanned??0)+" أصلًا جرى فحصه · "+items.length+" فرصة صالحة";
       out.innerHTML=items.length?items.slice(0,3).map((x,i)=>signalCard(x,i,m.api)).join(""):empty("لا توجد فرص واضحة الآن",d.message||"لم تتحقق شروط حركة السعر لفرصة مكتملة. لن نختلق صفقة.");
+      refreshLiveTradeTracking(m);
     } catch(err) {
       out.innerHTML=empty("تعذر تحليل السوق",err.message||"تحقق من اتصال بيانات السوق.");
       meta.textContent="تعذر إكمال التحليل المحلي";
