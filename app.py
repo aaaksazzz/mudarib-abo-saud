@@ -2252,7 +2252,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "technical_opportunities": 0,
         "external_opportunities": 0,
         "max_age_hours": 0,
-        "message": ai_message)
+        "message": ai_message
     }
     # Persist the latest scan per market/timeframe so users can reopen the page
     # without having to trigger a fresh scan.
