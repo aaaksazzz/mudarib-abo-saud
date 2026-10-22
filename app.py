@@ -2060,6 +2060,9 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
     """Generate hypotheses from raw candles only, with no indicators and no external trade ideas."""
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+    if not api_key:
+        return [], False, "التحليل بالذكاء الاصطناعي متوقف: أضف OPENAI_API_KEY إلى إعدادات الخدمة."
+
     def _candidate_from_row(row):
         if not isinstance(row, dict):
             return None
@@ -2110,10 +2113,6 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
                 continue
     if not candidates:
         return [], False, "لا توجد بيانات شموع خام كافية للتحليل."
-
-    # AI-only mode must not silently replace the model with local rule-based signals.
-    if not api_key:
-        return [], False, "التحليل بالذكاء الاصطناعي متوقف: أضف OPENAI_API_KEY إلى إعدادات الخدمة."
 
     prompt = (
         "حلل بيانات الأسعار والشموع الخام التالية فقط، ولا تستخدم توصيات خارجية أو مؤشرات فنية أو متوسطات أو RSI أو MACD أو ATR أو أي مؤشرات. "
