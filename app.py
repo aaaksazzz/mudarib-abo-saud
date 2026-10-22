@@ -2101,9 +2101,11 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
         close_position = (last["close"] - last["low"]) / candle_range
         side, score = None, 0
         avg_volume = sum(c["volume"] for c in prior[-3:]) / 3
-        if close > prior_high and up >= 2 and close_position >= 0.60:
+        # Keep breakout confirmation meaningful, but avoid rejecting valid
+        # closes merely because they finish near the middle of the candle.
+        if close > prior_high and up >= 2 and close_position >= 0.55:
             side, score = "شراء", min(88, 58 + 7 * up + (5 if last["volume"] > avg_volume else 0))
-        elif close < prior_low and down >= 2 and close_position <= 0.40:
+        elif close < prior_low and down >= 2 and close_position <= 0.45:
             side, score = "بيع", min(88, 58 + 7 * down + (5 if last["volume"] > avg_volume else 0))
         if not side or score < 65:
             return None
@@ -2152,7 +2154,10 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
         if symbol and symbol not in seen:
             seen.add(symbol)
             unique_rows.append(row)
-        if len(unique_rows) >= min(20, max(10, limit)):
+        # Scan a wider slice of the market universe, then return only the
+        # requested number of best candidates. Scanning just the first 20
+        # symbols often misses setups on the rest of the market.
+        if len(unique_rows) >= min(60, max(40, limit * 3)):
             break
     candidates = []
     with ThreadPoolExecutor(max_workers=3) as pool:
