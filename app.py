@@ -2700,24 +2700,31 @@ def _futures_pro_number_values(text):
 
 
 def _futures_pro_parse_post(source, post_html):
-    post_match = re.search(r'data-post=["\']([^"\']+)["\']', post_html)
+    """Parse common public Telegram signal formats without fabricating missing levels."""
+    post_match = re.search(r'\bdata-post=["\']([^"\']+)["\']', post_html, re.I)
     if not post_match:
         return None
     post_id = post_match.group(1)
+
+    # Match the message text div even when Telegram changes the order of class attributes.
     text_match = re.search(
-        r'<div class=["\'][^"\']*tgme_widget_message_text[^"\']*["\'][^>]*>(.*?)</div>',
+        r'<div\b(?=[^>]*\bclass=["\'][^"\']*\btgme_widget_message_text\b[^"\']*["\'])[^>]*>(.*?)</div>',
         post_html, re.S | re.I
     )
-    time_match = re.search(r'<time[^>]*datetime=["\']([^"\']+)["\']', post_html, re.I)
+    time_match = re.search(r'<time\b[^>]*\bdatetime=["\']([^"\']+)["\']', post_html, re.I)
     if not text_match or not time_match:
         return None
-    raw_text = re.sub(r"<br\s*/?>", "\n", text_match.group(1), flags=re.I)
-    raw_text = re.sub(r"<[^>]+>", " ", raw_text)
-    body = html_lib.unescape(raw_text).replace("\xa0", " ")
-    body = re.sub(r"[ \t\r]+", " ", body)
-    body = re.sub(r"\n\s*\n+", "\n", body).strip()
+
+    raw_text = re.sub(r'<br\b[^>]*>', '\n', text_match.group(1), flags=re.I)
+    raw_text = re.sub(r'</(?:div|p|li|h[1-6])\s*>', '\n', raw_text, flags=re.I)
+    raw_text = re.sub(r'<[^>]+>', ' ', raw_text)
+    body = html_lib.unescape(raw_text).replace('\xa0', ' ')
+    body = re.sub(r'[ \t\r]+', ' ', body)
+    body = re.sub(r'\n\s*\n+', '\n', body).strip()
+    normalized = body.upper()
+
     try:
-        published = datetime.fromisoformat(time_match.group(1).replace("Z", "+00:00"))
+        published = datetime.fromisoformat(time_match.group(1).replace('Z', '+00:00'))
         if published.tzinfo is None:
             published = published.replace(tzinfo=timezone.utc)
         published_ts = int(published.timestamp())
@@ -2727,39 +2734,69 @@ def _futures_pro_parse_post(source, post_html):
     if published_ts > now + 300 or published_ts < now - 24 * 60 * 60:
         return None
 
-    symbol_match = re.search(r"(?:#|\$)?\b([A-Z0-9]{2,15})\s*[/_-]\s*USDT\b|\b([A-Z0-9]{2,15})USDT\b", body, re.I)
+    # Support BTC/USDT, BTCUSDT, #BTC, $BTC and "BTC LONG" formats.
+    symbol_match = re.search(
+        r'(?:#|\$)?\b([A-Z0-9]{2,15})\s*[/_-]\s*USDT\b|'
+        r'\b([A-Z0-9]{2,15})USDT\b|(?:#|\$)\b([A-Z0-9]{2,15})\b',
+        normalized, re.I
+    )
+    if not symbol_match:
+        symbol_match = re.search(
+            r'\b([A-Z0-9]{2,15})\b(?=.*\b(?:LONG|SHORT|BUY|SELL|ENTRY|ENTRIES|SL|STOP LOSS|TP\d*)\b)',
+            normalized, re.I
+        )
     if not symbol_match:
         return None
-    symbol = (symbol_match.group(1) or symbol_match.group(2) or "").upper() + "USDT"
-    if symbol in {"USDTUSDT", "USDCUSDT", "BUSDUSDT", "TUSDUSDT", "FDUSDUSDT"}:
+    raw_symbol = next((g for g in symbol_match.groups() if g), '').upper()
+    symbol = raw_symbol if raw_symbol.endswith('USDT') else raw_symbol + 'USDT'
+    if symbol in {'USDTUSDT', 'USDCUSDT', 'BUSDUSDT', 'TUSDUSDT', 'FDUSDUSDT', 'DAIUSDT'}:
         return None
-    direction_match = re.search(r"\b(LONG|SHORT|BUY|SELL)\b|\b(شراء|بيع)\b", body, re.I)
+
+    direction_match = re.search(r'\b(LONG|SHORT|BUY|SELL)\b|شراء|بيع', normalized, re.I)
     if not direction_match:
         return None
-    direction_text = (direction_match.group(1) or direction_match.group(2) or "").upper()
-    side = "شراء" if direction_text in {"LONG", "BUY", "شراء"} else "بيع"
+    direction_text = (direction_match.group(1) or direction_match.group(0) or '').upper()
+    side = 'شراء' if direction_text in {'LONG', 'BUY', 'شراء'} else 'بيع'
 
-    entry_match = re.search(r"(?:ENTRY(?:\s*(?:PRICE|POINT|ZONE|TARGETS?))?|BUY\s*(?:ZONE|PRICE)?|SELL\s*(?:ZONE|PRICE)?)\s*[:=@-]\s*([^\n;|]+)", body, re.I)
+    number = r'([0-9][0-9,]*(?:\.[0-9]+)?|[0-9]*\.[0-9]+)'
+    entry_match = re.search(
+        r'(?:ENTRY(?:\s*(?:PRICE|POINT|ZONE|RANGE))?|ENTRY\s*AREA|BUY\s*ZONE|SELL\s*ZONE|'
+        r'BUY\s*PRICE|SELL\s*PRICE|سعر\s*الدخول|الدخول)\s*[:=@\-]?\s*'
+        r'(' + number + r'(?:\s*[-–]\s*' + number + r')?)',
+        body, re.I
+    )
     if not entry_match:
-        entry_match = re.search(r"(?:Entry|Buy|Sell)\s+([0-9][0-9,.]*(?:\s*[-–]\s*[0-9][0-9,.]*)?)", body, re.I)
+        entry_match = re.search(r'\b(?:BUY|SELL)\s*[:=@]\s*' + number, body, re.I)
     if not entry_match:
         return None
     entries = _futures_pro_number_values(entry_match.group(1))[:2]
+    if not entries:
+        return None
 
-    stop_match = re.search(r"(?:STOP\s*LOSS|STOPLOSS|STOP\s*TARGETS?|\bSL\b)\s*[:=@-]\s*([^\n;|]+)", body, re.I)
+    stop_match = re.search(
+        r'(?:STOP\s*LOSS|STOPLOSS|STOP\s*TARGET|STOP\s*PRICE|\bSL\b|وقف\s*الخسارة|الوقف)\s*[:=@\-]?\s*'
+        r'(' + number + r')',
+        body, re.I
+    )
     if not stop_match:
         return None
     stops = _futures_pro_number_values(stop_match.group(1))
-    if not entries or not stops:
+    if not stops:
         return None
 
     target_values = []
-    for target_match in re.finditer(r"(?:TAKE\s*PROFIT(?:\s*TARGETS?)?|TAKE-PROFIT(?:\s*TARGETS?)?|TARGETS?|TP\s*\d*)\s*[:=@-]?\s*([^\n;|]+)", body, re.I):
-        target_values.extend(_futures_pro_number_values(target_match.group(1)))
+    target_patterns = [
+        r'(?:TAKE\s*PROFIT(?:\s*TARGETS?)?|TAKE-PROFIT(?:\s*TARGETS?)?|TARGETS?|PROFIT\s*TARGETS?|'
+        r'\bTP\s*\d*\b|الهدف(?:\s*\d+)?)\s*[:=@\-]?\s*([^\n;|]+)',
+    ]
+    for pattern in target_patterns:
+        for match in re.finditer(pattern, body, re.I):
+            target_values.extend(_futures_pro_number_values(match.group(1)))
+    # Formats such as TP1 65000 or "1) 65000, 2) 66000" after a Targets heading.
     if not target_values:
-        target_values = []
-        for target_match in re.finditer(r"\bTP\s*\d+\s*[:=@-]\s*([0-9][0-9,.]*)", body, re.I):
-            target_values.extend(_futures_pro_number_values(target_match.group(1)))
+        targets_section = re.search(r'(?:TARGETS?|TAKE\s*PROFIT|الأهداف)\s*[:\-]?\s*(.*)', body, re.I | re.S)
+        if targets_section:
+            target_values.extend(_futures_pro_number_values(targets_section.group(1).splitlines()[0]))
     targets = []
     for value in target_values:
         if value not in targets:
@@ -2767,31 +2804,28 @@ def _futures_pro_parse_post(source, post_html):
     if not targets:
         return None
 
-    # Reject obviously malformed direction/levels rather than inventing or correcting them.
-    entry = entries[0]
-    stop = stops[0]
+    entry, stop = entries[0], stops[0]
     targets = targets[:3]
-    if side == "شراء" and (stop >= entry or targets[0] <= entry):
+    if side == 'شراء' and (stop >= entry or targets[0] <= entry):
         return None
-    if side == "بيع" and (stop <= entry or targets[0] >= entry):
+    if side == 'بيع' and (stop <= entry or targets[0] >= entry):
         return None
 
     return {
-        "id": post_id,
-        "source": source["name"],
-        "channel": source["channel"],
-        "url": "https://t.me/" + post_id,
-        "published_at": published_ts,
-        "published_iso": datetime.fromtimestamp(published_ts, timezone.utc).isoformat(),
-        "symbol": symbol,
-        "side": side,
-        "entry": entries,
-        "stop_loss": stop,
-        "targets": targets,
-        "raw_text": body[:1200],
-        "status": "إشارة منشورة حديثًا — لم تُتحقق نتيجة الصفقة بعد",
+        'id': post_id,
+        'source': source['name'],
+        'channel': source['channel'],
+        'url': 'https://t.me/' + post_id,
+        'published_at': published_ts,
+        'published_iso': datetime.fromtimestamp(published_ts, timezone.utc).isoformat(),
+        'symbol': symbol,
+        'side': side,
+        'entry': entries,
+        'stop_loss': stop,
+        'targets': targets,
+        'raw_text': body[:1200],
+        'status': 'إشارة منشورة حديثًا — لم تُتحقق نتيجة الصفقة بعد',
     }
-
 
 def _futures_pro_fetch_source(source):
     request = urllib.request.Request(
