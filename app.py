@@ -2674,14 +2674,10 @@ def trade_chart_data(market: str = Query(...), symbol: str = Query(..., min_leng
     except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError, KeyError):
         return JSONResponse({"ok": False, "items": [], "message": "تعذر جلب الشموع الفعلية الآن."}, status_code=503)
 
-@app.get("/futures-pro", response_class=HTMLResponse)
+@app.get("/futures-pro", include_in_schema=False)
 def futures_pro_sources_page():
-    """Protected standalone directory of public crypto-futures signal sources."""
-    page = BASE / "static" / "futures-pro.html"
-    try:
-        return HTMLResponse(page.read_text(encoding="utf-8"))
-    except OSError:
-        raise HTTPException(status_code=503, detail="صفحة مصادر فيوتشر PRO غير متاحة مؤقتًا.")
+    """Redirect the retired standalone page to the current futures market page."""
+    return RedirectResponse(url="/markets/futures", status_code=308)
 
 
 # Public Telegram channels that publish actual trade setups. Only complete, recent posts are displayed.
