@@ -329,7 +329,8 @@ def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     js = (root / "app.js").read_text(encoding="utf-8")
     assert 'href="/markets/spot"' in html and 'href="/markets/futures"' in html
     assert 'async function loadSignals(m)' in js
-    assert '"/api/signals/"+encodeURIComponent(markets[key].api)+"?interval="+encodeURIComponent(frame)+"&limit=20&refresh=true"' in js
+    assert '"/api/public-ideas?market="+encodeURIComponent(m.api)+"&interval=auto&limit=50&discover=true&refresh=true"' in js
+    assert '"/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(x.symbol)+"&interval="+encodeURIComponent(selectedInterval)' in js
     assert 'data-frame="' in js and '"15m","1h","4h","1d","1w","1M"' in js
     assert 'async function loadChart(m,symbol)' in js
 
