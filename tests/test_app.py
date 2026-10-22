@@ -76,7 +76,7 @@ def test_local_analysis_runs_without_api_key_and_marks_non_ai(monkeypatch):
     assert items[0]["method"] == "local_raw_candle_price_action_no_api"
     levels = items[0]["levels"]
     assert levels["stop_loss"] < levels["entry"] < levels["tp1"] < levels["tp2"] < levels["tp3"]
-    assert "دون API" in message
+    assert "غير متاح" in message
 
 
 def test_home_is_arabic_rtl_and_does_not_reference_missing_asset():
