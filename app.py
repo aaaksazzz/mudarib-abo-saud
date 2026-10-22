@@ -2154,22 +2154,45 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
         if symbol and symbol not in seen:
             seen.add(symbol)
             unique_rows.append(row)
-        # Scan a wider slice of the market universe, then return only the
-        # requested number of best candidates. Scanning just the first 20
-        # symbols often misses setups on the rest of the market.
-        if len(unique_rows) >= min(60, max(40, limit * 3)):
-            break
-    candidates = []
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        futures = [pool.submit(_candidate_from_row, row) for row in unique_rows]
-        for future in as_completed(futures):
+
+    # Prioritize liquid assets first: they tend to have faster, more reliable
+    # candle data and tighter spreads. Fall back to lower-liquidity assets only
+    # when the first batch does not produce enough valid candidates.
+    def _liquidity(row):
+        if not isinstance(row, dict):
+            return 0.0
+        for key in ("quote_volume", "quoteVolume", "dollar_volume", "avg_dollar_volume_5d", "volume"):
             try:
-                item = future.result()
-                if item:
-                    candidates.append(item)
-            except Exception as exc:
-                print(f"local signal candidate failed {market}: {type(exc).__name__}")
-    candidates.sort(key=lambda item: item.get("ai_score", 0), reverse=True)
+                value = float(row.get(key) or 0)
+                if math.isfinite(value) and value > 0:
+                    return value
+            except (TypeError, ValueError, OverflowError):
+                continue
+        return 0.0
+
+    unique_rows.sort(key=_liquidity, reverse=True)
+    scan_cap = min(60, max(40, limit * 3))
+    unique_rows = unique_rows[:scan_cap]
+    candidates, scanned_symbols = [], set()
+    batch_size = 20
+    for offset in range(0, len(unique_rows), batch_size):
+        batch = unique_rows[offset:offset + batch_size]
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            futures = {pool.submit(_candidate_from_row, row): str(row.get("symbol") or "").upper()
+                       for row in batch if isinstance(row, dict)}
+            for future in as_completed(futures):
+                scanned_symbols.add(futures[future])
+                try:
+                    item = future.result()
+                    if item:
+                        candidates.append(item)
+                except Exception as exc:
+                    print(f"local signal candidate failed {market}: {type(exc).__name__}")
+        candidates.sort(key=lambda item: item.get("ai_score", 0), reverse=True)
+        # Stop early when the high-liquidity batch already has enough candidates.
+        # Otherwise continue through progressively lower-liquidity assets.
+        if len(candidates) >= limit:
+            break
     if not candidates:
         return [], True, "اكتمل فحص المناهج المحلية؛ لم تتحقق شروط كافية لعرض صفقة."
 
