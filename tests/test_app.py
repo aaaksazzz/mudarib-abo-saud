@@ -327,7 +327,7 @@ def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     js = (root / "app.js").read_text(encoding="utf-8")
     assert 'href="/markets/spot"' in html and 'href="/markets/futures"' in html
     assert 'async function loadSignals(m)' in js
-    assert '"/api/public-ideas?market="+encodeURIComponent(m.api)+"&interval=auto&limit=50&discover=true&refresh=true"' in js
+    assert '"/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(frame)+"&limit=20"' in js
     assert '"/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(x.symbol)+"&interval="+encodeURIComponent(selectedInterval)' in js
     assert 'data-frame="' in js and '"15m","1h","4h","1d","1w","1M"' in js
     assert 'async function loadChart(m,symbol)' in js
@@ -530,7 +530,7 @@ def test_home_refresh_does_not_rebuild_dashboard_twice():
     html = (root / "index.html").read_text(encoding="utf-8")
     js = (root / "app.js").read_text(encoding="utf-8")
     assert '/static/app.css?v=20261019.2' in html
-    assert '/static/app.js?v=20261019.1' in html
+    assert '/static/app.js?v=20261022.1' in html
     assert 'getJSON("/api/status")' in js
     home_start = js.index("function renderHome()")
     home_end = js.index("function renderMarketPage(", home_start)
