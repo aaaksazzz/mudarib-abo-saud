@@ -1986,67 +1986,9 @@ def _ema_alignment(market, symbol, interval):
 
 
 def _technical_fallback_signal(market, symbol, interval):
-    """EMA20/50 multi-timeframe strategy: alignment on three frames plus a fresh lead-frame crossover."""
-    try:
-        alignment = _ema_alignment(market, symbol, interval)
-        if not alignment:
-            return None
-        side, confirmation_frames = alignment
-        candles = candle_data(market, symbol, interval)
-        if len(candles) < 55:
-            return None
-        closes = [float(c["close"]) for c in candles]
-        highs = [float(c["high"]) for c in candles]
-        lows = [float(c["low"]) for c in candles]
-        volumes = [float(c.get("volume") or 0) for c in candles]
-        entry = closes[-1]
-        if not math.isfinite(entry) or entry <= 0:
-            return None
-        true_ranges = []
-        for k in range(max(1, len(candles)-14), len(candles)):
-            true_ranges.append(max(highs[k]-lows[k], abs(highs[k]-closes[k-1]), abs(lows[k]-closes[k-1])))
-        atr = sum(true_ranges) / len(true_ranges) if true_ranges else entry * 0.01
-        if not math.isfinite(atr) or atr <= 0:
-            return None
-        recent_high = max(highs[-20:-1])
-        recent_low = min(lows[-20:-1])
-        max_risk_pct = {"15m": 0.03, "1h": 0.05, "2h": 0.06, "4h": 0.08, "1d": 0.12}.get(interval, 0.03)
-        max_risk = entry * max_risk_pct
-        if side == "شراء":
-            stop = min(entry - atr * 1.5, recent_low)
-            risk = min(entry - stop, max_risk)
-            if risk <= 0:
-                return None
-            stop = entry - risk
-            targets = [entry + risk * n for n in (1, 2, 3)]
-        else:
-            stop = max(entry + atr * 1.5, recent_high)
-            risk = min(stop - entry, max_risk)
-            if risk <= 0:
-                return None
-            stop = entry + risk
-            targets = [entry - risk * n for n in (1, 2, 3)]
-            if targets[-1] <= 0:
-                return None
-        digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
-        fmt = lambda value: round(float(value), digits)
-        return {
-            "source": "EMA20/EMA50 — توافق ثلاثة فريمات",
-            "title": f"{side} {symbol} — توافق EMA20/50",
-            "description": "تقاطع EMA20/EMA50 على فريم الدخول، مع توافق الاتجاه على الفريمين الأعلى المحددين. المستويات محسوبة من الشموع الفعلية وATR.",
-            "url": "", "published_at": int(time.time()), "market": market,
-            "direction": side, "symbol": symbol, "interval": interval,
-            "confirmation_timeframes": list(confirmation_frames),
-            "levels": {"entry": fmt(entry), "stop_loss": fmt(stop), "tp1": fmt(targets[0]),
-                       "tp2": fmt(targets[1]), "tp3": fmt(targets[2])},
-            "has_complete_levels": True, "ai_score": 100,
-            "analysis_methods": ["EMA20", "EMA50", "تقاطع الفريم الرئيسي", "توافق ثلاثة فريمات", "ATR لإدارة المخاطر"],
-            "age_hours": 0, "generated_by_site": True,
-            "raw_text": "إشارة آلية من شموع السوق الفعلية؛ لا تمثل نسبة نجاح مثبتة."
-        }
-    except (urllib.error.URLError, TimeoutError, OSError, KeyError, TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError) as exc:
-        print(f"EMA20/50 signal skipped {market}/{symbol}/{interval}: {type(exc).__name__}")
-        return None
+    """Disabled: this site must not generate trades from technical indicators."""
+    return None
+
 
 
 SCAN_CURSORS = {}
@@ -2388,8 +2330,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
 
     # One AI review batch per market scan; the model may explain quality but cannot alter direction or prices.
     items, ai_review_completed = _ai_review_signal_batch(items, market, interval)
+    if ai_review_completed:
+        items = [item for item in items if (item.get("ai_review") or {}).get("verdict") != "مرفوضة"]
 
-    # Rank by TP3 potential percentage return first, then risk/reward and signal score.
+    # Rank by TP3 potential percentage return first, then risk/reward and AI evidence score.
     # These are estimates, not guaranteed or backtested profits.
     items.sort(key=_tp3_profit_rank, reverse=True)
     result = {
