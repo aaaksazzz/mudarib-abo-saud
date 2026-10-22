@@ -2256,10 +2256,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
 
         symbol = str(source_item.get("symbol") or "").strip().upper()
         change = market_changes.get(symbol)
-        site_supports_reversed_side = (
+        site_supports_source_direction = (
             change is not None and ((side == "شراء" and change > 0) or (side == "بيع" and change < 0))
         )
-        site_score = 10 if site_supports_reversed_side else 0
+        site_score = 10 if site_supports_source_direction else 0
         # Rank by observable setup quality, not a made-up win probability:
         # reward/risk geometry, freshness of the public idea, and market-context alignment.
         first_rr = target_distances[0] / risk if risk > 0 else 0.0
@@ -2291,16 +2291,16 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             "generated_by_site": False,
             "has_complete_levels": True,
             "levels_completed_by_site": levels_completed_by_site,
-            "level_source_note": ("تم استكمال الأهداف الناقصة حسابيًا من مسافة المخاطرة (R)، ثم عكس الاتجاه وإعادة حساب الوقف."
-                                  if levels_completed_by_site else "عُكس اتجاه المصدر وأعيد حساب الوقف والأهداف بمسافات المخاطرة نفسها."),
+            "level_source_note": ("تم استكمال الأهداف الناقصة حسابيًا من مسافة المخاطرة (R)، مع الحفاظ على اتجاه المصدر."
+                                  if levels_completed_by_site else "حُسبت المستويات الناقصة بمسافات المخاطرة نفسها مع الحفاظ على اتجاه المصدر."),
             "source_timeframe_missing": bool(source_item.get("interval_missing_in_source")),
-            "method": "external_public_ideas_inverted_direction_90_technical_analysis_10"
+            "method": "external_public_ideas_source_direction_90_technical_analysis_10"
         })
         # Final guard: never display malformed or incorrectly ordered levels.
         if not _public_idea_levels_ordered(item):
             skipped += 1
             continue
-        # Verify risk/reward geometry after inversion.
+        # Verify risk/reward geometry while preserving source direction.
         try:
             first_reward_pct = abs(float(item["levels"]["tp1"]) - entry) / entry * 100
             mirrored_risk_pct = abs(float(item["levels"]["stop_loss"]) - entry) / entry * 100
