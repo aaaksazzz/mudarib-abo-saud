@@ -281,7 +281,7 @@
         return false;
       });
       // Keep the server's quality/risk-reward order; sorting by score alone hid its ranking.
-      meta.textContent="فُحص "+(d.scanned??"—")+" أصل على "+selectedInterval+" · "+items.length+" فرصة صالحة · ينتقل تلقائيًا من الأسرع للأبطأ";
+      meta.textContent=m.api==="futures"?"مصادر عامة: "+(d.sources_checked??"—")+" · فشل الوصول: "+(d.sources_failed??"—")+" · عُكست وحُللت "+items.length+" صفقة مكتملة على "+selectedInterval:"فُحص "+(d.scanned??"—")+" أصل على "+selectedInterval+" · "+items.length+" فرصة صالحة · ينتقل تلقائيًا من الأسرع للأبطأ";
       const bestBuy=items.find(x=>["شراء","BUY","LONG"].includes(x.direction||x.side)),bestSell=items.find(x=>["بيع","SELL","SHORT"].includes(x.direction||x.side)),bestBox=$("marketBestSides");if(bestBox)bestBox.innerHTML='<div class="feature-card"><small>أفضل شراء</small><strong>'+esc(bestBuy?.symbol||"لا توجد فرصة")+'</strong><small>'+esc(bestBuy?(bestBuy.interval||selectedInterval)+" · تقييم "+(bestBuy.ai_score??bestBuy.confidence??"—")+"/100":"لم تظهر صفقة شراء مؤهلة")+'</small></div><div class="feature-card"><small>أفضل بيع</small><strong>'+esc(bestSell?.symbol||"لا توجد فرصة")+'</strong><small>'+esc(bestSell?(bestSell.interval||selectedInterval)+" · تقييم "+(bestSell.ai_score??bestSell.confidence??"—")+"/100":"لم تظهر صفقة بيع مؤهلة")+'</small></div>';
       out.innerHTML=items.length?items.map((x,i)=>signalCard(x,i)).join(""):empty("لا توجد فرص مؤهلة الآن",d.message||"لن نعرض صفقة بمستويات ناقصة أو غير مرتبة.");
     } catch(err) {out.innerHTML=empty("تعذر فحص الفرص",err.message);meta.textContent="فشل الفحص"}
