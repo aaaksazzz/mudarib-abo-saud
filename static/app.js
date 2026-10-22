@@ -100,7 +100,7 @@
     $("refreshMarketDirection").addEventListener("click",loadDirection);
     $("marketSignalFrames").addEventListener("click",e=>{const b=e.target.closest("[data-market-frame]");if(!b)return;selectedInterval=b.dataset.marketFrame;scanCycleIndex=scanIntervalOrder.indexOf(selectedInterval);if(scanCycleIndex<0)scanCycleIndex=0;$("marketSignalFrames").querySelectorAll("[data-market-frame]").forEach(x=>{const active=x===b;x.classList.toggle("active",active);x.setAttribute("aria-pressed",active?"true":"false")});loadSignals(m)});
     if(marketSignalRefreshTimer)clearInterval(marketSignalRefreshTimer);
-    marketSignalRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible" && $("signalContent") && $("signalMeta") && $("pageView").innerHTML.includes(esc(m.name)) && !marketSignalRefreshBusy){scanCycleIndex=(scanCycleIndex+1)%scanIntervalOrder.length;selectedInterval=scanIntervalOrder[scanCycleIndex];$("marketSignalFrames").querySelectorAll("[data-market-frame]").forEach(x=>{const active=x.dataset.marketFrame===selectedInterval;x.classList.toggle("active",active);x.setAttribute("aria-pressed",active?"true":"false")});loadDirection();loadSignals(m)}},30*1000);
+    marketSignalRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible" && $("signalContent") && $("signalMeta") && $("pageView").innerHTML.includes(esc(m.name)) && !marketSignalRefreshBusy){scanCycleIndex=(scanCycleIndex+1)%scanIntervalOrder.length;selectedInterval=scanIntervalOrder[scanCycleIndex];$("marketSignalFrames").querySelectorAll("[data-market-frame]").forEach(x=>{const active=x.dataset.marketFrame===selectedInterval;x.classList.toggle("active",active);x.setAttribute("aria-pressed",active?"true":"false")});loadDirection();loadSignals(m)}},90*1000);
     $("signalContent").addEventListener("click",e=>{const b=e.target.closest("[data-inline-chart]");if(!b)return;const card=b.closest(".signal-card"),symbol=b.dataset.symbol,frame=b.dataset.frame||selectedInterval,box=card&&card.querySelector("[data-chart-box]");if(!box)return;if(box.dataset.open==="1"){box.dataset.open="0";box.innerHTML="";b.textContent="عرض الشارت داخل الصفقة";return;}box.dataset.open="1";b.textContent="إخفاء الشارت";box.innerHTML='<div class="loading">تحميل الشارت…</div>';getJSON("/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(symbol)+"&interval="+encodeURIComponent(frame)).then(d=>{if(box.dataset.open==="1")box.innerHTML=drawCandles(d.items||[],{entry:Number(b.dataset.entry),stop_loss:Number(b.dataset.stop),tp1:Number(b.dataset.tp1),tp2:Number(b.dataset.tp2),tp3:Number(b.dataset.tp3)})}).catch(err=>{if(box.dataset.open==="1")box.innerHTML=empty("الشارت غير متاح",err.message)});});
     loadDirection();
     // Load the latest opportunities automatically when a market page opens.
@@ -252,39 +252,42 @@
     const out=$("signalContent"),meta=$("signalMeta"),status=$("signalAutoStatus");
     if(!out||!meta)return;
     marketSignalRefreshBusy=true;
-    const key=Object.keys(markets).find(k=>markets[k]===m)||"futures",frame=selectedInterval;
-    if(status)status.textContent="● جاري الفحص التلقائي";
-    meta.textContent="فحص متتابع يبدأ بالسريع: "+selectedInterval+" ثم الأبطأ…";
-    if(!out.innerHTML.trim() || out.innerHTML.includes("جاري"))out.innerHTML='<div class="loading">جاري فحص الفرص تلقائيًا…</div>';
+    const frame=selectedInterval;
+    if(status)status.textContent="● جاري تحليل الذكاء الاصطناعي";
+    meta.textContent="تحليل حركة السعر والشموع الخام دون مؤشرات فنية أو توصيات خارجية — "+frame;
+    if(!out.innerHTML.trim() || out.innerHTML.includes("جاري"))out.innerHTML='<div class="loading">جاري تحليل بيانات السوق بالذكاء الاصطناعي…</div>';
     try {
-      const d=await getJSON("/api/public-ideas?market="+encodeURIComponent(m.api)+"&interval=auto&limit=50&discover=true&refresh=true");
-      let rawItems=Array.isArray(d.items)?d.items:[];
-      const recent=rawItems.filter(x=>x&&x.has_complete_levels&&x.levels&&x.levels.entry&&x.levels.stop_loss&&x.levels.tp1&&x.levels.tp2&&x.levels.tp3);
-      const reversed=[];
-      for(const x of recent.slice(0,20)){const y=reversePublicIdea(x);if(y)reversed.push(y);}
-      const analyzed=await Promise.all(reversed.map(async x=>{try{const chart=await getJSON("/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(x.symbol)+"&interval="+encodeURIComponent(selectedInterval));const a=analyzePublicCandles(chart.items||[]);return {...x,ai_score:a.score??"—",confidence:a.score??"—",technical_analysis:a,status:x.status+" · "+a.note+" · "+a.methods.map(m=>m.name+": "+m.dir).join("، ")};}catch(_){return {...x,ai_score:"—",confidence:"—",status:x.status+" · تعذر تحميل الشموع للتحليل المستقل"};}}));
-      rawItems=analyzed;
-      // Reject malformed crypto symbols and incorrectly ordered price levels before rendering.
+      const d=await getJSON("/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(frame)+"&limit=20");
       const cryptoMarket=["spot","futures","alpha"].includes(m.api);
-      const items=rawItems.filter(x=>{
+      const items=(Array.isArray(d.items)?d.items:[]).filter(x=>{
         if(!x||typeof x!=="object")return false;
         const symbol=String(x.symbol||"").trim().toUpperCase();
         if(!symbol||(cryptoMarket&&!/^[A-Z0-9]+$/.test(symbol)))return false;
-        const side=String(x.direction||x.side||"");
+        if(x.generated_by_ai!==true)return false;
+        if(x.market&&x.market!==m.api)return false;
+        if(x.interval&&x.interval!==frame)return false;
         const levels=x.levels&&typeof x.levels==="object"?x.levels:{};
         const nums=["entry","stop_loss","tp1","tp2","tp3"].map(k=>Number(levels[k]));
         if(!nums.every(v=>Number.isFinite(v)&&v>0))return false;
         const [entry,stop,tp1,tp2,tp3]=nums;
+        const side=String(x.direction||x.side||"");
         if(side==="شراء"||side==="BUY"||side==="LONG")return stop<entry&&entry<tp1&&tp1<=tp2&&tp2<=tp3;
         if(side==="بيع"||side==="SELL"||side==="SHORT")return stop>entry&&entry>tp1&&tp1>=tp2&&tp2>=tp3;
         return false;
-      });
-      // Keep the server's quality/risk-reward order; sorting by score alone hid its ranking.
-      meta.textContent="مصادر عامة: "+(d.sources_checked??"—")+" · فشل الوصول: "+(d.sources_failed??"—")+" · عُكست وحُللت "+items.length+" فرصة مكتملة على "+selectedInterval;
-      const bestBuy=items.find(x=>["شراء","BUY","LONG"].includes(x.direction||x.side)),bestSell=items.find(x=>["بيع","SELL","SHORT"].includes(x.direction||x.side)),bestBox=$("marketBestSides");if(bestBox)bestBox.innerHTML='<div class="feature-card"><small>أفضل شراء</small><strong>'+esc(bestBuy?.symbol||"لا توجد فرصة")+'</strong><small>'+esc(bestBuy?(bestBuy.interval||selectedInterval)+" · تقييم "+(bestBuy.ai_score??bestBuy.confidence??"—")+"/100":"لم تظهر صفقة شراء مؤهلة")+'</small></div><div class="feature-card"><small>أفضل بيع</small><strong>'+esc(bestSell?.symbol||"لا توجد فرصة")+'</strong><small>'+esc(bestSell?(bestSell.interval||selectedInterval)+" · تقييم "+(bestSell.ai_score??bestSell.confidence??"—")+"/100":"لم تظهر صفقة بيع مؤهلة")+'</small></div>';
-      out.innerHTML=items.length?items.map((x,i)=>signalCard(x,i)).join(""):empty("لا توجد فرص مؤهلة الآن",d.message||"لن نعرض صفقة بمستويات ناقصة أو غير مرتبة.");
-    } catch(err) {out.innerHTML=empty("تعذر فحص الفرص",err.message);meta.textContent="فشل الفحص"}
-    finally {marketSignalRefreshBusy=false;if(status)status.textContent="● الفحص التلقائي نشط";}
+      }).filter(x=>!x.expires_at||Number(x.expires_at)>Math.floor(Date.now()/1000));
+      const bestBuy=items.find(x=>["شراء","BUY","LONG"].includes(x.direction||x.side));
+      const bestSell=items.find(x=>["بيع","SELL","SHORT"].includes(x.direction||x.side));
+      const bestBox=$("marketBestSides");
+      if(bestBox)bestBox.innerHTML='<div class="feature-card"><small>أفضل شراء</small><strong>'+esc(bestBuy?.symbol||"لا توجد فرصة")+'</strong><small>'+esc(bestBuy?(bestBuy.interval||frame)+" · تقييم الأدلة "+(bestBuy.ai_score??"—")+"/100":"لا توجد فرصة شراء واضحة الآن")+'</small></div><div class="feature-card"><small>أفضل بيع</small><strong>'+esc(bestSell?.symbol||"لا توجد فرصة")+'</strong><small>'+esc(bestSell?(bestSell.interval||frame)+" · تقييم الأدلة "+(bestSell.ai_score??"—")+"/100":"لا توجد فرصة بيع واضحة الآن")+'</small></div>';
+      meta.textContent="تحليل AI فقط · "+(d.scanned??0)+" أصلًا جرى فحصه · "+items.length+" فرصة صالحة · "+frame;
+      out.innerHTML=items.length?items.map((x,i)=>signalCard(x,i)).join(""):empty("لا توجد فرص واضحة الآن",d.message||"لم يجد الذكاء الاصطناعي فرصة مكتملة بشروط صالحة. لن نختلق صفقة.");
+    } catch(err) {
+      out.innerHTML=empty("تعذر تحليل السوق",err.message||"تحقق من اتصال بيانات السوق وإعدادات خدمة الذكاء الاصطناعي.");
+      meta.textContent="فشل تحليل الذكاء الاصطناعي";
+    } finally {
+      marketSignalRefreshBusy=false;
+      if(status)status.textContent="● الفحص التلقائي نشط";
+    }
   }
   async function renderResults() {
     view.innerHTML=pageHeader("نتائج الصفقات","سجل حيّ للفرص التي رصدها الفحص، مع فصل المفتوح عن النتائج المحققة.","مركز الأداء")+
