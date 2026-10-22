@@ -111,95 +111,93 @@ def test_results_endpoint_handles_empty_and_malformed_pnl(tmp_path, monkeypatch)
     assert data["profitable"] == 1
 
 
-def test_strategy_signal_endpoint_does_not_create_trades_without_public_ideas(monkeypatch):
-    monkeypatch.setattr(app_module, "market_data", lambda market, limit=500: {"ok": True, "items": []})
-    monkeypatch.setattr(app_module, "public_ideas", lambda **kwargs: {
-        "ok": True, "items": [], "diagnostics": {"fetched": 0},
-        "sources_checked": 1, "sources_failed": 0,
+def _fake_ai_signal(market, interval, symbol="TESTUSDT"):
+    now = int(time.time())
+    return {
+        "symbol": symbol, "direction": "شراء", "original_direction": "شراء",
+        "title": f"شراء {symbol} — تحليل ذكاء اصطناعي",
+        "description": "تحليل تجريبي لحركة السعر الخام.",
+        "source": "تحليل الذكاء الاصطناعي لبيانات السوق الخام", "url": "",
+        "published_at": now, "created_at": now, "age_hours": 0,
+        "market": market, "interval": interval, "expires_at": now + 3600,
+        "valid_for_seconds": 3600, "price_updated_at": now, "price_fresh": True,
+        "live_price": 100, "levels": {"entry": 100, "stop_loss": 95, "tp1": 105, "tp2": 110, "tp3": 115},
+        "ai_score": 70, "ai_reviewed": True, "generated_by_ai": True,
+        "ai_review": {"summary_ar": "تحليل تجريبي", "risk_ar": "اختبار فقط"},
+        "external_source_weight": 0, "site_analysis_weight": 100,
+        "signal_inverted": False, "has_complete_levels": True,
+        "method": "ai_raw_price_action_no_indicators",
+    }
+
+
+def test_signal_endpoint_uses_ai_only_and_never_fetches_public_ideas(monkeypatch):
+    monkeypatch.setattr(app_module, "market_data", lambda market, limit=2000: {
+        "ok": True, "live": True, "stale": False,
+        "items": [{"symbol": "TESTUSDT", "price": 100, "change_pct": 1}],
     })
+    monkeypatch.setattr(app_module, "_ai_generate_market_signals",
+                        lambda market, interval, market_rows, limit: ([_fake_ai_signal(market, interval)], True, "AI test"))
+    monkeypatch.setattr(app_module, "market_direction", lambda market: {"direction": "BULLISH"})
+    monkeypatch.setattr(app_module, "public_ideas", lambda **kwargs: (_ for _ in ()).throw(AssertionError("public ideas must not be used")))
     app_module.PUBLIC_IDEAS_CACHE.clear()
-    response = client.get("/api/signals/spot?interval=15m")
+    response = client.get("/api/signals/spot?interval=15m&refresh=true")
     assert response.status_code == 200
     data = response.json()
-    assert data["items"] == []
-    assert data["scanned"] == 0
+    assert data["count"] == 1
+    assert data["items"][0]["generated_by_ai"] is True
+    assert data["items"][0]["external_source_weight"] == 0
+    assert data["items"][0]["site_analysis_weight"] == 100
     assert data["technical_fallback_used"] is False
-    assert "ما لقينا" in data["message"] or "لم تُنشأ" in data["message"]
 
 
-def test_signal_endpoint_scans_each_supported_market(monkeypatch):
-    # External ideas supply direction and levels; site technical analysis targets 50%.
+def test_signal_endpoint_scans_each_supported_market_with_ai_only(monkeypatch):
     supported = ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex")
     calls = []
-    monkeypatch.setattr(app_module, "candle_data", lambda market, symbol, interval: [])
-    monkeypatch.setattr(app_module, "market_data", lambda market, limit=500: (
-        calls.append(market) or {"ok": True, "items": [
-            {"symbol": "TESTUSDT", "price": 100, "change_pct": 2, "quote_volume": 2_000_000}
-        ]}
+    monkeypatch.setattr(app_module, "market_data", lambda market, limit=2000: (
+        calls.append(market) or {"ok": True, "live": True, "stale": False,
+        "items": [{"symbol": "TESTUSDT", "price": 100, "change_pct": 1}]}
     ))
-    def fake_ideas(market, interval, limit, discover, refresh=False):
-        return {"ok": True, "items": [{
-            "market": market, "symbol": "TESTUSDT", "direction": "شراء",
-            "interval": interval, "published_at": int(time.time()),
-            "levels": {"entry": 100, "stop_loss": 95, "tp1": 105, "tp2": 110, "tp3": 115},
-            "source": "Test public source", "url": "https://example.com/idea",
-        }], "diagnostics": {"fetched": 1}, "sources_checked": 1, "sources_failed": 0}
-    monkeypatch.setattr(app_module, "public_ideas", fake_ideas)
+    monkeypatch.setattr(app_module, "_ai_generate_market_signals",
+                        lambda market, interval, market_rows, limit: ([_fake_ai_signal(market, interval)], True, "AI test"))
+    monkeypatch.setattr(app_module, "market_direction", lambda market: {"direction": "NEUTRAL"})
+    monkeypatch.setattr(app_module, "public_ideas", lambda **kwargs: (_ for _ in ()).throw(AssertionError("public ideas must not be used")))
     app_module.PUBLIC_IDEAS_CACHE.clear()
     for market in supported:
-        response = client.get(f"/api/signals/{market}?interval=15m")
+        response = client.get(f"/api/signals/{market}?interval=15m&refresh=true")
         assert response.status_code == 200
         data = response.json()
         assert data["market"] == market
         assert data["count"] == 1
         assert data["items"][0]["market"] == market
-        assert data["items"][0]["direction"] == "بيع"
-        assert data["items"][0]["external_source_weight"] == 50
+        assert data["items"][0]["generated_by_ai"] is True
     assert calls == list(supported)
 
 
-def test_signal_endpoint_handles_site_context_outage_without_fabricating_trades(monkeypatch):
-    monkeypatch.setattr(app_module, "market_data", lambda market, limit=500: app_module.JSONResponse(
-        {"ok": False, "message": "provider unavailable"}, status_code=503
-    ))
-    monkeypatch.setattr(app_module, "public_ideas", lambda **kwargs: {
-        "ok": True, "items": [], "diagnostics": {"fetched": 0},
-        "sources_checked": 1, "sources_failed": 0,
+def test_signal_endpoint_skips_ai_when_market_data_is_stale(monkeypatch):
+    monkeypatch.setattr(app_module, "market_data", lambda market, limit=2000: {
+        "ok": True, "live": False, "stale": True,
+        "items": [{"symbol": "BTCUSDT", "price": 100}],
     })
+    monkeypatch.setattr(app_module, "_ai_generate_market_signals",
+                        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not generate from stale prices")))
     app_module.PUBLIC_IDEAS_CACHE.clear()
-    response = client.get("/api/signals/forex?interval=15m")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["ok"] is True
-    assert data["items"] == []
-    assert data["site_analysis_weight"] == 50
-
-
-def test_live_signal_endpoint_skips_technical_candidates_without_real_candles(monkeypatch):
-    monkeypatch.setattr(app_module, "candle_data", lambda market, symbol, interval: [])
-    monkeypatch.setattr(app_module, "market_data", lambda market, limit=500: {
-        "ok": True, "items": [{"symbol": "BTCUSDT", "price": 100, "change_pct": 1}]
-    })
-    monkeypatch.setattr(app_module, "public_ideas", lambda **kwargs: {
-        "ok": True, "items": [], "diagnostics": {"fetched": 0},
-        "sources_checked": 1, "sources_failed": 0,
-    })
-    response = client.get("/api/signals/spot?interval=15m")
+    response = client.get("/api/signals/spot?interval=15m&refresh=true")
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
-    assert data["technical_fallback_used"] is False
+    assert "ليست محدثة" in data["message"]
 
 
 def test_signal_endpoint_accepts_daily_weekly_and_monthly_frames(monkeypatch):
-    monkeypatch.setattr(app_module, "market_data", lambda market, limit=500: {"ok": True, "items": []})
-    monkeypatch.setattr(app_module, "public_ideas", lambda **kwargs: {
-        "ok": True, "items": [], "diagnostics": {"fetched": 0},
-        "sources_checked": 1, "sources_failed": 0,
+    monkeypatch.setattr(app_module, "market_data", lambda market, limit=2000: {
+        "ok": True, "live": True, "stale": False, "items": []
     })
+    monkeypatch.setattr(app_module, "_ai_generate_market_signals",
+                        lambda market, interval, market_rows, limit: ([], True, "لا توجد فرصة"))
+    monkeypatch.setattr(app_module, "market_direction", lambda market: {"direction": "NEUTRAL"})
     app_module.PUBLIC_IDEAS_CACHE.clear()
     for interval in ("1d", "1w", "1M"):
-        response = client.get(f"/api/signals/spot?interval={interval}")
+        response = client.get(f"/api/signals/spot?interval={interval}&refresh=true")
         assert response.status_code == 200
         assert response.json()["interval"] == interval
         assert response.json()["items"] == []
