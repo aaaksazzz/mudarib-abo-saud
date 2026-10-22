@@ -925,9 +925,10 @@ def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
                     "ok": False, "market": market, "live": False, "items": [],
                     "message": "تعذر جلب الأسعار من مزود السوق الآن. جرّب التحديث لاحقًا."
                 }, status_code=503)
-            # US stocks and listed futures must average at least $1m in reported daily turnover.
-            # Saudi TASI is exempt. Spot FX is OTC and Yahoo does not provide consolidated FX volume.
-            if market in {"us", "contracts"}:
+            # Apply the $1m turnover filter to US equities only. Futures use heterogeneous
+            # volume metadata, so filtering them here can hide valid listed contracts.
+            # Saudi TASI is exempt; spot FX has no consolidated OTC volume.
+            if market == "us":
                 data = [item for item in data if item.get("avg_dollar_volume_5d", 0) >= 1_000_000]
                 if not data:
                     return {"ok": True, "market": market, "live": True, "provider": "Yahoo Finance",
