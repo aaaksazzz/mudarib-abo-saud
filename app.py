@@ -2189,7 +2189,7 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
 
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20), refresh: bool = Query(False)):
-    """Review recent public trade ideas with AI; technical indicators and generated technical signals are disabled."""
+    """Generate AI-only market hypotheses from raw candles without indicators or external trade signals."""
     market = (market or "").strip().lower()
     allowed_markets = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
     if market not in allowed_markets:
@@ -2307,11 +2307,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "technical_opportunities": 0,
         "external_opportunities": 0,
         "max_age_hours": 0,
-        "message": ai_message
-                    if items else
-                    ("اتجاه السوق محايد/مختلط؛ تم إيقاف عرض الصفقات حتى يتضح الاتجاه."
-                     if market_trend == "محايد" else
-                     "لا توجد فرص مكتملة في اتجاه السوق الحالي؛ لم تُنشأ صفقات وهمية."))
+        "message": ai_message)
     }
     # Persist the latest scan per market/timeframe so users can reopen the page
     # without having to trigger a fresh scan.
