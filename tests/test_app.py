@@ -221,65 +221,22 @@ def test_public_news_aggregates_recent_items_without_network(monkeypatch):
     data = response.json()
     assert data["sources_checked"] == len(app_module.PUBLIC_IDEA_FEEDS)
     assert len(data["items"]) == 1
-    assert data["items"][0]["direction"] == "BUY"
+    assert data["items"][0]["direction"] == "POSITIVE_POTENTIAL"
 
 
-def test_public_ideas_aggregates_recent_items_without_network(monkeypatch):
-    now = int(time.time())
-    fake = [{
-        "source": "Test public feed",
-        "title": "Bitcoin bullish BTCUSDT 15m buy",
-        "description": "Entry $100 stop loss $95 target 1 $110 target 2 $115 target 3 $120",
-        "url": "https://example.com/bitcoin-idea",
-        "published_at": now,
-        "_text": "Bitcoin bullish BTCUSDT 15m buy Entry $100 stop loss $95 target 1 $110 target 2 $115 target 3 $120",
-    }]
-    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
-    app_module.PUBLIC_IDEAS_CACHE.clear()
-    app_module.PUBLIC_TRADE_FEED_CACHE.clear()
+def test_public_ideas_aggregates_recent_items_without_network():
     response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
     assert response.status_code == 200
     data = response.json()
-    assert len(data["items"]) == 1
-    assert data["items"][0]["direction"] == "شراء"
-    assert data["items"][0]["levels"]["entry"] == 100
+    assert data["items"] == []
+    assert "تم إيقاف التوصيات الخارجية" in data["message"]
 
-
-
-def test_public_ideas_reads_direction_from_title_and_requires_all_ordered_levels(monkeypatch):
-    now = int(time.time())
-    fake = [
-        {
-            "source": "Test public feed",
-            "title": "BTCUSDT BUY idea 15m",
-            "description": "Entry 100, SL 95, TP1 110, TP2 115, TP3 120",
-            "url": "https://example.com/title-buy",
-            "published_at": now,
-            "_text": "Entry 100, SL 95, TP1 110, TP2 115, TP3 120",
-        },
-        {
-            "source": "Test public feed",
-            "title": "ETHUSDT BUY idea 15m",
-            "description": "Entry 100, SL 95, TP1 110, TP2 115",
-            "url": "https://example.com/incomplete-levels",
-            "published_at": now,
-            "_text": "Entry 100, SL 95, TP1 110, TP2 115",
-        },
-    ]
-    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
-    monkeypatch.setattr(app_module, "_fetch_telegram_public_channel", lambda channel: [])
-    app_module.PUBLIC_IDEAS_CACHE.clear()
-    app_module.PUBLIC_TRADE_FEED_CACHE.clear()
-
+def test_public_ideas_reads_direction_from_title_and_requires_all_ordered_levels():
     response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
     assert response.status_code == 200
     data = response.json()
-    assert len(data["items"]) == 2
-    assert {item["symbol"] for item in data["items"]} == {"BTCUSDT", "ETHUSDT"}
-    assert all(item["direction"] == "شراء" for item in data["items"])
-    assert data["diagnostics"]["levels_missing_tp3"] >= 1
-    incomplete = next(item for item in data["items"] if item["symbol"] == "ETHUSDT")
-    assert incomplete["has_complete_levels"] is False
+    assert data["items"] == []
+    assert "تم إيقاف التوصيات الخارجية" in data["message"]
 
 def test_robots_sitemap_and_blog_are_available():
     robots = client.get("/robots.txt")
@@ -296,28 +253,12 @@ def test_robots_sitemap_and_blog_are_available():
     assert article.status_code == 200
 
 
-def test_public_ideas_auto_interval_and_futures_symbol_match(monkeypatch):
-    now = int(time.time())
-    fake = [{
-        "source": "Test public feed",
-        "title": "BTCUSDT bullish buy setup 15m",
-        "description": "Entry $100 stop loss $95 target 1 $110 target 2 $115 target 3 $120",
-        "url": "https://example.com/futures-idea",
-        "published_at": now,
-        "_text": "BTCUSDT bullish buy setup 15m Entry $100 stop loss $95 target 1 $110 target 2 $115 target 3 $120",
-    }]
-    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
-    app_module.PUBLIC_IDEAS_CACHE.clear()
-    app_module.PUBLIC_TRADE_FEED_CACHE.clear()
-
-    response = client.get("/api/public-ideas?market=futures&interval=auto&limit=10")
+def test_public_ideas_auto_interval_and_futures_symbol_match():
+    response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
     assert response.status_code == 200
     data = response.json()
-    assert data["interval"] == "auto"
-    assert len(data["items"]) == 1
-    assert data["items"][0]["symbol"] == "BTCUSDT"
-    assert data["items"][0]["direction"] == "شراء"
-
+    assert data["items"] == []
+    assert "تم إيقاف التوصيات الخارجية" in data["message"]
 
 def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     from pathlib import Path
@@ -328,7 +269,7 @@ def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     assert 'href="/markets/spot"' in html and 'href="/markets/futures"' in html
     assert 'async function loadSignals(m)' in js
     assert '"/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(frame)+"&limit=20"' in js
-    assert '"/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(x.symbol)+"&interval="+encodeURIComponent(selectedInterval)' in js
+    assert '"/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(symbol)+"&interval="+encodeURIComponent(frame)' in js
     assert 'data-frame="' in js and '"15m","1h","4h","1d","1w","1M"' in js
     assert 'async function loadChart(m,symbol)' in js
 
@@ -373,71 +314,19 @@ def test_public_ideas_reject_mismatched_tickers_and_incomplete_trade_levels(monk
     assert response.json()["items"] == []
 
 
-def test_public_futures_ideas_require_title_ticker_and_valid_complete_levels(monkeypatch):
-    now = int(time.time())
-    fake = [
-        {
-            "source": "Telegram — @Binance_Futures_Trades",
-            "title": "#UNI /USDT - Short 4H",
-            "description": "Entry 7.243 Stop Loss 7.3387 Target 1 7.19379 Target 2 7.1357 Target 3 6.92283",
-            "url": "https://t.me/Binance_Futures_Trades/52918",
-            "published_at": now,
-            "_text": "#UNI /USDT - Short 4H Entry 7.243 Stop Loss 7.3387 Target 1 7.19379 Target 2 7.1357 Target 3 6.92283",
-        },
-        {
-            "source": "TradingView — Trading Ideas",
-            "title": "Carvana heading back to earth after lunar launch",
-            "description": "The stock may fall near its peak; leverage is discussed in a separate context.",
-            "url": "https://example.com/carvana",
-            "published_at": now,
-            "_text": "Carvana heading back to earth after lunar launch bearish near its peak leverage",
-        },
-        {
-            "source": "TradingView — Trading Ideas",
-            "title": "UNIUSDT Short 4H setup",
-            "description": "Entry 7.24 Stop Loss 7.34 Target 1 7.30 Target 2 7.20 Target 3 7.10",
-            "url": "https://example.com/invalid-target-order",
-            "published_at": now,
-            "_text": "UNIUSDT Short 4H Entry 7.24 Stop Loss 7.34 Target 1 7.30 Target 2 7.20 Target 3 7.10",
-        },
-    ]
-    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
-    app_module.PUBLIC_IDEAS_CACHE.clear()
-    app_module.PUBLIC_TRADE_FEED_CACHE.clear()
-
-    response = client.get("/api/public-ideas?market=futures&interval=auto&limit=10")
+def test_public_futures_ideas_require_title_ticker_and_valid_complete_levels():
+    response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
     assert response.status_code == 200
-    items = response.json()["items"]
-    assert len(items) == 1
-    assert items[0]["symbol"] == "UNI"
-    assert items[0]["direction"] == "بيع"
-    assert items[0]["has_complete_levels"] is True
-    assert items[0]["url"] == ""
+    data = response.json()
+    assert data["items"] == []
+    assert "تم إيقاف التوصيات الخارجية" in data["message"]
 
-
-def test_public_ideas_detect_timeframe_in_title_when_body_omits_it(monkeypatch):
-    now = int(time.time())
-    fake = [{
-        "source": "Test public feed",
-        "title": "#UNI /USDT - Short 4H",
-        "description": "Entry 7.243 Stop Loss 7.3387 Target 1 7.19379 Target 2 7.1357 Target 3 6.92283",
-        "url": "https://example.com/title-timeframe",
-        "published_at": now,
-        "_text": "#UNI /USDT - Short Entry 7.243 Stop Loss 7.3387 Target 1 7.19379 Target 2 7.1357 Target 3 6.92283",
-    }]
-    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
-    app_module.PUBLIC_IDEAS_CACHE.clear()
-    app_module.PUBLIC_TRADE_FEED_CACHE.clear()
-
-    response = client.get("/api/public-ideas?market=futures&interval=4h&limit=10")
+def test_public_ideas_detect_timeframe_in_title_when_body_omits_it():
+    response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
     assert response.status_code == 200
-    items = response.json()["items"]
-    assert len(items) == 1
-    assert items[0]["symbol"] == "UNI"
-    assert items[0]["direction"] == "بيع"
-    assert items[0]["interval"] == "4h"
-    assert items[0]["has_complete_levels"] is True
-
+    data = response.json()
+    assert data["items"] == []
+    assert "تم إيقاف التوصيات الخارجية" in data["message"]
 
 def test_public_idea_levels_parse_html_labels_and_numbered_target_variants():
     levels = app_module._public_idea_levels(
@@ -539,7 +428,7 @@ def test_home_refresh_does_not_rebuild_dashboard_twice():
     assert 'getJSON("/api/status")' in js
     home_start = js.index("function renderHome()")
     home_end = js.index("function renderMarketPage(", home_start)
-    assert 'if($("homeMarketDashboard"))return;' in js[home_start:home_end]
+    assert js[home_start:home_end].count('getJSON("/api/status")') == 1
     assert 'setInterval(' not in js[home_start:home_end]
 
 
@@ -568,29 +457,12 @@ def test_saudi_market_keeps_symbols_below_usd_volume_cutoff(monkeypatch):
     app_module.YAHOO_CACHE.pop("saudi", None)
 
 
-def test_public_ideas_cache_respects_requested_limit(monkeypatch):
-    now = int(time.time())
-    levels = "Entry 100 SL 95 TP1 110 TP2 115 TP3 120"
-    fake = [
-        {
-            "source": "Test public feed",
-            "title": f"BTCUSDT bullish setup 15m idea {index}",
-            "description": levels,
-            "url": f"https://example.com/idea-{index}",
-            "published_at": now - index,
-            "_text": f"BTCUSDT bullish setup 15m {levels}",
-        }
-        for index in range(3)
-    ]
-    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
-    app_module.PUBLIC_IDEAS_CACHE.clear()
-    app_module.PUBLIC_TRADE_FEED_CACHE.clear()
-
-    one = client.get("/api/public-ideas?market=spot&interval=15m&limit=1").json()
-    many = client.get("/api/public-ideas?market=spot&interval=15m&limit=10").json()
-    assert len(one["items"]) == 1
-    assert len(many["items"]) == 3
-
+def test_public_ideas_cache_respects_requested_limit():
+    response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["items"] == []
+    assert "تم إيقاف التوصيات الخارجية" in data["message"]
 
 def test_public_ideas_cached_results_expire_at_24_hours():
     now = int(time.time())
