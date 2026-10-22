@@ -41,6 +41,31 @@ def test_health_endpoint_is_available():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["ok"] is True
+    api_response = TestClient(app, base_url="https://testserver").get("/api/health")
+    assert api_response.status_code == 200
+    assert api_response.json()["ok"] is True
+
+
+def test_closed_section_blocks_page_and_market_api(monkeypatch):
+    monkeypatch.setattr(app_module, "_section_settings", lambda: {"spot": "closed"})
+    page_response = client.get("/markets/spot")
+    api_response = client.get("/api/market/spot?limit=10")
+    assert page_response.status_code == 403
+    assert api_response.status_code == 403
+    assert "القسم مغلق" in api_response.json()["detail"]
+
+
+def test_ai_analysis_requires_api_key_and_does_not_fall_back_to_local_rules(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    def unexpected_candle_fetch(*args, **kwargs):
+        raise AssertionError("must not fetch candles without AI credentials")
+    monkeypatch.setattr(app_module, "candle_data", unexpected_candle_fetch)
+    items, completed, message = app_module._ai_generate_market_signals(
+        "spot", "15m", [{"symbol": "TESTUSDT", "price": 100}], limit=20
+    )
+    assert items == []
+    assert completed is False
+    assert "OPENAI_API_KEY" in message
 
 
 def test_home_is_arabic_rtl_and_does_not_reference_missing_asset():
