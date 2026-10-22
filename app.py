@@ -1599,172 +1599,12 @@ def _public_idea_levels(value):
     return {"entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3}
 @app.get("/api/public-ideas")
 def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), limit: int = Query(20, ge=1, le=50), discover: bool = Query(False), refresh: bool = Query(False)):
-    """Display only recent public ideas with a matching ticker, timeframe, direction, and ordered trade levels."""
-    market = (market or "").strip().lower()
-    interval = (interval or "auto").strip()
-    if market not in {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}:
-        return JSONResponse({"ok": False, "items": [], "message": "السوق غير مدعوم."}, status_code=422)
-    if interval not in PUBLIC_IDEA_INTERVALS:
-        return JSONResponse({"ok": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
-
-    now = int(time.time())
-    cache_key = (market, interval, int(limit), bool(discover))
-    with PUBLIC_IDEAS_LOCK:
-        cached = PUBLIC_IDEAS_CACHE.get(cache_key)
-        if not refresh and cached and now - cached[0] < PUBLIC_IDEAS_CACHE_TTL:
-            cached_response = {**cached[1], "cached": True}
-            fresh_items = []
-            for item in cached_response.get("items", []):
-                try:
-                    published = int(item.get("published_at") or 0)
-                except (TypeError, ValueError):
-                    published = 0
-                if now - PUBLIC_IDEA_MAX_AGE <= published <= now + 300:
-                    fresh_items.append(item)
-            cached_response["items"] = fresh_items
-            cached_response["count"] = len(fresh_items)
-            return cached_response
-
-    channels = _telegram_public_channels() if discover else []
-    feed_cache_key = bool(discover)
-    # Only one request per process refreshes shared feeds at a time. Re-check the
-    # cache after acquiring the lock because another request may have refreshed it.
-    with PUBLIC_TRADE_FEED_FETCH_LOCK:
-        feed_cached = PUBLIC_TRADE_FEED_CACHE.get(feed_cache_key)
-        if feed_cached and now - feed_cached["at"] < PUBLIC_TRADE_FEED_CACHE_TTL:
-            raw_rows = list(feed_cached["rows"])
-            source_errors = int(feed_cached["errors"])
-        else:
-            raw_rows, source_errors = [], 0
-            jobs = [(_fetch_public_idea_feed, (name, url)) for name, url in PUBLIC_TRADE_IDEA_FEEDS]
-            jobs.extend((_fetch_telegram_public_channel, (channel,)) for channel in channels)
-            with ThreadPoolExecutor(max_workers=6) as pool:
-                futures = [pool.submit(fn, *args) for fn, args in jobs]
-                for future in as_completed(futures):
-                    try:
-                        result = future.result()
-                        if isinstance(result, list):
-                            raw_rows.extend(row for row in result if isinstance(row, dict))
-                    except Exception as exc:
-                        source_errors += 1
-                        print(f"public idea source failed: {type(exc).__name__}: {exc}")
-            # Cache even an empty/partially failed result to prevent request storms.
-            PUBLIC_TRADE_FEED_CACHE[feed_cache_key] = {"at": int(time.time()), "rows": list(raw_rows), "errors": source_errors}
-
-    stats = {"fetched": len(raw_rows), "recent": 0, "market": 0, "symbol": 0,
-             "timeframe": 0, "direction_detected": 0, "duplicate": 0, "levels_missing_tp3": 0}
-    # Build the selected market's real symbol universe so public ideas are not limited
-    # to a tiny hand-maintained ticker list (especially US and Saudi equities).
-    known_market_symbols = set()
-    try:
-        universe = market_data(market, limit=2000)
-        if isinstance(universe, dict):
-            for asset in universe.get("items", []):
-                raw_symbol = str(asset.get("symbol") or "").strip().upper().replace("/", "")
-                if raw_symbol:
-                    known_market_symbols.add(raw_symbol)
-                    known_market_symbols.add(raw_symbol.removesuffix(".SR"))
-                    for quote in ("USDT", "USDC", "USD"):
-                        if raw_symbol.endswith(quote) and len(raw_symbol) > len(quote):
-                            known_market_symbols.add(raw_symbol[:-len(quote)])
-    except Exception as exc:
-        print(f"public idea universe unavailable {market}: {type(exc).__name__}")
-    cutoff = now - PUBLIC_IDEA_MAX_AGE
-    unique = {}
-    for raw in raw_rows:
-        try:
-            published = int(raw.get("published_at") or 0)
-        except (TypeError, ValueError):
-            published = 0
-        if published < cutoff or published > now:
-            continue
-        stats["recent"] += 1
-        title = str(raw.get("title") or "").strip()
-        body = str(raw.get("_text") or raw.get("description") or "").strip()
-        text_all = (title + "\n" + body).strip()
-        if not text_all:
-            continue
-        # Market matching is confirmed against the live market universe below, not only a short hard-coded ticker list.
-        market_text_match = _public_idea_market_match(market, text_all[:2400])
-        stats["market"] += 1
-
-        side = _public_idea_direction(text_all)
-        if side:
-            stats["direction_detected"] += 1
-        slash_pair = re.search(r"(?<![A-Z0-9])#?([A-Z0-9]{2,15})\s*/\s*(USDT|USDC|USD)\b", title, re.I)
-        symbol_re = re.compile(PUBLIC_SYMBOL_RE.pattern)
-        pair_re = re.compile(r"(?<![A-Z0-9])([A-Z0-9]{2,15}(?:USDT|USDC|USD))\b", re.I)
-        found = slash_pair or symbol_re.search(title) or pair_re.search(title) or symbol_re.search(body[:1600]) or pair_re.search(body[:1600])
-        symbol = (found.group(1) if slash_pair else found.group(0)).upper() if found else ""
-        # If the hard-coded ticker regex misses a valid market asset, search the title
-        # for a ticker that actually exists in the selected market's live universe.
-        if not symbol:
-            candidates = re.findall(r"(?<![A-Z0-9])\$?([A-Z][A-Z0-9.-]{0,9}(?:\.SR)?)(?![A-Z0-9])", title.upper())
-            for candidate in candidates:
-                normalized = candidate.removesuffix(".SR")
-                if candidate in known_market_symbols or normalized in known_market_symbols:
-                    symbol = candidate
-                    break
-        normalized_symbol = symbol.replace("/", "").upper()
-        in_live_universe = (
-            normalized_symbol in known_market_symbols or
-            normalized_symbol.removesuffix(".SR") in known_market_symbols
-        )
-        if not symbol or not (in_live_universe or _public_idea_symbol_matches_market(market, symbol, text_all[:2400])):
-            # Require either membership in this market's live universe or a recognizable crypto pair.
-            continue
-        if not market_text_match and not in_live_universe:
-            continue
-        stats["symbol"] += 1
-
-        detected_interval = _public_idea_interval(text_all)
-        # Most public ideas omit a timeframe. Do not discard an otherwise usable
-        # recent idea solely for that omission; keep the requested page interval as
-        # a display/filter context and explicitly disclose that the source omitted it.
-        interval_missing = not bool(detected_interval)
-        if detected_interval and interval != "auto" and detected_interval != interval:
-            continue
-        if interval_missing:
-            detected_interval = interval if interval != "auto" else "غير محدد"
-        stats["timeframe"] += 1
-        if not side:
-            continue
-        levels = _public_idea_levels(text_all)
-        if levels.get("tp3") is None:
-            stats["levels_missing_tp3"] += 1
-        candidate = {"direction": side, "levels": levels, "interval": detected_interval}
-        if not _public_idea_levels_ordered(candidate):
-            continue
-        url = str(raw.get("url") or "")
-        identity = url or f"{raw.get('source','')}|{title}|{published}"
-        if identity in unique:
-            stats["duplicate"] += 1
-            continue
-        clean = {key: value for key, value in raw.items() if not key.startswith("_")}
-        clean["url"] = url
-        clean.update({
-            "market": market, "direction": side or "غير محدد",
-            "symbol": symbol or "غير محدد",
-            "interval": detected_interval or (interval if interval != "auto" else "غير محدد"),
-            "interval_missing_in_source": interval_missing,
-            "levels": levels, "age_hours": round(max(0, now - published) / 3600, 1),
-            "has_complete_levels": all(levels.get(key) is not None for key in ("entry", "stop_loss", "tp1", "tp2", "tp3")),
-            "raw_text": (body or title)[:2400]
-        })
-        unique[identity] = clean
-
-    items = sorted(unique.values(), key=lambda row: (row.get("published_at", 0), -row.get("age_hours", 0)), reverse=True)[:limit]
-    response = {
-        "ok": True, "market": market, "interval": interval, "items": items,
-        "count": len(items), "sources_checked": len(PUBLIC_TRADE_IDEA_FEEDS) + len(channels),
-        "telegram_channels_checked": channels, "sources_failed": source_errors,
-        "max_age_hours": 24, "updated_at": now, "diagnostics": stats,
-        "discovery_enabled": bool(discover), "telegram_preview_enabled": bool(discover),
-        "message": "لا تظهر إلا الأفكار العامة الحديثة التي تحتوي على رمز وفريم واتجاه ومستويات دخول ووقف وأهداف مرتبة."
-    }
-    with PUBLIC_IDEAS_LOCK:
-        PUBLIC_IDEAS_CACHE[cache_key] = (now, response)
-    return response
+    """Legacy public-ideas endpoint disabled: trade generation is AI-only."""
+    return JSONResponse({
+        "ok": True, "market": market, "interval": interval, "items": [], "count": 0,
+        "sources_checked": 0, "sources_failed": 0, "discovery_enabled": False,
+        "message": "تم إيقاف التوصيات الخارجية. فرص التداول تُحلل بالذكاء الاصطناعي من بيانات السوق الخام فقط."
+    }, status_code=200)
 
 @app.get("/api/site/sections")
 def site_sections():
@@ -2333,8 +2173,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "market_trend": market_trend,
         "items": items[:limit], "count": len(items[:limit]),
         "scanned": scanned_count,
-        "sources_checked": int((external or {}).get("sources_checked", 0)) if isinstance(external, dict) else 0,
-        "sources_failed": int((external or {}).get("sources_failed", 0)) if isinstance(external, dict) else 0,
+        "sources_checked": 0,
+        "sources_failed": 0,
         "skipped_invalid_levels": skipped,
         "source_buy_ideas": 0,
         "source_sell_ideas": 0,
