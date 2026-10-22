@@ -2267,7 +2267,9 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     else:
         items, ai_review_completed, ai_message = _ai_generate_market_signals(market, interval, market_rows, limit)
     skipped = 0
-    scanned_count = min(len(market_rows), min(20, max(4, limit)))
+    # Report the actual breadth of the scan, matching the wider universe
+    # analyzed by _ai_generate_market_signals (up to 60 symbols for a 20-signal request).
+    scanned_count = min(len(market_rows), min(60, max(40, limit * 3)))
     source_buy_count = sum(1 for item in items if item.get("direction") == "شراء")
     source_sell_count = sum(1 for item in items if item.get("direction") == "بيع")
 
