@@ -2150,8 +2150,9 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         snapshot = market_data(market, limit=2000)
     except Exception as exc:
         print(f"market data unavailable for AI analysis {market}: {type(exc).__name__}")
-    market_rows = snapshot.get("items", []) if isinstance(snapshot, dict) else []
-    if not snapshot.get("live", False) or snapshot.get("stale", False):
+    snapshot_ok = isinstance(snapshot, dict)
+    market_rows = snapshot.get("items", []) if snapshot_ok else []
+    if not snapshot_ok or not snapshot.get("live", False) or snapshot.get("stale", False):
         items, ai_review_completed, ai_message = [], False, "الأسعار ليست محدثة من المصدر الآن؛ أوقفنا إنشاء صفقات جديدة حتى لا تظهر فرصة قديمة."
     else:
         items, ai_review_completed, ai_message = _ai_generate_market_signals(market, interval, market_rows, limit)
