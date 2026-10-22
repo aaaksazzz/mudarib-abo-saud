@@ -2157,7 +2157,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     else:
         items, ai_review_completed, ai_message = _ai_generate_market_signals(market, interval, market_rows, limit)
     skipped = 0
-    scanned_count = min(len(market_rows), 12)
+    scanned_count = min(len(market_rows), min(20, max(4, limit)))
     source_buy_count = sum(1 for item in items if item.get("direction") == "شراء")
     source_sell_count = sum(1 for item in items if item.get("direction") == "بيع")
 
