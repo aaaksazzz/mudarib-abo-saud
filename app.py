@@ -2445,13 +2445,72 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             journal = read_json_file(RESULTS_PATH, [])
             if not isinstance(journal, list):
                 journal = []
-            # Open opportunities expire after one matching timeframe; closed outcomes remain for history.
+            # Update every open trade for this market from the newest real quote snapshot.
+            current_prices = {}
+            for quote in (market_rows if isinstance(market_rows, list) else []):
+                if not isinstance(quote, dict):
+                    continue
+                quote_symbol = str(quote.get("symbol") or "").strip().upper()
+                try:
+                    quote_price = float(quote.get("price") or quote.get("lastPrice") or 0)
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if quote_symbol and math.isfinite(quote_price) and quote_price > 0:
+                    current_prices[quote_symbol] = quote_price
+            closed_results = {"TP1", "TP2", "TP3", "SL"}
+            for row in journal:
+                if not isinstance(row, dict) or str(row.get("market") or "") != market:
+                    continue
+                if str(row.get("result", "OPEN")).upper() in closed_results:
+                    continue
+                live_price = current_prices.get(str(row.get("symbol") or "").strip().upper())
+                if live_price is None:
+                    continue
+                try:
+                    entry = float(row.get("entry") or 0)
+                    stop = float(row.get("stop_loss") or 0)
+                    tp1, tp2, tp3 = (float(row.get(key) or 0) for key in ("tp1", "tp2", "tp3"))
+                    progress = int(row.get("progress") or 0)
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if not all(math.isfinite(v) and v > 0 for v in (entry, stop, tp1, tp2, tp3)):
+                    continue
+                side = str(row.get("direction") or "")
+                row["last_price"] = live_price
+                row["last_checked_at"] = now
+                if side == "شراء":
+                    row["pnl_pct"] = round((live_price - entry) / entry * 100, 4)
+                    stop_hit = live_price <= stop
+                    reached = 3 if live_price >= tp3 else 2 if live_price >= tp2 else 1 if live_price >= tp1 else 0
+                elif side == "بيع":
+                    row["pnl_pct"] = round((entry - live_price) / entry * 100, 4)
+                    stop_hit = live_price >= stop
+                    reached = 3 if live_price <= tp3 else 2 if live_price <= tp2 else 1 if live_price <= tp1 else 0
+                else:
+                    continue
+                row["progress"] = max(progress, reached)
+                if stop_hit:
+                    row["result"] = "SL"
+                    row["status"] = "انتهت عند وقف الخسارة"
+                    row["closed_at"] = now
+                    row["pnl_pct"] = round(((stop - entry) if side == "شراء" else (entry - stop)) / entry * 100, 4)
+                elif row["progress"] >= 3:
+                    row["result"] = "TP3"
+                    row["status"] = "اكتملت الصفقة عند الهدف الثالث"
+                    row["closed_at"] = now
+                    row["pnl_pct"] = round(((tp3 - entry) if side == "شراء" else (entry - tp3)) / entry * 100, 4)
+                elif row["progress"] == 2:
+                    row["status"] = "وصل الهدف الثاني — المتابعة مستمرة"
+                elif row["progress"] == 1:
+                    row["status"] = "وصل الهدف الأول — المتابعة مستمرة"
+                else:
+                    row["status"] = "صفقة مفتوحة — متابعة السعر"
+            # Keep open trades for up to 24 hours regardless of the internal scan interval.
             journal = [
                 row for row in journal
                 if isinstance(row, dict) and (
-                    str(row.get("result", "OPEN")).upper() in {"TP1", "TP2", "TP3", "SL"}
-                    or (now - int(row.get("created_at") or now))
-                    <= interval_lifetimes.get(str(row.get("interval") or ""), 24 * 60 * 60)
+                    str(row.get("result", "OPEN")).upper() in closed_results
+                    or (now - int(row.get("created_at") or now)) <= 24 * 60 * 60
                 )
             ]
             # One active record per market/symbol/timeframe/direction prevents every
@@ -2482,8 +2541,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                     "trade_id": trade_id, "market": market, "symbol": symbol,
                     "interval": interval, "direction": direction, "entry": entry,
                     "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3,
-                    "result": "OPEN", "pnl_pct": 0, "created_at": now,
-                    "source": item.get("method") or "technical-only scan"
+                    "result": "OPEN", "status": "صفقة مفتوحة — متابعة السعر",
+                    "progress": 0, "pnl_pct": 0, "last_price": current_prices.get(symbol, entry),
+                    "last_checked_at": now, "created_at": now,
+                    "source": item.get("method") or "price-action scan"
                 })
                 active_keys.add(active_key)
             write_json_file(RESULTS_PATH, journal[:2000])
@@ -2495,12 +2556,12 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
 
 # Persistent background scanner: runs even when no visitor has a market page open.
 AUTO_SCAN_MARKETS = ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex")
-AUTO_SCAN_INTERVALS = ("15m", "30m", "1h", "2h", "4h", "1d", "1w", "1M")
+AUTO_SCAN_INTERVALS = ("15m",)
 AUTO_SCAN_START_LOCK = threading.Lock()
 AUTO_SCAN_STARTED = False
 
 def _auto_scan_worker():
-    """Continuously rotate through every supported market/timeframe with bounded concurrency."""
+    """Continuously scan markets on one hidden internal interval; visible trade cards never expose timeframes."""
     position = 0
     jobs = [(market, interval) for interval in AUTO_SCAN_INTERVALS for market in AUTO_SCAN_MARKETS]
     while True:
