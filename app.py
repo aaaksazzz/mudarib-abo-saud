@@ -970,8 +970,6 @@ def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
 def _ai_analyze_tasi_candles(candles, interval):
     """Analyze TASI using raw OHLCV candles and AI only; no technical indicators."""
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not api_key:
-        return None, False, "الذكاء الاصطناعي غير مفعّل؛ أضف OPENAI_API_KEY في إعدادات الخدمة."
     raw = []
     for candle in candles[-60:]:
         try:
@@ -983,6 +981,42 @@ def _ai_analyze_tasi_candles(candles, interval):
             continue
     if len(raw) < 12:
         return None, False, "بيانات الشموع الخام غير كافية لتحليل تاسي."
+
+    # Fully functional no-key mode: transparent raw-candle analysis, no model/API required.
+    if not api_key:
+        recent = raw[-12:]
+        closes = [item["close"] for item in recent]
+        entry = closes[-1]
+        support = min(item["low"] for item in recent[-8:])
+        resistance = max(item["high"] for item in recent[-8:])
+        momentum = (closes[-1] - closes[-4]) / closes[-4] if closes[-4] else 0
+        if momentum > 0.001 and entry > closes[-2]:
+            direction = "شراء"
+            stop = support
+            risk = entry - stop
+            if risk <= 0:
+                direction = "محايد"
+        elif momentum < -0.001 and entry < closes[-2]:
+            direction = "بيع"
+            stop = resistance
+            risk = stop - entry
+            if risk <= 0:
+                direction = "محايد"
+        else:
+            direction = "محايد"
+        result = {
+            "trend": "صاعد" if momentum > 0.001 else "هابط" if momentum < -0.001 else "عرضي",
+            "direction": direction, "support": support, "resistance": resistance,
+            "rationale_ar": "تحليل محلي لحركة الشموع الخام دون مفتاح أو مؤشرات فنية؛ ليس نموذج ذكاء اصطناعي لغوي.",
+            "risk_ar": "تحليل آلي مبسط وقد يخطئ؛ لا يضمن الربح."
+        }
+        if direction == "محايد":
+            result.update({"entry": None, "stop_loss": None, "tp1": None, "tp2": None, "tp3": None})
+        else:
+            targets = [entry + risk * multiple for multiple in (1.0, 1.5, 2.0)] if direction == "شراء" else [entry - risk * multiple for multiple in (1.0, 1.5, 2.0)]
+            result.update({"entry": entry, "stop_loss": stop, "tp1": targets[0], "tp2": targets[1], "tp3": targets[2]})
+        return result, True, "تحليل محلي للشموع الخام دون مفتاح API؛ ليس نموذج ذكاء اصطناعي لغوي."
+
     prompt = (
         "حلل الشموع الخام لمؤشر تاسي فقط، دون استخدام أي مؤشرات أو متوسطات فنية. "
         "أعد JSON فقط بهذه الحقول: trend (صاعد/هابط/عرضي), direction (شراء/بيع/محايد), "
