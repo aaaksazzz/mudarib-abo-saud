@@ -2128,10 +2128,20 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
         digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
         now = int(time.time())
         lifetime = {"15m": 900, "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400, "1w": 604800, "1M": 2592000}.get(interval, 900)
-        rationale = ("اختراق قمة نطاق الشموع السابقة مع تأكيد من أجسام الشموع الأخيرة."
-                     if side == "شراء" else "كسر قاع نطاق الشموع السابقة مع تأكيد من أجسام الشموع الأخيرة.")
+        original_side = side
+        side = "بيع" if original_side == "شراء" else "شراء"
+        # Reverse the trade direction exactly once and rebuild all levels around entry.
+        # Preserve the original risk distance and TP risk multiples.
+        if side == "شراء":
+            stop = entry - risk
+            tp1, tp2, tp3 = entry + risk, entry + risk * 1.6, entry + risk * 2.2
+        else:
+            stop = entry + risk
+            tp1, tp2, tp3 = entry - risk, entry - risk * 1.6, entry - risk * 2.2
+        rationale = ("تم عكس إشارة التحليل الأصلية؛ أصبحت شراء بدل بيع، مع إعادة حساب الوقف والأهداف."
+                     if side == "شراء" else "تم عكس إشارة التحليل الأصلية؛ أصبحت بيع بدل شراء، مع إعادة حساب الوقف والأهداف.")
         return {
-            "symbol": symbol, "direction": side, "original_direction": side,
+            "symbol": symbol, "direction": side, "original_direction": original_side,
             "title": f"{side} {symbol} — تحليل حركة السعر",
             "description": rationale + " تحليل قواعدي من الشموع الخام، وليس نموذج ذكاء اصطناعي لغوي.",
             "source": "محرك تحليل محلي لحركة السعر", "url": "",
@@ -2144,7 +2154,7 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
             "ai_score": score, "ai_reviewed": False, "generated_by_ai": False,
             "ai_review": {"summary_ar": rationale, "risk_ar": "تحليل قواعدي غير مضمون؛ قد يفشل الاختراق أو يحدث انعكاس سريع.",
                           "verdict": "تحليل محلي", "score_type": "درجة تحقق شروط حركة السعر وليست احتمال ربح"},
-            "external_source_weight": 0, "site_analysis_weight": 100, "signal_inverted": False,
+            "external_source_weight": 0, "site_analysis_weight": 100, "signal_inverted": True,
             "has_complete_levels": True, "level_source_note": "المستويات محسوبة من آخر شموع السوق الخام؛ ليست توصية خارجية.",
             "method": "local_raw_candle_price_action_no_api"
         }
