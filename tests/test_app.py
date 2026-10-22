@@ -503,6 +503,11 @@ def test_tasi_analysis_returns_real_candles_and_levels(monkeypatch):
             "volume": 100000,
         })
     monkeypatch.setattr(app_module, "candle_data", lambda market, symbol, interval: candles)
+    monkeypatch.setattr(app_module, "_ai_analyze_tasi_candles", lambda candles, interval: ({
+        "trend": "صاعد", "direction": "شراء", "support": 10000, "resistance": 11000,
+        "entry": 10438, "stop_loss": 10400, "tp1": 10450, "tp2": 10460, "tp3": 10470,
+        "rationale_ar": "اختبار", "risk_ar": "اختبار",
+    }, True, "تحليل اختباري"))
     response = client.get("/api/tasi/analysis?interval=1d")
     assert response.status_code == 200
     data = response.json()
@@ -529,7 +534,7 @@ def test_home_refresh_does_not_rebuild_dashboard_twice():
     root = Path(__file__).resolve().parents[1] / "static"
     html = (root / "index.html").read_text(encoding="utf-8")
     js = (root / "app.js").read_text(encoding="utf-8")
-    assert '/static/app.css?v=20261019.2' in html
+    assert '/static/app.css?v=20261021.1' in html
     assert '/static/app.js?v=20261022.1' in html
     assert 'getJSON("/api/status")' in js
     home_start = js.index("function renderHome()")
