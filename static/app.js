@@ -257,15 +257,13 @@
     meta.textContent="فحص متتابع يبدأ بالسريع: "+selectedInterval+" ثم الأبطأ…";
     if(!out.innerHTML.trim() || out.innerHTML.includes("جاري"))out.innerHTML='<div class="loading">جاري فحص الفرص تلقائيًا…</div>';
     try {
-      const d=m.api==="futures"?await getJSON("/api/public-ideas?market=futures&interval=auto&limit=50&discover=true&refresh=true"):await getJSON("/api/signals/"+encodeURIComponent(markets[key].api)+"?interval="+encodeURIComponent(frame)+"&limit=20&refresh=true");
+      const d=await getJSON("/api/public-ideas?market="+encodeURIComponent(m.api)+"&interval=auto&limit=50&discover=true&refresh=true");
       let rawItems=Array.isArray(d.items)?d.items:[];
-      if(m.api==="futures") {
-        const recent=rawItems.filter(x=>x&&x.has_complete_levels&&x.levels&&x.levels.tp1&&x.levels.tp2&&x.levels.tp3);
-        const reversed=[];
-        for(const x of recent.slice(0,20)){const y=reversePublicIdea(x);if(y)reversed.push(y);}
-        const analyzed=await Promise.all(reversed.map(async x=>{try{const chart=await getJSON("/api/trade-chart-data?market=futures&symbol="+encodeURIComponent(x.symbol)+"&interval="+encodeURIComponent(selectedInterval));const a=analyzePublicCandles(chart.items||[]);return {...x,ai_score:a.score??"—",confidence:a.score??"—",technical_analysis:a,status:x.status+" · "+a.note+" · "+a.methods.map(m=>m.name+": "+m.dir).join("، ")};}catch(_){return {...x,ai_score:"—",confidence:"—",status:x.status+" · تعذر تحميل الشموع للتحليل المستقل"};}}));
-        rawItems=analyzed;
-      }
+      const recent=rawItems.filter(x=>x&&x.has_complete_levels&&x.levels&&x.levels.entry&&x.levels.stop_loss&&x.levels.tp1&&x.levels.tp2&&x.levels.tp3);
+      const reversed=[];
+      for(const x of recent.slice(0,20)){const y=reversePublicIdea(x);if(y)reversed.push(y);}
+      const analyzed=await Promise.all(reversed.map(async x=>{try{const chart=await getJSON("/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(x.symbol)+"&interval="+encodeURIComponent(selectedInterval));const a=analyzePublicCandles(chart.items||[]);return {...x,ai_score:a.score??"—",confidence:a.score??"—",technical_analysis:a,status:x.status+" · "+a.note+" · "+a.methods.map(m=>m.name+": "+m.dir).join("، ")};}catch(_){return {...x,ai_score:"—",confidence:"—",status:x.status+" · تعذر تحميل الشموع للتحليل المستقل"};}}));
+      rawItems=analyzed;
       // Reject malformed crypto symbols and incorrectly ordered price levels before rendering.
       const cryptoMarket=["spot","futures","alpha"].includes(m.api);
       const items=rawItems.filter(x=>{
@@ -282,7 +280,7 @@
         return false;
       });
       // Keep the server's quality/risk-reward order; sorting by score alone hid its ranking.
-      meta.textContent=m.api==="futures"?"مصادر عامة: "+(d.sources_checked??"—")+" · فشل الوصول: "+(d.sources_failed??"—")+" · عُكست وحُللت "+items.length+" صفقة مكتملة على "+selectedInterval:"فُحص "+(d.scanned??"—")+" أصل على "+selectedInterval+" · "+items.length+" فرصة صالحة · ينتقل تلقائيًا من الأسرع للأبطأ";
+      meta.textContent="مصادر عامة: "+(d.sources_checked??"—")+" · فشل الوصول: "+(d.sources_failed??"—")+" · عُكست وحُللت "+items.length+" فرصة مكتملة على "+selectedInterval;
       const bestBuy=items.find(x=>["شراء","BUY","LONG"].includes(x.direction||x.side)),bestSell=items.find(x=>["بيع","SELL","SHORT"].includes(x.direction||x.side)),bestBox=$("marketBestSides");if(bestBox)bestBox.innerHTML='<div class="feature-card"><small>أفضل شراء</small><strong>'+esc(bestBuy?.symbol||"لا توجد فرصة")+'</strong><small>'+esc(bestBuy?(bestBuy.interval||selectedInterval)+" · تقييم "+(bestBuy.ai_score??bestBuy.confidence??"—")+"/100":"لم تظهر صفقة شراء مؤهلة")+'</small></div><div class="feature-card"><small>أفضل بيع</small><strong>'+esc(bestSell?.symbol||"لا توجد فرصة")+'</strong><small>'+esc(bestSell?(bestSell.interval||selectedInterval)+" · تقييم "+(bestSell.ai_score??bestSell.confidence??"—")+"/100":"لم تظهر صفقة بيع مؤهلة")+'</small></div>';
       out.innerHTML=items.length?items.map((x,i)=>signalCard(x,i)).join(""):empty("لا توجد فرص مؤهلة الآن",d.message||"لن نعرض صفقة بمستويات ناقصة أو غير مرتبة.");
     } catch(err) {out.innerHTML=empty("تعذر فحص الفرص",err.message);meta.textContent="فشل الفحص"}
