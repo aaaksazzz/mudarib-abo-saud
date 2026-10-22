@@ -108,7 +108,7 @@ def _valid_market_session(token):
 
 def _is_market_protected_path(path):
     # Legacy URLs remain redirects; the canonical market page and data stay locked.
-    if path.startswith("/markets/"):
+    if path == "/futures-pro" or path.startswith("/markets/"):
         return True
     return path.startswith((
         "/news", "/tasi-analysis",
@@ -2663,3 +2663,12 @@ def trade_chart_data(market: str = Query(...), symbol: str = Query(..., min_leng
         return {"ok": True, "market": market, "symbol": symbol, "interval": interval, "items": candles[-72:]}
     except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError, KeyError):
         return JSONResponse({"ok": False, "items": [], "message": "تعذر جلب الشموع الفعلية الآن."}, status_code=503)
+
+@app.get("/futures-pro", response_class=HTMLResponse)
+def futures_pro_sources_page():
+    """Protected standalone directory of public crypto-futures signal sources."""
+    page = BASE / "static" / "futures-pro.html"
+    try:
+        return HTMLResponse(page.read_text(encoding="utf-8"))
+    except OSError:
+        raise HTTPException(status_code=503, detail="صفحة مصادر فيوتشر PRO غير متاحة مؤقتًا.")
