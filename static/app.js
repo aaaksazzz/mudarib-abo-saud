@@ -223,6 +223,25 @@
     add("حجم التداول",lastVol>avgVol*1.2?(change>0?"شراء":"بيع"):"محايد","حجم آخر شمعة "+(avgVol>0?(lastVol/avgVol).toFixed(2)+"× المتوسط":"غير متاح"));
     const recentHigh=Math.max(...high.slice(-20)),recentLow=Math.min(...low.slice(-20));
     add("اختراق دعم/مقاومة",close.at(-1)>=recentHigh?"شراء":close.at(-1)<=recentLow?"بيع":"محايد","نطاق أعلى/أدنى 20 شمعة");
+    const tr=rows.slice(-14).map((r,i)=>{const j=rows.length-14+i,h=Number(r.high??r.h),l=Number(r.low??r.l),pc=Number(rows[j-1]?.close??rows[j-1]?.c);return Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc));});
+    const atr=tr.reduce((a,b)=>a+b,0)/Math.max(1,tr.length);
+    add("ATR والتقلب","محايد","ATR نسبي "+(atr/close.at(-1)*100).toFixed(2)+"%");
+    const lows=low.slice(-14),highs=high.slice(-14),lo=Math.min(...lows),hi=Math.max(...highs);
+    const stoch=hi===lo?50:(close.at(-1)-lo)/(hi-lo)*100;
+    add("Stochastic 14",stoch<20?"شراء":stoch>80?"بيع":"محايد","%K "+stoch.toFixed(1));
+    const typical=rows.slice(-20).map((r,i)=>(Number(r.high??r.h)+Number(r.low??r.l)+close[close.length-20+i])/3);
+    const tmean=typical.reduce((a,b)=>a+b,0)/typical.length,mad=typical.reduce((a,b)=>a+Math.abs(b-tmean),0)/typical.length;
+    const cci=mad?(typical.at(-1)-tmean)/(.015*mad):0;
+    add("CCI 20",cci>100?"شراء":cci< -100?"بيع":"محايد","CCI "+cci.toFixed(1));
+    const wr=hi===lo?-50:(hi-close.at(-1))/(hi-lo)*-100;
+    add("Williams %R",wr< -80?"شراء":wr> -20?"بيع":"محايد","%R "+wr.toFixed(1));
+    add("هيكل السعر",close.at(-1)>(recentHigh+recentLow)/2?"شراء":"بيع","السعر مقابل منتصف نطاق 20 شمعة");
+    const e8=ema(8),e21=ema(21),e55=ema(55);
+    add("ترتيب المتوسطات",e8>e21&&e21>e55?"شراء":e8<e21&&e21<e55?"بيع":"محايد","EMA8/21/55");
+    const fibLow=Math.min(...low.slice(-50)),fibHigh=Math.max(...high.slice(-50)),fibMid=fibHigh-(fibHigh-fibLow)*.618;
+    add("فيبوناتشي 61.8%",close.at(-1)>fibMid?"شراء":"بيع","السعر مقابل 61.8% من النطاق");
+    const lastRow=rows.at(-1),body=close.at(-1)-Number(lastRow.open??lastRow.o),candleRange=Math.max(1e-12,high.at(-1)-low.at(-1));
+    add("شمعة يابانية",body/candleRange>.5?"شراء":body/candleRange<-.5?"بيع":"محايد","جسم الشمعة نسبةً إلى مداها");
     const up=methods.filter(m=>m.dir==="شراء").length,down=methods.filter(m=>m.dir==="بيع").length;
     return {score:Math.round(Math.max(up,down)/methods.length*100),methods,note:""+up+" مناهج تميل للشراء · "+down+" تميل للبيع · البقية محايدة"};
   }
