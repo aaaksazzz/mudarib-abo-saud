@@ -969,68 +969,97 @@ def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
 
 @app.get("/api/tasi/analysis")
 def tasi_index_analysis(interval: str = Query("1d")):
+    """Analyze raw TASI candles with AI only; no moving averages or technical indicators."""
     enforce_section_access("tasi")
-    """Broad analysis of the TASI benchmark index, not an individual Saudi stock."""
     if interval not in INTERVALS:
         return JSONResponse({"ok": False, "message": "الفريم غير مدعوم."}, status_code=422)
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        return JSONResponse({"ok": False, "live": False,
+            "message": "تحليل الذكاء الاصطناعي غير مفعّل؛ أضف OPENAI_API_KEY في إعدادات Northflank."}, status_code=503)
     try:
-        candles = candle_data("tasi_index", "^TASI.SR", interval)
-    except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError):
+        candles = candle_data("tasi_index", "^TASI.SR", interval, force_refresh=True)
+    except Exception as exc:
+        print(f"TASI raw candles unavailable: {type(exc).__name__}")
         candles = []
-    if len(candles) < 2:
-        return JSONResponse({"ok": False, "live": False, "items": [],
-                             "message": "تعذر جلب بيانات مؤشر تاسي من المصدر العام الآن؛ لم نعرض تحليلًا تقديريًا."}, status_code=503)
-    closes = [float(c["close"]) for c in candles]
-    last, prev = candles[-1], candles[-2]
-    def sma(n):
-        vals = closes[-n:]
-        return round(sum(vals) / len(vals), 2) if len(vals) >= n else None
-    change = ((last["close"] - prev["close"]) / prev["close"] * 100) if prev["close"] else 0
-    window = candles[-20:]
-    support = min(c["low"] for c in window)
-    resistance = max(c["high"] for c in window)
-    s20, s50, s200 = sma(20), sma(50), sma(200)
-    # ATR-based scenario levels are calculated from this exact timeframe's candles.
-    ranges = []
-    for i, candle in enumerate(candles[-15:]):
-        prev_close = candles[-16 + i]["close"] if len(candles) >= 16 and i >= 0 else candle["close"]
-        ranges.append(max(candle["high"] - candle["low"], abs(candle["high"] - prev_close), abs(candle["low"] - prev_close)))
-    atr = sum(ranges) / len(ranges) if ranges else max(last["high"] - last["low"], last["close"] * 0.01)
-    if s20 is not None and s50 is not None and last["close"] > s20 > s50:
-        trend = "صاعد"
-        side = "سيناريو صاعد"
-        entry = last["close"]
-        stop = min(support, entry - 1.5 * atr)
-        risk = max(entry - stop, atr)
-        targets = [entry + risk * multiple for multiple in (1, 2, 3)]
-    elif s20 is not None and s50 is not None and last["close"] < s20 < s50:
-        trend = "هابط"
-        side = "سيناريو هابط"
-        entry = last["close"]
-        stop = max(resistance, entry + 1.5 * atr)
-        risk = max(stop - entry, atr)
-        targets = [entry - risk * multiple for multiple in (1, 2, 3)]
-    else:
-        trend = "عرضي / مختلط"
-        side = "سيناريو مشروط"
-        entry = last["close"]
-        bullish = last["close"] >= (s20 if s20 is not None else last["close"])
-        stop = min(support, entry - 1.5 * atr) if bullish else max(resistance, entry + 1.5 * atr)
-        risk = max(abs(entry - stop), atr)
-        targets = [entry + risk * n if bullish else entry - risk * n for n in (1, 2, 3)]
-    return {"ok": True, "live": True, "symbol": "^TASI.SR", "name": "المؤشر العام للسوق السعودي — تاسي",
+    if len(candles) < 12:
+        return JSONResponse({"ok": False, "live": False,
+            "message": "بيانات الشموع الخام لمؤشر تاسي غير كافية؛ لم ننشئ تحليلًا تخمينيًا."}, status_code=503)
+    raw = []
+    for candle in candles[-30:]:
+        try:
+            item = {key: float(candle[key]) for key in ("open", "high", "low", "close")}
+            item["volume"] = float(candle.get("volume") or 0)
+            if all(math.isfinite(value) and value > 0 for value in item.values() if value != 0):
+                raw.append(item)
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+    if len(raw) < 12:
+        return JSONResponse({"ok": False, "live": False,
+            "message": "تعذر التحقق من بيانات الشموع الخام لمؤشر تاسي."}, status_code=503)
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+    prompt = (
+        "حلل مؤشر تاسي باستخدام بيانات OHLCV الخام المرفقة فقط. ممنوع استخدام المتوسطات أو RSI أو MACD أو ATR أو أي مؤشر فني، "
+        "وممنوع استخدام توصيات خارجية. استنتج الاتجاه من تسلسل حركة السعر والقمم والقيعان والشموع والحجم الخام فقط. "
+        "أخرج JSON فقط بالحقول: trend_ar, direction (شراء أو بيع أو انتظار), score (0-100 لقوة الأدلة لا احتمال الربح), "
+        "summary_ar, risk_ar, entry, stop_loss, tp1, tp2, tp3. إذا لم توجد فرصة واضحة فاجعل direction انتظار وكل مستويات الصفقة null. "
+        "إذا اخترت شراء فيجب أن يكون stop_loss < entry < tp1 <= tp2 <= tp3، وإذا بيع فيجب أن يكون stop_loss > entry > tp1 >= tp2 >= tp3. "
+        "لا تخترع بيانات أو تضمن الربح. البيانات: " +
+        json.dumps({"market": "TASI", "timeframe": interval, "candles": raw}, ensure_ascii=False)
+    )
+    body = json.dumps({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "أنت محلل أسواق حذر. تحليل ذكاء اصطناعي من الشموع الخام فقط، بلا مؤشرات أو توصيات خارجية. أخرج JSON صالحًا فقط."},
+            {"role": "user", "content": prompt}
+        ],
+        "response_format": {"type": "json_object"}, "temperature": 0.1, "max_tokens": 1200
+    }).encode("utf-8")
+    req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=body,
+        headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=22) as response:
+            parsed = json.loads(response.read(1_000_000).decode("utf-8", errors="replace"))
+        analysis = json.loads(parsed["choices"][0]["message"]["content"])
+        direction = analysis.get("direction")
+        if direction not in {"شراء", "بيع", "انتظار"}:
+            raise ValueError("invalid AI direction")
+        score = max(0, min(100, int(float(analysis.get("score", 0)))))
+        levels = {}
+        if direction in {"شراء", "بيع"}:
+            for key in ("entry", "stop_loss", "tp1", "tp2", "tp3"):
+                value = float(analysis[key])
+                if not math.isfinite(value) or value <= 0:
+                    raise ValueError("invalid AI level")
+                levels[key] = round(value, 2)
+            if direction == "شراء" and not (levels["stop_loss"] < levels["entry"] < levels["tp1"] <= levels["tp2"] <= levels["tp3"]):
+                raise ValueError("unordered buy levels")
+            if direction == "بيع" and not (levels["stop_loss"] > levels["entry"] > levels["tp1"] >= levels["tp2"] >= levels["tp3"]):
+                raise ValueError("unordered sell levels")
+        last = candles[-1]
+        previous = candles[-2]
+        change = ((float(last["close"]) - float(previous["close"])) / float(previous["close"]) * 100) if float(previous["close"]) else 0
+        return {
+            "ok": True, "live": True, "symbol": "^TASI.SR", "name": "المؤشر العام للسوق السعودي — تاسي",
             "provider": "Yahoo Finance", "delayed": True, "interval": interval,
-            "price": round(last["close"], 2), "change_pct": round(change, 2),
-            "trend": trend, "open": round(last["open"], 2), "high": round(last["high"], 2),
-            "low": round(last["low"], 2), "close": round(last["close"], 2),
-            "support": round(support, 2), "resistance": round(resistance, 2),
-            "atr": round(atr, 2), "scenario": side, "entry": round(entry, 2),
-            "stop_loss": round(stop, 2), "tp1": round(targets[0], 2), "tp2": round(targets[1], 2), "tp3": round(targets[2], 2),
-            "risk_reward": "1:1 / 1:2 / 1:3", "sma20": s20, "sma50": s50, "sma200": s200,
-            "candles": [{"time": c.get("time"), "open": round(c["open"], 2), "high": round(c["high"], 2),
-                         "low": round(c["low"], 2), "close": round(c["close"], 2), "volume": c.get("volume", 0)}
-                        for c in candles[-60:]],
-            "message": "تحليل فني للمؤشر العام، وليس توصية على سهم منفرد. بيانات Yahoo قد تكون متأخرة."}
+            "price": round(float(last["close"]), 2), "change_pct": round(change, 2),
+            "trend": str(analysis.get("trend_ar") or "غير محدد")[:60],
+            "scenario": direction, "score": score,
+            "summary_ar": str(analysis.get("summary_ar") or "")[:700],
+            "risk_ar": str(analysis.get("risk_ar") or "التحليل احتمالي ولا يضمن الربح.")[:500],
+            "entry": levels.get("entry"), "stop_loss": levels.get("stop_loss"),
+            "tp1": levels.get("tp1"), "tp2": levels.get("tp2"), "tp3": levels.get("tp3"),
+            "analysis_method": "ai_raw_candles_no_indicators_no_external_ideas",
+            "candles": [{"time": c.get("time"), "open": round(float(c["open"]), 2),
+                         "high": round(float(c["high"]), 2), "low": round(float(c["low"]), 2),
+                         "close": round(float(c["close"]), 2), "volume": float(c.get("volume") or 0)}
+                        for c in candles[-80:]]
+        }
+    except (urllib.error.URLError, TimeoutError, OSError, KeyError, TypeError, ValueError, IndexError, OverflowError) as exc:
+        print(f"TASI AI analysis unavailable: {type(exc).__name__}")
+        return JSONResponse({"ok": False, "live": False,
+            "message": "تعذر إكمال تحليل تاسي بالذكاء الاصطناعي؛ لم نعرض مستويات بديلة أو تحليلًا فنيًا."}, status_code=503)
+
 
 @app.get("/api/risk/position-size")
 def risk_position_size(
