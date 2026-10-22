@@ -180,72 +180,8 @@
       '<div class="level target"><small>الهدف الأول</small><strong>'+price(tp1)+'</strong><small class="positive">ربح محتمل '+pctTo(tp1,true)+'</small></div>'+
       '<div class="level target"><small>الهدف الثاني</small><strong>'+price(tp2)+'</strong><small class="positive">ربح محتمل '+pctTo(tp2,true)+'</small></div>'+
       '<div class="level target"><small>الهدف الثالث</small><strong>'+price(tp3)+'</strong><small class="positive">ربح محتمل '+pctTo(tp3,true)+'</small></div></div>'+
-      (x.technical_analysis?'<details style="margin-top:12px"><summary>تفاصيل التحليل الفني ('+esc(x.technical_analysis.methods.length)+' منهج)</summary><p class="muted">'+esc(x.technical_analysis.note)+'</p><div class="feature-grid">'+x.technical_analysis.methods.map(m=>'<div class="feature-card" style="padding:8px;min-height:0"><small>'+esc(m.name)+'</small><strong>'+esc(m.dir)+'</strong><small>'+esc(m.why)+'</small></div>').join("")+'</div></details>':"")+
       (x.url&&/^https?:\/\//i.test(x.url)?'<p class="muted" style="margin-top:10px"><a href="'+esc(x.url)+'" target="_blank" rel="noopener noreferrer">فتح المنشور الأصلي للمصدر ↗</a> · الاتجاه الأصلي: '+esc(x.original_direction||"—")+'</p>':"")+
       '<div class="toolbar" style="margin-top:12px"><button type="button" class="button small" data-inline-chart="1" data-symbol="'+esc(x.symbol||"")+'" data-frame="'+esc(x.interval||selectedInterval)+'" data-entry="'+esc(entry)+'" data-stop="'+esc(stop)+'" data-tp1="'+esc(tp1)+'" data-tp2="'+esc(tp2)+'" data-tp3="'+esc(tp3)+'">عرض الشارت داخل الصفقة</button></div><div data-chart-box data-open="0" style="margin-top:10px"></div><div class="muted" style="margin-top:10px">'+esc(x.status||"النسب تقديرية من سعر الدخول إلى الهدف/الوقف، قبل الرسوم والانزلاق")+'</div></article>';
-  }
-  function reversePublicIdea(item) {
-    const original=String(item.direction||"");
-    const buy=["شراء","BUY","LONG"].includes(original);
-    const l=item.levels||{};
-    const entry=Number(l.entry),oldStop=Number(l.stop_loss);
-    const targets=["tp1","tp2","tp3"].map(k=>Number(l[k]));
-    if(!Number.isFinite(entry)||entry<=0||!Number.isFinite(oldStop)||!targets.every(v=>Number.isFinite(v)&&v>0))return null;
-    const side=buy?"بيع":"شراء";
-    const stop=buy?entry+(entry-oldStop):entry-(oldStop-entry);
-    const mirrored=targets.map(v=>buy?entry-(v-entry):entry+(entry-v)).sort((a,b)=>buy?b-a:a-b);
-    const ordered=buy?(stop>entry&&mirrored.every(v=>v<entry)):(stop<entry&&mirrored.every(v=>v>entry));
-    if(!ordered||mirrored.some(v=>!Number.isFinite(v)||v<=0))return null;
-    return {...item,direction:side,side,original_direction:original,levels:{entry,stop_loss:stop,tp1:mirrored[0],tp2:mirrored[1],tp3:mirrored[2]},
-      status:"صفقة معكوسة عن المصدر العام؛ المستويات انعكاس حسابي حول الدخول وليست توصية موثقة. المصدر: "+String(item.source||"مصدر عام")};
-  }
-  function analyzePublicCandles(rows) {
-    if(!Array.isArray(rows)||rows.length<35)return {score:null,methods:[],note:"شموع غير كافية للتحليل الفني"};
-    const close=rows.map(r=>Number(r.close??r.c)).filter(Number.isFinite);
-    const high=rows.map(r=>Number(r.high??r.h)).filter(Number.isFinite);
-    const low=rows.map(r=>Number(r.low??r.l)).filter(Number.isFinite);
-    const volume=rows.map(r=>Number(r.volume??r.v??0));
-    if(close.length<35||high.length!==close.length||low.length!==close.length)return {score:null,methods:[],note:"تعذر قراءة الشموع"};
-    const ema=(period)=>{let a=close[0],k=2/(period+1);for(let i=1;i<close.length;i++)a=close[i]*k+a*(1-k);return a};
-    const change=close.at(-1)-close.at(-2);
-    let gains=0,losses=0;for(let i=Math.max(1,close.length-14);i<close.length;i++){const d=close[i]-close[i-1];if(d>0)gains+=d;else losses-=d;}
-    const rsi=losses===0?100:100-100/(1+(gains/14)/(losses/14));
-    const mean=close.slice(-20).reduce((a,b)=>a+b,0)/20;
-    const sd=Math.sqrt(close.slice(-20).reduce((a,b)=>a+(b-mean)**2,0)/20);
-    const avgVol=volume.slice(-21,-1).reduce((a,b)=>a+b,0)/20;
-    const lastVol=volume.at(-1)||0;
-    const methods=[];
-    const add=(name,dir,why)=>methods.push({name,dir,why});
-    add("اتجاه EMA 20/50",ema(20)>ema(50)?"شراء":"بيع",ema(20)>ema(50)?"EMA20 أعلى EMA50":"EMA20 أدنى EMA50");
-    add("فلتر EMA200",ema(20)>ema(Math.min(200,close.length))?"شراء":"بيع",close.at(-1)>ema(Math.min(200,close.length))?"السعر فوق المتوسط الطويل":"السعر تحت المتوسط الطويل");
-    add("RSI 14",rsi>=55?"شراء":rsi<=45?"بيع":"محايد","RSI "+rsi.toFixed(1));
-    add("MACD مبسط",ema(12)>ema(26)?"شراء":"بيع","EMA12 مقابل EMA26");
-    add("بولنجر 20",close.at(-1)>mean+sd?"شراء":close.at(-1)<mean-sd?"بيع":"محايد","موقع السعر من نطاق ±1 انحراف");
-    add("زخم الشمعة",change>0?"شراء":"بيع",change>0?"الإغلاق أعلى من السابق":"الإغلاق أدنى من السابق");
-    add("حجم التداول",lastVol>avgVol*1.2?(change>0?"شراء":"بيع"):"محايد","حجم آخر شمعة "+(avgVol>0?(lastVol/avgVol).toFixed(2)+"× المتوسط":"غير متاح"));
-    const recentHigh=Math.max(...high.slice(-20)),recentLow=Math.min(...low.slice(-20));
-    add("اختراق دعم/مقاومة",close.at(-1)>=recentHigh?"شراء":close.at(-1)<=recentLow?"بيع":"محايد","نطاق أعلى/أدنى 20 شمعة");
-    const tr=rows.slice(-14).map((r,i)=>{const j=rows.length-14+i,h=Number(r.high??r.h),l=Number(r.low??r.l),pc=Number(rows[j-1]?.close??rows[j-1]?.c);return Math.max(h-l,Math.abs(h-pc),Math.abs(l-pc));});
-    const atr=tr.reduce((a,b)=>a+b,0)/Math.max(1,tr.length);
-    add("ATR والتقلب","محايد","ATR نسبي "+(atr/close.at(-1)*100).toFixed(2)+"%");
-    const lows=low.slice(-14),highs=high.slice(-14),lo=Math.min(...lows),hi=Math.max(...highs);
-    const stoch=hi===lo?50:(close.at(-1)-lo)/(hi-lo)*100;
-    add("Stochastic 14",stoch<20?"شراء":stoch>80?"بيع":"محايد","%K "+stoch.toFixed(1));
-    const typical=rows.slice(-20).map((r,i)=>(Number(r.high??r.h)+Number(r.low??r.l)+close[close.length-20+i])/3);
-    const tmean=typical.reduce((a,b)=>a+b,0)/typical.length,mad=typical.reduce((a,b)=>a+Math.abs(b-tmean),0)/typical.length;
-    const cci=mad?(typical.at(-1)-tmean)/(.015*mad):0;
-    add("CCI 20",cci>100?"شراء":cci< -100?"بيع":"محايد","CCI "+cci.toFixed(1));
-    const wr=hi===lo?-50:(hi-close.at(-1))/(hi-lo)*-100;
-    add("Williams %R",wr< -80?"شراء":wr> -20?"بيع":"محايد","%R "+wr.toFixed(1));
-    add("هيكل السعر",close.at(-1)>(recentHigh+recentLow)/2?"شراء":"بيع","السعر مقابل منتصف نطاق 20 شمعة");
-    const e8=ema(8),e21=ema(21),e55=ema(55);
-    add("ترتيب المتوسطات",e8>e21&&e21>e55?"شراء":e8<e21&&e21<e55?"بيع":"محايد","EMA8/21/55");
-    const fibLow=Math.min(...low.slice(-50)),fibHigh=Math.max(...high.slice(-50)),fibMid=fibHigh-(fibHigh-fibLow)*.618;
-    add("فيبوناتشي 61.8%",close.at(-1)>fibMid?"شراء":"بيع","السعر مقابل 61.8% من النطاق");
-    const lastRow=rows.at(-1),body=close.at(-1)-Number(lastRow.open??lastRow.o),candleRange=Math.max(1e-12,high.at(-1)-low.at(-1));
-    add("شمعة يابانية",body/candleRange>.5?"شراء":body/candleRange<-.5?"بيع":"محايد","جسم الشمعة نسبةً إلى مداها");
-    const up=methods.filter(m=>m.dir==="شراء").length,down=methods.filter(m=>m.dir==="بيع").length;
-    return {score:Math.round(Math.max(up,down)/methods.length*100),methods,note:""+up+" مناهج تميل للشراء · "+down+" تميل للبيع · البقية محايدة"};
   }
   async function loadSignals(m) {
     if(marketSignalRefreshBusy)return;
