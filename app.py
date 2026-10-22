@@ -2011,7 +2011,7 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
         if symbol and symbol not in seen:
             seen.add(symbol)
             unique_rows.append(row)
-        if len(unique_rows) >= min(12, max(4, limit)):
+        if len(unique_rows) >= min(20, max(4, limit)):
             break
     candidates = []
     with ThreadPoolExecutor(max_workers=4) as pool:
