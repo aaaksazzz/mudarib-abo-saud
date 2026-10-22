@@ -2051,13 +2051,13 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
             momentum = (last - prior) / last
             swing = (last - earlier) / last
             position = (last - recent_low) / span
-            if momentum > 0.001 and swing > 0.001 and position >= 0.60:
+            if momentum > 0.0003 and swing > 0.0005 and position >= 0.52:
                 side = "شراء"
                 entry = last
                 stop = recent_low
                 risk = entry - stop
                 tps = [entry + risk * n for n in (1.0, 1.5, 2.0)]
-            elif momentum < -0.001 and swing < -0.001 and position <= 0.40:
+            elif momentum < -0.0003 and swing < -0.0005 and position <= 0.48:
                 side = "بيع"
                 entry = last
                 stop = recent_high
@@ -2067,7 +2067,7 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
                 continue
             if risk <= 0 or min([entry, stop] + tps) <= 0:
                 continue
-            score = min(78, 55 + int(min(20, abs(momentum) * 5000)) + (5 if (position >= .75 if side == "شراء" else position <= .25) else 0))
+            score = min(78, 55 + int(min(20, abs(momentum) * 5000)) + (5 if (position >= .70 if side == "شراء" else position <= .30) else 0))
             digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
             local_signals.append({
                 "symbol": c["symbol"], "direction": side, "original_direction": side,
