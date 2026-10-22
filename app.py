@@ -2331,12 +2331,13 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             rr = reward_pct / risk_pct if risk_pct > 0 else 0.0
             score = float(item.get("ai_score", 50) or 0)
             published = int(item.get("published_at", 0) or 0)
-            # Rank by TP3 potential return first, then risk/reward, then score.
-            return (reward_pct, rr, score, published)
+            # Rank by the 50/50 blended evidence score first; use risk/reward and TP3 return as tie-breakers.
+            blended = float(item.get("combined_score", item.get("method_score", score)) or 0)
+            return (blended, rr, reward_pct, published)
         except (KeyError, TypeError, ValueError, OverflowError, ZeroDivisionError):
             return (-1.0, -1.0, -1.0, 0)
 
-    # Rank by TP3 potential percentage return first, then risk/reward and AI evidence score.
+    # Rank by blended 50/50 method and AI evidence score, then risk/reward and TP3 return.
     # These are estimates, not guaranteed or backtested profits.
     items.sort(key=_tp3_profit_rank, reverse=True)
     print(
@@ -2362,7 +2363,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "ai_enabled": False,
         "ai_review_completed": False,
         "analysis_completed": bool(ai_review_completed),
-        "analysis_engine": "local_raw_candle_price_action_no_api",
+        "analysis_engine": "hybrid_methods_ai_review_50_50",
+        "method_weight_percent": 50,
+        "ai_review_weight_percent": 50,
+        "ai_provider_configured": bool(os.getenv("OPENAI_API_KEY", "").strip()),
         "technical_fallback_used": False,
         "technical_opportunities": 0,
         "external_opportunities": 0,
