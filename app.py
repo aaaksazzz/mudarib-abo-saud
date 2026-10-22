@@ -2760,8 +2760,8 @@ def _futures_pro_parse_post(source, post_html):
 
     number = r'([0-9][0-9,]*(?:\.[0-9]+)?|[0-9]*\.[0-9]+)'
     entry_match = re.search(
-        r'(?:ENTRY(?:\s*(?:PRICE|POINT|ZONE|RANGE))?|ENTRY\s*AREA|BUY\s*ZONE|SELL\s*ZONE|'
-        r'BUY\s*PRICE|SELL\s*PRICE|سعر\s*الدخول|الدخول)\s*[:=@\-]?\s*'
+        r'(?:ENTRY(?:\s*(?:PRICE|POINT|ZONE|RANGE|LEVEL|AREA))?|OPEN\s*PRICE|ENTRY\s*AREA|ENTRY\s*ZONE|BUY\s*ZONE|SELL\s*ZONE|'
+        r'BUY\s*PRICE|SELL\s*PRICE|سعر\s*الدخول|سعر\s*الشراء|سعر\s*البيع|منطقة\s*الدخول|الدخول\s*من|شراء\s*من|بيع\s*من|الدخول)\s*[:=@\-]?\s*'
         r'(' + number + r'(?:\s*[-–]\s*' + number + r')?)',
         body, re.I
     )
@@ -2774,7 +2774,7 @@ def _futures_pro_parse_post(source, post_html):
         return None
 
     stop_match = re.search(
-        r'(?:STOP\s*LOSS|STOPLOSS|STOP\s*TARGET|STOP\s*PRICE|\bSL\b|وقف\s*الخسارة|الوقف)\s*[:=@\-]?\s*'
+        r'(?:STOP\s*LOSS|STOP-LOSS|STOPLOSS|STOP\s*TARGET|STOP\s*PRICE|SL\s*PRICE|\bSTOP\b|\bSL\b|وقف\s*الخسارة|وقف\s*الصفقة|الستوب|الوقف)\s*[:=@\-]?\s*'
         r'(' + number + r')',
         body, re.I
     )
@@ -2786,7 +2786,7 @@ def _futures_pro_parse_post(source, post_html):
 
     target_values = []
     target_patterns = [
-        r'(?:TAKE\s*PROFIT(?:\s*TARGETS?)?|TAKE-PROFIT(?:\s*TARGETS?)?|TARGETS?|PROFIT\s*TARGETS?|'
+        r'(?:TAKE\s*PROFIT(?:\s*TARGETS?)?|TAKE-PROFIT(?:\s*TARGETS?)?|PROFIT\s*TARGETS?|TARGETS?|'
         r'\bTP\s*\d*\b|الهدف(?:\s*\d+)?)\s*[:=@\-]?\s*([^\n;|]+)',
     ]
     for pattern in target_patterns:
