@@ -2591,37 +2591,9 @@ def _futures_pro_fetch_source(source):
 
 @app.get("/api/futures-pro/signals")
 def futures_pro_live_signals(refresh: bool = Query(False)):
-    """Fetch recent public Telegram posts and show only complete, parseable futures setups."""
-    now = time.time()
-    with _FUTURES_PRO_CACHE_LOCK:
-        if not refresh and now - _FUTURES_PRO_CACHE["at"] < 60:
-            return {
-                "ok": True, "updated_at": _FUTURES_PRO_CACHE["at"],
-                "items": _FUTURES_PRO_CACHE["items"],
-                "sources": _FUTURES_PRO_CACHE["sources"],
-                "errors": _FUTURES_PRO_CACHE["errors"],
-                "note": "مصادر عامة؛ الإشارات المنشورة لا تعني أن الصفقة ما زالت قابلة للدخول."
-            }
-    items, sources_ok, errors = [], [], []
-    with ThreadPoolExecutor(max_workers=5) as pool:
-        jobs = {pool.submit(_futures_pro_fetch_source, source): source for source in FUTURES_PRO_TELEGRAM_SOURCES}
-        for job in as_completed(jobs, timeout=12):
-            source = jobs[job]
-            try:
-                source_items = job.result()
-                sources_ok.append(source["channel"])
-                items.extend(source_items)
-            except Exception as exc:
-                errors.append({"source": source["channel"], "error": type(exc).__name__})
-    unique = {}
-    for item in items:
-        unique[item["id"]] = item
-    items = sorted(unique.values(), key=lambda item: item["published_at"], reverse=True)[:50]
-    now = time.time()
-    with _FUTURES_PRO_CACHE_LOCK:
-        _FUTURES_PRO_CACHE.update({"at": now, "items": items, "sources": sources_ok, "errors": errors})
+    """Legacy public Telegram signals endpoint disabled in AI-only mode."""
     return {
-        "ok": True, "updated_at": now, "items": items,
-        "sources": sources_ok, "errors": errors,
-        "note": "مصادر عامة؛ الإشارات المنشورة لا تعني أن الصفقة ما زالت قابلة للدخول."
+        "ok": True, "updated_at": int(time.time()), "items": [],
+        "sources": [], "errors": [],
+        "note": "تم إيقاف توصيات تيليجرام الخارجية. استخدم تحليل الذكاء الاصطناعي المستقل في صفحات الأسواق."
     }
