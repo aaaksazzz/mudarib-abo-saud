@@ -1956,18 +1956,16 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
     if not api_key:
         return [], False, "الذكاء الاصطناعي غير مفعّل؛ أضف OPENAI_API_KEY في Northflank."
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
-    candidates, seen = [], set()
-    for row in market_rows if isinstance(market_rows, list) else []:
+    def _candidate_from_row(row):
         if not isinstance(row, dict):
-            continue
+            return None
         symbol = str(row.get("symbol") or "").strip().upper()
-        if not symbol or symbol in seen:
-            continue
-        seen.add(symbol)
+        if not symbol:
+            return None
         try:
             candles = candle_data(market, symbol, interval, force_refresh=True)
         except Exception:
-            continue
+            return None
         raw = []
         for candle in candles[-30:] if isinstance(candles, list) else []:
             try:
@@ -1978,15 +1976,34 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
             except (KeyError, TypeError, ValueError, OverflowError):
                 continue
         if len(raw) < 12:
-            continue
+            return None
         try:
             price = float(row.get("price") or raw[-1]["close"])
             change = float(row.get("change_pct") or 0)
         except (TypeError, ValueError, OverflowError):
             price, change = raw[-1]["close"], 0
-        candidates.append({"symbol": symbol, "price": price, "change_pct": change, "candles": raw})
-        if len(candidates) >= min(12, max(4, limit)):
+        return {"symbol": symbol, "price": price, "change_pct": change, "candles": raw}
+
+    # Bound work to the leading candidates and fetch their candle histories concurrently.
+    # This prevents one slow quote source from serially blocking the entire page request.
+    unique_rows, seen = [], set()
+    for row in market_rows if isinstance(market_rows, list) else []:
+        symbol = str(row.get("symbol") or "").strip().upper() if isinstance(row, dict) else ""
+        if symbol and symbol not in seen:
+            seen.add(symbol)
+            unique_rows.append(row)
+        if len(unique_rows) >= min(12, max(4, limit)):
             break
+    candidates = []
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(_candidate_from_row, row) for row in unique_rows]
+        for future in as_completed(futures):
+            try:
+                candidate = future.result()
+                if candidate:
+                    candidates.append(candidate)
+            except Exception:
+                continue
     if not candidates:
         return [], False, "لا توجد بيانات شموع خام كافية لتحليل الذكاء الاصطناعي."
     prompt = (
