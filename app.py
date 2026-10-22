@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import secrets
 import hashlib
 import hmac
+import html as html_lib
 import threading
 import xml.etree.ElementTree as ET
 import urllib.request
@@ -114,7 +115,7 @@ def _is_market_protected_path(path):
         "/news", "/tasi-analysis",
         "/api/news", "/api/market/", "/api/market-direction", "/api/signals/",
         "/api/public-ideas", "/api/trade-chart-data", "/api/tasi/analysis",
-        "/api/universe-counts"
+        "/api/universe-counts", "/api/futures-pro/signals"
     ))
 
 @app.middleware("http")
@@ -2672,3 +2673,177 @@ def futures_pro_sources_page():
         return HTMLResponse(page.read_text(encoding="utf-8"))
     except OSError:
         raise HTTPException(status_code=503, detail="صفحة مصادر فيوتشر PRO غير متاحة مؤقتًا.")
+
+
+# Public Telegram channels that publish actual trade setups. Only complete, recent posts are displayed.
+FUTURES_PRO_TELEGRAM_SOURCES = [
+    {"name": "Binance Futures Signals", "channel": "getbinancefutures", "url": "https://t.me/s/getbinancefutures"},
+    {"name": "Spoiler Signals", "channel": "SpoilerSIGNALS", "url": "https://t.me/s/SpoilerSIGNALS"},
+    {"name": "Futures Signals FREE", "channel": "freesignalsfutures", "url": "https://t.me/s/freesignalsfutures"},
+    {"name": "Crypto Futures Signals", "channel": "crypto_futures_sign", "url": "https://t.me/s/crypto_futures_sign"},
+    {"name": "Binance Spot & Futures Signals", "channel": "binancespotfuturessignals", "url": "https://t.me/s/binancespotfuturessignals"},
+]
+_FUTURES_PRO_CACHE = {"at": 0, "items": [], "sources": [], "errors": []}
+_FUTURES_PRO_CACHE_LOCK = threading.Lock()
+
+
+def _futures_pro_number_values(text):
+    values = []
+    for raw in re.findall(r"(?<![A-Za-z])(?:\d{1,12}(?:,\d{3})*(?:\.\d+)?|\.\d+)(?![A-Za-z])", text):
+        try:
+            value = float(raw.replace(",", ""))
+            if math.isfinite(value) and value > 0:
+                values.append(value)
+        except (TypeError, ValueError):
+            continue
+    return values
+
+
+def _futures_pro_parse_post(source, post_html):
+    post_match = re.search(r'data-post=["\\']([^"\\']+)["\\']', post_html)
+    if not post_match:
+        return None
+    post_id = post_match.group(1)
+    text_match = re.search(
+        r'<div class=["\\'][^"\\']*tgme_widget_message_text[^"\\']*["\\'][^>]*>(.*?)</div>',
+        post_html, re.S | re.I
+    )
+    time_match = re.search(r'<time[^>]*datetime=["\\']([^"\\']+)["\\']', post_html, re.I)
+    if not text_match or not time_match:
+        return None
+    raw_text = re.sub(r"<br\\s*/?>", "\n", text_match.group(1), flags=re.I)
+    raw_text = re.sub(r"<[^>]+>", " ", raw_text)
+    body = html_lib.unescape(raw_text).replace("\\xa0", " ")
+    body = re.sub(r"[ \\t\\r]+", " ", body)
+    body = re.sub(r"\\n\\s*\\n+", "\n", body).strip()
+    try:
+        published = datetime.fromisoformat(time_match.group(1).replace("Z", "+00:00"))
+        if published.tzinfo is None:
+            published = published.replace(tzinfo=timezone.utc)
+        published_ts = int(published.timestamp())
+    except (TypeError, ValueError, OverflowError):
+        return None
+    now = int(time.time())
+    if published_ts > now + 300 or published_ts < now - 24 * 60 * 60:
+        return None
+
+    symbol_match = re.search(r"(?:#|\\$)?\\b([A-Z0-9]{2,15})\\s*[/_-]\\s*USDT\\b|\\b([A-Z0-9]{2,15})USDT\\b", body, re.I)
+    if not symbol_match:
+        return None
+    symbol = (symbol_match.group(1) or symbol_match.group(2) or "").upper() + "USDT"
+    if symbol in {"USDTUSDT", "USDCUSDT", "BUSDUSDT", "TUSDUSDT", "FDUSDUSDT"}:
+        return None
+    direction_match = re.search(r"\\b(LONG|SHORT|BUY|SELL)\\b|\\b(شراء|بيع)\\b", body, re.I)
+    if not direction_match:
+        return None
+    direction_text = (direction_match.group(1) or direction_match.group(2) or "").upper()
+    side = "شراء" if direction_text in {"LONG", "BUY", "شراء"} else "بيع"
+
+    entry_match = re.search(r"(?:ENTRY(?:\\s*(?:PRICE|POINT|ZONE|TARGETS?))?|BUY\\s*(?:ZONE|PRICE)?|SELL\\s*(?:ZONE|PRICE)?)\\s*[:=@-]\\s*([^\\n;|]+)", body, re.I)
+    if not entry_match:
+        entry_match = re.search(r"(?:Entry|Buy|Sell)\\s+([0-9][0-9,.]*(?:\\s*[-–]\\s*[0-9][0-9,.]*)?)", body, re.I)
+    if not entry_match:
+        return None
+    entries = _futures_pro_number_values(entry_match.group(1))[:2]
+
+    stop_match = re.search(r"(?:STOP\\s*LOSS|STOPLOSS|STOP\\s*TARGETS?|\\bSL\\b)\\s*[:=@-]\\s*([^\\n;|]+)", body, re.I)
+    if not stop_match:
+        return None
+    stops = _futures_pro_number_values(stop_match.group(1))
+    if not entries or not stops:
+        return None
+
+    target_values = []
+    for target_match in re.finditer(r"(?:TAKE\\s*PROFIT(?:\\s*TARGETS?)?|TAKE-PROFIT(?:\\s*TARGETS?)?|TARGETS?|TP\\s*\\d*)\\s*[:=@-]?\\s*([^\\n;|]+)", body, re.I):
+        target_values.extend(_futures_pro_number_values(target_match.group(1)))
+    if not target_values:
+        target_values = []
+        for target_match in re.finditer(r"\\bTP\\s*\\d+\\s*[:=@-]\\s*([0-9][0-9,.]*)", body, re.I):
+            target_values.extend(_futures_pro_number_values(target_match.group(1)))
+    targets = []
+    for value in target_values:
+        if value not in targets:
+            targets.append(value)
+    if not targets:
+        return None
+
+    # Reject obviously malformed direction/levels rather than inventing or correcting them.
+    entry = entries[0]
+    stop = stops[0]
+    targets = targets[:3]
+    if side == "شراء" and (stop >= entry or targets[0] <= entry):
+        return None
+    if side == "بيع" and (stop <= entry or targets[0] >= entry):
+        return None
+
+    return {
+        "id": post_id,
+        "source": source["name"],
+        "channel": source["channel"],
+        "url": "https://t.me/" + post_id,
+        "published_at": published_ts,
+        "published_iso": datetime.fromtimestamp(published_ts, timezone.utc).isoformat(),
+        "symbol": symbol,
+        "side": side,
+        "entry": entries,
+        "stop_loss": stop,
+        "targets": targets,
+        "raw_text": body[:1200],
+        "status": "إشارة منشورة حديثًا — لم تُتحقق نتيجة الصفقة بعد",
+    }
+
+
+def _futures_pro_fetch_source(source):
+    request = urllib.request.Request(
+        source["url"],
+        headers={"User-Agent": "Mozilla/5.0 (compatible; FuturesProPublicFeed/1.0)", "Accept": "text/html"}
+    )
+    with urllib.request.urlopen(request, timeout=8) as response:
+        page = response.read(2_000_000).decode("utf-8", errors="replace")
+    chunks = re.split(r'<div class=["\\'][^"\\']*tgme_widget_message_wrap[^"\\']*["\\'][^>]*>', page, flags=re.I)
+    items = []
+    for chunk in chunks:
+        if "tgme_widget_message_text" not in chunk or "data-post=" not in chunk:
+            continue
+        parsed = _futures_pro_parse_post(source, chunk)
+        if parsed:
+            items.append(parsed)
+    return items
+
+
+@app.get("/api/futures-pro/signals")
+def futures_pro_live_signals(refresh: bool = Query(False)):
+    """Fetch recent public Telegram posts and show only complete, parseable futures setups."""
+    now = time.time()
+    with _FUTURES_PRO_CACHE_LOCK:
+        if not refresh and now - _FUTURES_PRO_CACHE["at"] < 60:
+            return {
+                "ok": True, "updated_at": _FUTURES_PRO_CACHE["at"],
+                "items": _FUTURES_PRO_CACHE["items"],
+                "sources": _FUTURES_PRO_CACHE["sources"],
+                "errors": _FUTURES_PRO_CACHE["errors"],
+                "note": "مصادر عامة؛ الإشارات المنشورة لا تعني أن الصفقة ما زالت قابلة للدخول."
+            }
+    items, sources_ok, errors = [], [], []
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        jobs = {pool.submit(_futures_pro_fetch_source, source): source for source in FUTURES_PRO_TELEGRAM_SOURCES}
+        for job in as_completed(jobs, timeout=12):
+            source = jobs[job]
+            try:
+                source_items = job.result()
+                sources_ok.append(source["channel"])
+                items.extend(source_items)
+            except Exception as exc:
+                errors.append({"source": source["channel"], "error": type(exc).__name__})
+    unique = {}
+    for item in items:
+        unique[item["id"]] = item
+    items = sorted(unique.values(), key=lambda item: item["published_at"], reverse=True)[:50]
+    now = time.time()
+    with _FUTURES_PRO_CACHE_LOCK:
+        _FUTURES_PRO_CACHE.update({"at": now, "items": items, "sources": sources_ok, "errors": errors})
+    return {
+        "ok": True, "updated_at": now, "items": items,
+        "sources": sources_ok, "errors": errors,
+        "note": "مصادر عامة؛ الإشارات المنشورة لا تعني أن الصفقة ما زالت قابلة للدخول."
+    }
