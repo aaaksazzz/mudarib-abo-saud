@@ -2172,7 +2172,7 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
 
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20), refresh: bool = Query(False)):
-    """Generate AI-only market hypotheses from raw candles without indicators or external trade signals."""
+    """Generate local rule-based price-action opportunities without API or external trade signals."""
     market = (market or "").strip().lower()
     allowed_markets = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
     if market not in allowed_markets:
