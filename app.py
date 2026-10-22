@@ -139,7 +139,7 @@ async def site_password_gate(request: Request, call_next):
                             max_age=60 * 60 * 24 * 7)
         return response
 
-    if path == "/health" or (path.startswith("/static/") and not path.lower().endswith((".html", ".htm"))):
+    if path in {"/health", "/api/health"} or (path.startswith("/static/") and not path.lower().endswith((".html", ".htm"))):
         return await call_next(request)
 
     if _is_market_protected_path(path):
@@ -216,7 +216,8 @@ SECTION_CATALOG = [
     {"id": "saudi", "label": "السوق السعودي"}, {"id": "forex", "label": "الفوركس والذهب"},
     {"id": "alpha", "label": "Binance Alpha"}, {"id": "tasi", "label": "تحليل تاسي العام"},
     {"id": "results", "label": "النتائج"}, {"id": "news", "label": "الأخبار"},
-    {"id": "blog", "label": "المدونة"}, {"id": "account", "label": "الحساب"}
+    {"id": "blog", "label": "المدونة"}, {"id": "account", "label": "الحساب"},
+    {"id": "analysis", "label": "مكتبة التحليل"}
 ]
 
 def _section_settings():
@@ -2035,18 +2036,18 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
             price, change = raw[-1]["close"], 0
         return {"symbol": symbol, "price": price, "change_pct": change, "candles": raw}
 
-    # Bound work to the leading candidates and fetch their candle histories concurrently.
-    # This prevents one slow quote source from serially blocking the entire page request.
+    # Bound per-request work to protect the small production container from overload.
+    # Scan up to 20 unique assets per pass and avoid dozens of simultaneous requests.
     unique_rows, seen = [], set()
     for row in market_rows if isinstance(market_rows, list) else []:
         symbol = str(row.get("symbol") or "").strip().upper() if isinstance(row, dict) else ""
         if symbol and symbol not in seen:
             seen.add(symbol)
             unique_rows.append(row)
-        if len(unique_rows) >= min(60, max(10, limit * 3)):
+        if len(unique_rows) >= min(20, max(10, limit)):
             break
     candidates = []
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=3) as pool:
         futures = [pool.submit(_candidate_from_row, row) for row in unique_rows]
         for future in as_completed(futures):
             try:
@@ -2058,70 +2059,9 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
     if not candidates:
         return [], False, "لا توجد بيانات شموع خام كافية للتحليل."
 
-    # No API key: use a transparent, local raw-price-action fallback instead of
-    # blocking the page. This is deterministic candle analysis, not an LLM.
+    # AI-only mode must not silently replace the model with local rule-based signals.
     if not api_key:
-        local_signals = []
-        ttl = {"15m": 900, "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400, "1w": 604800, "1M": 2592000}.get(interval, 900)
-        for c in candidates:
-            candles = c.get("candles") or []
-            if len(candles) < 12:
-                continue
-            recent = candles[-8:]
-            previous = candles[-16:-8] if len(candles) >= 16 else candles[:-8]
-            if not previous:
-                continue
-            closes = [float(x["close"]) for x in candles]
-            last = closes[-1]
-            prior = closes[-4]
-            earlier = closes[-8]
-            recent_high = max(float(x["high"]) for x in recent)
-            recent_low = min(float(x["low"]) for x in recent)
-            span = recent_high - recent_low
-            if last <= 0 or span <= 0:
-                continue
-            # Require consistent short-term movement and a close in the matching
-            # half of the recent raw-candle range; no indicators are calculated.
-            momentum = (last - prior) / last
-            swing = (last - earlier) / last
-            position = (last - recent_low) / span
-            if momentum > 0.0001 and swing > 0.0002 and position >= 0.50:
-                side = "شراء"
-                entry = last
-                stop = recent_low
-                risk = entry - stop
-                tps = [entry + risk * n for n in (1.0, 1.5, 2.0)]
-            elif momentum < -0.0001 and swing < -0.0002 and position <= 0.50:
-                side = "بيع"
-                entry = last
-                stop = recent_high
-                risk = stop - entry
-                tps = [entry - risk * n for n in (1.0, 1.5, 2.0)]
-            else:
-                continue
-            if risk <= 0 or min([entry, stop] + tps) <= 0:
-                continue
-            score = min(78, 55 + int(min(20, abs(momentum) * 5000)) + (5 if (position >= .70 if side == "شراء" else position <= .30) else 0))
-            digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
-            local_signals.append({
-                "symbol": c["symbol"], "direction": side, "original_direction": side,
-                "title": f"{side} {c['symbol']} — تحليل حركة السعر المحلي",
-                "description": "اتجاه قصير المدى وتأكيد من إغلاق الشموع وموقع السعر ضمن نطاقه الأخير؛ تحليل آلي محلي دون API، وليس نموذج لغة.",
-                "source": "تحليل محلي للشموع الخام", "url": "",
-                "published_at": int(time.time()), "created_at": int(time.time()), "age_hours": 0,
-                "market": market, "interval": interval, "expires_at": int(time.time()) + ttl,
-                "valid_for_seconds": ttl, "price_updated_at": int(time.time()), "price_fresh": True,
-                "freshness_label": "سعر محدث وقت التحليل", "live_price": round(float(c.get("price") or entry), digits),
-                "levels": {"entry": round(entry, digits), "stop_loss": round(stop, digits),
-                           "tp1": round(tps[0], digits), "tp2": round(tps[1], digits), "tp3": round(tps[2], digits)},
-                "ai_score": score, "ai_reviewed": False, "generated_by_ai": False,
-                "ai_review": {"summary_ar": "تحليل آلي محلي لحركة الشموع الخام.", "risk_ar": "تحليل قائم على قواعد السعر وليس نموذج ذكاء اصطناعي لغوي؛ قد يفشل.", "verdict": "حذر", "score_type": "درجة توافق قواعد حركة السعر وليست نسبة ربح"},
-                "external_source_weight": 0, "site_analysis_weight": 100, "signal_inverted": False,
-                "has_complete_levels": True, "level_source_note": "مستويات محسوبة من نطاق الشموع الخام، وليست توصية خارجية.",
-                "method": "local_raw_candle_price_action_no_api"
-            })
-        local_signals.sort(key=lambda x: x["ai_score"], reverse=True)
-        return local_signals[:limit], True, "تحليل محلي للشموع الخام دون API خارجي؛ ليس نموذج ذكاء اصطناعي لغوي."
+        return [], False, "التحليل بالذكاء الاصطناعي متوقف: أضف OPENAI_API_KEY إلى إعدادات الخدمة."
 
     prompt = (
         "حلل بيانات الأسعار والشموع الخام التالية فقط، ولا تستخدم توصيات خارجية أو مؤشرات فنية أو متوسطات أو RSI أو MACD أو ATR أو أي مؤشرات. "
@@ -2332,6 +2272,13 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     # Rank by TP3 potential percentage return first, then risk/reward and AI evidence score.
     # These are estimates, not guaranteed or backtested profits.
     items.sort(key=_tp3_profit_rank, reverse=True)
+    print(
+        "signal scan summary: "
+        f"market={market} interval={interval} quote_rows={len(market_rows) if isinstance(market_rows, list) else 0} "
+        f"candidates_requested={min(20, max(10, limit))} signals={len(items)} "
+        f"ai_key_configured={bool(os.getenv('OPENAI_API_KEY', '').strip())} "
+        f"ai_completed={bool(ai_review_completed)} reason={str(ai_message)[:180]!r}"
+    )
     result = {
         "ok": True, "live": bool(items), "market": market, "interval": interval,
         "market_trend": market_trend,
@@ -2433,10 +2380,20 @@ def _auto_scan_worker():
         market, interval = jobs[position % len(jobs)]
         position += 1
         try:
-            signal_cards(market, interval=interval, limit=20, refresh=True)
-            print(f"auto scan completed: {market}/{interval}")
+            outcome = signal_cards(market, interval=interval, limit=20, refresh=True)
+            if isinstance(outcome, JSONResponse):
+                print(f"auto scan returned HTTP {outcome.status_code}: {market}/{interval}")
+            elif isinstance(outcome, dict):
+                print(
+                    f"auto scan finished: {market}/{interval} "
+                    f"signals={outcome.get('count', 0)} "
+                    f"ai_enabled={outcome.get('ai_enabled', False)} "
+                    f"reason={str(outcome.get('message', ''))[:160]!r}"
+                )
+            else:
+                print(f"auto scan returned unexpected result: {market}/{interval} type={type(outcome).__name__}")
         except Exception as exc:
-            print(f"auto scan failed {market}/{interval}: {type(exc).__name__}")
+            print(f"auto scan failed {market}/{interval}: {type(exc).__name__}: {str(exc)[:160]}")
         # Keep pressure low on the small hosting instance; rotate to a different pair next.
         time.sleep(25)
 
