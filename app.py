@@ -2157,8 +2157,9 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         if not refresh and cached and now - cached[0] < 90:
             return {**cached[1], "cached": True}
 
-    # Site-only mode: do not query or ingest ideas from external websites.
-    external = {"ok": True, "items": [], "sources_checked": 0, "sources_failed": 0}
+    # Public-source mode: discover recent public trade ideas and Telegram channels.
+    # The public_ideas pipeline filters market, symbol, direction, timestamp, and level geometry.
+    external = public_ideas(market=market, interval=interval, limit=limit, discover=True, refresh=refresh)
 
     # Live site-market data provides technical candidates and contextual confirmation.
     market_changes = {}
@@ -2180,7 +2181,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     skipped = 0
     source_buy_count = 0
     source_sell_count = 0
-    external_quota = 0
+    external_quota = max(0, min(limit, int(math.ceil(limit * 0.90))))
     for source_item in external.get("items", []) if isinstance(external, dict) else []:
         if len(items) >= external_quota:
             break
@@ -2315,8 +2316,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             continue
         items.append(item)
 
-    # Fill only the remaining ~10% with local technical signals.
-    technical_quota = limit
+    # Keep public ideas at ~90%; reserve at most ~10% for locally generated technical candidates.
+    technical_quota = max(1, int(math.ceil(limit * 0.10)))
     live_rows = (snapshot.get("items", []) if isinstance(snapshot, dict) else [])
     scanned_count = 0
     if live_rows:
@@ -2466,12 +2467,12 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "source_sell_ideas": source_sell_count,
         "buy_opportunities": sum(1 for item in items if item.get("direction") == "شراء"),
         "sell_opportunities": sum(1 for item in items if item.get("direction") == "بيع"),
-        "external_source_weight": 0, "site_analysis_weight": 100,
-        "technical_fallback_used": False,
+        "external_source_weight": 90, "site_analysis_weight": 10,
+        "technical_fallback_used": bool(any(item.get("generated_by_site") for item in items)),
         "technical_opportunities": sum(1 for item in items if item.get("generated_by_site")),
         "external_opportunities": sum(1 for item in items if not item.get("generated_by_site")),
         "max_age_hours": 24,
-        "message": ("الفرص مصفّاة حسب اتجاه السوق العام: شراء في الصعود فقط وبيع في الهبوط فقط."
+        "message": ("فرص عامة من مواقع وقنوات متاحة خلال آخر 24 ساعة، مع تحليل فني محلي محدود للتأكيد؛ اتجاه المصدر لا يُعكس."
                     if items else
                     ("اتجاه السوق محايد/مختلط؛ تم إيقاف عرض الصفقات حتى يتضح الاتجاه."
                      if market_trend == "محايد" else
