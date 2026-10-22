@@ -2792,11 +2792,19 @@ def _futures_pro_parse_post(source, post_html):
     for pattern in target_patterns:
         for match in re.finditer(pattern, body, re.I):
             target_values.extend(_futures_pro_number_values(match.group(1)))
-    # Formats such as TP1 65000 or "1) 65000, 2) 66000" after a Targets heading.
+    # Many Telegram channels put the target heading on its own line and list
+    # targets below it as emoji-prefixed lines. Parse the whole section up to SL,
+    # rather than inspecting only the heading's (usually empty) line.
     if not target_values:
-        targets_section = re.search(r'(?:TARGETS?|TAKE\s*PROFIT|الأهداف)\s*[:\-]?\s*(.*)', body, re.I | re.S)
+        targets_section = re.search(
+            r'(?:TAKE\s*PROFIT(?:\s*TARGETS?)?|TAKE-PROFIT(?:\s*TARGETS?)?|'
+            r'PROFIT\s*TARGETS?|TARGETS?|الأهداف|الاهداف)\s*[:\-]?\s*(.*?)'
+            r'(?=(?:STOP\s*LOSS|STOP-LOSS|STOPLOSS|SL\s*PRICE|\bSL\b|'
+            r'وقف\s*الخسارة|وقف\s*الصفقة|الستوب|الوقف)\s*[:=@\-]?\s*' + number + r'|$)',
+            body, re.I | re.S
+        )
         if targets_section:
-            target_values.extend(_futures_pro_number_values(targets_section.group(1).splitlines()[0]))
+            target_values.extend(_futures_pro_number_values(targets_section.group(1)))
     targets = []
     for value in target_values:
         if value not in targets:
