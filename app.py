@@ -2043,7 +2043,7 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
         if symbol and symbol not in seen:
             seen.add(symbol)
             unique_rows.append(row)
-        if len(unique_rows) >= min(20, max(4, limit)):
+        if len(unique_rows) >= min(60, max(10, limit * 3)):
             break
     candidates = []
     with ThreadPoolExecutor(max_workers=4) as pool:
@@ -2085,13 +2085,13 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
             momentum = (last - prior) / last
             swing = (last - earlier) / last
             position = (last - recent_low) / span
-            if momentum > 0.0003 and swing > 0.0005 and position >= 0.52:
+            if momentum > 0.0001 and swing > 0.0002 and position >= 0.50:
                 side = "شراء"
                 entry = last
                 stop = recent_low
                 risk = entry - stop
                 tps = [entry + risk * n for n in (1.0, 1.5, 2.0)]
-            elif momentum < -0.0003 and swing < -0.0005 and position <= 0.48:
+            elif momentum < -0.0001 and swing < -0.0002 and position <= 0.50:
                 side = "بيع"
                 entry = last
                 stop = recent_high
