@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import secrets
 import hashlib
+import sqlite3
 import hmac
 import html as html_lib
 import threading
@@ -204,6 +205,113 @@ for _legacy_path, _empty_data in ((RESULTS_PATH, []), (SIGNALS_CACHE_PATH, {})):
         print(f"WARNING: could not initialize {_legacy_path.name}: {exc}")
 # Protect the complete read-modify-write transaction across all market endpoints.
 RESULTS_LOCK = threading.RLock()
+
+# Customer account authentication; DATA_DIR must be mounted persistently in production.
+AUTH_DB_PATH = DATA_DIR / "accounts.sqlite3"
+AUTH_SECRET_PATH = DATA_DIR / "auth.secret"
+AUTH_LOCK = threading.RLock()
+
+def _auth_secret():
+    try:
+        secret = AUTH_SECRET_PATH.read_bytes()
+        if len(secret) >= 32: return secret
+    except OSError: pass
+    secret = secrets.token_bytes(48)
+    try:
+        fd = os.open(str(AUTH_SECRET_PATH), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "wb") as f: f.write(secret)
+        return secret
+    except FileExistsError:
+        return AUTH_SECRET_PATH.read_bytes()
+    except OSError as exc:
+        raise RuntimeError("تعذر حفظ مفتاح جلسات الحسابات") from exc
+
+def _auth_db():
+    con = sqlite3.connect(str(AUTH_DB_PATH), timeout=15)
+    con.row_factory = sqlite3.Row
+    con.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE COLLATE NOCASE, display_name TEXT NOT NULL, password_hash TEXT NOT NULL, created_at INTEGER NOT NULL, active INTEGER NOT NULL DEFAULT 1)")
+    con.commit()
+    return con
+
+def _password_hash(password):
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 310000)
+    return salt.hex() + "$" + digest.hex()
+
+def _password_matches(password, encoded):
+    try:
+        salt_hex, digest_hex = encoded.split("$", 1)
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt_hex), 310000).hex()
+        return secrets.compare_digest(actual, digest_hex)
+    except (ValueError, TypeError): return False
+
+def _make_account_session(user_id, expiry):
+    payload = str(int(user_id)) + "." + str(int(expiry))
+    sig = hmac.new(_auth_secret(), payload.encode("ascii"), hashlib.sha256).hexdigest()
+    return payload + "." + sig
+
+def _read_account_session(token):
+    try:
+        user_text, expiry_text, supplied = token.split(".", 2)
+        user_id, expiry = int(user_text), int(expiry_text)
+        payload = str(user_id) + "." + str(expiry)
+        expected = hmac.new(_auth_secret(), payload.encode("ascii"), hashlib.sha256).hexdigest()
+        if user_id < 1 or expiry < int(time.time()) or not secrets.compare_digest(supplied, expected): return None
+        with _auth_db() as con:
+            row = con.execute("SELECT id,email,display_name,active FROM users WHERE id=?", (user_id,)).fetchone()
+        return dict(row) if row and row["active"] else None
+    except (ValueError, TypeError, OSError, RuntimeError, sqlite3.Error): return None
+
+def _set_account_cookie(response, user_id):
+    age = 1209600
+    response.set_cookie("account_session", _make_account_session(user_id, int(time.time()) + age), httponly=True, secure=True, samesite="lax", path="/", max_age=age)
+
+@app.post("/api/auth/register")
+async def account_register(request: Request):
+    try: data = await request.json()
+    except Exception: raise HTTPException(status_code=400, detail="تحقق من البيانات المدخلة.")
+    name = str(data.get("name", "")).strip()[:80]
+    email = str(data.get("email", "")).strip().lower()[:254]
+    password = str(data.get("password", ""))
+    if len(name) < 2: raise HTTPException(status_code=400, detail="اكتب الاسم (حرفين على الأقل).")
+    if not re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+", email): raise HTTPException(status_code=400, detail="البريد الإلكتروني غير صحيح.")
+    if len(password) < 10 or len(password) > 128 or not re.search(r"[A-Za-z]", password) or not re.search(r"[0-9]", password):
+        raise HTTPException(status_code=400, detail="كلمة المرور لازم تكون 10 أحرف على الأقل وتحتوي حرفًا ورقمًا.")
+    try:
+        with AUTH_LOCK, _auth_db() as con:
+            cur = con.execute("INSERT INTO users(email,display_name,password_hash,created_at) VALUES(?,?,?,?)", (email, name, _password_hash(password), int(time.time())))
+            user_id = cur.lastrowid
+    except sqlite3.IntegrityError: raise HTTPException(status_code=409, detail="هذا البريد مسجل مسبقًا. سجّل الدخول.")
+    response = JSONResponse({"ok": True, "user": {"id": user_id, "email": email, "name": name}})
+    _set_account_cookie(response, user_id)
+    return response
+
+@app.post("/api/auth/login")
+async def account_login(request: Request):
+    try: data = await request.json()
+    except Exception: raise HTTPException(status_code=400, detail="تحقق من البيانات المدخلة.")
+    email = str(data.get("email", "")).strip().lower()[:254]
+    password = str(data.get("password", ""))
+    with _auth_db() as con:
+        row = con.execute("SELECT id,email,display_name,password_hash,active FROM users WHERE email=? COLLATE NOCASE", (email,)).fetchone()
+    if not row or not row["active"] or not _password_matches(password, row["password_hash"]):
+        raise HTTPException(status_code=401, detail="البريد الإلكتروني أو كلمة المرور غير صحيحة.")
+    response = JSONResponse({"ok": True, "user": {"id": row["id"], "email": row["email"], "name": row["display_name"]}})
+    _set_account_cookie(response, row["id"])
+    return response
+
+@app.get("/api/auth/me")
+async def account_me(request: Request):
+    user = _read_account_session(request.cookies.get("account_session", ""))
+    if not user: raise HTTPException(status_code=401, detail="سجّل الدخول أولًا.")
+    return {"ok": True, "user": {"id": user["id"], "email": user["email"], "name": user["display_name"]}}
+
+@app.post("/api/auth/logout")
+async def account_logout():
+    response = JSONResponse({"ok": True})
+    response.delete_cookie("account_session", path="/", secure=True, httponly=True, samesite="lax")
+    return response
+
 ARTICLES_PATH = DATA_DIR / "articles.json"
 SECTION_SETTINGS_PATH = DATA_DIR / "section-settings.json"
 SECTION_CATALOG = [
