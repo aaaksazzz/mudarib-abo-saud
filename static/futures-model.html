@@ -13,7 +13,7 @@
 </head>
 <body><main>
 <header class="top"><div class="brand">ST ◈ التداول الذكي PRO</div><span class="tag">محرك تحليل الشموع · نسخة محسّنة</span></header>
-<section class="intro"><h1>تحليل الفيوتشر — المستوى المتوسط</h1><p>توافق مرن بين طرق التحليل؛ ما نشترط اتفاقها كلها، ولا نعتبر الاختلاف البسيط سببًا كافيًا لرفض الفرصة. الأرقام أدناه أمثلة شكلية لتوضيح الواجهة وليست بيانات سوق مباشرة.</p></section>
+<section class="intro"><h1>تحليل الفيوتشر — المستوى المتوسط</h1><p>تحليل اتجاه الشموع والزخم على بيانات السوق المتاحة. لا تظهر الصفقة إلا عند توفر شموع كافية وسعر دخول وأهداف ووقف صالحين.</p></section>
 <section class="panel">
 <div class="controls" id="timeframes"><button class="tf active" data-tf="15m">15 دقيقة</button><button class="tf" data-tf="1h">ساعة</button><button class="tf" data-tf="4h">4 ساعات</button><button class="tf" data-tf="1d">يومي</button><button class="tf" data-tf="1w">أسبوعي</button><button class="tf" data-tf="1M">شهري</button><label class="toggle"><input id="reverse" type="checkbox"> عكس الاستراتيجية (شراء ↔ بيع)</label></div>
 </section>
@@ -27,7 +27,7 @@
 <div id="trades"></div>
 <div class="section-title"><h2>كل عقود الفيوتشر المؤهلة</h2><span class="pill">حجم تداول 24 ساعة ≥ 1,000,000 USDT</span></div><div class="panel"><p id="assetsStatus" class="muted">جاري تحميل العقود وحجم تداولها اليومي…</p><div class="assets-wrap"><table class="assets-table"><thead><tr><th>#</th><th>العملة</th><th>حجم 24 ساعة</th><th>تغير 24 ساعة</th></tr></thead><tbody id="qualifiedAssets"><tr><td colspan="4">جاري التحميل…</td></tr></tbody></table></div></div>
 <div class="notice">طريقة الحساب المقترحة: توافق من مجموعة طرق التحليل الفنية على نفس بيانات الشموع، مع وزن أكبر لاتجاه السعر والزخم والسيولة. النسبة تعرض عدد الطرق المؤيدة من الطرق التي أعطت قراءة صالحة؛ لا تمثل ضمانًا للربح. بيانات السوق الفعلية مطلوبة قبل اعتماد أي فرصة.</div>
-<p class="foot">بيانات العقود من واجهة السوق الفعلية. تحليل الشموع يفحص عينة محدودة لتخفيف الضغط، ولا ينفذ أوامر تداول.</p>
+<p class="foot">بيانات العقود من واجهة السوق الفعلية. تُفحص عينة محدودة لتخفيف الضغط، وتُخفى الفرص التي لا تتوفر لها بيانات شموع ومستويات مخاطرة صالحة. لا ينفذ الموقع أوامر تداول.</p>
 </main>
 <script>
 const tfNames={'15m':'15 دقيقة','1h':'ساعة','4h':'4 ساعات','1d':'يومي','1w':'أسبوعي','1M':'شهري'};
@@ -59,10 +59,10 @@ async function refresh(){
   $('buyBar').style.width=(up/total*100)+'%';$('sellBar').style.width=(down/total*100)+'%';
   $('sampleNote')?.remove();
   const ranked=items.filter(x=>Number(x.change_pct)!==0).sort((a,b)=>Math.abs(Number(b.change_pct))-Math.abs(Number(a.change_pct))).slice(0,3);
-  const rows=await Promise.all(ranked.map(async x=>{
+  const rows=(await Promise.all(ranked.map(async x=>{
    try{
     const c=await get('/api/trade-chart-data?market=futures&symbol='+encodeURIComponent(x.symbol)+'&interval='+encodeURIComponent(currentTf));
-    const candles=(c.items||[]).filter(k=>['open','high','low','close'].every(z=>Number.isFinite(Number(k[z]))&&Number(k[z])>0&&Number.isFinite(Number(k[z]))));
+    const candles=(c.items||[]).filter(k=>['open','high','low','close'].every(z=>Number.isFinite(Number(k[z]))&&Number(k[z])>0));
     if(candles.length<30)throw Error('نحتاج 30 شمعة صالحة على الأقل');
     const closes=candles.map(k=>Number(k.close)),entry=closes[closes.length-1];
     const recent=candles.slice(-14);
@@ -81,7 +81,7 @@ async function refresh(){
     const quality=Math.min(100,Math.round(35+agreement*35+Math.min(15,Math.abs(m8)*1.4)+Math.min(10,(bodyRecent/atr)*10)+Math.min(5,Math.abs(m20)*0.25)));
     const confidence=aligned>=3&&agreement>=0.75?'توافق جيد':aligned===2?'توافق متوسط':'توافق ضعيف';
     return {...x,entry,atr,score:quality,side,agreement,confidence,m3,m8,m20,volatilityPct,marketPrice:Number(x.marketPrice||x.price)};
-   }catch(e){return {...x,score:Math.min(75,Math.round(50+Math.min(25,Math.abs(Number(x.change_pct))*4))),side:Number(x.change_pct)>0?'شراء':'بيع',entry:Number(x.price),marketPrice:Number(x.marketPrice||x.price),atr:null,why:'مستويات الأهداف والوقف غير متاحة؛ لم تُخمن.'}}
+   }catch(e){return null}}
   }));
   rows.sort((a,b)=>Number(b.score||0)-Number(a.score||0));
   const reverse=$('reverse').checked;
@@ -95,7 +95,7 @@ async function refresh(){
    const fmtPct=v=>v===null||!Number.isFinite(v)?'—':v.toFixed(2);
    const cls=i===0?'gold':i===1?'silver':i===2?'bronze':'',medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':String(i+1);
    return '<article class="panel trade '+cls+'"><div class="trade-head"><span class="rank">'+medal+'</span><span class="symbol">'+esc(t.symbol)+'</span><span class="side '+(sell?'sellSide':'buySide')+'">'+side+'</span><span class="score">درجة التوافق <b>'+t.score+'/100</b></span><span class="pill">'+tfNames[currentTf]+'</span></div><div class="levels"><div class="level entry"><small>الدخول</small><b>'+fmt(t.entry)+'</b></div><div class="level target"><small>TP1</small><b>'+fmt(tp1)+'</b></div><div class="level target"><small>TP2</small><b>'+fmt(tp2)+'</b></div><div class="level target"><small>TP3</small><b>'+fmt(tp3)+'</b></div><div class="level stop"><small>وقف الخسارة</small><b>'+fmt(sl)+'</b></div></div><div class="pnl"><span class="profit">ربح TP1<b>+'+fmtPct(pctFromEntry(tp1))+'%</b></span><span class="profit">ربح TP2<b>+'+fmtPct(pctFromEntry(tp2))+'%</b></span><span class="profit">ربح TP3<b>+'+fmtPct(pctFromEntry(tp3))+'%</b></span><span class="loss">خسارة الوقف<b>-'+fmtPct(pctFromEntry(sl))+'%</b></span></div><div class="why">'+(t.atr?'مستويات تقديرية من متوسط نطاق آخر 14 شمعة فعلية.':'تعذر حساب نطاق الشموع؛ لم نختلق أهدافًا أو وقفًا.')+' · '+esc(t.confidence||'قراءة محدودة')+' · زخم 3/8/20 شمعة: '+Number(t.m3||0).toFixed(2)+'% / '+Number(t.m8||0).toFixed(2)+'% / '+Number(t.m20||0).toFixed(2)+'%. الدرجة ليست احتمال ربح؛ التحليل من الشموع وليس 200 طريقة.</div></article>';
-  }).join(''):'<div class="panel muted">لا توجد فرص نشطة ضمن العينة بعد استبعاد الفرص التي تجاوز سعرها الدخول. غيّر الفريم أو انتظر تحديث الفحص.</div>');
+  }).join(''):'<div class="panel muted">لا توجد فرص مكتملة وصالحة حاليًا. لن نعرض صفقة ناقصة الأهداف أو وقف الخسارة؛ غيّر الفريم أو انتظر تحديث الفحص.</div>');
   $('liveStatus').textContent='مباشر من بيانات الشموع · فُحص '+(data.assets_scanned??items.length)+' أصل من عينة محدودة ('+(data.assets_available??'—')+' متاح) · '+new Date().toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit'});
  }catch(e){$('bullCount').textContent='—';$('bearCount').textContent='—';$('trades').innerHTML='<div class="panel muted">تعذر تحميل بيانات الفيوتشر: '+esc(e.message||'خطأ غير معروف')+'. لم نعرض فرصًا وهمية.</div>';$('liveStatus').textContent='المصدر غير متاح حالياً';}
  finally{busy=false}
