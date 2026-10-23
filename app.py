@@ -2905,6 +2905,95 @@ def admin_list_articles(credentials: HTTPBasicCredentials = Depends(security)):
     return {"ok": True, "items": read_json_file(ARTICLES_PATH, [])}
 
 
+# Live customer support chat. Messages are stored in the persistent account database.
+def _support_init(con):
+    con.execute("""CREATE TABLE IF NOT EXISTS support_conversations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        FOREIGN KEY(user_id) REFERENCES users(id))""")
+    con.execute("""CREATE TABLE IF NOT EXISTS support_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id INTEGER NOT NULL,
+        sender TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL,
+        FOREIGN KEY(conversation_id) REFERENCES support_conversations(id))""")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_support_messages_conv ON support_messages(conversation_id,id)")
+    con.commit()
+
+def _support_conversation(con, user_id):
+    row = con.execute("SELECT id FROM support_conversations WHERE user_id=?", (int(user_id),)).fetchone()
+    if row: return int(row["id"])
+    now = int(time.time())
+    cur = con.execute("INSERT INTO support_conversations(user_id,created_at,updated_at,status) VALUES(?,?,?,'open')", (int(user_id),now,now))
+    con.commit()
+    return int(cur.lastrowid)
+
+def _support_message_rows(con, conversation_id):
+    rows = con.execute("SELECT id,sender,body,created_at FROM support_messages WHERE conversation_id=? ORDER BY id ASC LIMIT 300", (int(conversation_id),)).fetchall()
+    return [dict(x) for x in rows]
+
+@app.get("/api/support/messages")
+def support_messages(request: Request):
+    user = _member_for_request(request)
+    if not user: raise HTTPException(status_code=401, detail="سجّل الدخول لاستخدام الدعم الفني.")
+    with _auth_db() as con:
+        _support_init(con)
+        cid = _support_conversation(con, user["id"])
+        return {"ok":True,"conversation_id":cid,"items":_support_message_rows(con,cid)}
+
+@app.post("/api/support/messages")
+async def support_send(request: Request):
+    user = _member_for_request(request)
+    if not user: raise HTTPException(status_code=401, detail="سجّل الدخول لاستخدام الدعم الفني.")
+    try: payload = await request.json()
+    except Exception: raise HTTPException(status_code=400, detail="اكتب رسالتك أولًا.")
+    body = str(payload.get("body","")).strip()
+    if not body or len(body)>2000: raise HTTPException(status_code=422, detail="الرسالة مطلوبة وبحد أقصى 2000 حرف.")
+    with _auth_db() as con:
+        _support_init(con)
+        cid = _support_conversation(con,user["id"])
+        now = int(time.time())
+        con.execute("INSERT INTO support_messages(conversation_id,sender,body,created_at) VALUES(?,?,?,?)",(cid,"customer",body,now))
+        con.execute("UPDATE support_conversations SET updated_at=?,status='open' WHERE id=?",(now,cid))
+        con.commit()
+        return {"ok":True,"items":_support_message_rows(con,cid)}
+
+@app.get("/api/admin/support/conversations")
+def admin_support_conversations(credentials: HTTPBasicCredentials = Depends(security)):
+    require_admin(credentials)
+    with _auth_db() as con:
+        _support_init(con)
+        rows = con.execute("""SELECT c.id,c.status,c.created_at,c.updated_at,u.display_name,u.email,
+            (SELECT body FROM support_messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) last_message,
+            (SELECT sender FROM support_messages m WHERE m.conversation_id=c.id ORDER BY m.id DESC LIMIT 1) last_sender
+            FROM support_conversations c JOIN users u ON u.id=c.user_id ORDER BY c.updated_at DESC LIMIT 200""").fetchall()
+        return {"ok":True,"items":[dict(x) for x in rows]}
+
+@app.get("/api/admin/support/conversations/{conversation_id}")
+def admin_support_read(conversation_id: int, credentials: HTTPBasicCredentials = Depends(security)):
+    require_admin(credentials)
+    with _auth_db() as con:
+        _support_init(con)
+        row=con.execute("SELECT c.id,c.status,u.display_name,u.email FROM support_conversations c JOIN users u ON u.id=c.user_id WHERE c.id=?",(conversation_id,)).fetchone()
+        if not row: raise HTTPException(status_code=404,detail="المحادثة غير موجودة.")
+        return {"ok":True,"conversation":dict(row),"items":_support_message_rows(con,conversation_id)}
+
+@app.post("/api/admin/support/conversations/{conversation_id}")
+async def admin_support_reply(conversation_id: int, request: Request, credentials: HTTPBasicCredentials = Depends(security)):
+    require_admin(credentials)
+    try: payload=await request.json()
+    except Exception: raise HTTPException(status_code=400,detail="اكتب الرد.")
+    body=str(payload.get("body","")).strip()
+    if not body or len(body)>2000: raise HTTPException(status_code=422,detail="الرد مطلوب وبحد أقصى 2000 حرف.")
+    with _auth_db() as con:
+        _support_init(con)
+        row=con.execute("SELECT id FROM support_conversations WHERE id=?",(conversation_id,)).fetchone()
+        if not row: raise HTTPException(status_code=404,detail="المحادثة غير موجودة.")
+        now=int(time.time())
+        con.execute("INSERT INTO support_messages(conversation_id,sender,body,created_at) VALUES(?,?,?,?)",(conversation_id,"admin",body,now))
+        con.execute("UPDATE support_conversations SET updated_at=?,status='open' WHERE id=?",(now,conversation_id))
+        con.commit()
+        return {"ok":True,"items":_support_message_rows(con,conversation_id)}
+
 @app.get("/api/status")
 def status():
     return {
