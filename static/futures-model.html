@@ -81,8 +81,8 @@ async function refresh(){
     const quality=Math.min(100,Math.round(35+agreement*35+Math.min(15,Math.abs(m8)*1.4)+Math.min(10,(bodyRecent/atr)*10)+Math.min(5,Math.abs(m20)*0.25)));
     const confidence=aligned>=3&&agreement>=0.75?'توافق جيد':aligned===2?'توافق متوسط':'توافق ضعيف';
     return {...x,entry,atr,score:quality,side,agreement,confidence,m3,m8,m20,volatilityPct,marketPrice:Number(x.marketPrice||x.price)};
-   }catch(e){return null}}
-  }));
+   }catch(e){return null}
+  }))).filter(t=>t&&t.atr&&Number(t.entry)>0&&Number(t.marketPrice)>0);
   rows.sort((a,b)=>Number(b.score||0)-Number(a.score||0));
   const reverse=$('reverse').checked;
   const isMissed=(t)=>{const sell=(t.side==='بيع')!==reverse,live=Number(t.marketPrice),entry=Number(t.entry);if(!(live>0&&entry>0))return false;const tolerance=Math.max((Number(t.atr)||0)*0.15,entry*0.001);return sell?live<entry-tolerance:live>entry+tolerance;};
