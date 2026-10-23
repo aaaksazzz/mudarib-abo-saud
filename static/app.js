@@ -19,7 +19,7 @@
     "/markets/forex-gold":"forex"
   };
   const marketKey = pathToMarket[path];
-  const scanIntervalOrder = ["15m","1h","2h","4h","1d","1w"];
+  const scanIntervalOrder = ["15m","1h","4h","1d","1w","1M"];
   let scanCycleIndex = 0;
   let selectedInterval = "15m";
   let marketSignalRefreshTimer = null;
@@ -109,7 +109,8 @@
       '@media(max-width:850px){.surge-layout{grid-template-columns:1fr}.surge-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:420px){.surge-page{padding:9px}.surge-hero{padding:14px}.surge-panel{padding:10px}.surge-stat{padding:10px}}'+
       '</style>'+
       '<div class="surge-page">'+
-      '<div class="surge-top"><div><span class="eyebrow">SMART TRADING PRO · '+esc(m.source.toUpperCase())+'</span><h1 class="page-title" style="margin:5px 0">'+esc(m.name)+'</h1><p class="muted">'+esc(m.sub)+' · اختر اتجاه الفحص، وتابع توجه السوق صاعدًا أو هابطًا.</p></div><div class="surge-scan" role="group" aria-label="اتجاه الفحص"><button type="button" id="surgeScanAll" data-mode="all" class="active">الكل</button><button type="button" id="surgeScanBuy" data-mode="buy">↑ فحص الصاعد / شراء</button><button type="button" id="surgeScanSell" data-mode="sell">↓ فحص الهابط / بيع</button><button class="button primary small" id="surgeRefresh">↻ تحديث</button></div></div>'+
+      '<div class="surge-top"><div><span class="eyebrow">SMART TRADING PRO · '+esc(m.source.toUpperCase())+'</span><h1 class="page-title" style="margin:5px 0">'+esc(m.name)+'</h1><p class="muted">'+esc(m.sub)+' · اختر الفريم لتغيير فحص حركة الأسعار الفعلية.</p></div><div class="surge-scan" role="group" aria-label="اتجاه الفحص"><button type="button" id="surgeScanAll" data-mode="all" class="active">الكل</button><button type="button" id="surgeScanBuy" data-mode="buy">↑ فحص الصاعد / شراء</button><button type="button" id="surgeScanSell" data-mode="sell">↓ فحص الهابط / بيع</button><button class="button primary small" id="surgeRefresh">↻ تحديث</button></div></div>'+
+      '<div class="surge-panel" style="margin-bottom:14px"><div class="surge-head"><h2>⏱ فريم الفحص</h2><span class="surge-chip" id="surgeIntervalLabel">15 دقيقة</span></div><div class="surge-scan" id="surgeIntervals" role="group" aria-label="فريم الفحص"><button type="button" data-interval="15m" class="active">15 دقيقة</button><button type="button" data-interval="1h">ساعة</button><button type="button" data-interval="4h">4 ساعات</button><button type="button" data-interval="1d">يومي</button><button type="button" data-interval="1w">أسبوعي</button><button type="button" data-interval="1M">شهري</button></div><p class="surge-muted" id="surgeIntervalStatus">تتغير النتائج حسب الشموع الفعلية للفريم المختار.</p></div>'+
       '<section class="surge-hero"><div><div style="color:#ffc85a;font-size:11px;margin-bottom:7px">MARKET MONITOR · '+esc(m.source.toUpperCase())+'</div><h1>'+esc(m.name)+' — رصد حركة السوق</h1><p>يعرض الأصول الفعلية المتاحة من مصدر هذا السوق، ويرتب تغيّر الأسعار وقيمة التداول. لا ينشئ صفقات أو أهدافًا أو وقف خسارة.</p></div><span class="surge-chip" id="surgeConnection">● جاري الاتصال بالمصدر</span></section>'+
       '<section class="surge-stats"><div class="surge-stat"><small>الأصول المفحوصة</small><strong id="surgeCount">—</strong><span class="surge-muted">من مصدر السوق المحدد</span></div><div class="surge-stat"><small>أصول صاعدة</small><strong id="surgeUp" class="surge-pos">—</strong><span class="surge-muted">حسب تغيّر السعر</span></div><div class="surge-stat"><small>أصول هابطة</small><strong id="surgeDown" class="surge-neg">—</strong><span class="surge-muted">حسب تغيّر السعر</span></div><div class="surge-stat"><small>أقوى تغيّر</small><strong id="surgeBest">—</strong><span class="surge-muted" id="surgeBestSymbol">بانتظار البيانات</span></div></section>'+
       '<div class="surge-layout"><section class="surge-panel"><div class="surge-head"><h2>◈ الأصول وترتيب الحركة</h2><span class="surge-chip" id="surgeUpdated">آخر تحديث —</span></div><div class="surge-status" id="surgeStatus">جاري تحميل بيانات السوق…</div><div class="surge-table-wrap"><table class="surge-table"><thead><tr><th>#</th><th>الأصل</th><th>السعر</th><th>التغيّر</th><th>قيمة التداول</th><th>درجة الرصد</th></tr></thead><tbody id="surgeRows"><tr><td colspan="6" class="surge-empty">جاري الاتصال بمصدر البيانات…</td></tr></tbody></table></div><p class="surge-muted">درجة الرصد لترتيب الأصول حسب حركة السعر والسيولة المتاحة، وليست احتمال ربح أو توصية تداول.</p></section>'+
@@ -117,13 +118,15 @@
       '<p class="surge-muted" style="margin-top:14px">الأسعار وتغطية الأصول تعتمد على المصدر المتاح لكل سوق وقد تتأخر. عند تعذّر المصدر لن تُعرض أرقام وهمية. لا توجد أوامر تداول آلية.</p></div>';
     let busy=false;
     let scanMode="all";
+    let selectedMarketInterval="15m";
+    const intervalNames={"15m":"15 دقيقة","1h":"ساعة","4h":"4 ساعات","1d":"يومي","1w":"أسبوعي","1M":"شهري"};
     const setScanMode=(mode)=>{scanMode=mode;document.querySelectorAll(".surge-scan button[data-mode]").forEach(b=>b.classList.toggle("active",b.dataset.mode===mode));refresh();};
     const loadDirection=async()=>{const out=$("surgeDirection");if(!out)return;out.innerHTML='<div class="surge-empty">جاري حساب اتجاه السوق…</div>';try{const d=await getJSON("/api/market-direction?market="+encodeURIComponent(m.api));if(!d.ok)throw new Error(d.message||"الاتجاه غير متاح");const up=Number(d.assets_up||0),down=Number(d.assets_down||0),flat=Number(d.assets_flat||0);const color=d.direction==="BULLISH"?"#16d99a":d.direction==="BEARISH"?"#ff647c":"#ffc85a";out.innerHTML='<div class="surge-item"><div class="surge-item-head"><span>التوجّه العام</span><strong style="color:'+color+'">'+esc(d.direction_ar||"محايد")+'</strong></div><p>متوسط التغيّر: '+esc(pct(d.price_change_pct))+'<br>صاعد: '+up+' · هابط: '+down+' · مستقر: '+flat+'<br>العينة: '+esc(d.assets_sampled??up+down+flat)+' أصل</p></div>';}catch(e){out.innerHTML='<div class="surge-empty">'+esc(e.message||"الاتجاه غير متاح")+'</div>'}};
     async function refresh(){
       if(busy)return;busy=true;const btn=$("surgeRefresh");if(btn)btn.disabled=true;
       $("surgeStatus").textContent="جاري تحميل قائمة الأصول وترتيب الحركة…";$("surgeConnection").textContent="● جاري التحديث";
       try{
-        const d=await getJSON("/api/market/"+encodeURIComponent(m.api)+"?limit=2000");
+        const d=await getJSON("/api/market-timeframe/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedMarketInterval)+"&limit=2000");
         if(!d||!Array.isArray(d.items))throw new Error(d.message||"المصدر لم يرجع قائمة أصول صالحة");
         if(d.live===false||d.stale===true)throw new Error(d.message||"البيانات قديمة؛ لم نعرض ترتيبًا جديدًا");
         const items=d.items.filter(x=>x&&String(x.symbol||"").trim()&&Number.isFinite(Number(x.price))&&Number(x.price)>0&&Number.isFinite(Number(x.change_pct)));
@@ -145,7 +148,7 @@
       }catch(e){$("surgeConnection").textContent="● تعذر الاتصال";$("surgeStatus").textContent="تعذر تحميل البيانات: "+(e.message||"خطأ غير معروف");$("surgeRows").innerHTML='<tr><td colspan="6" class="surge-empty">لم نعرض أرقامًا وهمية بدل البيانات الحقيقية.</td></tr>';$("surgeHighlights").innerHTML='<div class="surge-empty">بيانات الحركة غير متاحة.</div>';$("surgeHeat").innerHTML='<div class="surge-empty">لا توجد بيانات متاحة</div>';$("surgeCount").textContent="—";$("surgeUp").textContent="—";$("surgeDown").textContent="—";$("surgeBest").textContent="—";$("surgeBestSymbol").textContent="بانتظار البيانات";}
       finally{busy=false;if(btn)btn.disabled=false}
     }
-    $("surgeRefresh").addEventListener("click",refresh);$("surgeDirectionRefresh").addEventListener("click",loadDirection);
+    $("surgeRefresh").addEventListener("click",refresh);$("surgeDirectionRefresh").addEventListener("click",loadDirection);document.querySelectorAll("#surgeIntervals [data-interval]").forEach(b=>b.addEventListener("click",()=>{selectedMarketInterval=b.dataset.interval;document.querySelectorAll("#surgeIntervals [data-interval]").forEach(x=>x.classList.toggle("active",x.dataset.interval===selectedMarketInterval));$("surgeIntervalLabel").textContent=intervalNames[selectedMarketInterval];refresh();loadDirection();}));
     $("surgeScanAll").addEventListener("click",()=>setScanMode("all"));$("surgeScanBuy").addEventListener("click",()=>setScanMode("buy"));$("surgeScanSell").addEventListener("click",()=>setScanMode("sell"));
     refresh();loadDirection();
     if(marketSignalRefreshTimer)clearInterval(marketSignalRefreshTimer);
