@@ -399,49 +399,81 @@ def fetch_json(url: str, timeout: int = 8):
 
 
 def alpha_market_tickers():
-    """Fetch real Binance Alpha tickers through the documented public API."""
+    """Fetch real Binance Alpha tickers; prefer a bulk quote endpoint to avoid one request per token."""
     now = time.time()
     if ALPHA_CACHE["items"] and now - ALPHA_CACHE["at"] < ALPHA_CACHE_TTL:
         return [dict(item) for item in ALPHA_CACHE["items"]]
-    payload = fetch_json(ALPHA_EXCHANGE_INFO_URL, timeout=8)
-    info = payload.get("data") if isinstance(payload, dict) else None
-    if not isinstance(info, dict) or payload.get("success") is False:
-        raise ValueError("Binance Alpha exchange info unavailable")
-    symbols = [
-        item.get("symbol") for item in info.get("symbols", [])
-        if isinstance(item, dict) and item.get("status") == "TRADING"
-        and item.get("quoteAsset") in ("USDT", "USDC") and item.get("symbol")
-        and str(item.get("baseAsset") or item.get("symbol", "").replace("USDT", "").replace("USDC", "")).upper() not in STABLES
-    ]
-    # Inspect the full active Alpha universe; filter by 24h quote turnover below rather than truncating symbols.
-    symbols = list(dict.fromkeys(symbols))
-    def fetch_ticker(symbol):
-        from urllib.parse import urlencode
-        data = fetch_json(ALPHA_BASE + "/ticker?" + urlencode({"symbol": symbol}), timeout=7)
-        row = data.get("data") if isinstance(data, dict) else None
-        if not isinstance(row, dict) or data.get("success") is False:
+
+    def normalize(row, symbol_hint=""):
+        if not isinstance(row, dict):
             return None
+        symbol = str(row.get("symbol") or row.get("s") or symbol_hint).upper()
         try:
-            price = float(row.get("lastPrice") or 0)
-            change = float(row.get("priceChangePercent") or 0)
-            quote_volume = float(row.get("quoteVolume") or 0)
+            price = float(row.get("lastPrice") or row.get("last") or row.get("c") or row.get("price") or 0)
+            change = float(row.get("priceChangePercent") or row.get("P") or row.get("changePercent") or row.get("change_pct") or 0)
+            quote_volume = float(row.get("quoteVolume") or row.get("q") or row.get("quoteVol") or row.get("turnover") or 0)
         except (TypeError, ValueError):
             return None
-        if price <= 0 or quote_volume < 1_000_000:
+        base = symbol
+        for suffix in ("USDT", "USDC"):
+            if base.endswith(suffix):
+                base = base[:-len(suffix)]
+                break
+        if not symbol or price <= 0 or quote_volume < 1_000_000 or base in STABLES:
             return None
         return {"symbol": symbol, "price": price, "change_pct": change, "quote_volume": quote_volume}
+
     rows = []
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        for future in as_completed([pool.submit(fetch_ticker, symbol) for symbol in symbols]):
-            try:
-                item = future.result()
-            except Exception:
-                item = None
-            if item:
-                rows.append(item)
+    # Some Alpha API deployments expose all tickers in one response. Try this first
+    # to avoid hundreds of sequential/parallel calls and public API rate limits.
+    try:
+        bulk = fetch_json(ALPHA_BASE + "/ticker", timeout=8)
+        bulk_data = bulk.get("data") if isinstance(bulk, dict) else None
+        if isinstance(bulk_data, list):
+            rows = [item for item in (normalize(x) for x in bulk_data) if item]
+        elif isinstance(bulk_data, dict):
+            candidates = bulk_data.get("list") or bulk_data.get("tickers") or bulk_data.get("items")
+            if isinstance(candidates, list):
+                rows = [item for item in (normalize(x) for x in candidates) if item]
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError):
+        pass
+
     if not rows:
-        raise ValueError("No Binance Alpha tickers returned")
-    rows.sort(key=lambda x: x["quote_volume"], reverse=True)
+        payload = fetch_json(ALPHA_EXCHANGE_INFO_URL, timeout=8)
+        info = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(info, dict) or payload.get("success") is False:
+            raise ValueError("تعذر جلب قائمة أصول Binance Alpha من المصدر.")
+        symbols = [
+            str(item.get("symbol")) for item in info.get("symbols", [])
+            if isinstance(item, dict) and item.get("status") == "TRADING"
+            and item.get("quoteAsset") in ("USDT", "USDC") and item.get("symbol")
+            and str(item.get("baseAsset") or item.get("symbol", "").replace("USDT", "").replace("USDC", "")).upper() not in STABLES
+        ]
+        symbols = list(dict.fromkeys(symbols))
+        if not symbols:
+            raise ValueError("لم يُرجع مصدر Binance Alpha أصولًا نشطة.")
+        def fetch_ticker(symbol):
+            from urllib.parse import urlencode
+            data = fetch_json(ALPHA_BASE + "/ticker?" + urlencode({"symbol": symbol}), timeout=5)
+            row = data.get("data") if isinstance(data, dict) else None
+            if isinstance(row, list):
+                row = row[0] if row else None
+            return normalize(row, symbol)
+        # Bound concurrency to reduce 429 responses; per-token failures don't block the market.
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = [pool.submit(fetch_ticker, symbol) for symbol in symbols]
+            for future in as_completed(futures):
+                try:
+                    item = future.result()
+                except Exception:
+                    item = None
+                if item:
+                    rows.append(item)
+    if not rows:
+        raise ValueError("مصدر Binance Alpha لم يُرجع أسعارًا صالحة حاليًا؛ حاول التحديث لاحقًا.")
+    # Deduplicate symbols if the bulk endpoint returns aliases/duplicates.
+    unique = {item["symbol"]: item for item in rows}
+    rows = sorted(unique.values(), key=lambda x: x["quote_volume"], reverse=True)
     ALPHA_CACHE.update({"at": now, "items": rows})
     return [dict(item) for item in rows]
 
