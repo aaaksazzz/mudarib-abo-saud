@@ -323,6 +323,10 @@ def _subscription_expiry(user_id):
 
 def _has_market_access(request):
     now = int(time.time())
+    admin_cookie = request.cookies.get("admin_site_access", "")
+    expected_admin_cookie = _admin_site_cookie_value()
+    if admin_cookie and expected_admin_cookie and secrets.compare_digest(admin_cookie, expected_admin_cookie):
+        return True
     user = _member_for_request(request)
     if user:
         if _subscription_expiry(user["id"]) > now: return True
@@ -555,6 +559,36 @@ def require_admin(credentials):
         raise HTTPException(status_code=401, detail="بيانات الإدارة غير صحيحة.",
                             headers={"WWW-Authenticate": "Basic"})
     return True
+
+def _admin_site_cookie_value():
+    secret = os.getenv("ADMIN_PASSWORD", "")
+    return hmac.new(secret.encode("utf-8"), ("site-access:" + os.getenv("ADMIN_USERNAME", "admin")).encode("utf-8"), hashlib.sha256).hexdigest() if secret else ""
+
+@app.post("/api/admin/site-access")
+def admin_site_access(response: JSONResponse = None, credentials: HTTPBasicCredentials = Depends(security)):
+    require_admin(credentials)
+    out = JSONResponse({"ok": True, "message": "تم تفعيل صلاحية المشرف على كامل الموقع."})
+    out.set_cookie("admin_site_access", _admin_site_cookie_value(), max_age=43200, httponly=True, secure=True, samesite="lax", path="/")
+    return out
+
+@app.post("/api/admin/grant-subscription")
+def admin_grant_subscription(payload: dict, credentials: HTTPBasicCredentials = Depends(security)):
+    require_admin(credentials)
+    email = str(payload.get("email", "")).strip().lower()
+    try:
+        days = int(payload.get("days", 0))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="حدد مدة الاشتراك بالأيام.")
+    if not email or days < 1 or days > 3650:
+        raise HTTPException(status_code=422, detail="أدخل بريد الحساب ومدة من يوم إلى 3650 يومًا.")
+    with _auth_db() as con:
+        user = con.execute("SELECT id,email,display_name FROM users WHERE email=? AND active=1", (email,)).fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="ما لقيت حسابًا نشطًا بهذا البريد. تأكد أن الشخص سجّل بالموقع أولًا.")
+    with PAYMENT_LOCK, _billing_db() as con:
+        expiry = _grant_subscription(con, user["id"], days, "admin_manual")
+        con.commit()
+    return {"ok": True, "email": user["email"], "display_name": user["display_name"], "days_added": days, "expires_at": expiry}
 
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 
