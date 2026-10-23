@@ -12,7 +12,7 @@
 </style>
 </head>
 <body><main>
-<header class="top"><div class="brand">ST ◈ التداول الذكي PRO</div><span class="tag">نموذج واجهة تجريبي</span></header>
+<header class="top"><div class="brand">ST ◈ التداول الذكي PRO</div><span class="tag">محرك تحليل الشموع · نسخة محسّنة</span></header>
 <section class="intro"><h1>تحليل الفيوتشر — المستوى المتوسط</h1><p>توافق مرن بين طرق التحليل؛ ما نشترط اتفاقها كلها، ولا نعتبر الاختلاف البسيط سببًا كافيًا لرفض الفرصة. الأرقام أدناه أمثلة شكلية لتوضيح الواجهة وليست بيانات سوق مباشرة.</p></section>
 <section class="panel">
 <div class="controls" id="timeframes"><button class="tf active" data-tf="15m">15 دقيقة</button><button class="tf" data-tf="1h">ساعة</button><button class="tf" data-tf="4h">4 ساعات</button><button class="tf" data-tf="1d">يومي</button><button class="tf" data-tf="1w">أسبوعي</button><button class="tf" data-tf="1M">شهري</button><label class="toggle"><input id="reverse" type="checkbox"> عكس الاستراتيجية (شراء ↔ بيع)</label></div>
@@ -51,15 +51,25 @@ async function refresh(){
   const rows=await Promise.all(ranked.map(async x=>{
    try{
     const c=await get('/api/trade-chart-data?market=futures&symbol='+encodeURIComponent(x.symbol)+'&interval='+encodeURIComponent(currentTf));
-    const candles=(c.items||[]).filter(k=>['open','high','low','close'].every(z=>Number.isFinite(Number(k[z]))&&Number(k[z])>0));
-    if(candles.length<15)throw Error('شموع غير كافية');
-    const entry=Number(candles[candles.length-1].close);
+    const candles=(c.items||[]).filter(k=>['open','high','low','close'].every(z=>Number.isFinite(Number(k[z]))&&Number(k[z])>0&&Number.isFinite(Number(k[z]))));
+    if(candles.length<30)throw Error('نحتاج 30 شمعة صالحة على الأقل');
+    const closes=candles.map(k=>Number(k.close)),entry=closes[closes.length-1];
     const recent=candles.slice(-14);
     const atr=recent.reduce((sum,k)=>sum+(Number(k.high)-Number(k.low)),0)/recent.length;
     if(!(atr>0&&entry>0))throw Error('نطاق غير صالح');
-    const rawScore=Math.min(85,Math.round(50+Math.min(25,Math.abs(Number(x.change_pct))*4)+Math.min(10,(atr/entry)*1000)));
-    const naturalSide=Number(x.change_pct)>0?'شراء':'بيع';
-    return {...x,entry,atr,score:rawScore,side:naturalSide};
+    const move=(n)=>((closes[closes.length-1]/closes[Math.max(0,closes.length-1-n)])-1)*100;
+    const m3=move(3),m8=move(8),m20=move(20);
+    const direction=(v)=>v>0.04?1:v< -0.04?-1:0;
+    const dirs=[direction(m3),direction(m8),direction(m20),direction(Number(x.change_pct))];
+    const buyVotes=dirs.filter(v=>v>0).length,sellVotes=dirs.filter(v=>v<0).length;
+    const side=buyVotes===sellVotes?(m8>=0?'شراء':'بيع'):(buyVotes>sellVotes?'شراء':'بيع');
+    const agreement=Math.max(buyVotes,sellVotes)/dirs.length;
+    const aligned=side==='شراء'?buyVotes:sellVotes;
+    const volatilityPct=atr/entry*100;
+    const bodyRecent=recent.reduce((s,k)=>s+Math.abs(Number(k.close)-Number(k.open)),0)/recent.length;
+    const quality=Math.min(100,Math.round(35+agreement*35+Math.min(15,Math.abs(m8)*1.4)+Math.min(10,(bodyRecent/atr)*10)+Math.min(5,Math.abs(m20)*0.25)));
+    const confidence=aligned>=3&&agreement>=0.75?'توافق جيد':aligned===2?'توافق متوسط':'توافق ضعيف';
+    return {...x,entry,atr,score:quality,side,agreement,confidence,m3,m8,m20,volatilityPct};
    }catch(e){return {...x,score:Math.min(75,Math.round(50+Math.min(25,Math.abs(Number(x.change_pct))*4))),side:Number(x.change_pct)>0?'شراء':'بيع',entry:Number(x.price),atr:null,why:'مستويات الأهداف والوقف غير متاحة؛ لم تُخمن.'}}
   }));
   const reverse=$('reverse').checked;
@@ -77,6 +87,6 @@ async function refresh(){
 document.querySelectorAll('.tf').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.tf').forEach(x=>x.classList.toggle('active',x===b));currentTf=b.dataset.tf;$('tfLabel').textContent=currentTf;refresh()}));
 $('reverse').addEventListener('change',refresh);
 const note=document.createElement('p');note.id='liveStatus';note.className='muted';note.textContent='جاري الاتصال ببيانات الفيوتشر…';document.querySelector('.section-title').after(note);
-document.querySelector('.intro p').textContent='يعرض هذا النموذج عينة فعلية محدودة من عقود الفيوتشر حسب الفريم. التوافق هنا تقييم حركة مبسط وليس تحليل 200 طريقة، ولا توجد ضمانات ربح.';
+document.querySelector('.intro p').textContent='يفحص عينة محدودة من عقود الفيوتشر ثم يقيّم اتجاه الشموع والزخم وثبات الحركة قبل ترتيب الفرص. النتيجة درجة توافق داخلية وليست احتمال ربح أو ضمانًا.';
 refresh();
 </script></body></html>
