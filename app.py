@@ -145,9 +145,13 @@ async def site_password_gate(request: Request, call_next):
             "<!doctype html><html lang='ar' dir='rtl'><meta charset='utf-8'>"
             "<meta name='viewport' content='width=device-width,initial-scale=1'>"
             "<title>فتح الأسواق | التداول الذكي PRO</title>"
-            "<body style='background:#080d18;color:#edf3ff;font:16px Tahoma;padding:28px'>"
-            "<h1>الأسواق للمشتركين</h1><p>" + detail + "</p>"
-            "<a style='color:#8dbaff' href='/account'>تسجيل الدخول والاشتراك</a></body></html>",
+            "<body style='background:#080d18;color:#edf3ff;font:16px Tahoma;padding:28px;line-height:1.9'>"
+            "<main style='max-width:620px;margin:8vh auto;padding:24px;border:1px solid #263752;border-radius:18px;background:#101a2b'>"
+            "<h1>🔒 الأسواق تحتاج تفعيل الوصول</h1><p>" + detail + "</p>"
+            "<p>ما تحتاج تسجل حساب عشان تجرب الموقع. شارك رابط التداول الذكي PRO من الزر التالي وفعّل وصولًا مجانيًا لمدة 24 ساعة.</p>"
+            "<button id='share' style='width:100%;padding:14px;border:0;border-radius:12px;background:#4f8cff;color:white;font-weight:bold;font-size:16px;cursor:pointer'>📢 شارك الموقع وفعّل اليوم المجاني</button>"
+            "<p id='result' aria-live='polite'></p><p><a style='color:#8dbaff' href='/account'>أو سجّل الدخول / اشترك</a> · <a style='color:#8dbaff' href='/'>العودة للرئيسية</a></p></main>"
+            "<script>const b=document.getElementById('share'),m=document.getElementById('result');b.onclick=async()=>{b.disabled=true;m.textContent='';try{if(navigator.share){await navigator.share({title:'التداول الذكي PRO',text:'تابع الأسواق في التداول الذكي PRO',url:location.origin});}else if(navigator.clipboard){await navigator.clipboard.writeText(location.origin);}else{m.textContent='انسخ الرابط يدويًا: '+location.origin;b.disabled=false;return;}const r=await fetch('/api/billing/guest-share',{method:'POST',credentials:'same-origin'});const d=await r.json();if(!r.ok)throw new Error(d.detail||'تعذر تفعيل التجربة');m.textContent=d.already_active?'تجربتك المجانية مفعّلة بالفعل.':'تم تفعيل وصولك المجاني لمدة 24 ساعة!';setTimeout(()=>location.reload(),900);}catch(e){m.textContent=e.name==='AbortError'?'ألغيت المشاركة؛ لم يتم تفعيل التجربة.':(e.message||'تعذر التفعيل، حاول مرة ثانية.');}finally{b.disabled=false;}};</script></body></html>",
             status_code=403
         )
 
