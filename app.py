@@ -565,7 +565,7 @@ def _admin_site_cookie_value():
     return hmac.new(secret.encode("utf-8"), ("site-access:" + os.getenv("ADMIN_USERNAME", "admin")).encode("utf-8"), hashlib.sha256).hexdigest() if secret else ""
 
 @app.post("/api/admin/site-access")
-def admin_site_access(response: JSONResponse = None, credentials: HTTPBasicCredentials = Depends(security)):
+def admin_site_access(credentials: HTTPBasicCredentials = Depends(security)):
     require_admin(credentials)
     out = JSONResponse({"ok": True, "message": "تم تفعيل صلاحية المشرف على كامل الموقع."})
     out.set_cookie("admin_site_access", _admin_site_cookie_value(), max_age=43200, httponly=True, secure=True, samesite="lax", path="/")
