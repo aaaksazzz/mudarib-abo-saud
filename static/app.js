@@ -401,9 +401,36 @@
     $("tasiRefresh").addEventListener("click",load);
     await load();
   }
-  function renderAccount() {
-    view.innerHTML=pageHeader("الحساب","حالة الحسابات والخدمات المتاحة حاليًا.","الحساب")+
-      '<section class="panel"><h2>حالة العضوية</h2><div class="notice" style="margin-top:12px">تسجيل حسابات العملاء والاشتراكات غير مفعّل في هذه النسخة. لن نعرض نموذج تسجيل لا يعمل.</div><div class="feature-grid" style="margin-top:12px"><div class="feature-card"><small>أوامر تداول آلية</small><strong>متوقفة</strong></div><div class="feature-card"><small>الأسعار</small><strong>حسب المصدر</strong></div><div class="feature-card"><small>الإدارة</small><strong>محمية</strong></div></div></section>';
+  async function renderAccount() {
+    view.innerHTML=pageHeader("الحساب","أنشئ حسابك أو سجّل الدخول.","الحساب")+
+      '<section class="panel"><div class="toolbar"><button class="button primary" id="accountLoginTab">تسجيل الدخول</button><button class="button" id="accountRegisterTab">إنشاء حساب</button></div><div id="accountAuthArea" style="margin-top:16px"></div><div id="accountAuthMessage" class="muted" role="status" style="margin-top:12px"></div></section>';
+    const area=$("accountAuthArea"), msg=$("accountAuthMessage");
+    function show(mode) {
+      $("accountLoginTab").classList.toggle("primary",mode==="login");
+      $("accountRegisterTab").classList.toggle("primary",mode==="register");
+      area.innerHTML=mode==="register"
+        ? '<form id="customerAuthForm" class="form-grid"><label class="field">الاسم<input name="name" autocomplete="name" minlength="2" maxlength="80" required></label><label class="field">البريد الإلكتروني<input name="email" type="email" autocomplete="email" required maxlength="254></label><label class="field">كلمة المرور<input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="128" required><small class="muted">10 أحرف على الأقل وتشمل حرفًا ورقمًا.</small></label><div><button class="button primary" type="submit">إنشاء الحساب</button></div></form>'
+        : '<form id="customerAuthForm" class="form-grid"><label class="field">البريد الإلكتروني<input name="email" type="email" autocomplete="email" required></label><label class="field">كلمة المرور<input name="password" type="password" autocomplete="current-password" required></label><div><button class="button primary" type="submit">دخول</button></div></form>';
+      area.querySelector("form").addEventListener("submit",async e=>{
+        e.preventDefault();const form=e.currentTarget,button=form.querySelector("button[type=submit]");
+        const data=Object.fromEntries(new FormData(form).entries());button.disabled=true;msg.textContent="جاري التحقق…";
+        try {
+          const d=await getJSON(mode==="register"?"/api/auth/register":"/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+          msg.textContent="تم "+(mode==="register"?"إنشاء الحساب":"تسجيل الدخول")+" بنجاح.";
+          showProfile(d.user);
+        } catch(err) {msg.textContent=err.message||"تعذر إكمال الطلب.";}
+        finally {if(button.isConnected)button.disabled=false;}
+      });
+    }
+    function showProfile(user) {
+      $("accountLoginTab").classList.remove("primary");$("accountRegisterTab").classList.remove("primary");
+      area.innerHTML='<div class="feature-grid"><div class="feature-card"><small>الاسم</small><strong>'+esc(user.name)+'</strong></div><div class="feature-card"><small>البريد الإلكتروني</small><strong>'+esc(user.email)+'</strong></div></div><button class="button" id="accountLogout" style="margin-top:14px">تسجيل الخروج</button>';
+      $("accountLogout").addEventListener("click",async()=>{try{await getJSON("/api/auth/logout",{method:"POST"});msg.textContent="تم تسجيل الخروج.";show("login");}catch(err){msg.textContent=err.message;}});
+    }
+    $("accountLoginTab").addEventListener("click",()=>{msg.textContent="";show("login");});
+    $("accountRegisterTab").addEventListener("click",()=>{msg.textContent="";show("register");});
+    try {const d=await getJSON("/api/auth/me");showProfile(d.user);msg.textContent="أنت مسجّل الدخول.";}
+    catch(_) {show("login");}
   }
   function renderAdmin() {
     view.innerHTML=pageHeader("إدارة المنصة","لوحة محمية للمشرف. صلاحيات الإدارة تتحقق من الخادم.","الإدارة")+
