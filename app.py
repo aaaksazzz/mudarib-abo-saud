@@ -1637,9 +1637,9 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
             return JSONResponse({"ok": False, "live": False, "items": [],
                                  "message": "بيانات السوق الأساسية غير متاحة."}, status_code=503)
         raw = quotes["items"]
-        # Candle retrieval is network intensive; scan the 60 most liquid available assets,
+        # Candle retrieval is network intensive; scan the 30 most liquid available assets,
         # then show the actual number scanned instead of implying full-universe coverage.
-        candidates = sorted(raw, key=lambda x: float(x.get("quote_volume") or x.get("dollar_volume") or x.get("volume") or 0), reverse=True)[:60]
+        candidates = sorted(raw, key=lambda x: float(x.get("quote_volume") or x.get("dollar_volume") or x.get("volume") or 0), reverse=True)[:30]
         results = []
         with ThreadPoolExecutor(max_workers=10) as pool:
             jobs = {pool.submit(candle_data, market, str(item.get("symbol") or ""), interval): item
