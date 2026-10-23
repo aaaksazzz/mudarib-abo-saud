@@ -25,9 +25,9 @@
 <div class="bar"><span class="buy" id="buyBar" style="width:38.8%"></span><span class="sell" id="sellBar" style="width:61.2%"></span></div>
 <div class="section-title"><h2>أفضل الفرص حسب التوافق</h2><span class="pill">تحليل متوسط</span></div>
 <div id="trades"></div>
-<div class="section-title"><h2>جميع عقود الفيوتشر المؤهلة</h2><span class="pill">حجم تداول 24 ساعة ≥ 1,000,000 USDT</span></div><div class="panel"><p id="assetsStatus" class="muted">جاري تحميل العقود وحجم تداولها اليومي…</p><div class="assets-wrap"><table class="assets-table"><thead><tr><th>#</th><th>العملة</th><th>حجم 24 ساعة</th><th>تغير 24 ساعة</th></tr></thead><tbody id="qualifiedAssets"><tr><td colspan="4">جاري التحميل…</td></tr></tbody></table></div></div>
+<div class="section-title"><h2>كل عقود الفيوتشر المؤهلة</h2><span class="pill">حجم تداول 24 ساعة ≥ 1,000,000 USDT</span></div><div class="panel"><p id="assetsStatus" class="muted">جاري تحميل العقود وحجم تداولها اليومي…</p><div class="assets-wrap"><table class="assets-table"><thead><tr><th>#</th><th>العملة</th><th>حجم 24 ساعة</th><th>تغير 24 ساعة</th></tr></thead><tbody id="qualifiedAssets"><tr><td colspan="4">جاري التحميل…</td></tr></tbody></table></div></div>
 <div class="notice">طريقة الحساب المقترحة: توافق من مجموعة طرق التحليل الفنية على نفس بيانات الشموع، مع وزن أكبر لاتجاه السعر والزخم والسيولة. النسبة تعرض عدد الطرق المؤيدة من الطرق التي أعطت قراءة صالحة؛ لا تمثل ضمانًا للربح. بيانات السوق الفعلية مطلوبة قبل اعتماد أي فرصة.</div>
-<p class="foot">نموذج واجهة فقط — غير متصل ببيانات Binance ولا ينفذ أوامر تداول.</p>
+<p class="foot">بيانات العقود من واجهة السوق الفعلية. تحليل الشموع يفحص عينة محدودة لتخفيف الضغط، ولا ينفذ أوامر تداول.</p>
 </main>
 <script>
 const tfNames={'15m':'15 دقيقة','1h':'ساعة','4h':'4 ساعات','1d':'يومي','1w':'أسبوعي','1M':'شهري'};
@@ -48,7 +48,7 @@ async function refresh(){
   const quoteItems=(quotes.items||[]).filter(x=>x&&x.symbol);
   const volumeOf=x=>Number(x.quote_volume??x.quoteVolume??x.quoteVolume24h??x.dollar_volume??0);
   const eligible=quoteItems.filter(x=>volumeOf(x)>=1000000).sort((a,b)=>volumeOf(b)-volumeOf(a));
-  $('assetsStatus').textContent='تم العثور على '+eligible.length+' عقد مستوفٍ للحد من '+quoteItems.length+' عقد رجعها المصدر. الحد هو مليون دولار/USDT خلال 24 ساعة.';
+  $('assetsStatus').textContent='تم تحميل '+eligible.length+' عقد مؤهل من أصل '+quoteItems.length+' عقد رجعها المصدر. القائمة تعرض كل العقود التي يتجاوز حجم تداولها مليون USDT خلال 24 ساعة؛ فحص الشموع يقتصر على 30 عقدًا لتخفيف الضغط.';
   $('qualifiedAssets').innerHTML=eligible.length?eligible.map((x,i)=>'<tr><td>'+(i+1)+'</td><td dir="ltr"><b>'+esc(x.symbol)+'</b></td><td>'+fmt(volumeOf(x))+' USDT</td><td class="'+(Number(x.change_pct)>=0?'up':'down')+'">'+Number(x.change_pct||0).toFixed(2)+'%</td></tr>').join(''):'<tr><td colspan="4">لا توجد عقود مستوفية للحد في بيانات المصدر الحالية.</td></tr>';
   const eligibleSymbols=new Set(eligible.map(x=>x.symbol));
   const items=(data.items||[]).filter(x=>x&&x.symbol&&eligibleSymbols.has(x.symbol)&&Number(x.price)>0&&Number.isFinite(Number(x.change_pct)));
@@ -86,8 +86,8 @@ async function refresh(){
   const reverse=$('reverse').checked;
   $('trades').innerHTML=rows.map((t,i)=>{
    const sell=(t.side==='بيع')!==reverse,side=sell?'بيع':'شراء';
-   const risk=t.atr?Math.max(t.atr*1.2,t.entry*.002):null;
-   const tp1=risk?(sell?t.entry-risk:t.entry+risk):null,tp2=risk?(sell?t.entry-risk*1.5:t.entry+risk*1.5):null,tp3=risk?(sell?t.entry-risk*2:t.entry+risk*2):null,sl=risk?(sell?t.entry+risk:t.entry-risk):null;
+   const risk=t.atr&&t.entry>0?Math.min(Math.max(t.atr*0.5,t.entry*0.002),t.entry*0.03):null;
+   const tp1=risk?(sell?Math.max(t.entry-risk,t.entry*0.000001):t.entry+risk):null,tp2=risk?(sell?Math.max(t.entry-risk*1.5,t.entry*0.000001):t.entry+risk*1.5):null,tp3=risk?(sell?Math.max(t.entry-risk*2,t.entry*0.000001):t.entry+risk*2):null,sl=risk?(sell?t.entry+risk:Math.max(t.entry-risk,t.entry*0.000001)):null;
    const pctFromEntry=v=>risk&&Number.isFinite(v)?Math.abs(v-t.entry)/t.entry*100:null;
    const fmtPct=v=>v===null||!Number.isFinite(v)?'—':v.toFixed(2);
    const cls=i===0?'gold':i===1?'silver':i===2?'bronze':'',medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':String(i+1);
