@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#080d18">
+<title>نموذج تحليل الفيوتشر المتوسط | التداول الذكي PRO</title>
+<style>
+:root{color-scheme:dark;--bg:#080d18;--panel:#111a2a;--line:#26344b;--muted:#91a0b8;--text:#f3f6fc;--green:#36d399;--red:#ff6878;--blue:#6da8ff;--gold:#e9bd4c}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#14223a 0,var(--bg) 58%);color:var(--text);font-family:Tahoma,Arial,sans-serif}main{max-width:960px;margin:auto;padding:20px 14px 44px}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.brand{font-weight:800;font-size:19px}.tag{color:#a9c7ff;border:1px solid #34527e;border-radius:20px;padding:6px 10px;font-size:12px}.intro{margin:22px 0}.intro h1{font-size:25px;margin:0 0 8px}.intro p,.muted{color:var(--muted);font-size:13px;line-height:1.8}.panel{background:linear-gradient(145deg,#131e30,#0d1523);border:1px solid var(--line);border-radius:18px;padding:16px;margin:14px 0;box-shadow:0 12px 35px #0002}.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.tf{border:1px solid var(--line);background:#0b1220;color:#d9e4f6;padding:10px 13px;border-radius:10px;cursor:pointer}.tf.active{background:#254b7b;border-color:#5c9be8;color:white}.toggle{display:flex;align-items:center;gap:9px;margin-right:auto;font-size:13px;color:#d5deed}.toggle input{accent-color:#6da8ff;width:18px;height:18px}.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.stat{background:#0b1320;border:1px solid var(--line);border-radius:13px;padding:13px}.stat small{display:block;color:var(--muted);font-size:12px;margin-bottom:8px}.stat strong{font-size:23px}.up{color:var(--green)}.down{color:var(--red)}.neutral{color:var(--blue)}.bar{height:7px;background:#263248;border-radius:10px;overflow:hidden;display:flex;margin-top:12px}.bar .buy{background:var(--green)}.bar .sell{background:var(--red)}.section-title{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:20px 2px 10px}.section-title h2{font-size:17px;margin:0}.pill{border-radius:20px;padding:5px 9px;background:#19283c;color:#b9cce7;font-size:11px}.trade{position:relative;overflow:hidden}.trade-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.rank{display:grid;place-items:center;width:34px;height:34px;border-radius:11px;background:#1b2b42;font-weight:800}.trade.gold{border-color:#b99539;box-shadow:inset 0 0 0 1px #b9953940}.trade.silver{border-color:#9aa9bb}.trade.bronze{border-color:#a66d49}.gold .rank{background:#59461b;color:#ffdc78}.silver .rank{background:#344252;color:#dce7f2}.bronze .rank{background:#4c3024;color:#f1b18b}.symbol{font-size:16px;font-weight:800}.side{font-size:12px;font-weight:800;padding:6px 10px;border-radius:8px}.buySide{background:#123d34;color:#5aebbb}.sellSide{background:#47202b;color:#ff9aa6}.score{margin-right:auto;color:#dce7f8;font-size:12px}.score b{font-size:16px;color:#a8caff}.levels{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;margin-top:15px}.level{background:#0a1220;border-radius:9px;padding:9px 7px;min-width:0}.level small{display:block;color:var(--muted);font-size:10px;margin-bottom:6px}.level b{font-size:12px;overflow-wrap:anywhere}.entry b{color:#a8caff}.target b{color:var(--green)}.stop b{color:var(--red)}.why{border-top:1px solid var(--line);margin-top:13px;padding-top:11px;color:var(--muted);font-size:12px;line-height:1.8}.foot{color:#8190a7;font-size:11px;text-align:center;margin:20px 0}.notice{border:1px dashed #50627c;color:#aebdd2;background:#0c1523;border-radius:12px;padding:12px;font-size:12px;line-height:1.8}
+@media(max-width:600px){main{padding:15px 10px 30px}.intro h1{font-size:22px}.stats{gap:7px}.stat{padding:10px}.stat strong{font-size:20px}.levels{grid-template-columns:repeat(3,minmax(0,1fr))}.level{padding:8px}.toggle{margin:5px 0 0 0;width:100%}.score{margin-right:0}.trade-head{gap:8px}}
+</style>
+</head>
+<body><main>
+<header class="top"><div class="brand">ST ◈ التداول الذكي PRO</div><span class="tag">نموذج واجهة تجريبي</span></header>
+<section class="intro"><h1>تحليل الفيوتشر — المستوى المتوسط</h1><p>توافق مرن بين طرق التحليل؛ ما نشترط اتفاقها كلها، ولا نعتبر الاختلاف البسيط سببًا كافيًا لرفض الفرصة. الأرقام أدناه أمثلة شكلية لتوضيح الواجهة وليست بيانات سوق مباشرة.</p></section>
+<section class="panel">
+<div class="controls" id="timeframes"><button class="tf active" data-tf="15m">15 دقيقة</button><button class="tf" data-tf="1h">ساعة</button><button class="tf" data-tf="4h">4 ساعات</button><button class="tf" data-tf="1d">يومي</button><button class="tf" data-tf="1w">أسبوعي</button><button class="tf" data-tf="1M">شهري</button><label class="toggle"><input id="reverse" type="checkbox"> عكس الاستراتيجية (شراء ↔ بيع)</label></div>
+</section>
+<section class="stats">
+<div class="stat"><small>الاتجاه الصاعد</small><strong class="up" id="bullCount">146</strong></div>
+<div class="stat"><small>الاتجاه الهابط</small><strong class="down" id="bearCount">230</strong></div>
+<div class="stat"><small>الفريم المختار</small><strong class="neutral" id="tfLabel">15m</strong></div>
+</section>
+<div class="bar"><span class="buy" id="buyBar" style="width:38.8%"></span><span class="sell" id="sellBar" style="width:61.2%"></span></div>
+<div class="section-title"><h2>أفضل الفرص حسب التوافق</h2><span class="pill">تحليل متوسط</span></div>
+<div id="trades"></div>
+<div class="notice">طريقة الحساب المقترحة: توافق من مجموعة طرق التحليل الفنية على نفس بيانات الشموع، مع وزن أكبر لاتجاه السعر والزخم والسيولة. النسبة تعرض عدد الطرق المؤيدة من الطرق التي أعطت قراءة صالحة؛ لا تمثل ضمانًا للربح. بيانات السوق الفعلية مطلوبة قبل اعتماد أي فرصة.</div>
+<p class="foot">نموذج واجهة فقط — غير متصل ببيانات Binance ولا ينفذ أوامر تداول.</p>
+</main>
+<script>
+const samples=[
+ {symbol:'BTCUSDT',side:'شراء',score:76,entry:'—',tp1:'—',tp2:'—',tp3:'—',sl:'—',why:'توافق متوسط بين الاتجاه والزخم؛ يلزم إدخال بيانات السوق الحية لحساب المستويات.'},
+ {symbol:'ETHUSDT',side:'بيع',score:71,entry:'—',tp1:'—',tp2:'—',tp3:'—',sl:'—',why:'ميل هابط مع اختلاف بعض طرق القياس؛ مثال توضيحي لا توصية فعلية.'},
+ {symbol:'SOLUSDT',side:'شراء',score:68,entry:'—',tp1:'—',tp2:'—',tp3:'—',sl:'—',why:'توافق مقبول وليس إجماعًا؛ المستويات لا تظهر قبل وصول بيانات موثوقة.'},
+ {symbol:'XRPUSDT',side:'بيع',score:63,entry:'—',tp1:'—',tp2:'—',tp3:'—',sl:'—',why:'توافق أقل؛ يبقى الترتيب أقل من الفرص الأقوى.'}
+];
+const tfNames={'15m':'15 دقيقة','1h':'ساعة','4h':'4 ساعات','1d':'يومي','1w':'أسبوعي','1M':'شهري'};
+let currentTf='15m';
+function render(){const reversed=document.getElementById('reverse').checked;document.getElementById('tfLabel').textContent=currentTf;document.getElementById('trades').innerHTML=samples.map((t,i)=>{const sell=(t.side==='بيع')!==reversed;const side=sell?'بيع':'شراء';const cls=i===0?'gold':i===1?'silver':i===2?'bronze':'';const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':String(i+1);return '<article class="panel trade '+cls+'"><div class="trade-head"><span class="rank">'+medal+'</span><span class="symbol">'+t.symbol+'</span><span class="side '+(sell?'sellSide':'buySide')+'">'+side+'</span><span class="score">التوافق <b>'+t.score+'%</b></span><span class="pill">'+tfNames[currentTf]+'</span></div><div class="levels"><div class="level entry"><small>الدخول</small><b>'+t.entry+'</b></div><div class="level target"><small>TP1</small><b>'+t.tp1+'</b></div><div class="level target"><small>TP2</small><b>'+t.tp2+'</b></div><div class="level target"><small>TP3</small><b>'+t.tp3+'</b></div><div class="level stop"><small>وقف الخسارة</small><b>'+t.sl+'</b></div></div><div class="why">'+t.why+'</div></article>'}).join('')}
+document.querySelectorAll('.tf').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.tf').forEach(x=>x.classList.toggle('active',x===b));currentTf=b.dataset.tf;render()}));document.getElementById('reverse').addEventListener('change',render);render();
+</script></body></html>
