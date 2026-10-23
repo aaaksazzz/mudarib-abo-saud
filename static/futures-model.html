@@ -72,13 +72,14 @@ async function refresh(){
     return {...x,entry,atr,score:quality,side,agreement,confidence,m3,m8,m20,volatilityPct};
    }catch(e){return {...x,score:Math.min(75,Math.round(50+Math.min(25,Math.abs(Number(x.change_pct))*4))),side:Number(x.change_pct)>0?'شراء':'بيع',entry:Number(x.price),atr:null,why:'مستويات الأهداف والوقف غير متاحة؛ لم تُخمن.'}}
   }));
+  rows.sort((a,b)=>Number(b.score||0)-Number(a.score||0));
   const reverse=$('reverse').checked;
   $('trades').innerHTML=rows.map((t,i)=>{
    const sell=(t.side==='بيع')!==reverse,side=sell?'بيع':'شراء';
    const risk=t.atr?Math.max(t.atr*1.2,t.entry*.002):null;
    const tp1=risk?(sell?t.entry-risk:t.entry+risk):null,tp2=risk?(sell?t.entry-risk*1.5:t.entry+risk*1.5):null,tp3=risk?(sell?t.entry-risk*2:t.entry+risk*2):null,sl=risk?(sell?t.entry+risk:t.entry-risk):null;
    const cls=i===0?'gold':i===1?'silver':i===2?'bronze':'',medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':String(i+1);
-   return '<article class="panel trade '+cls+'"><div class="trade-head"><span class="rank">'+medal+'</span><span class="symbol">'+esc(t.symbol)+'</span><span class="side '+(sell?'sellSide':'buySide')+'">'+side+'</span><span class="score">تقييم الحركة <b>'+t.score+'%</b></span><span class="pill">'+tfNames[currentTf]+'</span></div><div class="levels"><div class="level entry"><small>الدخول</small><b>'+fmt(t.entry)+'</b></div><div class="level target"><small>TP1</small><b>'+fmt(tp1)+'</b></div><div class="level target"><small>TP2</small><b>'+fmt(tp2)+'</b></div><div class="level target"><small>TP3</small><b>'+fmt(tp3)+'</b></div><div class="level stop"><small>وقف الخسارة</small><b>'+fmt(sl)+'</b></div></div><div class="why">'+(t.atr?'مستويات تقديرية محسوبة من متوسط نطاق آخر 14 شمعة فعلية.':'تعذر حساب نطاق الشموع؛ عرضنا سعر المصدر دون اختراع أهداف أو وقف.')+' التغيّر في آخر شمعة: '+Number(t.change_pct).toFixed(2)+'%. هذا تقييم حركة مبسط وليس توافق 200 طريقة.</div></article>';
+   return '<article class="panel trade '+cls+'"><div class="trade-head"><span class="rank">'+medal+'</span><span class="symbol">'+esc(t.symbol)+'</span><span class="side '+(sell?'sellSide':'buySide')+'">'+side+'</span><span class="score">درجة التوافق <b>'+t.score+'/100</b></span><span class="pill">'+tfNames[currentTf]+'</span></div><div class="levels"><div class="level entry"><small>الدخول</small><b>'+fmt(t.entry)+'</b></div><div class="level target"><small>TP1</small><b>'+fmt(tp1)+'</b></div><div class="level target"><small>TP2</small><b>'+fmt(tp2)+'</b></div><div class="level target"><small>TP3</small><b>'+fmt(tp3)+'</b></div><div class="level stop"><small>وقف الخسارة</small><b>'+fmt(sl)+'</b></div></div><div class="why">'+(t.atr?'مستويات تقديرية من متوسط نطاق آخر 14 شمعة فعلية.':'تعذر حساب نطاق الشموع؛ لم نختلق أهدافًا أو وقفًا.')+' التغيّر في آخر شمعة: '+Number(t.change_pct).toFixed(2)+'%. هذا تقييم حركة مبسط وليس توافق 200 طريقة.</div></article>';
   }).join('');
   $('liveStatus').textContent='مباشر من بيانات الشموع · فُحص '+(data.assets_scanned??items.length)+' أصل من عينة محدودة ('+(data.assets_available??'—')+' متاح) · '+new Date().toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit'});
  }catch(e){$('bullCount').textContent='—';$('bearCount').textContent='—';$('trades').innerHTML='<div class="panel muted">تعذر تحميل بيانات الفيوتشر: '+esc(e.message||'خطأ غير معروف')+'. لم نعرض فرصًا وهمية.</div>';$('liveStatus').textContent='المصدر غير متاح حالياً';}
@@ -89,4 +90,5 @@ $('reverse').addEventListener('change',refresh);
 const note=document.createElement('p');note.id='liveStatus';note.className='muted';note.textContent='جاري الاتصال ببيانات الفيوتشر…';document.querySelector('.section-title').after(note);
 document.querySelector('.intro p').textContent='يفحص عينة محدودة من عقود الفيوتشر ثم يقيّم اتجاه الشموع والزخم وثبات الحركة قبل ترتيب الفرص. النتيجة درجة توافق داخلية وليست احتمال ربح أو ضمانًا.';
 refresh();
+setInterval(()=>{if(document.visibilityState==='visible'&&!busy)refresh()},180000);
 </script></body></html>
