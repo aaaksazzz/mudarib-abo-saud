@@ -1621,6 +1621,65 @@ def candle_data(market: str, symbol: str, interval: str, force_refresh: bool = F
     return [dict(candle) for candle in copied]
 
 
+@app.get("/api/market-timeframe/{market}")
+def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int = Query(2000, ge=1, le=2000)):
+    """Rank a bounded liquid sample using actual OHLC candles for the selected timeframe."""
+    market = (market or "").lower().strip()
+    allowed = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
+    if market not in allowed or interval not in INTERVALS:
+        return JSONResponse({"ok": False, "live": False, "items": [],
+                             "message": "السوق أو الفريم غير مدعوم."}, status_code=422)
+    try:
+        quotes = market_data(market, limit=2000)
+        if isinstance(quotes, JSONResponse):
+            return quotes
+        if not isinstance(quotes, dict) or not quotes.get("items"):
+            return JSONResponse({"ok": False, "live": False, "items": [],
+                                 "message": "بيانات السوق الأساسية غير متاحة."}, status_code=503)
+        raw = quotes["items"]
+        # Candle retrieval is network intensive; scan the 60 most liquid available assets,
+        # then show the actual number scanned instead of implying full-universe coverage.
+        candidates = sorted(raw, key=lambda x: float(x.get("quote_volume") or x.get("dollar_volume") or x.get("volume") or 0), reverse=True)[:60]
+        results = []
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            jobs = {pool.submit(candle_data, market, str(item.get("symbol") or ""), interval): item
+                    for item in candidates if item.get("symbol")}
+            for future in as_completed(jobs):
+                quote = jobs[future]
+                try:
+                    candles = future.result()
+                    if len(candles) < 2:
+                        continue
+                    previous = float(candles[-2]["close"])
+                    latest = float(candles[-1]["close"])
+                    if previous <= 0 or latest <= 0 or not math.isfinite(previous) or not math.isfinite(latest):
+                        continue
+                    row = dict(quote)
+                    row["price"] = latest
+                    row["change_pct"] = (latest - previous) / previous * 100
+                    row["candle_time"] = candles[-1].get("time")
+                    row["interval"] = interval
+                    row["candle_sample"] = len(candles)
+                    results.append(row)
+                except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError, KeyError):
+                    continue
+        if not results:
+            return JSONResponse({"ok": False, "live": False, "items": [],
+                                 "market": market, "interval": interval,
+                                 "message": "تعذر جلب شموع هذا الفريم من المصدر؛ لم نستخدم تغير 24 ساعة بديلًا."}, status_code=503)
+        results.sort(key=lambda x: abs(float(x.get("change_pct") or 0)), reverse=True)
+        return {"ok": True, "live": True, "market": market, "interval": interval,
+                "provider": quotes.get("provider", "Public market data"),
+                "assets_available": len(raw), "assets_scanned": len(results),
+                "sample_limit": len(candidates), "updated_at": int(time.time()),
+                "items": results[:limit],
+                "message": "الترتيب مبني على إغلاق الشموع الفعلية للفريم المحدد. تم فحص عينة سيولة محدودة لتفادي تعطيل الخدمة."}
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError, KeyError) as exc:
+        print(f"Market timeframe scan unavailable for {market}/{interval}: {type(exc).__name__}")
+        return JSONResponse({"ok": False, "live": False, "items": [],
+                             "message": "تعذر إكمال فحص الشموع لهذا الفريم الآن."}, status_code=503)
+
+
 @app.get("/api/market-direction")
 def market_direction(market: str = Query("spot")):
     """Summarize current public quote changes for one market; this is not a trade signal."""
