@@ -40,6 +40,7 @@
 <header class="topbar">
   <button class="icon-button" id="menuToggle" aria-label="فتح القائمة" aria-expanded="false">☰</button>
   <a class="brand" href="/" aria-label="التداول الذكي PRO - الرئيسية"><span class="brand-mark">ST</span><span><strong>التداول الذكي <b>PRO</b></strong><small>تحليل الأسواق · بيانات مستقلة لكل سوق</small></span></a>
+  <button class="theme-toggle" id="themeToggle" type="button" aria-label="تبديل الوضع الليلي" title="الوضع الليلي">🌙 <span>الوضع الليلي</span></button>
   <span class="status-pill" id="serviceStatus"><i></i> جاهز</span>
 </header>
 <div class="backdrop" id="backdrop" hidden></div>
@@ -95,7 +96,22 @@
       </div>
     </section>
   </div>
+  <section class="home-language-panel" aria-label="إعدادات الموقع"><div><strong>🌐 لغة الموقع</strong><small>اختر اللغة المناسبة لك</small></div><select id="siteLanguage" aria-label="تغيير لغة الموقع"><option value="ar">العربية</option><option value="en">English</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="pt">Português</option><option value="tr">Türkçe</option><option value="hi">हिन्दी</option><option value="id">Bahasa Indonesia</option><option value="zh">简体中文</option></select></section>
   <footer class="site-footer"><span>التداول الذكي PRO</span><span>الأسعار العامة قد تكون متأخرة. الإشارات ليست ضمانًا للربح.</span><a href="/admin">الإدارة</a></footer>
 </main>
+
+<script>
+(function(){
+  var themeButton=document.getElementById('themeToggle');
+  var languageSelect=document.getElementById('siteLanguage');
+  function setTheme(theme){document.body.classList.toggle('light-mode',theme==='light');if(themeButton){themeButton.innerHTML=theme==='light'?'☀️ <span>الوضع النهاري</span>':'🌙 <span>الوضع الليلي</span>';themeButton.setAttribute('aria-pressed',theme!=='light');}try{localStorage.setItem('stp-theme',theme);}catch(e){}}
+  var savedTheme='dark';try{savedTheme=localStorage.getItem('stp-theme')||'dark';}catch(e){}setTheme(savedTheme);
+  if(themeButton)themeButton.addEventListener('click',function(){setTheme(document.body.classList.contains('light-mode')?'dark':'light');});
+  var supported=['ar','en','es','fr','de','pt','tr','hi','id','zh'];var current='ar';
+  try{var match=document.cookie.match(/(?:^|; )googtrans=([^;]+)/);if(match){var parts=decodeURIComponent(match[1]).split('/');if(parts.length>2&&supported.includes(parts[2]))current=parts[2];}}catch(e){}
+  if(languageSelect)languageSelect.value=current;
+  if(languageSelect)languageSelect.addEventListener('change',function(){var lang=languageSelect.value;if(!supported.includes(lang))return;var value='/ar/'+lang;document.cookie='googtrans='+value+';path=/;max-age=31536000;SameSite=Lax';document.cookie='googtrans='+value+';path=/;domain='+location.hostname+';max-age=31536000;SameSite=Lax';location.reload();});
+})();
+</script>
 </body>
 </html>
