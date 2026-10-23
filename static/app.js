@@ -517,10 +517,7 @@
     if(path==="/"){renderHome();return}
     if(marketKey){renderMarketPage(marketKey);return}
     if(path==="/market-direction"){renderMarketDirection();return}
-    if(path==="/results"){await renderResults();return}
     if(path==="/news"){renderNews().catch(err=>{view.innerHTML=pageHeader("أخبار الأسواق","تعذر تحميل الأخبار.","الأخبار")+empty("تعذر عرض الأخبار",err.message)});return}
-    if(path==="/analysis"){renderAnalysis();return}
-    if(path==="/tasi-analysis"){renderTasi().catch(err=>{view.innerHTML=pageHeader("تحليل تاسي العام","تعذر تحميل التحليل.","السوق السعودي")+empty("تعذر عرض تحليل تاسي",err.message)});return}
     if(path==="/account"){renderAccount();return}
     if(path==="/admin"){renderAdmin();return}
     // Blog pages are server-rendered and should never be replaced by this shell.
