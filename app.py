@@ -130,9 +130,30 @@ async def site_password_gate(request: Request, call_next):
             "spot", "futures", "alpha", "contracts", "us", "saudi", "forex"
         } else None
 
+    protected_market = (
+        path in {"/market-direction", "/radar", "/gold", "/tasi-analysis"} or
+        path.startswith("/markets/") or path.startswith("/market/") or
+        path.startswith("/api/market/") or path.startswith("/api/signals/") or
+        path in {"/api/market-direction", "/api/public-ideas", "/api/trade-chart-data",
+                 "/api/universe-counts", "/api/tasi/analysis", "/api/futures-pro/signals"}
+    )
+    if protected_market and not _has_market_access(request):
+        detail = "افتح الأسواق باشتراك فعّال أو بعرض المشاركة المجاني لمدة 24 ساعة."
+        if path.startswith("/api/"):
+            return JSONResponse({"ok": False, "detail": detail, "code": "MEMBERSHIP_REQUIRED"}, status_code=403)
+        return HTMLResponse(
+            "<!doctype html><html lang='ar' dir='rtl'><meta charset='utf-8'>"
+            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+            "<title>فتح الأسواق | التداول الذكي PRO</title>"
+            "<body style='background:#080d18;color:#edf3ff;font:16px Tahoma;padding:28px'>"
+            "<h1>الأسواق للمشتركين</h1><p>" + detail + "</p>"
+            "<a style='color:#8dbaff' href='/account'>تسجيل الدخول والاشتراك</a></body></html>",
+            status_code=403
+        )
+
     if section_id:
         section_mode = _section_settings().get(section_id, "public")
-        if section_mode in {"closed", "subscription"}:
+        if section_mode == "closed" or (section_mode == "subscription" and not _has_market_access(request)):
             detail = "هذا القسم مغلق مؤقتًا." if section_mode == "closed" else "هذا القسم مخصص للمشتركين."
             if path.startswith("/api/"):
                 return JSONResponse({"ok": False, "detail": detail}, status_code=403)
@@ -141,7 +162,7 @@ async def site_password_gate(request: Request, call_next):
                 "<meta name='viewport' content='width=device-width,initial-scale=1'>"
                 "<title>القسم غير متاح | التداول الذكي PRO</title>"
                 "<body style='background:#080d18;color:#edf3ff;font:16px Tahoma;padding:28px'>"
-                "<h1>القسم غير متاح حاليًا</h1><p>" + detail + "</p><a style='color:#8dbaff' href='/'>العودة للرئيسية</a></body></html>",
+                "<h1>القسم غير متاح حاليًا</h1><p>" + detail + "</p><a style='color:#8dbaff' href='/account'>فتح الحساب</a></body></html>",
                 status_code=403
             )
 
