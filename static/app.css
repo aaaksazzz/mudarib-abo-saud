@@ -142,3 +142,17 @@
 .trade-live-tracker span{font-size:11px;color:#8be4bf;font-weight:800}
 .trade-live-tracker strong{font-size:13px;color:#e8f7f1}
 .trade-live-tracker small{font-size:11px;color:var(--muted);direction:rtl}
+
+
+/* Cross-market momentum scanner */
+.surge-results-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px}
+.surge-results-grid .signal-card{border:1px solid var(--line,#203247);border-radius:14px;background:var(--panel,#0b1626);padding:14px;min-width:0}
+.surge-results-grid .signal-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.surge-results-grid .signal-rank{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;border-radius:7px;background:#17324a;color:#a9c7e4;font-size:11px}
+.surge-results-grid .signal-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.surge-results-grid .signal-metrics>div{min-width:0;display:flex;flex-direction:column;gap:5px}
+.surge-results-grid .signal-metrics small,.surge-results-grid .muted{color:var(--muted,#91a8c0);font-size:11px}
+.surge-results-grid .signal-metrics strong{font-size:13px;overflow-wrap:anywhere}
+.surge-results-grid .signal-progress{height:5px;background:#162a3b;border-radius:99px;overflow:hidden;margin:12px 0 8px}
+.surge-results-grid .signal-progress span{display:block;height:100%;background:linear-gradient(90deg,#169d79,#a3e96c)}
+.surge-results-grid .signal-reasons{font-size:12px;line-height:1.7;color:var(--muted,#91a8c0);margin:0 0 7px}
