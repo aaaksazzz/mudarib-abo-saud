@@ -262,6 +262,153 @@ def _read_account_session(token):
         return dict(row) if row and row["active"] else None
     except (ValueError, TypeError, OSError, RuntimeError, sqlite3.Error): return None
 
+
+# Membership and payment verification (USDT on TRON / TRC20).
+PAYMENT_WALLET = "TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6"
+USDT_TRC20_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+PLAN_DAYS = {"1m": 30, "2m": 60, "3m": 90, "6m": 180, "1y": 365}
+PLAN_USD = {"1m": 30, "2m": 60, "3m": 90, "6m": 140, "1y": 280}
+PLAN_LABELS = {"1m": "شهر واحد", "2m": "شهرين", "3m": "3 أشهر", "6m": "6 أشهر", "1y": "سنة"}
+PAYMENT_LOCK = threading.RLock()
+
+def _billing_db():
+    con = _auth_db()
+    con.execute("""CREATE TABLE IF NOT EXISTS subscriptions (
+        user_id INTEGER PRIMARY KEY, expires_at INTEGER NOT NULL, source TEXT NOT NULL,
+        updated_at INTEGER NOT NULL, FOREIGN KEY(user_id) REFERENCES users(id))""")
+    con.execute("""CREATE TABLE IF NOT EXISTS payment_intents (
+        id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, plan_id TEXT NOT NULL,
+        amount_cents INTEGER NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending', txid TEXT UNIQUE,
+        FOREIGN KEY(user_id) REFERENCES users(id))""")
+    con.execute("CREATE INDEX IF NOT EXISTS idx_payment_intents_status ON payment_intents(status,created_at)")
+    con.commit()
+    return con
+
+def _member_for_request(request):
+    return _read_account_session(request.cookies.get("account_session", ""))
+
+def _subscription_expiry(user_id):
+    with _billing_db() as con:
+        row = con.execute("SELECT expires_at FROM subscriptions WHERE user_id=?", (int(user_id),)).fetchone()
+    return int(row["expires_at"]) if row else 0
+
+def _has_market_access(request):
+    user = _member_for_request(request)
+    if not user: return False
+    now = int(time.time())
+    if _subscription_expiry(user["id"]) > now: return True
+    with _billing_db() as con:
+        row = con.execute("SELECT 1 FROM payment_intents WHERE user_id=? AND status='share_granted' AND expires_at>? LIMIT 1", (user["id"], now)).fetchone()
+    return bool(row)
+
+def _grant_subscription(con, user_id, days, source):
+    now = int(time.time())
+    row = con.execute("SELECT expires_at FROM subscriptions WHERE user_id=?", (user_id,)).fetchone()
+    base = max(now, int(row["expires_at"]) if row else now)
+    expiry = base + int(days) * 86400
+    con.execute("INSERT INTO subscriptions(user_id,expires_at,source,updated_at) VALUES(?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET expires_at=excluded.expires_at,source=excluded.source,updated_at=excluded.updated_at", (user_id, expiry, source, now))
+    return expiry
+
+def _scan_usdt_payments(user_id):
+    # Scan confirmed incoming USDT TRC20 transfers and match a short-lived unique payment amount.
+    with _billing_db() as con:
+        intents = con.execute("SELECT * FROM payment_intents WHERE user_id=? AND status='pending' AND expires_at>? ORDER BY created_at DESC", (user_id, int(time.time()))).fetchall()
+    if not intents: return
+    url = "https://api.trongrid.io/v1/accounts/" + PAYMENT_WALLET + "/transactions/trc20?only_confirmed=true&only_to=true&limit=200&order_by=block_timestamp,desc&contract_address=" + USDT_TRC20_CONTRACT
+    req = urllib.request.Request(url, headers={"Accept":"application/json", **({"TRON-PRO-API-KEY": os.getenv("TRONGRID_API_KEY","")} if os.getenv("TRONGRID_API_KEY") else {})})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return
+    transfers = payload.get("data", []) if isinstance(payload, dict) else []
+    for tx in transfers:
+        if tx.get("to") != PAYMENT_WALLET or tx.get("type") != "Transfer" or tx.get("success") is False: continue
+        info = tx.get("token_info") or {}
+        if info.get("address") != USDT_TRC20_CONTRACT or int(info.get("decimals", 0) or 0) != 6: continue
+        try:
+            cents = int((int(tx.get("value", "0")) + 5000) // 10000)
+            stamp = int(tx.get("block_timestamp", 0)) // 1000
+            txid = str(tx.get("transaction_id", ""))
+        except (ValueError, TypeError): continue
+        if not txid: continue
+        for intent in intents:
+            if stamp < int(intent["created_at"]) or stamp > int(intent["expires_at"]): continue
+            if cents != int(intent["amount_cents"]): continue
+            with PAYMENT_LOCK, _billing_db() as con:
+                already = con.execute("SELECT 1 FROM payment_intents WHERE txid=?", (txid,)).fetchone()
+                fresh = con.execute("SELECT * FROM payment_intents WHERE id=? AND status='pending' AND expires_at>?", (intent["id"], int(time.time()))).fetchone()
+                if already or not fresh: break
+                expiry = _grant_subscription(con, user_id, PLAN_DAYS[fresh["plan_id"]], "trc20")
+                con.execute("UPDATE payment_intents SET status='paid',txid=? WHERE id=?", (txid, fresh["id"]))
+                con.commit()
+            break
+
+@app.get("/api/billing/plans")
+async def billing_plans(request: Request):
+    user = _member_for_request(request)
+    if not user: raise HTTPException(status_code=401, detail="سجّل الدخول أولًا.")
+    expiry = _subscription_expiry(user["id"])
+    with _billing_db() as con:
+        share = con.execute("SELECT expires_at FROM payment_intents WHERE user_id=? AND status='share_granted' ORDER BY expires_at DESC LIMIT 1", (user["id"],)).fetchone()
+        has_shared = con.execute("SELECT 1 FROM payment_intents WHERE user_id=? AND status='share_granted' LIMIT 1", (user["id"],)).fetchone()
+        pending = con.execute("SELECT id,plan_id,amount_cents,expires_at FROM payment_intents WHERE user_id=? AND status='pending' AND expires_at>? ORDER BY created_at DESC LIMIT 1", (user["id"], int(time.time()))).fetchone()
+    return {"ok":True,"wallet":PAYMENT_WALLET,"network":"TRC20","subscription_expires_at":expiry,"share_expires_at":int(share["expires_at"]) if share and int(share["expires_at"])>int(time.time()) else 0,"share_used":bool(has_shared),"plans":[{"id":key,"label":PLAN_LABELS[key],"base_usd":PLAN_USD[key],"days":PLAN_DAYS[key]} for key in PLAN_USD],"pending":{"id":pending["id"],"plan_id":pending["plan_id"],"amount_usd":pending["amount_cents"]/100,"expires_at":pending["expires_at"]} if pending else None}
+
+@app.post("/api/billing/create")
+async def billing_create(request: Request):
+    user = _member_for_request(request)
+    if not user: raise HTTPException(status_code=401, detail="سجّل الدخول أولًا.")
+    try: data = await request.json()
+    except Exception: raise HTTPException(status_code=400, detail="اختر مدة الاشتراك.")
+    plan = str(data.get("plan_id", ""))
+    if plan not in PLAN_USD: raise HTTPException(status_code=400, detail="مدة الاشتراك غير صحيحة.")
+    now = int(time.time())
+    with PAYMENT_LOCK, _billing_db() as con:
+        existing = con.execute("SELECT id,plan_id,amount_cents,expires_at FROM payment_intents WHERE user_id=? AND status='pending' AND expires_at>? ORDER BY created_at DESC LIMIT 1", (user["id"],now)).fetchone()
+        if existing:
+            if existing["plan_id"] != plan: raise HTTPException(status_code=409, detail="لديك طلب دفع قائم. انتظر انتهاءه أو أكمل الدفع بالمبلغ الظاهر.")
+            return {"ok":True,"id":existing["id"],"plan_id":plan,"amount_usd":existing["amount_cents"]/100,"expires_at":existing["expires_at"],"wallet":PAYMENT_WALLET}
+        used = {int(x["amount_cents"]) for x in con.execute("SELECT amount_cents FROM payment_intents WHERE status='pending' AND expires_at>?",(now,)).fetchall()}
+        options = [PLAN_USD[plan]*100 + cents for cents in range(1,100)]
+        available = [amount for amount in options if amount not in used]
+        if not available: raise HTTPException(status_code=503, detail="طلبات الدفع كثيرة حاليًا، حاول بعد قليل.")
+        amount_cents = secrets.choice(available)
+        intent_id = secrets.token_urlsafe(18)
+        expiry = now + 7200
+        con.execute("INSERT INTO payment_intents(id,user_id,plan_id,amount_cents,created_at,expires_at,status) VALUES(?,?,?,?,?,?,?)",(intent_id,user["id"],plan,amount_cents,now,expiry,"pending"))
+        con.commit()
+    return {"ok":True,"id":intent_id,"plan_id":plan,"amount_usd":amount_cents/100,"expires_at":expiry,"wallet":PAYMENT_WALLET}
+
+@app.get("/api/billing/status")
+async def billing_status(request: Request):
+    user = _member_for_request(request)
+    if not user: raise HTTPException(status_code=401, detail="سجّل الدخول أولًا.")
+    _scan_usdt_payments(user["id"])
+    now = int(time.time())
+    expiry = _subscription_expiry(user["id"])
+    with _billing_db() as con:
+        share = con.execute("SELECT expires_at FROM payment_intents WHERE user_id=? AND status='share_granted' ORDER BY expires_at DESC LIMIT 1", (user["id"],)).fetchone()
+        paid = con.execute("SELECT plan_id,txid FROM payment_intents WHERE user_id=? AND status='paid' ORDER BY created_at DESC LIMIT 1", (user["id"],)).fetchone()
+        pending = con.execute("SELECT id,plan_id,amount_cents,expires_at FROM payment_intents WHERE user_id=? AND status='pending' AND expires_at>? ORDER BY created_at DESC LIMIT 1", (user["id"],now)).fetchone()
+    share_expiry = int(share["expires_at"]) if share else 0
+    return {"ok":True,"has_access":expiry>now or share_expiry>now,"subscription_expires_at":expiry,"share_expires_at":share_expiry,"paid_plan":PLAN_LABELS.get(paid["plan_id"]) if paid else None,"pending":{"id":pending["id"],"plan_id":pending["plan_id"],"amount_usd":pending["amount_cents"]/100,"expires_at":pending["expires_at"]} if pending else None}
+
+@app.post("/api/billing/share")
+async def billing_share(request: Request):
+    user = _member_for_request(request)
+    if not user: raise HTTPException(status_code=401, detail="سجّل الدخول أولًا.")
+    now = int(time.time())
+    with PAYMENT_LOCK, _billing_db() as con:
+        used = con.execute("SELECT 1 FROM payment_intents WHERE user_id=? AND status='share_granted' LIMIT 1",(user["id"],)).fetchone()
+        if used: raise HTTPException(status_code=409, detail="تم استخدام العرض المجاني لهذا الحساب مسبقًا.")
+        expiry = now + 86400
+        con.execute("INSERT INTO payment_intents(id,user_id,plan_id,amount_cents,created_at,expires_at,status) VALUES(?,?,?,?,?,?,?)",(secrets.token_urlsafe(18),user["id"],"share",0,now,expiry,"share_granted"))
+        con.commit()
+    return {"ok":True,"share_expires_at":expiry,"note":"العرض المجاني لمرة واحدة لكل حساب."}
+
+
 def _set_account_cookie(response, user_id):
     age = 1209600
     response.set_cookie("account_session", _make_account_session(user_id, int(time.time()) + age), httponly=True, secure=True, samesite="lax", path="/", max_age=age)
