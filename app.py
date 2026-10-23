@@ -967,11 +967,14 @@ def robots_txt():
 @app.get("/sitemap.xml", response_class=HTMLResponse)
 def sitemap_xml():
     from xml.sax.saxutils import escape as xml_escape
-    urls = [(SEO_BASE_URL + "/", "daily", "1.0"), (SEO_BASE_URL + "/blog", "weekly", "0.9")] + [(SEO_BASE_URL + p, "daily", "0.8") for p in ["/markets/spot", "/markets/futures", "/markets/contracts", "/markets/us-stocks", "/markets/saudi", "/markets/forex-gold", "/markets/alpha", "/tasi-analysis", "/analysis", "/results", "/news"]]
-    urls.extend((SEO_BASE_URL + "/blog/" + p["slug"], "monthly", "0.7") for p in SEO_POSTS)
+    urls = [(SEO_BASE_URL + "/", "weekly", "1.0"), (SEO_BASE_URL + "/blog", "weekly", "0.9")] + [(SEO_BASE_URL + p, "daily", "0.8") for p in ["/market-direction", "/markets/spot", "/markets/futures", "/markets/contracts", "/markets/us-stocks", "/markets/saudi", "/markets/forex-gold", "/markets/alpha", "/tasi-analysis", "/analysis", "/results", "/news"]]
+    urls.extend((SEO_BASE_URL + "/blog/" + str(p.get("slug") or p.get("id")), "monthly", "0.7") for p in SEO_POSTS if p.get("slug") or p.get("id"))
     urls.extend((SEO_BASE_URL + "/blog/" + slug, "monthly", "0.6") for slug in ["risk-management-stop-loss", "ema50-ema200-trend-filter", "breakout-retest-price-action", "liquidity-sweep-vs-market-structure", "risk-reward-win-rate", "backtest-trading-strategy"])
     urls.extend((SEO_BASE_URL + "/blog/" + str(p.get("slug") or p.get("id")), "monthly", "0.6") for p in read_json_file(ARTICLES_PATH, []) if p.get("slug") or p.get("id"))
-    items = "".join("<url><loc>" + xml_escape(url) + "</loc><changefreq>" + freq + "</changefreq><priority>" + priority + "</priority></url>" for url, freq, priority in urls)
+    unique_urls = {}
+    for url, freq, priority in urls:
+        unique_urls[url] = (url, freq, priority)
+    items = "".join("<url><loc>" + xml_escape(url) + "</loc><changefreq>" + freq + "</changefreq><priority>" + priority + "</priority></url>" for url, freq, priority in unique_urls.values())
     xml = '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + items + "</urlset>"
     return HTMLResponse(xml, media_type="application/xml")
 
@@ -1075,15 +1078,15 @@ def section_page(request: Request):
     # Give each shareable section its own canonical URL and search snippet.
     # The SPA shell is shared, but search engines must not see every section as "/".
     section_seo = {
-        "/market-direction": ("توجهات الأسواق | التداول الذكي PRO", "عرض اتجاهات الأسواق حسب البيانات العامة المتاحة لكل سوق."),
+        "/market-direction": ("اتجاهات الأسواق اليوم | صعود وهبوط العملات والأسهم", "تابع اتجاهات العملات الرقمية والأسهم السعودية والأمريكية والفوركس والذهب حسب بيانات السوق المتاحة."),
         "/analysis": ("مناهج التحليل الفني | التداول الذكي PRO", "مكتبة مناهج التحليل الفني: حركة السعر، SMC، ICT، السيولة، النماذج، وإدارة المخاطر."),
         "/tasi-analysis": ("تحليل المؤشر العام لتاسي | التداول الذكي PRO", "تحليل اتجاه المؤشر العام للسوق السعودي تاسي، تغيراته ومستوياته الفنية عبر عدة أطر زمنية."),
-        "/markets/spot": ("سوق السبوت | التداول الذكي PRO", "متابعة أسعار Binance Spot وفرص السوق حسب الفريم، مع توضيح أن الإشارات آلية أولية وليست ضمانًا للربح."),
-        "/markets/futures": ("فيوتشر | التداول الذكي PRO", "اتجاه Binance Futures وعدد العملات الصاعدة والهابطة وفرص قصيرة الأجل مع أهداف ووقف خسارة عند اكتمال البيانات."),
+        "/markets/spot": ("تحليل Binance Spot | أسعار العملات الرقمية سبوت", "تابع أسعار عملات Binance Spot وتغيّرها والسيولة المتاحة، مع أدوات رصد السوق ومحتوى تعليمي لإدارة مخاطر التداول."),
+        "/markets/futures": ("تحليل Binance Futures | متابعة سوق العقود الرقمية", "تابع حركة العملات في Binance Futures واتجاه السوق والأصول الصاعدة والهابطة وبيانات الأسعار المتاحة. التداول بالرافعة ينطوي على مخاطر مرتفعة."),
         "/markets/contracts": ("العقود الأمريكية | التداول الذكي PRO", "متابعة العقود الأمريكية مثل S&P 500 وناسداك والذهب والنفط من أسعار عامة قد تكون متأخرة."),
-        "/markets/us-stocks": ("الأسهم الأمريكية | التداول الذكي PRO", "متابعة مجموعة من الأسهم الأمريكية وأسعارها العامة؛ قد تكون البيانات متأخرة وليست أسعار تنفيذ."),
-        "/markets/saudi": ("السوق السعودي | التداول الذكي PRO", "متابعة مجموعة من الأسهم السعودية وأسعارها العامة مع تنبيه إلى توقيت البيانات ومخاطر التداول."),
-        "/markets/forex-gold": ("الفوركس والذهب | التداول الذكي PRO", "متابعة أزواج الفوركس والذهب والفضة من أسعار عامة قد تكون متأخرة."),
+        "/markets/us-stocks": ("تحليل الأسهم الأمريكية | متابعة الأسعار واتجاه السوق", "تابع حركة الأسهم الأمريكية وأسعارها العامة واتجاه السوق. قد تكون البيانات متأخرة ولا تمثل أسعار تنفيذ مباشرة."),
+        "/markets/saudi": ("تحليل السوق السعودي | متابعة الأسهم وتاسي", "تابع الأسهم السعودية ومؤشر تاسي واتجاهات السوق والبيانات المتاحة، مع محتوى تعليمي عن التحليل وإدارة المخاطر."),
+        "/markets/forex-gold": ("تحليل الفوركس والذهب | متابعة العملات والمعادن", "تابع أزواج الفوركس والذهب والفضة واتجاهات الأسعار المتاحة مع محتوى تعليمي عن المخاطر وإدارة رأس المال."),
         "/markets/alpha": ("سوق Binance Alpha | التداول الذكي PRO", "حالة تغطية سوق Binance Alpha ومصادر البيانات المتاحة؛ لا تعرض المنصة أسعارًا غير متصلة أو تقديرية."),
         "/radar": ("رادار الأسواق | التداول الذكي PRO", "رصد الأسواق وفرص التحليل الفني عبر صفحات مستقلة، مع بيانات عامة وحدود واضحة لدقة الإشارات."),
         "/gold": ("الصفقات الذهبية | التداول الذكي PRO", "صفقات مرتبة وفق معايير الفحص المتاحة، مع الدخول والأهداف ووقف الخسارة عند توفر إشارة صالحة."),
