@@ -29,14 +29,54 @@
 <p class="foot">نموذج واجهة فقط — غير متصل ببيانات Binance ولا ينفذ أوامر تداول.</p>
 </main>
 <script>
-const samples=[
- {symbol:'BTCUSDT',side:'شراء',score:76,entry:'—',tp1:'—',tp2:'—',tp3:'—',sl:'—',why:'توافق متوسط بين الاتجاه والزخم؛ يلزم إدخال بيانات السوق الحية لحساب المستويات.'},
- {symbol:'ETHUSDT',side:'بيع',score:71,entry:'—',tp1:'—',tp2:'—',tp3:'—',sl:'—',why:'ميل هابط مع اختلاف بعض طرق القياس؛ مثال توضيحي لا توصية فعلية.'},
- {symbol:'SOLUSDT',side:'شراء',score:68,entry:'—',tp1:'—',tp2:'—',tp3:'—',sl:'—',why:'توافق مقبول وليس إجماعًا؛ المستويات لا تظهر قبل وصول بيانات موثوقة.'},
- {symbol:'XRPUSDT',side:'بيع',score:63,entry:'—',tp1:'—',tp2:'—',tp3:'—',sl:'—',why:'توافق أقل؛ يبقى الترتيب أقل من الفرص الأقوى.'}
-];
 const tfNames={'15m':'15 دقيقة','1h':'ساعة','4h':'4 ساعات','1d':'يومي','1w':'أسبوعي','1M':'شهري'};
-let currentTf='15m';
-function render(){const reversed=document.getElementById('reverse').checked;document.getElementById('tfLabel').textContent=currentTf;document.getElementById('trades').innerHTML=samples.map((t,i)=>{const sell=(t.side==='بيع')!==reversed;const side=sell?'بيع':'شراء';const cls=i===0?'gold':i===1?'silver':i===2?'bronze':'';const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':String(i+1);return '<article class="panel trade '+cls+'"><div class="trade-head"><span class="rank">'+medal+'</span><span class="symbol">'+t.symbol+'</span><span class="side '+(sell?'sellSide':'buySide')+'">'+side+'</span><span class="score">التوافق <b>'+t.score+'%</b></span><span class="pill">'+tfNames[currentTf]+'</span></div><div class="levels"><div class="level entry"><small>الدخول</small><b>'+t.entry+'</b></div><div class="level target"><small>TP1</small><b>'+t.tp1+'</b></div><div class="level target"><small>TP2</small><b>'+t.tp2+'</b></div><div class="level target"><small>TP3</small><b>'+t.tp3+'</b></div><div class="level stop"><small>وقف الخسارة</small><b>'+t.sl+'</b></div></div><div class="why">'+t.why+'</div></article>'}).join('')}
-document.querySelectorAll('.tf').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.tf').forEach(x=>x.classList.toggle('active',x===b));currentTf=b.dataset.tf;render()}));document.getElementById('reverse').addEventListener('change',render);render();
+let currentTf='15m',busy=false;
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=v=>Number.isFinite(Number(v))?Number(v).toLocaleString('en-US',{maximumSignificantDigits:8}):'—';
+async function get(url){const r=await fetch(url,{headers:{'Accept':'application/json'}});const d=await r.json();if(!r.ok||d.ok===false)throw Error(d.message||'البيانات غير متاحة');return d}
+async function refresh(){
+ if(busy)return;busy=true;
+ $('trades').innerHTML='<div class="panel muted">جاري فحص عينة العقود الفعلية للفريم المختار…</div>';
+ $('bullCount').textContent='…';$('bearCount').textContent='…';
+ try{
+  const data=await get('/api/market-timeframe/futures?interval='+encodeURIComponent(currentTf)+'&limit=30');
+  const items=(data.items||[]).filter(x=>x&&x.symbol&&Number(x.price)>0&&Number.isFinite(Number(x.change_pct)));
+  if(!items.length)throw Error('ما وصلت بيانات شموع صالحة لهذا الفريم.');
+  const up=items.filter(x=>Number(x.change_pct)>0).length,down=items.filter(x=>Number(x.change_pct)<0).length,total=items.length;
+  $('bullCount').textContent=up;$('bearCount').textContent=down;$('tfLabel').textContent=currentTf;
+  $('buyBar').style.width=(up/total*100)+'%';$('sellBar').style.width=(down/total*100)+'%';
+  $('sampleNote')?.remove();
+  const ranked=items.filter(x=>Number(x.change_pct)!==0).sort((a,b)=>Math.abs(Number(b.change_pct))-Math.abs(Number(a.change_pct))).slice(0,4);
+  const rows=await Promise.all(ranked.map(async x=>{
+   try{
+    const c=await get('/api/trade-chart-data?market=futures&symbol='+encodeURIComponent(x.symbol)+'&interval='+encodeURIComponent(currentTf));
+    const candles=(c.items||[]).filter(k=>['open','high','low','close'].every(z=>Number.isFinite(Number(k[z]))&&Number(k[z])>0));
+    if(candles.length<15)throw Error('شموع غير كافية');
+    const entry=Number(candles[candles.length-1].close);
+    const recent=candles.slice(-14);
+    const atr=recent.reduce((sum,k)=>sum+(Number(k.high)-Number(k.low)),0)/recent.length;
+    if(!(atr>0&&entry>0))throw Error('نطاق غير صالح');
+    const rawScore=Math.min(85,Math.round(50+Math.min(25,Math.abs(Number(x.change_pct))*4)+Math.min(10,(atr/entry)*1000)));
+    const naturalSide=Number(x.change_pct)>0?'شراء':'بيع';
+    return {...x,entry,atr,score:rawScore,side:naturalSide};
+   }catch(e){return {...x,score:Math.min(75,Math.round(50+Math.min(25,Math.abs(Number(x.change_pct))*4))),side:Number(x.change_pct)>0?'شراء':'بيع',entry:Number(x.price),atr:null,why:'مستويات الأهداف والوقف غير متاحة؛ لم تُخمن.'}}
+  }));
+  const reverse=$('reverse').checked;
+  $('trades').innerHTML=rows.map((t,i)=>{
+   const sell=(t.side==='بيع')!==reverse,side=sell?'بيع':'شراء';
+   const risk=t.atr?Math.max(t.atr*1.2,t.entry*.002):null;
+   const tp1=risk?(sell?t.entry-risk:t.entry+risk):null,tp2=risk?(sell?t.entry-risk*1.5:t.entry+risk*1.5):null,tp3=risk?(sell?t.entry-risk*2:t.entry+risk*2):null,sl=risk?(sell?t.entry+risk:t.entry-risk):null;
+   const cls=i===0?'gold':i===1?'silver':i===2?'bronze':'',medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':String(i+1);
+   return '<article class="panel trade '+cls+'"><div class="trade-head"><span class="rank">'+medal+'</span><span class="symbol">'+esc(t.symbol)+'</span><span class="side '+(sell?'sellSide':'buySide')+'">'+side+'</span><span class="score">تقييم الحركة <b>'+t.score+'%</b></span><span class="pill">'+tfNames[currentTf]+'</span></div><div class="levels"><div class="level entry"><small>الدخول</small><b>'+fmt(t.entry)+'</b></div><div class="level target"><small>TP1</small><b>'+fmt(tp1)+'</b></div><div class="level target"><small>TP2</small><b>'+fmt(tp2)+'</b></div><div class="level target"><small>TP3</small><b>'+fmt(tp3)+'</b></div><div class="level stop"><small>وقف الخسارة</small><b>'+fmt(sl)+'</b></div></div><div class="why">'+(t.atr?'مستويات تقديرية محسوبة من متوسط نطاق آخر 14 شمعة فعلية.':'تعذر حساب نطاق الشموع؛ عرضنا سعر المصدر دون اختراع أهداف أو وقف.')+' التغيّر في آخر شمعة: '+Number(t.change_pct).toFixed(2)+'%. هذا تقييم حركة مبسط وليس توافق 200 طريقة.</div></article>';
+  }).join('');
+  $('liveStatus').textContent='مباشر من بيانات الشموع · فُحص '+(data.assets_scanned??items.length)+' أصل من عينة محدودة ('+(data.assets_available??'—')+' متاح) · '+new Date().toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit'});
+ }catch(e){$('bullCount').textContent='—';$('bearCount').textContent='—';$('trades').innerHTML='<div class="panel muted">تعذر تحميل بيانات الفيوتشر: '+esc(e.message||'خطأ غير معروف')+'. لم نعرض فرصًا وهمية.</div>';$('liveStatus').textContent='المصدر غير متاح حالياً';}
+ finally{busy=false}
+}
+document.querySelectorAll('.tf').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.tf').forEach(x=>x.classList.toggle('active',x===b));currentTf=b.dataset.tf;$('tfLabel').textContent=currentTf;refresh()}));
+$('reverse').addEventListener('change',refresh);
+const note=document.createElement('p');note.id='liveStatus';note.className='muted';note.textContent='جاري الاتصال ببيانات الفيوتشر…';document.querySelector('.section-title').after(note);
+document.querySelector('.intro p').textContent='يعرض هذا النموذج عينة فعلية محدودة من عقود الفيوتشر حسب الفريم. التوافق هنا تقييم حركة مبسط وليس تحليل 200 طريقة، ولا توجد ضمانات ربح.';
+refresh();
 </script></body></html>
