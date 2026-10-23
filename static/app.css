@@ -201,3 +201,14 @@ body.light-mode .home-language-panel select{background:#f6f8fc;color:#172338;bor
 body.light-mode .drawer{background:#fff;color:#172338}
 body.light-mode .site-footer{border-color:var(--line)}
 @media(max-width:520px){.theme-toggle{width:40px;padding:0;font-size:17px}.theme-toggle span{display:none}.home-language-panel{align-items:flex-start;flex-direction:column}.home-language-panel select{max-width:none;width:100%}.topbar{gap:7px}}
+
+/* Fix theme contrast and ensure Google Translate UI stays out of the layout */
+body.light-mode .pro-hero h1,body.light-mode .pro-hero h1 span{color:#172338}
+body.light-mode .pro-hero p,body.light-mode .pro-hero .hero-foot,body.light-mode .pro-hero .eyebrow{color:#42546b}
+body.light-mode .pro-principles>div{background:#fff;border-color:var(--line)}
+body.light-mode .pro-principles strong{color:#172338}
+body.light-mode .pro-principles small{color:#53657c}
+body.light-mode .section-heading h2,body.light-mode .section-heading p{color:#172338}
+body.light-mode .feature-card,body.light-mode .market-card{color:#172338}
+.goog-te-banner-frame,.goog-te-balloon-frame,#goog-gt-tt,.goog-te-gadget{display:none!important}
+body{top:0!important}
