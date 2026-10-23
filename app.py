@@ -274,7 +274,7 @@ async def account_register(request: Request):
     email = str(data.get("email", "")).strip().lower()[:254]
     password = str(data.get("password", ""))
     if len(name) < 2: raise HTTPException(status_code=400, detail="اكتب الاسم (حرفين على الأقل).")
-    if not re.fullmatch(r"[^\\s@]+@[^\\s@]+\\.[^\\s@]+", email): raise HTTPException(status_code=400, detail="البريد الإلكتروني غير صحيح.")
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email): raise HTTPException(status_code=400, detail="البريد الإلكتروني غير صحيح.")
     if len(password) < 10 or len(password) > 128 or not re.search(r"[A-Za-z]", password) or not re.search(r"[0-9]", password):
         raise HTTPException(status_code=400, detail="كلمة المرور لازم تكون 10 أحرف على الأقل وتحتوي حرفًا ورقمًا.")
     try:
