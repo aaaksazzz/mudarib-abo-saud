@@ -414,17 +414,24 @@
       const guestCard=document.createElement("div");
       guestCard.className="feature-card";
       guestCard.style.marginBottom="16px";
-      guestCard.innerHTML='<strong>🎁 تجربة مجانية للزوار — بدون حساب</strong><p class="muted">شارك رابط الموقع لتفعيل دخول الأسواق لمدة 24 ساعة على هذا المتصفح.</p><button class="button primary" type="button" id="guestShareUnlock">مشاركة الرابط وفتح يوم مجاني</button>';
+      guestCard.innerHTML='<strong>🎁 شارك موقع التداول الذكي PRO على مواقع التواصل الاجتماعي واحصل على يوم مجاني (24 ساعة) — بدون تسجيل حساب.</strong><p class="muted">اضغط مشاركة، واختر منصة التواصل الاجتماعي المناسبة. بعد إكمال المشاركة سنفعّل التجربة على هذا المتصفح.</p><button class="button primary" type="button" id="guestShareUnlock">📢 شارك الموقع واحصل على يوم مجاني</button>';
       area.prepend(guestCard);
       $("guestShareUnlock").addEventListener("click",async()=>{
-        const btn=$("guestShareUnlock");btn.disabled=true;msg.textContent="جاري تجهيز رابط المشاركة…";
+        const btn=$("guestShareUnlock");btn.disabled=true;msg.textContent="افتح قائمة المشاركة واختر تطبيق تواصل اجتماعي.";
         try{
-          if(navigator.share){await navigator.share({title:"التداول الذكي PRO",text:"تابع الأسواق عبر التداول الذكي PRO",url:location.origin});}
-          else {try{await navigator.clipboard.writeText(location.origin);}catch(_){msg.textContent="انسخ الرابط وشاركه: "+location.origin;return;}}
+          if(navigator.share){
+            await navigator.share({title:"التداول الذكي PRO",text:"أشارككم موقع التداول الذكي PRO لمتابعة الأسواق: ",url:location.origin});
+          }else{
+            try{await navigator.clipboard.writeText("التداول الذكي PRO — تابع الأسواق: "+location.origin);}
+            catch(_){msg.textContent="انسخ الرابط وشاركه على مواقع التواصل: "+location.origin;return;}
+            msg.textContent="نُسخ رابط الموقع. جاري تفعيل التجربة…";
+          }
           const d=await getJSON("/api/billing/guest-share",{method:"POST"});
-          msg.textContent="تم تفعيل دخول الزائر لمدة 24 ساعة حتى "+fmtDate(d.share_expires_at)+".";
-        }catch(err){if(err.name!=="AbortError")msg.textContent=err.message||"تعذر تفعيل التجربة؛ حاول مرة أخرى."}
-        finally{btn.disabled=false;}
+          msg.textContent=d.already_active?"تجربتك المجانية مفعّلة بالفعل حتى "+fmtDate(d.share_expires_at)+".":"✅ تم تفعيل يومك المجاني حتى "+fmtDate(d.share_expires_at)+". افتح أحد أقسام الأسواق الآن.";
+        }catch(err){
+          if(err.name==="AbortError"){msg.textContent="تم إلغاء المشاركة، ولم يُفعّل اليوم المجاني. اضغط الزر وأكمل المشاركة.";}
+          else{msg.textContent=(err.message||"تعذر تفعيل التجربة.")+" إذا استمرت المشكلة، أرسل هذه الرسالة للدعم.";}
+        }finally{btn.disabled=false;}
       });
       area.querySelector("form").addEventListener("submit",async e=>{
         e.preventDefault();const form=e.currentTarget,button=form.querySelector("button[type=submit]"),data=Object.fromEntries(new FormData(form).entries());button.disabled=true;msg.textContent="جاري التحقق…";
