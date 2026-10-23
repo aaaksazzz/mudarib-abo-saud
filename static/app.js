@@ -411,6 +411,21 @@
       area.innerHTML=mode==="register"
         ? '<form id="customerAuthForm" class="form-grid"><label class="field">الاسم<input name="name" autocomplete="name" minlength="2" maxlength="80" required></label><label class="field">البريد الإلكتروني<input name="email" type="email" autocomplete="email" required maxlength="254"></label><label class="field">كلمة المرور<input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="128" required><small class="muted">10 أحرف على الأقل وتشمل حرفًا ورقمًا.</small></label><div><button class="button primary" type="submit">إنشاء الحساب</button></div></form>'
         : '<form id="customerAuthForm" class="form-grid"><label class="field">البريد الإلكتروني<input name="email" type="email" autocomplete="email" required></label><label class="field">كلمة المرور<input name="password" type="password" autocomplete="current-password" required></label><div><button class="button primary" type="submit">دخول</button></div></form>';
+      const guestCard=document.createElement("div");
+      guestCard.className="feature-card";
+      guestCard.style.marginBottom="16px";
+      guestCard.innerHTML='<strong>🎁 تجربة مجانية للزوار — بدون حساب</strong><p class="muted">شارك رابط الموقع لتفعيل دخول الأسواق لمدة 24 ساعة على هذا المتصفح.</p><button class="button primary" type="button" id="guestShareUnlock">مشاركة الرابط وفتح يوم مجاني</button>';
+      area.prepend(guestCard);
+      $("guestShareUnlock").addEventListener("click",async()=>{
+        const btn=$("guestShareUnlock");btn.disabled=true;msg.textContent="جاري تجهيز رابط المشاركة…";
+        try{
+          if(navigator.share){await navigator.share({title:"التداول الذكي PRO",text:"تابع الأسواق عبر التداول الذكي PRO",url:location.origin});}
+          else {try{await navigator.clipboard.writeText(location.origin);}catch(_){msg.textContent="انسخ الرابط وشاركه: "+location.origin;return;}}
+          const d=await getJSON("/api/billing/guest-share",{method:"POST"});
+          msg.textContent="تم تفعيل دخول الزائر لمدة 24 ساعة حتى "+fmtDate(d.share_expires_at)+".";
+        }catch(err){if(err.name!=="AbortError")msg.textContent=err.message||"تعذر تفعيل التجربة؛ حاول مرة أخرى."}
+        finally{btn.disabled=false;}
+      });
       area.querySelector("form").addEventListener("submit",async e=>{
         e.preventDefault();const form=e.currentTarget,button=form.querySelector("button[type=submit]"),data=Object.fromEntries(new FormData(form).entries());button.disabled=true;msg.textContent="جاري التحقق…";
         try{const d=await getJSON(mode==="register"?"/api/auth/register":"/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});msg.textContent="تم "+(mode==="register"?"إنشاء الحساب":"تسجيل الدخول")+" بنجاح.";await showBilling(d.user);}
