@@ -402,35 +402,73 @@
     await load();
   }
   async function renderAccount() {
-    view.innerHTML=pageHeader("الحساب","أنشئ حسابك أو سجّل الدخول.","الحساب")+
+    view.innerHTML=pageHeader("الحساب والاشتراك","افتح جميع الأسواق عبر اشتراك أو تجربة مشاركة لمدة 24 ساعة.","الحساب")+
       '<section class="panel"><div class="toolbar"><button class="button primary" id="accountLoginTab">تسجيل الدخول</button><button class="button" id="accountRegisterTab">إنشاء حساب</button></div><div id="accountAuthArea" style="margin-top:16px"></div><div id="accountAuthMessage" class="muted" role="status" style="margin-top:12px"></div></section>';
     const area=$("accountAuthArea"), msg=$("accountAuthMessage");
-    function show(mode) {
+    function showAuth(mode) {
       $("accountLoginTab").classList.toggle("primary",mode==="login");
       $("accountRegisterTab").classList.toggle("primary",mode==="register");
       area.innerHTML=mode==="register"
         ? '<form id="customerAuthForm" class="form-grid"><label class="field">الاسم<input name="name" autocomplete="name" minlength="2" maxlength="80" required></label><label class="field">البريد الإلكتروني<input name="email" type="email" autocomplete="email" required maxlength="254"></label><label class="field">كلمة المرور<input name="password" type="password" autocomplete="new-password" minlength="10" maxlength="128" required><small class="muted">10 أحرف على الأقل وتشمل حرفًا ورقمًا.</small></label><div><button class="button primary" type="submit">إنشاء الحساب</button></div></form>'
         : '<form id="customerAuthForm" class="form-grid"><label class="field">البريد الإلكتروني<input name="email" type="email" autocomplete="email" required></label><label class="field">كلمة المرور<input name="password" type="password" autocomplete="current-password" required></label><div><button class="button primary" type="submit">دخول</button></div></form>';
       area.querySelector("form").addEventListener("submit",async e=>{
-        e.preventDefault();const form=e.currentTarget,button=form.querySelector("button[type=submit]");
-        const data=Object.fromEntries(new FormData(form).entries());button.disabled=true;msg.textContent="جاري التحقق…";
-        try {
-          const d=await getJSON(mode==="register"?"/api/auth/register":"/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
-          msg.textContent="تم "+(mode==="register"?"إنشاء الحساب":"تسجيل الدخول")+" بنجاح.";
-          showProfile(d.user);
-        } catch(err) {msg.textContent=err.message||"تعذر إكمال الطلب.";}
-        finally {if(button.isConnected)button.disabled=false;}
+        e.preventDefault();const form=e.currentTarget,button=form.querySelector("button[type=submit]"),data=Object.fromEntries(new FormData(form).entries());button.disabled=true;msg.textContent="جاري التحقق…";
+        try{const d=await getJSON(mode==="register"?"/api/auth/register":"/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});msg.textContent="تم "+(mode==="register"?"إنشاء الحساب":"تسجيل الدخول")+" بنجاح.";await showBilling(d.user);}
+        catch(err){msg.textContent=err.message||"تعذر إكمال الطلب."}finally{if(button.isConnected)button.disabled=false;}
       });
     }
-    function showProfile(user) {
+    function fmtDate(ts){return ts?new Date(ts*1000).toLocaleString("ar-SA",{dateStyle:"medium",timeStyle:"short"}):"غير مفعّل";}
+    async function showBilling(user) {
       $("accountLoginTab").classList.remove("primary");$("accountRegisterTab").classList.remove("primary");
-      area.innerHTML='<div class="feature-grid"><div class="feature-card"><small>الاسم</small><strong>'+esc(user.name)+'</strong></div><div class="feature-card"><small>البريد الإلكتروني</small><strong>'+esc(user.email)+'</strong></div></div><button class="button" id="accountLogout" style="margin-top:14px">تسجيل الخروج</button>';
-      $("accountLogout").addEventListener("click",async()=>{try{await getJSON("/api/auth/logout",{method:"POST"});msg.textContent="تم تسجيل الخروج.";show("login");}catch(err){msg.textContent=err.message;}});
+      area.innerHTML='<div id="billingProfile" class="feature-grid"></div><div id="billingState" class="notice" style="margin-top:12px">جاري فحص الاشتراك…</div><h2 style="margin:22px 0 10px">اختر الاشتراك</h2><div id="billingPlans" class="feature-grid"></div><div id="billingPayment" style="margin-top:14px"></div><h2 style="margin:22px 0 10px">تجربة المشاركة المجانية</h2><p class="muted">شارك رابط الموقع؛ العرض مرة واحدة لكل حساب ولمدة 24 ساعة. لا يمكن للموقع التأكد من نشر منشور عام على كل منصة.</p><button class="button" id="shareUnlock">مشاركة الرابط وطلب يوم مجاني</button><h2 style="margin:22px 0 10px">تحويل من Binance</h2><div class="feature-card"><strong>Binance Pay UID: 28191866</strong><p class="muted">التحقق الآلي من تحويل UID يحتاج ربط Binance Pay Merchant API ومفاتيح التاجر. حاليًا التفعيل الآلي متاح لتحويل USDT عبر شبكة TRC20 إلى عنوان المحفظة أدناه.</p></div><button class="button" id="customerLogout" style="margin-top:18px">تسجيل الخروج</button>';
+      $("billingProfile").innerHTML='<div class="feature-card"><small>الاسم</small><strong>'+esc(user.name)+'</strong></div><div class="feature-card"><small>البريد الإلكتروني</small><strong>'+esc(user.email)+'</strong></div>';
+      const plansOut=$("billingPlans"),payOut=$("billingPayment"),state=$("billingState");
+      let plansData=null;
+      async function refreshBilling(silent=false) {
+        try{
+          const d=await getJSON("/api/billing/status");
+          state.textContent=d.subscription_expires_at>Math.floor(Date.now()/1000)?"اشتراكك فعّال حتى "+fmtDate(d.subscription_expires_at):(d.share_expires_at>Math.floor(Date.now()/1000)?"الأسواق مفتوحة مجانًا حتى "+fmtDate(d.share_expires_at):"لا يوجد اشتراك فعّال حاليًا.");
+          if(d.pending){
+            payOut.innerHTML='<div class="feature-card"><strong>بانتظار الدفع · '+esc(d.pending.amount_usd.toFixed(2))+' USDT</strong><p class="muted">حوّل المبلغ الظاهر بالضبط إلى عنوان TRC20 أدناه. يجري فحص التحويلات المؤكدة تلقائيًا.</p><p><strong>انتهاء الطلب:</strong> '+esc(fmtDate(d.pending.expires_at))+'</p><button class="button" id="copyWalletAgain">نسخ عنوان المحفظة</button></div>';
+            $("copyWalletAgain").addEventListener("click",async()=>{try{await navigator.clipboard.writeText(plansData.wallet);msg.textContent="تم نسخ عنوان المحفظة."}catch(_){msg.textContent=plansData.wallet}});
+          }
+          if(d.has_access) document.querySelectorAll("[data-membership-lock]").forEach(x=>x.classList.remove("hidden"));
+          if(!silent && d.paid_plan) msg.textContent="تم تأكيد الدفع وتفعيل "+d.paid_plan+" تلقائيًا.";
+          if(d.pending && !silent) msg.textContent="نراقب التحويلات المؤكدة تلقائيًا. أبقِ الصفحة مفتوحة حتى يظهر التفعيل.";
+        }catch(err){if(!silent)state.textContent="تعذر فحص حالة الدفع الآن: "+(err.message||"حاول لاحقًا");}
+      }
+      try {
+        plansData=await getJSON("/api/billing/plans");
+        plansOut.innerHTML=plansData.plans.map(p=>'<div class="feature-card"><small>'+esc(p.label)+'</small><strong>'+p.base_usd+' USDT</strong><p class="muted">'+p.days+' يومًا</p><button class="button primary" data-plan="'+esc(p.id)+'">اختيار الخطة</button></div>').join("");
+        plansOut.querySelectorAll("[data-plan]").forEach(btn=>btn.addEventListener("click",async()=>{
+          btn.disabled=true;msg.textContent="جاري تجهيز طلب الدفع…";
+          try{
+            const intent=await getJSON("/api/billing/create",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({plan_id:btn.dataset.plan})});
+            payOut.innerHTML='<div class="feature-card"><small>المبلغ المطلوب بالضبط</small><strong>'+intent.amount_usd.toFixed(2)+' USDT</strong><p class="muted">شبكة TRON (TRC20) فقط. يجب أن يصل المبلغ الظاهر نفسه إلى المحفظة خلال ساعتين؛ لا تستخدم شبكة أخرى.</p><p style="overflow-wrap:anywhere"><strong>المحفظة:</strong><br>'+esc(intent.wallet)+'</p><button class="button primary" id="copyPayDetails">نسخ عنوان المحفظة</button><p class="muted">بعد وصول التحويل وتأكيده على الشبكة، يفعّل الموقع الاشتراك تلقائيًا. قد يستغرق ظهور التحويل بعض الوقت.</p></div>';
+            $("copyPayDetails").addEventListener("click",async()=>{try{await navigator.clipboard.writeText(intent.wallet);msg.textContent="تم نسخ العنوان. حوّل المبلغ المحدد بالضبط."}catch(_){msg.textContent="انسخ العنوان يدويًا: "+intent.wallet}});
+            msg.textContent="تم إنشاء طلب الدفع. المبلغ الدقيق "+intent.amount_usd.toFixed(2)+" USDT.";
+            await refreshBilling(true);
+          }catch(err){msg.textContent=err.message||"تعذر إنشاء طلب الدفع."}finally{btn.disabled=false;}
+        }));
+      }catch(err){plansOut.textContent="تعذر تحميل خطط الاشتراك: "+err.message}
+      $("shareUnlock").addEventListener("click",async()=>{
+        const shareData={title:"التداول الذكي PRO",text:"تابع الأسواق عبر التداول الذكي PRO",url:location.origin};
+        try{
+          if(navigator.share) await navigator.share(shareData);
+          else {await navigator.clipboard.writeText(location.origin);msg.textContent="تم نسخ رابط الموقع. سيتم تفعيل العرض لهذا الحساب.";}
+          const d=await getJSON("/api/billing/share",{method:"POST"});
+          msg.textContent="تم تفعيل يوم مجاني حتى "+fmtDate(d.share_expires_at)+".";
+          await refreshBilling(true);
+        }catch(err){if(err.name!=="AbortError")msg.textContent=err.message||"لم يتم تفعيل العرض. جرّب مرة أخرى."}
+      });
+      $("customerLogout").addEventListener("click",async()=>{try{await getJSON("/api/auth/logout",{method:"POST"});msg.textContent="تم تسجيل الخروج.";showAuth("login");}catch(err){msg.textContent=err.message}});
+      await refreshBilling();
+      if(window.__billingPollTimer) clearInterval(window.__billingPollTimer);
+      window.__billingPollTimer=setInterval(()=>refreshBilling(true),15000);
     }
-    $("accountLoginTab").addEventListener("click",()=>{msg.textContent="";show("login");});
-    $("accountRegisterTab").addEventListener("click",()=>{msg.textContent="";show("register");});
-    try {const d=await getJSON("/api/auth/me");showProfile(d.user);msg.textContent="أنت مسجّل الدخول.";}
-    catch(_) {show("login");}
+    $("accountLoginTab").addEventListener("click",()=>{msg.textContent="";showAuth("login");});
+    $("accountRegisterTab").addEventListener("click",()=>{msg.textContent="";showAuth("register");});
+    try{const d=await getJSON("/api/auth/me");await showBilling(d.user);msg.textContent="أنت مسجّل الدخول.";}catch(_){showAuth("login");}
   }
   function renderAdmin() {
     view.innerHTML=pageHeader("إدارة المنصة","لوحة محمية للمشرف. صلاحيات الإدارة تتحقق من الخادم.","الإدارة")+
