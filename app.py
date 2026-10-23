@@ -349,7 +349,9 @@ def _scan_usdt_payments(user_id):
         info = tx.get("token_info") or {}
         if info.get("address") != USDT_TRC20_CONTRACT or int(info.get("decimals", 0) or 0) != 6: continue
         try:
-            cents = int((int(tx.get("value", "0")) + 5000) // 10000)
+            raw_value = int(tx.get("value", "0"))
+            cents = raw_value // 10000
+            if raw_value % 10000 != 0: continue
             stamp = int(tx.get("block_timestamp", 0)) // 1000
             txid = str(tx.get("transaction_id", ""))
         except (ValueError, TypeError): continue
