@@ -303,6 +303,9 @@ def _billing_db():
         status TEXT NOT NULL DEFAULT 'pending', txid TEXT UNIQUE,
         FOREIGN KEY(user_id) REFERENCES users(id))""")
     con.execute("CREATE INDEX IF NOT EXISTS idx_payment_intents_status ON payment_intents(status,created_at)")
+    con.execute("""CREATE TABLE IF NOT EXISTS guest_trials (
+        token_hash TEXT PRIMARY KEY, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
+    )""")
     con.commit()
     return con
 
@@ -315,12 +318,18 @@ def _subscription_expiry(user_id):
     return int(row["expires_at"]) if row else 0
 
 def _has_market_access(request):
-    user = _member_for_request(request)
-    if not user: return False
     now = int(time.time())
-    if _subscription_expiry(user["id"]) > now: return True
+    user = _member_for_request(request)
+    if user:
+        if _subscription_expiry(user["id"]) > now: return True
+        with _billing_db() as con:
+            row = con.execute("SELECT 1 FROM payment_intents WHERE user_id=? AND status='share_granted' AND expires_at>? LIMIT 1", (user["id"], now)).fetchone()
+        if row: return True
+    guest_token = request.cookies.get("guest_trial", "")
+    if not guest_token: return False
+    guest_hash = hashlib.sha256(guest_token.encode("utf-8")).hexdigest()
     with _billing_db() as con:
-        row = con.execute("SELECT 1 FROM payment_intents WHERE user_id=? AND status='share_granted' AND expires_at>? LIMIT 1", (user["id"], now)).fetchone()
+        row = con.execute("SELECT 1 FROM guest_trials WHERE token_hash=? AND expires_at>? LIMIT 1", (guest_hash, now)).fetchone()
     return bool(row)
 
 def _grant_subscription(con, user_id, days, source):
@@ -417,6 +426,28 @@ async def billing_status(request: Request):
         pending = con.execute("SELECT id,plan_id,amount_cents,expires_at FROM payment_intents WHERE user_id=? AND status='pending' AND expires_at>? ORDER BY created_at DESC LIMIT 1", (user["id"],now)).fetchone()
     share_expiry = int(share["expires_at"]) if share else 0
     return {"ok":True,"has_access":expiry>now or share_expiry>now,"subscription_expires_at":expiry,"share_expires_at":share_expiry,"paid_plan":PLAN_LABELS.get(paid["plan_id"]) if paid else None,"pending":{"id":pending["id"],"plan_id":pending["plan_id"],"amount_usd":pending["amount_cents"]/100,"expires_at":pending["expires_at"]} if pending else None}
+
+@app.post("/api/billing/guest-share")
+async def billing_guest_share(request: Request):
+    now = int(time.time())
+    existing_token = request.cookies.get("guest_trial", "")
+    existing_hash = hashlib.sha256(existing_token.encode("utf-8")).hexdigest() if existing_token else ""
+    with PAYMENT_LOCK, _billing_db() as con:
+        existing = con.execute("SELECT expires_at FROM guest_trials WHERE token_hash=?", (existing_hash,)).fetchone() if existing_hash else None
+        if existing:
+            expiry = int(existing["expires_at"])
+            if expiry > now:
+                return {"ok": True, "share_expires_at": expiry, "already_active": True}
+            raise HTTPException(status_code=409, detail="تم استخدام التجربة المجانية لهذا المتصفح مسبقًا.")
+        token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        expiry = now + 86400
+        con.execute("INSERT INTO guest_trials(token_hash,created_at,expires_at) VALUES(?,?,?)", (token_hash, now, expiry))
+        con.commit()
+    response = JSONResponse({"ok": True, "share_expires_at": expiry, "note": "تجربة الزائر لمدة 24 ساعة."})
+    response.set_cookie("guest_trial", token, max_age=86400, httponly=True, secure=True, samesite="lax", path="/")
+    return response
+
 
 @app.post("/api/billing/share")
 async def billing_share(request: Request):
