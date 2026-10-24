@@ -33,7 +33,7 @@
 const tfNames={'15m':'15 دقيقة','1h':'ساعة','4h':'4 ساعات','1d':'يومي','1w':'أسبوعي','1M':'شهري'};
 const tfMillis={'15m':900000,'1h':3600000,'4h':14400000,'1d':86400000,'1w':604800000,'1M':2592000000};
 const SIGNAL_LIFETIME_MS=15*60*1000;
-const PAGE_BUILD='futures-model-refresh-20261024-v3';
+const PAGE_BUILD='futures-model-refresh-20261024-v4';
 let currentTf='15m',busy=false;
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -97,7 +97,7 @@ async function refresh(){
   }))).filter(t=>t&&t.atr&&Number(t.entry)>0&&Number(t.marketPrice)>0);
   rows.sort((a,b)=>Number(b.score||0)-Number(a.score||0));
   rows.splice(3); // عرض أفضل ثلاث فرص فقط بعد تحليل الشموع، وليس قبل التحقق من صلاحيتها
-  const reverse=true; // عكس الاستراتيجية ثابت دائمًا؛ لا يوجد تحكم من الواجهة.
+  const reverse=false; // رجوع للاتجاه الأصلي قبل عكس الاستراتيجية.
   const isMissed=(t)=>{const sell=(t.side==='بيع')!==reverse,live=Number(t.marketPrice),entry=Number(t.entry);if(!(live>0&&entry>0))return false;const tolerance=Math.max((Number(t.atr)||0)*0.15,entry*0.001);return sell?live<entry-tolerance:live>entry+tolerance;};
   const missedRows=rows.filter(isMissed),activeRows=rows.filter(t=>!isMissed(t));
   $('trades').innerHTML=(missedRows.length?'<div class="notice missed-note">تم استبعاد '+missedRows.length+' فرصة لأن السعر تجاوز نقطة الدخول؛ لا تعرض كصفقات نشطة. يتم التحقق من السعر الحالي قبل عرض مستويات الصفقة.</div>':'')+(activeRows.length?activeRows.map((t,i)=>{
