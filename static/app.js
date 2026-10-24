@@ -429,8 +429,10 @@
             catch(_){msg.textContent="انسخ الرابط وشاركه على مواقع التواصل: "+location.origin;return;}
             msg.textContent="نُسخ رابط الموقع. جاري تفعيل التجربة…";
           }
+          msg.textContent="تمت المشاركة. انتظر 30 ثانية لتفعيل 24 ساعة مجانية إضافية…";
+          await new Promise(resolve=>setTimeout(resolve,30000));
           const d=await getJSON("/api/billing/guest-share",{method:"POST"});
-          msg.textContent=d.already_active?"تجربتك المجانية مفعّلة بالفعل حتى "+fmtDate(d.share_expires_at)+".":"✅ تم تفعيل يومك المجاني حتى "+fmtDate(d.share_expires_at)+". افتح أحد أقسام الأسواق الآن.";
+          msg.textContent="✅ تم تفعيل 24 ساعة مجانية حتى "+fmtDate(d.share_expires_at)+". تقدر تكرر المشاركة لتجديد المدة.";
         }catch(err){
           if(err.name==="AbortError"){msg.textContent="تم إلغاء المشاركة، ولم يُفعّل اليوم المجاني. اضغط الزر وأكمل المشاركة.";}
           else{msg.textContent=(err.message||"تعذر تفعيل التجربة.")+" إذا استمرت المشكلة، أرسل هذه الرسالة للدعم.";}
@@ -445,7 +447,7 @@
     function fmtDate(ts){return ts?new Date(ts*1000).toLocaleString("ar-SA",{dateStyle:"medium",timeStyle:"short"}):"غير مفعّل";}
     async function showBilling(user) {
       $("accountLoginTab").classList.remove("primary");$("accountRegisterTab").classList.remove("primary");
-      area.innerHTML='<div id="billingProfile" class="feature-grid"></div><div id="billingState" class="notice" style="margin-top:12px">جاري فحص الاشتراك…</div><h2 style="margin:22px 0 10px">اختر الاشتراك</h2><div id="billingPlans" class="feature-grid"></div><div id="billingPayment" style="margin-top:14px"></div><h2 style="margin:22px 0 10px">تجربة المشاركة المجانية</h2><p class="muted">شارك رابط الموقع؛ العرض مرة واحدة لكل حساب ولمدة 24 ساعة. لا يمكن للموقع التأكد من نشر منشور عام على كل منصة.</p><button class="button" id="shareUnlock">مشاركة الرابط وطلب يوم مجاني</button><h2 style="margin:22px 0 10px">تحويل من Binance</h2><div class="feature-card"><strong>Binance Pay UID: 28191866</strong><p class="muted">التحقق الآلي من تحويل UID يحتاج ربط Binance Pay Merchant API ومفاتيح التاجر. حاليًا التفعيل الآلي متاح لتحويل USDT عبر شبكة TRC20 إلى عنوان المحفظة أدناه.</p></div><button class="button" id="customerLogout" style="margin-top:18px">تسجيل الخروج</button>';
+      area.innerHTML='<div id="billingProfile" class="feature-grid"></div><div id="billingState" class="notice" style="margin-top:12px">جاري فحص الاشتراك…</div><h2 style="margin:22px 0 10px">اختر الاشتراك</h2><div id="billingPlans" class="feature-grid"></div><div id="billingPayment" style="margin-top:14px"></div><h2 style="margin:22px 0 10px">تجربة المشاركة المجانية</h2><p class="muted">كل مرة تشارك فيها الرابط تمنحك 24 ساعة مجانية إضافية. بعد المشاركة انتظر 30 ثانية للتفعيل. لا يمكن للموقع التأكد من نشر منشور عام على كل منصة.</p><button class="button" id="shareUnlock">مشاركة الموقع وتجديد 24 ساعة مجانية</button><h2 style="margin:22px 0 10px">تحويل من Binance</h2><div class="feature-card"><strong>Binance Pay UID: 28191866</strong><p class="muted">التحقق الآلي من تحويل UID يحتاج ربط Binance Pay Merchant API ومفاتيح التاجر. حاليًا التفعيل الآلي متاح لتحويل USDT عبر شبكة TRC20 إلى عنوان المحفظة أدناه.</p></div><button class="button" id="customerLogout" style="margin-top:18px">تسجيل الخروج</button>';
       $("billingProfile").innerHTML='<div class="feature-card"><small>الاسم</small><strong>'+esc(user.name)+'</strong></div><div class="feature-card"><small>البريد الإلكتروني</small><strong>'+esc(user.email)+'</strong></div>';
       const plansOut=$("billingPlans"),payOut=$("billingPayment"),state=$("billingState");
       let plansData=null;
@@ -481,8 +483,10 @@
         try{
           if(navigator.share) await navigator.share(shareData);
           else {await navigator.clipboard.writeText(location.origin);msg.textContent="تم نسخ رابط الموقع. سيتم تفعيل العرض لهذا الحساب.";}
+          msg.textContent="تمت المشاركة. انتظر 30 ثانية لتجديد 24 ساعة مجانية…";
+          await new Promise(resolve=>setTimeout(resolve,30000));
           const d=await getJSON("/api/billing/share",{method:"POST"});
-          msg.textContent="تم تفعيل يوم مجاني حتى "+fmtDate(d.share_expires_at)+".";
+          msg.textContent="تم تجديد الوصول المجاني لمدة 24 ساعة حتى "+fmtDate(d.share_expires_at)+".";
           await refreshBilling(true);
         }catch(err){if(err.name!=="AbortError")msg.textContent=err.message||"لم يتم تفعيل العرض. جرّب مرة أخرى."}
       });
