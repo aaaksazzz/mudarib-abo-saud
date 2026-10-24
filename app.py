@@ -813,7 +813,10 @@ def _fetch_market_tickers_uncached(market):
         symbol = str(item.get("symbol", ""))
         if not symbol.endswith("USDT"):
             continue
-        if market == "futures" and symbol not in crypto_futures:
+        # The USD-M futures ticker endpoint already returns futures contracts.
+        # If exchangeInfo is temporarily blocked/unavailable on a host, do not
+        # discard the entire market just because the optional universe lookup is empty.
+        if market == "futures" and crypto_futures and symbol not in crypto_futures:
             continue
         base = symbol[:-4]
         if base in STABLES:
