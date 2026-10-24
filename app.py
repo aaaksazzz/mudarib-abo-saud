@@ -144,18 +144,17 @@ async def site_password_gate(request: Request, call_next):
     if protected_market and not _has_market_access(request):
         detail = "افتح الأسواق باشتراك فعّال أو بعرض المشاركة المجاني لمدة 24 ساعة."
         if path.startswith("/api/"):
-            return JSONResponse({"ok": False, "detail": detail, "code": "MEMBERSHIP_REQUIRED"}, status_code=403)
+            return JSONResponse({"ok": False, "detail": "أدخل الرقم السري لفتح الأسواق لمدة 24 ساعة.", "code": "MEMBERSHIP_REQUIRED"}, status_code=403)
         return HTMLResponse(
             "<!doctype html><html lang='ar' dir='rtl'><meta charset='utf-8'>"
             "<meta name='viewport' content='width=device-width,initial-scale=1'>"
             "<title>فتح الأسواق | التداول الذكي PRO</title>"
-            "<body style='background:#080d18;color:#edf3ff;font:16px Tahoma;padding:28px;line-height:1.9'>"
-            "<main style='max-width:620px;margin:8vh auto;padding:24px;border:1px solid #263752;border-radius:18px;background:#101a2b'>"
-            "<h1>🔒 الأسواق تحتاج تفعيل الوصول</h1><p>" + detail + "</p>"
-            "<p>ما تحتاج تسجل حساب عشان تجرب الموقع. شارك رابط التداول الذكي PRO من الزر التالي وفعّل وصولًا مجانيًا لمدة 24 ساعة.</p>"
-            "<button id='share' style='width:100%;padding:14px;border:0;border-radius:12px;background:#4f8cff;color:white;font-weight:bold;font-size:16px;cursor:pointer'>📢 شارك الموقع وفعّل اليوم المجاني</button>"
-            "<p id='result' aria-live='polite'></p><p><a style='color:#8dbaff' href='/account'>أو سجّل الدخول / اشترك</a> · <a style='color:#8dbaff' href='/'>العودة للرئيسية</a></p></main>"
-            "<script>const b=document.getElementById('share'),m=document.getElementById('result');b.onclick=async()=>{b.disabled=true;m.textContent='اختر واتساب أو أي تطبيق مشاركة، وبعد ما ترجع بنفعّل دخولك…';try{if(navigator.share){await navigator.share({title:'التداول الذكي PRO',text:'جرّب التداول الذكي PRO وتابع الأسواق',url:location.origin});}else if(navigator.clipboard){await navigator.clipboard.writeText(location.origin);m.textContent='نسخنا الرابط. الصقه في واتساب أو أي تطبيق مشاركة، ثم ارجع واضغط الزر مرة ثانية لإكمال التفعيل.';b.disabled=false;return;}else{m.textContent='جهازك لا يدعم المشاركة المباشرة؛ انسخ الرابط يدويًا ثم حاول مرة ثانية.';b.disabled=false;return;}m.textContent='اكتملت المشاركة. جاري تفعيل 24 ساعة…';const r=await fetch('/api/billing/guest-share',{method:'POST',credentials:'same-origin',cache:'no-store'});const d=await r.json();if(!r.ok)throw new Error(d.detail||'تعذر تفعيل التجربة');m.textContent=d.already_active?'تجربتك المجانية مفعّلة بالفعل. سيتم فتح السوق بعد لحظة…':'تم تفعيل 24 ساعة مجانًا. سيتم فتح السوق بعد لحظة…';setTimeout(()=>location.reload(),3000);}catch(e){m.textContent=e.name==='AbortError'?'أغلقت نافذة المشاركة قبل إكمالها؛ ما تفعلت التجربة. اضغط وشارك مرة ثانية.':(e.message||'تعذر التفعيل؛ حاول مرة ثانية.');b.disabled=false;}};</script></body></html>",
+            "<body style='background:#080d18;color:#edf3ff;font:16px Tahoma;padding:24px;line-height:1.9'>"
+            "<main style='max-width:420px;margin:10vh auto;padding:24px;border:1px solid #263752;border-radius:18px;background:#101a2b'>"
+            "<h1 style='font-size:25px'>🔒 فتح الأسواق</h1><p>أدخل الرقم السري لفتح جميع الأسواق لمدة 24 ساعة.</p>"
+            "<form id='pinForm'><label for='pin'>الرقم السري</label><input id='pin' inputmode='numeric' autocomplete='one-time-code' type='password' maxlength='20' required style='box-sizing:border-box;width:100%;padding:14px;margin:8px 0 14px;border-radius:10px;border:1px solid #35516d;background:#07111f;color:white;font-size:22px;letter-spacing:6px'><button id='unlock' style='width:100%;padding:14px;border:0;border-radius:12px;background:#00bd91;color:#041610;font-weight:bold;font-size:16px;cursor:pointer'>فتح لمدة 24 ساعة</button></form>"
+            "<p id='result' aria-live='polite'></p><p><a style='color:#8dbaff' href='/account'>الحساب والاشتراك</a> · <a style='color:#8dbaff' href='/'>الرئيسية</a></p></main>"
+            "<script>const f=document.getElementById('pinForm'),b=document.getElementById('unlock'),m=document.getElementById('result');f.onsubmit=async e=>{e.preventDefault();b.disabled=true;m.textContent='جارٍ التحقق…';try{const r=await fetch('/api/market-pin',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:document.getElementById('pin').value})});const d=await r.json();if(!r.ok)throw new Error(d.detail||'الرقم السري غير صحيح');m.textContent='تم الفتح لمدة 24 ساعة.';location.reload()}catch(e){m.textContent=e.message||'تعذر الفتح';b.disabled=false}};</script></body></html>",
             status_code=403
         )
 
@@ -438,6 +437,27 @@ async def billing_status(request: Request):
         pending = con.execute("SELECT id,plan_id,amount_cents,expires_at FROM payment_intents WHERE user_id=? AND status='pending' AND expires_at>? ORDER BY created_at DESC LIMIT 1", (user["id"],now)).fetchone()
     share_expiry = int(share["expires_at"]) if share else 0
     return {"ok":True,"has_access":expiry>now or share_expiry>now,"subscription_expires_at":expiry,"share_expires_at":share_expiry,"paid_plan":PLAN_LABELS.get(paid["plan_id"]) if paid else None,"pending":{"id":pending["id"],"plan_id":pending["plan_id"],"amount_usd":pending["amount_cents"]/100,"expires_at":pending["expires_at"]} if pending else None}
+
+@app.post("/api/market-pin")
+async def market_pin_unlock(request: Request):
+    try:
+        payload = await request.json()
+        pin = str(payload.get("pin", "")) if isinstance(payload, dict) else ""
+    except Exception:
+        pin = ""
+    expected = os.getenv("MARKET_ACCESS_PIN", "2341")
+    if not secrets.compare_digest(pin, expected):
+        raise HTTPException(status_code=401, detail="الرقم السري غير صحيح.")
+    now = int(time.time())
+    token = secrets.token_urlsafe(32)
+    expiry = now + 24 * 60 * 60
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    with _billing_db() as con:
+        con.execute("INSERT INTO guest_trials(token_hash,created_at,expires_at) VALUES(?,?,?)", (token_hash, now, expiry))
+    response = JSONResponse({"ok": True, "expires_at": expiry, "message": "تم فتح الأسواق لمدة 24 ساعة."})
+    response.set_cookie("guest_trial", token, max_age=24 * 60 * 60, httponly=True, secure=True, samesite="lax", path="/")
+    return response
+
 
 @app.post("/api/billing/guest-share")
 async def billing_guest_share(request: Request):
