@@ -15,7 +15,7 @@
 <header class="top"><div class="brand">ST ◈ التداول الذكي PRO</div><span class="tag">محرك تحليل الشموع · نسخة محسّنة</span></header>
 <section class="intro"><h1>تحليل الفيوتشر — المستوى المتوسط</h1><p>تحليل اتجاه الشموع والزخم على بيانات السوق المتاحة. لا تظهر الصفقة إلا عند توفر شموع كافية وسعر دخول وأهداف ووقف صالحين.</p></section>
 <section class="panel">
-<div class="controls" id="timeframes"><button class="tf active" data-tf="15m">15 دقيقة</button><button class="tf" data-tf="1h">ساعة</button><button class="tf" data-tf="4h">4 ساعات</button><button class="tf" data-tf="1d">يومي</button><button class="tf" data-tf="1w">أسبوعي</button><button class="tf" data-tf="1M">شهري</button></div>
+<div class="controls" id="timeframes"><button class="tf active" data-tf="15m">15 دقيقة</button><button class="tf" data-tf="1h">ساعة</button><button class="tf" data-tf="4h">4 ساعات</button><button class="tf" data-tf="1d">يومي</button><button class="tf" data-tf="1w">أسبوعي</button><button class="tf" data-tf="1M">شهري</button><button class="tf active" id="reverseToggle" type="button" aria-pressed="true">عكس الاستراتيجية: مفعّل</button></div>
 </section>
 <section class="stats">
 <div class="stat"><small>الاتجاه الصاعد</small><strong class="up" id="bullCount">—</strong></div>
@@ -34,7 +34,7 @@ const tfNames={'15m':'15 دقيقة','1h':'ساعة','4h':'4 ساعات','1d':'�
 const tfMillis={'15m':900000,'1h':3600000,'4h':14400000,'1d':86400000,'1w':604800000,'1M':2592000000};
 const SIGNAL_LIFETIME_MS=15*60*1000;
 const PAGE_BUILD='futures-model-refresh-20261024-v5';
-let currentTf='15m',busy=false;
+let currentTf='15m',busy=false,reverseStrategy=true;
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt=v=>Number.isFinite(Number(v))?Number(v).toLocaleString('en-US',{maximumSignificantDigits:8}):'—';
@@ -97,7 +97,7 @@ async function refresh(){
   }))).filter(t=>t&&t.atr&&Number(t.entry)>0&&Number(t.marketPrice)>0);
   rows.sort((a,b)=>Number(b.score||0)-Number(a.score||0));
   rows.splice(3); // عرض أفضل ثلاث فرص فقط بعد تحليل الشموع، وليس قبل التحقق من صلاحيتها
-  const reverse=true; // عكس اتجاه الإشارة ومستويات الصفقة.
+  const reverse=reverseStrategy; // يتبع حالة زر عكس الاستراتيجية.
   const isMissed=(t)=>{const sell=(t.side==='بيع')!==reverse,live=Number(t.marketPrice),entry=Number(t.entry);if(!(live>0&&entry>0))return false;const tolerance=Math.max((Number(t.atr)||0)*0.15,entry*0.001);return sell?live<entry-tolerance:live>entry+tolerance;};
   const missedRows=rows.filter(isMissed),activeRows=rows.filter(t=>!isMissed(t));
   $('trades').innerHTML=(missedRows.length?'<div class="notice missed-note">تم استبعاد '+missedRows.length+' فرصة لأن السعر تجاوز نقطة الدخول؛ لا تعرض كصفقات نشطة. يتم التحقق من السعر الحالي قبل عرض مستويات الصفقة.</div>':'')+(activeRows.length?activeRows.map((t,i)=>{
@@ -113,8 +113,10 @@ async function refresh(){
  }catch(e){$('bullCount').textContent='—';$('bearCount').textContent='—';$('tfLabel').textContent=currentTf;$('buyBar').style.width='0%';$('sellBar').style.width='0%';$('trades').innerHTML='<div class="panel muted">تعذر تحميل بيانات الفيوتشر: '+esc(e.message||'خطأ غير معروف')+'. لم نعرض فرصًا وهمية.</div>';$('assetsStatus').textContent='تعذر تحميل قائمة العقود: '+(e.message||'المصدر غير متاح')+'. أعد المحاولة بعد قليل.';$('qualifiedAssets').innerHTML='<tr><td colspan="4">تعذر تحميل البيانات؛ لا توجد أرقام مؤكدة لعرضها.</td></tr>';$('liveStatus').textContent='المصدر غير متاح حالياً';}
  finally{busy=false}
 }
-document.querySelectorAll('button,[role="button"],label').forEach(el=>{if((el.textContent||'').includes('عكس الاستراتيجية'))el.remove()});
-document.querySelectorAll('.tf').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.tf').forEach(x=>x.classList.toggle('active',x===b));currentTf=b.dataset.tf;$('tfLabel').textContent=currentTf;refresh()}));
+
+document.querySelectorAll('.tf[data-tf]').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.tf[data-tf]').forEach(x=>x.classList.toggle('active',x===b));currentTf=b.dataset.tf;$('tfLabel').textContent=currentTf;refresh()}));
+const reverseButton=$('reverseToggle');
+reverseButton.addEventListener('click',()=>{reverseStrategy=!reverseStrategy;reverseButton.classList.toggle('active',reverseStrategy);reverseButton.setAttribute('aria-pressed',String(reverseStrategy));reverseButton.textContent='عكس الاستراتيجية: '+(reverseStrategy?'مفعّل':'متوقف');refresh()});
 document.documentElement.dataset.build=PAGE_BUILD;
 const note=document.createElement('p');note.id='liveStatus';note.className='muted';note.textContent='جاري الاتصال ببيانات الفيوتشر…';document.querySelector('.section-title').after(note);
 document.querySelector('.intro p').textContent='يفحص عينة محدودة من عقود الفيوتشر ثم يقيّم اتجاه الشموع والزخم وثبات الحركة قبل ترتيب الفرص. النتيجة درجة توافق داخلية وليست احتمال ربح أو ضمانًا.';
