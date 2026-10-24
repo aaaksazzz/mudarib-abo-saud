@@ -38,7 +38,7 @@ let currentTf='15m',busy=false;
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt=v=>Number.isFinite(Number(v))?Number(v).toLocaleString('en-US',{maximumSignificantDigits:8}):'—';
-async function get(url){const r=await fetch(url,{cache:'no-store',headers:{'Accept':'application/json','Cache-Control':'no-cache'}});const d=await r.json();if(!r.ok||d.ok===false)throw Error(d.message||'البيانات غير متاحة');return d}
+async function get(url){const r=await fetch(url,{cache:'no-store',credentials:'same-origin',headers:{'Accept':'application/json','Cache-Control':'no-cache'}});let d={};try{d=await r.json()}catch(_){throw Error('استجابة الخادم ليست JSON (HTTP '+r.status+')')}if(!r.ok||d.ok===false)throw Error(d.detail||d.message||d.error||('تعذر تحميل البيانات (HTTP '+r.status+')'));return d}
 async function refresh(){
  if(busy)return;busy=true;
  $('trades').innerHTML='<div class="panel muted">جاري فحص عينة العقود الفعلية للفريم المختار…</div>';
