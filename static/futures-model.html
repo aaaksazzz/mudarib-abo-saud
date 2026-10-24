@@ -33,11 +33,12 @@
 const tfNames={'15m':'15 دقيقة','1h':'ساعة','4h':'4 ساعات','1d':'يومي','1w':'أسبوعي','1M':'شهري'};
 const tfMillis={'15m':900000,'1h':3600000,'4h':14400000,'1d':86400000,'1w':604800000,'1M':2592000000};
 const SIGNAL_LIFETIME_MS=15*60*1000;
+const PAGE_BUILD='futures-fix-20261024-v2';
 let currentTf='15m',busy=false;
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const fmt=v=>Number.isFinite(Number(v))?Number(v).toLocaleString('en-US',{maximumSignificantDigits:8}):'—';
-async function get(url){const r=await fetch(url,{headers:{'Accept':'application/json'}});const d=await r.json();if(!r.ok||d.ok===false)throw Error(d.message||'البيانات غير متاحة');return d}
+async function get(url){const r=await fetch(url,{cache:'no-store',headers:{'Accept':'application/json','Cache-Control':'no-cache'}});const d=await r.json();if(!r.ok||d.ok===false)throw Error(d.message||'البيانات غير متاحة');return d}
 async function refresh(){
  if(busy)return;busy=true;
  $('trades').innerHTML='<div class="panel muted">جاري فحص عينة العقود الفعلية للفريم المختار…</div>';
@@ -68,12 +69,13 @@ async function refresh(){
     if(candles.length<30)throw Error('نحتاج 30 شمعة صالحة على الأقل');
     const lastCandle=candles[candles.length-1];
     const rawStamp=Number(lastCandle.timestamp??lastCandle.time??lastCandle.open_time??lastCandle.openTime??lastCandle.t??lastCandle.date??lastCandle[0]??0);
-    const candleStamp=rawStamp>0?(rawStamp<1e12?rawStamp*1000:rawStamp):Math.floor(Date.now()/tfMillis[currentTf])*tfMillis[currentTf];
-    if(Date.now()-candleStamp>tfMillis[currentTf]+120000)throw Error('بيانات الفريم قديمة؛ تم إيقاف التوصية');
-    const signalKey='stpro-futures-signal:'+currentTf+':'+x.symbol+':'+candleStamp;
-    let signalSince=0;
-    try{signalSince=Number(localStorage.getItem(signalKey)||0);if(!signalSince){signalSince=Date.now();localStorage.setItem(signalKey,String(signalSince));}}catch(_){signalSince=Date.now();}
-    if(Date.now()-signalSince>=SIGNAL_LIFETIME_MS)throw Error('انتهت صلاحية التوصية بعد 15 دقيقة');
+    if(!(rawStamp>0))throw Error('وقت الشمعة غير متاح؛ تم إيقاف التوصية');
+    const candleStamp=rawStamp<1e12?rawStamp*1000:rawStamp;
+    const signalSince=candleStamp+tfMillis[currentTf];
+    const now=Date.now();
+    if(signalSince>now+120000)throw Error('وقت الشمعة غير صحيح؛ تم إيقاف التوصية');
+    if(now-signalSince>tfMillis[currentTf]+120000)throw Error('بيانات الفريم قديمة؛ تم إيقاف التوصية');
+    if(now-signalSince>=SIGNAL_LIFETIME_MS)throw Error('انتهت صلاحية التوصية بعد 15 دقيقة من إغلاق شمعة التحليل');
     const closes=candles.map(k=>Number(k.close)),entry=closes[closes.length-1];
     const recent=candles.slice(-14);
     const atr=recent.reduce((sum,k)=>sum+(Number(k.high)-Number(k.low)),0)/recent.length;
@@ -110,7 +112,9 @@ async function refresh(){
  }catch(e){$('bullCount').textContent='—';$('bearCount').textContent='—';$('tfLabel').textContent=currentTf;$('buyBar').style.width='0%';$('sellBar').style.width='0%';$('trades').innerHTML='<div class="panel muted">تعذر تحميل بيانات الفيوتشر: '+esc(e.message||'خطأ غير معروف')+'. لم نعرض فرصًا وهمية.</div>';$('assetsStatus').textContent='تعذر تحميل قائمة العقود: '+(e.message||'المصدر غير متاح')+'. أعد المحاولة بعد قليل.';$('qualifiedAssets').innerHTML='<tr><td colspan="4">تعذر تحميل البيانات؛ لا توجد أرقام مؤكدة لعرضها.</td></tr>';$('liveStatus').textContent='المصدر غير متاح حالياً';}
  finally{busy=false}
 }
+document.querySelectorAll('button,[role="button"],label').forEach(el=>{if((el.textContent||'').includes('عكس الاستراتيجية'))el.remove()});
 document.querySelectorAll('.tf').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.tf').forEach(x=>x.classList.toggle('active',x===b));currentTf=b.dataset.tf;$('tfLabel').textContent=currentTf;refresh()}));
+document.documentElement.dataset.build=PAGE_BUILD;
 const note=document.createElement('p');note.id='liveStatus';note.className='muted';note.textContent='جاري الاتصال ببيانات الفيوتشر…';document.querySelector('.section-title').after(note);
 document.querySelector('.intro p').textContent='يفحص عينة محدودة من عقود الفيوتشر ثم يقيّم اتجاه الشموع والزخم وثبات الحركة قبل ترتيب الفرص. النتيجة درجة توافق داخلية وليست احتمال ربح أو ضمانًا.';
 /* لا يوجد زر لعكس الاستراتيجية في هذه الصفحة. */
