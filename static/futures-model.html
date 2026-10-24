@@ -92,6 +92,7 @@ async function refresh(){
     const fib50=upTrend?swingHigh-swingRange*0.5:swingLow+swingRange*0.5;
     const fib618=upTrend?swingHigh-swingRange*0.618:swingLow+swingRange*0.618;
     const fib786=upTrend?swingHigh-swingRange*0.786:swingLow+swingRange*0.786;
+    const fib1272=upTrend?swingLow+swingRange*1.272:swingHigh-swingRange*1.272;
     const fib1618=upTrend?swingLow+swingRange*1.618:swingHigh-swingRange*1.618;
     const agreement=Math.min(1,Math.abs(entry-sma200)/entry*100/2+Math.abs(m8)/10);
     const quality=Math.min(99,Math.round(55+Math.min(20,Math.abs(entry-sma200)/entry*100*4)+Math.min(15,Math.abs(m8)*1.5)+Math.min(9,Math.max(0,(retracement-0.5)*30))));
@@ -108,7 +109,7 @@ async function refresh(){
    const sell=(t.side==='بيع')!==reverse,side=sell?'بيع':'شراء';
    const risk=t.atr&&t.entry>0?Math.min(Math.max(t.atr*0.5,t.entry*0.002),t.entry*0.03):null;
    const fibTarget=Number(t.fib1618);
-   const tp1=Number(t.fib618),tp2=Number(t.fib786),tp3=fibTarget,sl=risk?(sell?t.entry+risk:Math.max(t.swingLow,t.entry-risk)):null;
+   const tp1=sell?Number(t.swingLow):Number(t.swingHigh),tp2=Number(t.fib1272),tp3=fibTarget,sl=sell?Number(t.swingHigh)+risk:Math.max(Number(t.swingLow)-risk,t.entry*0.000001);
    const pctFromEntry=v=>risk&&Number.isFinite(v)?Math.abs(v-t.entry)/t.entry*100:null;
    const fmtPct=v=>v===null||!Number.isFinite(v)?'—':v.toFixed(2);
    const cls=i===0?'gold':i===1?'silver':i===2?'bronze':'',medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':String(i+1);
