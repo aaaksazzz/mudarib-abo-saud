@@ -33,7 +33,7 @@
 const tfNames={'15m':'15 دقيقة','1h':'ساعة','4h':'4 ساعات','1d':'يومي','1w':'أسبوعي','1M':'شهري'};
 const tfMillis={'15m':900000,'1h':3600000,'4h':14400000,'1d':86400000,'1w':604800000,'1M':2592000000};
 const SIGNAL_LIFETIME_MS=15*60*1000;
-const PAGE_BUILD='futures-model-refresh-20261024-v6';
+const PAGE_BUILD='futures-model-refresh-20261024-v7';
 let currentTf='15m',busy=false,reverseStrategy=false;
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
