@@ -674,9 +674,9 @@ def fetch_json(url: str, timeout: int = 8):
         "query3.finance.yahoo.com": ["query1.finance.yahoo.com", "query2.finance.yahoo.com", "query4.finance.yahoo.com"],
         "query4.finance.yahoo.com": ["query1.finance.yahoo.com", "query2.finance.yahoo.com", "query3.finance.yahoo.com"],
     }
-    hosts = ([host] + fallback_hosts.get(host, []))[:2]
+    hosts = ([host] + fallback_hosts.get(host, []))[:4]
     # Keep each provider attempt short so a blocked host cannot stall signal scans.
-    timeout = min(timeout, 4)
+    timeout = min(timeout, 3)
     last_error = None
     for candidate in hosts:
         candidate_url = urlunsplit((parsed.scheme, candidate, parsed.path, parsed.query, parsed.fragment))
