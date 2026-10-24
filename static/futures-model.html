@@ -12,7 +12,7 @@
 </style>
 </head>
 <body><main>
-<header class="top"><div class="brand">ST ◈ التداول الذكي PRO</div><span class="tag">محرك تحليل الشموع · نسخة محسّنة</span></header>
+<header class="top"><div class="brand">ST ◈ التداول الذكي PRO</div><span class="tag">محرك تحليل الشموع · الإصدار v6</span></header>
 <section class="intro"><h1>تحليل الفيوتشر — المستوى المتوسط</h1><p>تحليل اتجاه الشموع والزخم على بيانات السوق المتاحة. لا تظهر الصفقة إلا عند توفر شموع كافية وسعر دخول وأهداف ووقف صالحين.</p></section>
 <section class="panel">
 <div class="controls" id="timeframes"><button class="tf active" data-tf="15m">15 دقيقة</button><button class="tf" data-tf="1h">ساعة</button><button class="tf" data-tf="4h">4 ساعات</button><button class="tf" data-tf="1d">يومي</button><button class="tf" data-tf="1w">أسبوعي</button><button class="tf" data-tf="1M">شهري</button><button class="tf active" id="reverseToggle" type="button" aria-pressed="true">عكس الاستراتيجية: مفعّل</button></div>
@@ -33,7 +33,7 @@
 const tfNames={'15m':'15 دقيقة','1h':'ساعة','4h':'4 ساعات','1d':'يومي','1w':'أسبوعي','1M':'شهري'};
 const tfMillis={'15m':900000,'1h':3600000,'4h':14400000,'1d':86400000,'1w':604800000,'1M':2592000000};
 const SIGNAL_LIFETIME_MS=15*60*1000;
-const PAGE_BUILD='futures-model-refresh-20261024-v5';
+const PAGE_BUILD='futures-model-refresh-20261024-v6';
 let currentTf='15m',busy=false,reverseStrategy=true;
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
