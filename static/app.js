@@ -2,7 +2,8 @@
   "use strict";
   const $ = (id) => document.getElementById(id);
   const view = $("pageView");
-  const API_TIMEOUT = 45000;
+  // مهلة متوازنة للجوال والمتصفحات البطيئة، دون تعليق الواجهة لمدة طويلة.
+  const API_TIMEOUT = 20000;
   const markets = {
     spot:{slug:"spot",api:"spot",name:"سبوت Binance",sub:"العملات الفورية",icon:"◉",source:"Binance"},
     futures:{slug:"futures",api:"futures",name:"فيوتشر",sub:"عقود Binance الدائمة وفرص قصيرة الأجل",icon:"⇅",source:"Binance"},
@@ -36,18 +37,21 @@
   const pct = (v) => {const n=Number(v);return Number.isFinite(n)?(n>0?"+":"")+n.toFixed(2)+"%":"—"};
   const timeText = (v) => {const n=Number(v);if(!n)return "—";try{return new Date(n<1e12?n*1000:n).toLocaleString("ar-SA",{dateStyle:"medium",timeStyle:"short"})}catch(_){return "—"}};
   async function getJSON(url, opts={}) {
-    const controller = new AbortController();
-    const timer = setTimeout(()=>controller.abort(), API_TIMEOUT);
+    // توافق مع WebViews والمتصفحات التي لا توفر AbortController.
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = controller ? setTimeout(()=>controller.abort(), API_TIMEOUT) : null;
     try {
-      const response = await fetch(url,{cache:"no-store",...opts,signal:controller.signal});
+      const requestOptions = {...opts, cache:"no-store"};
+      if(controller) requestOptions.signal = controller.signal;
+      const response = await fetch(url, requestOptions);
       const raw = await response.text();
       let data; try {data=JSON.parse(raw)} catch(_){data={message:raw.slice(0,250)||"استجابة غير مفهومة من الخادم."}}
       if(!response.ok) throw new Error(data.detail || data.message || ("تعذر الطلب ("+response.status+")"));
       return data;
     } catch(err) {
-      if(err.name==="AbortError") throw new Error("انتهت مهلة الاتصال. جرّب التحديث بعد قليل.");
+      if(err && err.name==="AbortError") throw new Error("انتهت مهلة الاتصال. جرّب التحديث بعد قليل.");
       throw err;
-    } finally {clearTimeout(timer)}
+    } finally {if(timer) clearTimeout(timer)}
   }
   function setStatus(text, good=true) {
     const node=$("serviceStatus"); if(!node)return;
