@@ -2508,7 +2508,8 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
                 return None
         digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
         now = int(time.time())
-        lifetime = {"15m": 900, "1h": 3600, "2h": 7200, "4h": 14400, "1d": 86400, "1w": 604800, "1M": 2592000}.get(interval, 900)
+        # Every recommendation expires after 15 minutes, regardless of chart timeframe.
+        lifetime = 15 * 60
         original_side = side
         side = "بيع" if original_side == "شراء" else "شراء"
         # Reverse the trade direction exactly once and rebuild all levels around entry.
@@ -2653,14 +2654,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                              "message": "الفريم غير مدعوم."}, status_code=422)
 
     now = int(time.time())
-    # Each trade plan expires after one candle interval.
-    interval_lifetimes = {
-        "15m": 15 * 60, "1h": 60 * 60, "2h": 2 * 60 * 60,
-        "4h": 4 * 60 * 60, "1d": 24 * 60 * 60,
-        "1w": 7 * 24 * 60 * 60, "1M": 30 * 24 * 60 * 60,
-    }
-    timeframe_lifetime = interval_lifetimes.get(interval, 15 * 60)
-    cache_key = ("canonical_market_direction_v2", market, interval, limit)
+    # All recommendations expire after 15 minutes, independent of selected timeframe.
+    timeframe_lifetime = 15 * 60
+    # Bump cache namespace so older timeframe-length recommendations cannot reappear.
+    cache_key = ("canonical_market_direction_v3_15m_expiry", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if not refresh and cached and now - cached[0] < 90:
