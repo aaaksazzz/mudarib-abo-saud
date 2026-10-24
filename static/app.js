@@ -95,6 +95,7 @@
     view.innerHTML=
       '<style>'+
       '.surge-page{color:var(--text);background:radial-gradient(ellipse at 75% -10%,#12365b 0,transparent 42%),#06101d;border:1px solid #18334a;border-radius:20px;padding:clamp(12px,2vw,22px)}'+
+      '.surge-top .surge-scan,.surge-stats,.surge-layout,.surge-page>p.surge-muted{display:none!important}'+
       '.surge-top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}.surge-market-title{display:inline-block;font-size:clamp(30px,5vw,48px)!important;font-weight:900;line-height:1.25;padding:12px 22px;border-radius:14px;background:linear-gradient(110deg,rgba(10,28,45,.92),rgba(7,17,31,.72));border:1px solid rgba(22,217,154,.22);box-shadow:inset 0 1px 0 rgba(255,255,255,.035);letter-spacing:0;text-shadow:0 0 24px rgba(22,217,154,.12)}.surge-market-sub{color:#91a8c0;font-size:12px;letter-spacing:1.5px;margin-top:7px}'+
       '.surge-hero{border:1px solid #20415d;background:linear-gradient(110deg,#0b2034,#0b1626);border-radius:18px;padding:20px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}'+
       '.surge-hero h1{font-size:clamp(22px,3vw,32px);margin:0 0 8px}.surge-hero p{color:#a9bfd5;margin:0;line-height:1.8;max-width:700px}'+
