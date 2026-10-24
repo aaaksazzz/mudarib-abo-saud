@@ -441,16 +441,17 @@ async def billing_guest_share(request: Request):
     existing_token = request.cookies.get("guest_trial", "")
     existing_hash = hashlib.sha256(existing_token.encode("utf-8")).hexdigest() if existing_token else ""
     with PAYMENT_LOCK, _billing_db() as con:
-        existing = con.execute("SELECT expires_at FROM guest_trials WHERE token_hash=?", (existing_hash,)).fetchone() if existing_hash else None
-        if existing:
-            expiry = int(existing["expires_at"])
-            if expiry > now:
-                return {"ok": True, "share_expires_at": expiry, "already_active": True}
-            raise HTTPException(status_code=409, detail="تم استخدام التجربة المجانية لهذا المتصفح مسبقًا.")
-        token = secrets.token_urlsafe(32)
-        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        existing = con.execute("SELECT token_hash FROM guest_trials WHERE token_hash=?", (existing_hash,)).fetchone() if existing_hash else None
         expiry = now + 86400
-        con.execute("INSERT INTO guest_trials(token_hash,created_at,expires_at) VALUES(?,?,?)", (token_hash, now, expiry))
+        if existing:
+            # Each new share action renews the guest's 24-hour access window.
+            token = existing_token
+            token_hash = existing_hash
+            con.execute("UPDATE guest_trials SET created_at=?,expires_at=? WHERE token_hash=?", (now, expiry, token_hash))
+        else:
+            token = secrets.token_urlsafe(32)
+            token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+            con.execute("INSERT INTO guest_trials(token_hash,created_at,expires_at) VALUES(?,?,?)", (token_hash, now, expiry))
         con.commit()
     response = JSONResponse({"ok": True, "share_expires_at": expiry, "note": "تجربة الزائر لمدة 24 ساعة."})
     response.set_cookie("guest_trial", token, max_age=86400, httponly=True, secure=True, samesite="lax", path="/")
@@ -463,12 +464,15 @@ async def billing_share(request: Request):
     if not user: raise HTTPException(status_code=401, detail="سجّل الدخول أولًا.")
     now = int(time.time())
     with PAYMENT_LOCK, _billing_db() as con:
-        used = con.execute("SELECT 1 FROM payment_intents WHERE user_id=? AND status='share_granted' LIMIT 1",(user["id"],)).fetchone()
-        if used: raise HTTPException(status_code=409, detail="تم استخدام العرض المجاني لهذا الحساب مسبقًا.")
         expiry = now + 86400
-        con.execute("INSERT INTO payment_intents(id,user_id,plan_id,amount_cents,created_at,expires_at,status) VALUES(?,?,?,?,?,?,?)",(secrets.token_urlsafe(18),user["id"],"share",0,now,expiry,"share_granted"))
+        existing = con.execute("SELECT id FROM payment_intents WHERE user_id=? AND status='share_granted' ORDER BY created_at DESC LIMIT 1",(user["id"],)).fetchone()
+        if existing:
+            # Every new share action renews access for another 24 hours from now.
+            con.execute("UPDATE payment_intents SET created_at=?,expires_at=? WHERE id=?", (now, expiry, existing["id"]))
+        else:
+            con.execute("INSERT INTO payment_intents(id,user_id,plan_id,amount_cents,created_at,expires_at,status) VALUES(?,?,?,?,?,?,?)",(secrets.token_urlsafe(18),user["id"],"share",0,now,expiry,"share_granted"))
         con.commit()
-    return {"ok":True,"share_expires_at":expiry,"note":"العرض المجاني لمرة واحدة لكل حساب."}
+    return {"ok":True,"share_expires_at":expiry,"note":"تم تمديد الوصول المجاني لمدة 24 ساعة بعد المشاركة."}
 
 
 def _set_account_cookie(response, user_id):
