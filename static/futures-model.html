@@ -100,7 +100,7 @@ async function refresh(){
     return {...x,entry,atr,sma200,swingHigh,swingLow,swingRange,retracement,fib50,fib618,fib786,fib1618,score:quality,side,agreement,confidence,m3,m8,m20,volatilityPct:atr/entry*100,marketPrice:Number(x.marketPrice||x.price),signalSince,candleStamp};
    }catch(e){return null}
   }))).filter(t=>t&&t.atr&&Number(t.entry)>0&&Number(t.marketPrice)>0);
-  rows.sort((a,b)=>Number(b.score||0)-Number(a.score||0));
+  rows.sort((a,b)=>{const momentum=t=>{const sell=(t.side==='بيع')!==reverseStrategy;const sign=sell?-1:1;return sign*(0.2*Number(t.m3||0)+0.3*Number(t.m8||0)+0.5*Number(t.m20||0));};return momentum(b)-momentum(a)||Number(b.score||0)-Number(a.score||0);});
   rows.splice(3); // عرض أفضل ثلاث فرص فقط بعد تحليل الشموع، وليس قبل التحقق من صلاحيتها
   const reverse=reverseStrategy; // يتبع حالة زر عكس الاستراتيجية.
   const isMissed=(t)=>{const sell=(t.side==='بيع')!==reverse,live=Number(t.marketPrice),entry=Number(t.entry);if(!(live>0&&entry>0))return false;const tolerance=Math.max((Number(t.atr)||0)*0.15,entry*0.001);return sell?live<entry-tolerance:live>entry+tolerance;};
