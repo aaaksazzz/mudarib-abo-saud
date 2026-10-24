@@ -1659,18 +1659,54 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
                 quote = jobs[future]
                 try:
                     candles = future.result()
-                    if len(candles) < 2:
+                    if len(candles) < 200:
                         continue
-                    previous = float(candles[-2]["close"])
-                    latest = float(candles[-1]["close"])
-                    if previous <= 0 or latest <= 0 or not math.isfinite(previous) or not math.isfinite(latest):
+                    closes = [float(c.get("close") or 0) for c in candles]
+                    if any(v <= 0 or not math.isfinite(v) for v in closes):
                         continue
+                    previous, latest = closes[-2], closes[-1]
+                    # EMA 200 is the only moving-average filter used by this strategy.
+                    alpha = 2.0 / 201.0
+                    ema200 = closes[0]
+                    for close_value in closes[1:]:
+                        ema200 = close_value * alpha + ema200 * (1.0 - alpha)
+                    swing = candles[-100:]
+                    swing_high = max(float(c["high"]) for c in swing)
+                    swing_low = min(float(c["low"]) for c in swing)
+                    swing_range = swing_high - swing_low
                     row = dict(quote)
                     row["price"] = latest
                     row["change_pct"] = (latest - previous) / previous * 100
                     row["candle_time"] = candles[-1].get("time")
                     row["interval"] = interval
                     row["candle_sample"] = len(candles)
+                    row["ema200"] = ema200
+                    row["market_direction"] = "صاعد" if latest > ema200 else "هابط" if latest < ema200 else "محايد"
+                    row["signal"] = None
+                    if swing_range > 0 and latest > ema200:
+                        retracement = (latest - swing_low) / swing_range
+                        if 0.50 < retracement < 1.0:
+                            entry = latest
+                            stop = swing_low
+                            tp1 = swing_low + swing_range * 1.0
+                            tp2 = swing_low + swing_range * 1.272
+                            tp3 = swing_low + swing_range * 1.618
+                            if stop < entry < tp3:
+                                row["signal"] = {"side": "BUY", "strength": "شراء قوي" if latest > ema200 * 1.01 else "شراء",
+                                    "entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3,
+                                    "fibonacci_retracement": round(retracement * 100, 2), "ema200": ema200}
+                    elif swing_range > 0 and latest < ema200:
+                        retracement = (swing_high - latest) / swing_range
+                        if 0.50 < retracement < 1.0:
+                            entry = latest
+                            stop = swing_high
+                            tp1 = swing_high - swing_range * 1.0
+                            tp2 = swing_high - swing_range * 1.272
+                            tp3 = swing_high - swing_range * 1.618
+                            if tp3 < entry < stop:
+                                row["signal"] = {"side": "SELL", "strength": "بيع قوي" if latest < ema200 * 0.99 else "بيع",
+                                    "entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3,
+                                    "fibonacci_retracement": round(retracement * 100, 2), "ema200": ema200}
                     results.append(row)
                 except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError, KeyError):
                     continue
@@ -1678,12 +1714,13 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
             return JSONResponse({"ok": False, "live": False, "items": [],
                                  "market": market, "interval": interval,
                                  "message": "تعذر جلب شموع هذا الفريم من المصدر؛ لم نستخدم تغير 24 ساعة بديلًا."}, status_code=503)
-        results.sort(key=lambda x: abs(float(x.get("change_pct") or 0)), reverse=True)
+        results.sort(key=lambda x: (1 if x.get("signal") else 0, abs(float(x.get("change_pct") or 0))), reverse=True)
         return {"ok": True, "live": True, "market": market, "interval": interval,
                 "provider": quotes.get("provider", "Public market data"),
                 "assets_available": len(raw), "assets_scanned": len(results),
                 "sample_limit": len(candidates), "updated_at": int(time.time()),
                 "items": results[:limit],
+                "recommendations": [dict(x, levels=x.get("signal")) for x in results if x.get("signal")],
                 "message": "الترتيب مبني على إغلاق الشموع الفعلية للفريم المحدد. تم فحص عينة سيولة محدودة لتفادي تعطيل الخدمة."}
     except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError, KeyError) as exc:
         print(f"Market timeframe scan unavailable for {market}/{interval}: {type(exc).__name__}")
