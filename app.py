@@ -130,12 +130,16 @@ async def site_password_gate(request: Request, call_next):
             "spot", "futures", "alpha", "contracts", "us", "saudi", "forex"
         } else None
 
+    # Public read-only market universe endpoint: keep contract lists available
+    # across browsers even when a guest has no share/subscription cookie.
+    public_market_data = bool(re.fullmatch(r"/api/market/(spot|futures|alpha|contracts|us|saudi|forex)", path))
     protected_market = (
-        path in {"/market-direction", "/radar", "/gold", "/tasi-analysis"} or
-        path.startswith("/markets/") or path.startswith("/market/") or
-        path.startswith("/api/market/") or path.startswith("/api/signals/") or
-        path in {"/api/market-direction", "/api/public-ideas", "/api/trade-chart-data",
-                 "/api/universe-counts", "/api/tasi/analysis", "/api/futures-pro/signals"}
+        (path in {"/market-direction", "/radar", "/gold", "/tasi-analysis"} or
+         path.startswith("/markets/") or path.startswith("/market/") or
+         (path.startswith("/api/market/") and not public_market_data) or
+         path.startswith("/api/signals/") or
+         path in {"/api/market-direction", "/api/public-ideas", "/api/trade-chart-data",
+                  "/api/universe-counts", "/api/tasi/analysis", "/api/futures-pro/signals"})
     )
     if protected_market and not _has_market_access(request):
         detail = "افتح الأسواق باشتراك فعّال أو بعرض المشاركة المجاني لمدة 24 ساعة."
