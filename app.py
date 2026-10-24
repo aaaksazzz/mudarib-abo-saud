@@ -108,7 +108,7 @@ async def site_password_gate(request: Request, call_next):
         section_id = page_sections[path]
     elif path.startswith("/blog/"):
         section_id = "blog"
-    elif path.startswith("/api/market/"):
+    elif path.startswith("/api/market/") and not re.fullmatch(r"/api/market/(spot|futures|alpha|contracts|us|saudi|forex)", path):
         requested_market = path.rsplit("/", 1)[-1].lower()
         section_id = requested_market if requested_market in {
             "spot", "futures", "alpha", "contracts", "us", "saudi", "forex"
