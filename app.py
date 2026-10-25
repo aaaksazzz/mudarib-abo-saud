@@ -1677,6 +1677,32 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
             return JSONResponse({"ok": False, "live": False, "items": [],
                                  "message": "بيانات السوق الأساسية غير متاحة."}, status_code=503)
         raw = quotes["items"]
+        # Market direction is a lightweight breadth count over the full available quote universe.
+        # Keep it independent from the smaller, candle-intensive sample used for trade candidates.
+        direction_up = direction_down = direction_flat = 0
+        for quote in raw:
+            try:
+                change = float(quote.get("change_pct") or 0)
+                if not math.isfinite(change):
+                    change = 0.0
+            except (TypeError, ValueError):
+                change = 0.0
+            if change > 0:
+                direction_up += 1
+            elif change < 0:
+                direction_down += 1
+            else:
+                direction_flat += 1
+        direction_ar = ("صاعد" if direction_up > direction_down else
+                        "هابط" if direction_down > direction_up else "محايد")
+        direction_summary = {
+            "assets_up": direction_up,
+            "assets_down": direction_down,
+            "assets_flat": direction_flat,
+            "assets_total": len(raw),
+            "direction_ar": direction_ar,
+            "basis": "تغير السعر المتاح خلال 24 ساعة"
+        }
         # Candle retrieval is network intensive; scan the 30 most liquid available assets,
         # then show the actual number scanned instead of implying full-universe coverage.
         candidates = sorted(raw, key=lambda x: float(x.get("quote_volume") or x.get("dollar_volume") or x.get("volume") or 0), reverse=True)[:30]
@@ -1747,6 +1773,7 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
         return {"ok": True, "live": True, "market": market, "interval": interval,
                 "provider": quotes.get("provider", "Public market data"),
                 "assets_available": len(raw), "assets_scanned": len(results),
+                "market_direction_24h": direction_summary,
                 "sample_limit": len(candidates), "updated_at": int(time.time()),
                 "items": results[:limit],
                 "recommendations": [dict(x, levels=x.get("signal")) for x in results if x.get("signal")],
