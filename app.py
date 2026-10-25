@@ -1677,9 +1677,11 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
             return JSONResponse({"ok": False, "live": False, "items": [],
                                  "message": "بيانات السوق الأساسية غير متاحة."}, status_code=503)
         raw = quotes["items"]
-        # Market direction is a lightweight breadth count over the full available quote universe.
-        # Keep it independent from the smaller, candle-intensive sample used for trade candidates.
+        # Estimate directional liquidity using available traded-value fields.
+        # This is volume associated with rising/falling assets, not true buyer/seller aggressor flow.
         direction_up = direction_down = direction_flat = 0
+        liquidity_up = liquidity_down = 0.0
+        volume_assets = 0
         for quote in raw:
             try:
                 change = float(quote.get("change_pct") or 0)
@@ -1687,21 +1689,40 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
                     change = 0.0
             except (TypeError, ValueError):
                 change = 0.0
+            try:
+                volume = float(quote.get("quote_volume") or quote.get("dollar_volume") or 0)
+                if not math.isfinite(volume) or volume < 0:
+                    volume = 0.0
+            except (TypeError, ValueError):
+                volume = 0.0
+            if volume > 0:
+                volume_assets += 1
             if change > 0:
                 direction_up += 1
+                liquidity_up += volume
             elif change < 0:
                 direction_down += 1
+                liquidity_down += volume
             else:
                 direction_flat += 1
-        direction_ar = ("صاعد" if direction_up > direction_down else
-                        "هابط" if direction_down > direction_up else "محايد")
+        if volume_assets and (liquidity_up + liquidity_down) > 0:
+            direction_ar = ("صاعد" if liquidity_up > liquidity_down else
+                            "هابط" if liquidity_down > liquidity_up else "محايد")
+            direction_basis = "قيمة تداول الأصول الصاعدة مقابل الهابطة خلال 24 ساعة"
+        else:
+            direction_ar = ("صاعد" if direction_up > direction_down else
+                            "هابط" if direction_down > direction_up else "محايد")
+            direction_basis = "عدد الأصول الصاعدة والهابطة؛ بيانات السيولة غير متاحة"
         direction_summary = {
             "assets_up": direction_up,
             "assets_down": direction_down,
             "assets_flat": direction_flat,
             "assets_total": len(raw),
+            "liquidity_up": round(liquidity_up, 2),
+            "liquidity_down": round(liquidity_down, 2),
+            "liquidity_assets": volume_assets,
             "direction_ar": direction_ar,
-            "basis": "تغير السعر المتاح خلال 24 ساعة"
+            "basis": direction_basis
         }
         # Candle retrieval is network intensive; scan the 30 most liquid available assets,
         # then show the actual number scanned instead of implying full-universe coverage.
