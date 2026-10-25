@@ -1803,7 +1803,7 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
                             row["signal"] = {
                                 "side": "BUY", "strength": "شراء قوي" if up_candles == 3 else "شراء",
                                 "entry": latest, "stop_loss": stop,
-                                "tp1": latest + risk * 1.5, "tp2": latest + risk * 2.5, "tp3": latest + risk * 3.5,
+                                "tp1": latest + risk * 2.0, "tp2": latest + risk * 4.0, "tp3": latest + risk * 6.0,
                                 "method": "تحليل حركة السعر"
                             }
                     elif side == "SELL":
@@ -1815,7 +1815,7 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
                                 row["signal"] = {
                                     "side": "SELL", "strength": "بيع قوي" if down_candles == 3 else "بيع",
                                     "entry": latest, "stop_loss": stop,
-                                    "tp1": latest - risk * 1.5, "tp2": latest - risk * 2.5, "tp3": latest - risk * 3.5,
+                                    "tp1": latest - risk * 2.0, "tp2": latest - risk * 4.0, "tp3": latest - risk * 6.0,
                                     "method": "تحليل حركة السعر"
                                 }
                     results.append(row)
