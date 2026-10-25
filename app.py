@@ -1752,8 +1752,8 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
                     if len(valid_candles) < 12:
                         continue
                     previous, latest = valid_candles[-2]["close"], valid_candles[-1]["close"]
-                    recent, prior = valid_candles[-3:], valid_candles[-11:-3]
-                    if len(prior) < 8 or previous <= 0 or latest <= 0:
+                    recent, prior = valid_candles[-3:], valid_candles[-6:-3]
+                    if len(prior) < 3 or previous <= 0 or latest <= 0:
                         continue
                     prior_high = max(c["high"] for c in prior)
                     prior_low = min(c["low"] for c in prior)
@@ -1771,16 +1771,16 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
                     row["market_direction"] = "صاعد" if latest > previous else "هابط" if latest < previous else "محايد"
                     row["signal"] = None
                     side = None
-                    if latest > prior_high and up_candles >= 2 and close_position >= 0.55:
+                    if up_candles >= 2 and close_position >= 0.55 and (latest > prior_high or (latest > previous and latest > prior[-1]["close"])):
                         side = "BUY"
-                    elif latest < prior_low and down_candles >= 2 and close_position <= 0.45:
+                    elif down_candles >= 2 and close_position <= 0.45 and (latest < prior_low or (latest < previous and latest < prior[-1]["close"])):
                         side = "SELL"
                     max_risk_pct = {
                         "15m": 0.008, "30m": 0.012, "1h": 0.018,
                         "2h": 0.025, "4h": 0.035, "1d": 0.05,
                         "1w": 0.08, "1M": 0.12,
                     }.get(str(interval), 0.008)
-                    swing = valid_candles[-8:]
+                    swing = valid_candles[-4:]
                     if side == "BUY":
                         structural_stop = min(c["low"] for c in swing)
                         risk = max(latest - structural_stop, latest * 0.001, abs(last["high"] - last["low"]) * 0.35)
