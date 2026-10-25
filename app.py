@@ -2645,18 +2645,11 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
         now = int(time.time())
         # Every recommendation expires after 15 minutes, regardless of chart timeframe.
         lifetime = 15 * 60
+        # Keep the direction produced by price-action analysis; never invert it.
+        # Targets stay staged and relatively close: 1.0R, 1.3R, 1.6R.
         original_side = side
-        side = "بيع" if original_side == "شراء" else "شراء"
-        # Reverse the trade direction exactly once and rebuild all levels around entry.
-        # Preserve the original risk distance and TP risk multiples.
-        if side == "شراء":
-            stop = entry - risk
-            tp1, tp2, tp3 = entry + risk, entry + risk * 1.6, entry + risk * 2.2
-        else:
-            stop = entry + risk
-            tp1, tp2, tp3 = entry - risk, entry - risk * 1.6, entry - risk * 2.2
-        rationale = ("تم عكس إشارة التحليل الأصلية؛ أصبحت شراء بدل بيع، مع إعادة حساب الوقف والأهداف."
-                     if side == "شراء" else "تم عكس إشارة التحليل الأصلية؛ أصبحت بيع بدل شراء، مع إعادة حساب الوقف والأهداف.")
+        rationale = ("تحليل حركة السعر يشير إلى شراء؛ الأهداف متدرجة والوقف مرتبط ببنية السعر."
+                     if side == "شراء" else "تحليل حركة السعر يشير إلى بيع؛ الأهداف متدرجة والوقف مرتبط ببنية السعر.")
         return {
             "symbol": symbol, "direction": side, "original_direction": original_side,
             "title": f"{side} {symbol} — تحليل حركة السعر",
