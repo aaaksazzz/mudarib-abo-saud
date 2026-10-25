@@ -1735,54 +1735,75 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
                 quote = jobs[future]
                 try:
                     candles = future.result()
-                    if len(candles) < 200:
+                    if len(candles) < 12:
                         continue
-                    closes = [float(c.get("close") or 0) for c in candles]
-                    if any(v <= 0 or not math.isfinite(v) for v in closes):
+                    valid_candles = []
+                    for candle in candles[-30:]:
+                        try:
+                            o = float(candle.get("open") or 0)
+                            h = float(candle.get("high") or 0)
+                            low = float(candle.get("low") or 0)
+                            close_value = float(candle.get("close") or 0)
+                            if (all(math.isfinite(v) and v > 0 for v in (o, h, low, close_value))
+                                and h >= max(o, close_value) and low <= min(o, close_value) and h >= low):
+                                valid_candles.append({"open": o, "high": h, "low": low, "close": close_value})
+                        except (TypeError, ValueError, OverflowError):
+                            continue
+                    if len(valid_candles) < 12:
                         continue
-                    previous, latest = closes[-2], closes[-1]
-                    # EMA 200 is the only moving-average filter used by this strategy.
-                    alpha = 2.0 / 201.0
-                    ema200 = closes[0]
-                    for close_value in closes[1:]:
-                        ema200 = close_value * alpha + ema200 * (1.0 - alpha)
-                    swing = candles[-100:]
-                    swing_high = max(float(c["high"]) for c in swing)
-                    swing_low = min(float(c["low"]) for c in swing)
-                    swing_range = swing_high - swing_low
+                    previous, latest = valid_candles[-2]["close"], valid_candles[-1]["close"]
+                    recent, prior = valid_candles[-3:], valid_candles[-11:-3]
+                    if len(prior) < 8 or previous <= 0 or latest <= 0:
+                        continue
+                    prior_high = max(c["high"] for c in prior)
+                    prior_low = min(c["low"] for c in prior)
+                    last = valid_candles[-1]
+                    candle_range = max(last["high"] - last["low"], latest * 0.001)
+                    close_position = (latest - last["low"]) / candle_range
+                    up_candles = sum(c["close"] > c["open"] for c in recent)
+                    down_candles = sum(c["close"] < c["open"] for c in recent)
                     row = dict(quote)
                     row["price"] = latest
                     row["change_pct"] = (latest - previous) / previous * 100
                     row["candle_time"] = candles[-1].get("time")
                     row["interval"] = interval
-                    row["candle_sample"] = len(candles)
-                    row["ema200"] = ema200
-                    row["market_direction"] = "صاعد" if latest > ema200 else "هابط" if latest < ema200 else "محايد"
+                    row["candle_sample"] = len(valid_candles)
+                    row["market_direction"] = "صاعد" if latest > previous else "هابط" if latest < previous else "محايد"
                     row["signal"] = None
-                    if swing_range > 0 and latest > ema200:
-                        retracement = (latest - swing_low) / swing_range
-                        if 0.50 < retracement < 1.0:
-                            entry = latest
-                            stop = swing_low
-                            tp1 = swing_low + swing_range * 1.0
-                            tp2 = swing_low + swing_range * 1.272
-                            tp3 = swing_low + swing_range * 1.618
-                            if stop < entry < tp3:
-                                row["signal"] = {"side": "BUY", "strength": "شراء قوي" if latest > ema200 * 1.01 else "شراء",
-                                    "entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3,
-                                    "fibonacci_retracement": round(retracement * 100, 2), "ema200": ema200}
-                    elif swing_range > 0 and latest < ema200:
-                        retracement = (swing_high - latest) / swing_range
-                        if 0.50 < retracement < 1.0:
-                            entry = latest
-                            stop = swing_high
-                            tp1 = swing_high - swing_range * 1.0
-                            tp2 = swing_high - swing_range * 1.272
-                            tp3 = swing_high - swing_range * 1.618
-                            if tp3 < entry < stop:
-                                row["signal"] = {"side": "SELL", "strength": "بيع قوي" if latest < ema200 * 0.99 else "بيع",
-                                    "entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3,
-                                    "fibonacci_retracement": round(retracement * 100, 2), "ema200": ema200}
+                    side = None
+                    if latest > prior_high and up_candles >= 2 and close_position >= 0.55:
+                        side = "BUY"
+                    elif latest < prior_low and down_candles >= 2 and close_position <= 0.45:
+                        side = "SELL"
+                    max_risk_pct = {
+                        "15m": 0.008, "30m": 0.012, "1h": 0.018,
+                        "2h": 0.025, "4h": 0.035, "1d": 0.05,
+                        "1w": 0.08, "1M": 0.12,
+                    }.get(str(interval), 0.008)
+                    swing = valid_candles[-8:]
+                    if side == "BUY":
+                        structural_stop = min(c["low"] for c in swing)
+                        risk = max(latest - structural_stop, latest * 0.001, abs(last["high"] - last["low"]) * 0.35)
+                        if 0 < risk / latest <= max_risk_pct:
+                            stop = latest - risk
+                            row["signal"] = {
+                                "side": "BUY", "strength": "شراء قوي" if up_candles == 3 else "شراء",
+                                "entry": latest, "stop_loss": stop,
+                                "tp1": latest + risk, "tp2": latest + risk * 1.3, "tp3": latest + risk * 1.6,
+                                "method": "تحليل حركة السعر"
+                            }
+                    elif side == "SELL":
+                        structural_stop = max(c["high"] for c in swing)
+                        risk = max(structural_stop - latest, latest * 0.001, abs(last["high"] - last["low"]) * 0.35)
+                        if 0 < risk / latest <= max_risk_pct:
+                            stop = latest + risk
+                            if latest - risk * 1.6 > 0:
+                                row["signal"] = {
+                                    "side": "SELL", "strength": "بيع قوي" if down_candles == 3 else "بيع",
+                                    "entry": latest, "stop_loss": stop,
+                                    "tp1": latest - risk, "tp2": latest - risk * 1.3, "tp3": latest - risk * 1.6,
+                                    "method": "تحليل حركة السعر"
+                                }
                     results.append(row)
                 except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError, KeyError):
                     continue
