@@ -1724,9 +1724,23 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
             "direction_ar": direction_ar,
             "basis": direction_basis
         }
-        # Candle retrieval is network intensive; scan the 30 most liquid available assets,
-        # then show the actual number scanned instead of implying full-universe coverage.
-        candidates = sorted(raw, key=lambda x: float(x.get("quote_volume") or x.get("dollar_volume") or x.get("volume") or 0), reverse=True)[:30]
+        # Prioritize fast movers among already-eligible/liquid assets, then use traded value as a tie-breaker.
+        # This changes scan order only; it does not alter entry rules, stop-loss, or targets.
+        def _fast_mover_rank(item):
+            try:
+                move = abs(float(item.get("change_pct") or 0))
+                if not math.isfinite(move):
+                    move = 0.0
+            except (TypeError, ValueError, OverflowError):
+                move = 0.0
+            try:
+                traded_value = float(item.get("quote_volume") or item.get("dollar_volume") or item.get("volume") or 0)
+                if not math.isfinite(traded_value) or traded_value < 0:
+                    traded_value = 0.0
+            except (TypeError, ValueError, OverflowError):
+                traded_value = 0.0
+            return (move, traded_value)
+        candidates = sorted(raw, key=_fast_mover_rank, reverse=True)[:30]
         results = []
         with ThreadPoolExecutor(max_workers=10) as pool:
             jobs = {pool.submit(candle_data, market, str(item.get("symbol") or ""), interval): item
