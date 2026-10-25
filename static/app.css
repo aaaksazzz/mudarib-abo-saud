@@ -244,3 +244,6 @@ body{top:0!important}
  .surge-page .surge-head{align-items:flex-start!important}
  .surge-page .surge-table td{padding:10px 8px!important}
 }
+
+/* User requested removal of the asset ranking section from market pages */
+.surge-page .surge-layout{display:none!important}
