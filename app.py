@@ -2616,19 +2616,29 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
         if not side or score < 65:
             return None
         swing = raw[-8:]
-        min_risk = max(close * 0.002, abs(last["high"] - last["low"]) * 0.5)
+        # Conservative risk caps by timeframe. If market structure requires a wider stop,
+        # skip the setup instead of publishing a dangerously wide trade.
+        max_risk_pct = {
+            "15m": 0.008, "30m": 0.012, "1h": 0.018,
+            "2h": 0.025, "4h": 0.035, "1d": 0.05, "1w": 0.08, "1M": 0.12,
+        }.get(str(interval), 0.008)
+        min_risk = max(close * 0.001, abs(last["high"] - last["low"]) * 0.35)
         if side == "شراء":
-            stop = min(c["low"] for c in swing)
-            risk = max(close - stop, min_risk)
+            structural_stop = min(c["low"] for c in swing)
+            risk = max(close - structural_stop, min_risk)
+            if risk / close > max_risk_pct:
+                return None
             stop = close - risk
-            entry, tp1, tp2, tp3 = close, close + risk, close + risk * 1.6, close + risk * 2.2
+            entry, tp1, tp2, tp3 = close, close + risk, close + risk * 1.3, close + risk * 1.6
             if not stop < entry < tp1 < tp2 < tp3:
                 return None
         else:
-            stop = max(c["high"] for c in swing)
-            risk = max(stop - close, min_risk)
+            structural_stop = max(c["high"] for c in swing)
+            risk = max(structural_stop - close, min_risk)
+            if risk / close > max_risk_pct:
+                return None
             stop = close + risk
-            entry, tp1, tp2, tp3 = close, close - risk, close - risk * 1.6, close - risk * 2.2
+            entry, tp1, tp2, tp3 = close, close - risk, close - risk * 1.3, close - risk * 1.6
             if not stop > entry > tp1 > tp2 > tp3 or tp3 <= 0:
                 return None
         digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
