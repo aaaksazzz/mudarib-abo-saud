@@ -1740,7 +1740,7 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
             except (TypeError, ValueError, OverflowError):
                 traded_value = 0.0
             return (move, traded_value)
-        candidates = sorted(raw, key=_fast_mover_rank, reverse=True)[:40]
+        candidates = sorted(raw, key=_fast_mover_rank, reverse=True)[:50]
         results = []
         with ThreadPoolExecutor(max_workers=10) as pool:
             jobs = {pool.submit(candle_data, market, str(item.get("symbol") or ""), interval): item
@@ -1785,9 +1785,9 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
                     row["market_direction"] = "صاعد" if latest > previous else "هابط" if latest < previous else "محايد"
                     row["signal"] = None
                     side = None
-                    if up_candles >= 2 and close_position >= 0.48 and (latest > prior_high or (latest > previous and latest > prior[-1]["close"])):
+                    if up_candles >= 1 and close_position >= 0.42 and (latest > prior_high or (latest > previous and latest > prior[-1]["close"])):
                         side = "BUY"
-                    elif down_candles >= 2 and close_position <= 0.52 and (latest < prior_low or (latest < previous and latest < prior[-1]["close"])):
+                    elif down_candles >= 1 and close_position <= 0.58 and (latest < prior_low or (latest < previous and latest < prior[-1]["close"])):
                         side = "SELL"
                     max_risk_pct = {
                         "15m": 0.008, "30m": 0.012, "1h": 0.018,
