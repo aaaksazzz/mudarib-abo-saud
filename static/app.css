@@ -212,3 +212,35 @@ body.light-mode .section-heading h2,body.light-mode .section-heading p{color:#17
 body.light-mode .feature-card,body.light-mode .market-card{color:#172338}
 .goog-te-banner-frame,.goog-te-balloon-frame,#goog-gt-tt,.goog-te-gadget{display:none!important}
 body{top:0!important}
+
+
+/* Market pages: professional hierarchy, mobile-first asset list, no visible prices */
+.surge-page{max-width:1240px!important;margin:14px auto!important;padding:clamp(12px,2.5vw,24px)!important;border-radius:22px!important}
+.surge-page .surge-top{align-items:center!important;margin-bottom:18px!important}
+.surge-page .surge-market-title{font-size:clamp(25px,4vw,38px)!important;padding:10px 16px!important}
+.surge-page .surge-hero{padding:clamp(14px,2.5vw,22px)!important;gap:12px!important}
+.surge-page #surgeIntervals{display:flex!important;flex-wrap:wrap!important;gap:7px!important}
+.surge-page #surgeIntervals button{min-height:40px!important;padding:8px 13px!important;border-radius:11px!important;border:1px solid #2b4963!important;background:#102238!important;color:#dceaff!important;font-weight:800!important}
+.surge-page #surgeIntervals button.active{background:#173c4a!important;border-color:#16d99a!important;color:#74f0c3!important;box-shadow:0 0 0 1px #16d99a22!important}
+.surge-page .surge-layout{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:14px!important}
+.surge-page .surge-layout>.surge-panel:first-child{min-width:0!important}
+.surge-page .surge-table-wrap{width:100%!important;overflow-x:auto!important;border:1px solid #203b53!important;border-radius:13px!important}
+.surge-page .surge-table{width:100%!important;min-width:460px!important;border-collapse:separate!important;border-spacing:0!important}
+.surge-page .surge-table th{position:sticky!important;top:0!important;background:#12253a!important;color:#a9c5e1!important;font-size:12px!important;white-space:nowrap!important}
+.surge-page .surge-table td{padding:11px 10px!important;border-bottom:1px solid #1b3045!important}
+.surge-page .surge-table tbody tr:nth-child(even){background:#0b1b2a!important}
+.surge-page .surge-table tbody tr:hover{background:#112b3d!important}
+.surge-page .surge-table th:nth-child(3),.surge-page .surge-table td:nth-child(3){display:none!important}
+.surge-page .surge-panel:has(#surgeRecommendations){display:none!important}
+.surge-page .surge-status{margin:8px 0 12px!important}
+.surge-page .surge-muted{font-size:12px!important;line-height:1.8!important}
+@media(max-width:600px){
+ .surge-page{margin:8px auto!important;padding:11px!important;border-radius:15px!important}
+ .surge-page .surge-top{gap:9px!important}
+ .surge-page .surge-market-title{font-size:25px!important}
+ .surge-page .surge-hero{border-radius:14px!important}
+ .surge-page #surgeIntervals button{flex:1 1 calc(33.333% - 7px)!important;padding:8px 5px!important;font-size:12px!important}
+ .surge-page .surge-panel{padding:11px!important}
+ .surge-page .surge-head{align-items:flex-start!important}
+ .surge-page .surge-table td{padding:10px 8px!important}
+}
