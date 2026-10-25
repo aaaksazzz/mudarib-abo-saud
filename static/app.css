@@ -247,3 +247,18 @@ body{top:0!important}
 
 /* User requested removal of the asset ranking section from market pages */
 .surge-page .surge-layout{display:none!important}
+
+
+/* Market page order requested: market name, whole-market direction, timeframe, recommendations only */
+.surge-page>.surge-hero{display:none!important}
+.surge-page>.surge-stats{display:none!important}
+.surge-page>.surge-panel:has(#surgeDirection){display:block!important;order:1}
+.surge-page>.surge-panel:has(#surgeRecommendations){display:block!important;order:3}
+.surge-page>.surge-panel:has(#surgeIntervals){display:block!important;order:2}
+.surge-page>.surge-layout{display:none!important}
+.surge-page>.surge-panel:has(#surgeDirection),
+.surge-page>.surge-panel:has(#surgeIntervals),
+.surge-page>.surge-panel:has(#surgeRecommendations){margin-bottom:12px!important}
+.surge-page>.surge-panel:has(#surgeRecommendations) .surge-recommendations{display:grid!important}
+.surge-page>.surge-panel:has(#surgeRecommendations) .surge-head h2{font-size:18px!important}
+.surge-page>.surge-panel:has(#surgeRecommendations) .surge-chip{font-size:11px!important}
