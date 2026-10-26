@@ -2975,8 +2975,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         except (KeyError, TypeError, ValueError, OverflowError, ZeroDivisionError):
             return (-1.0, -1.0, -1.0, 0)
 
-    # Multi-timeframe strategy: keep the selected higher timeframe as the signal
-    # timeframe, and rank its signals by aligned movement on the paired lower timeframe.
+    # Multi-timeframe ranking: use the full percentage change across the paired
+    # lower timeframe, not just the latest candle. Rank by strongest aligned move.
     # 4H -> 15m, Daily -> 1H, Weekly -> 4H, Monthly -> Daily.
     rank_interval = {"4h": "15m", "1d": "1h", "1w": "4h", "1M": "1d"}.get(interval)
     for item in items:
@@ -2993,15 +2993,17 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 candles = candle_data(market, symbol, rank_interval)
                 if len(candles) < 2:
                     return item, None
-                previous = float(candles[-2].get("close") or 0)
-                latest = float(candles[-1].get("close") or 0)
-                if previous <= 0 or latest <= 0 or not math.isfinite(previous) or not math.isfinite(latest):
+                start_price = float(candles[0].get("open") or candles[0].get("close") or 0)
+                end_price = float(candles[-1].get("close") or 0)
+                if (start_price <= 0 or end_price <= 0
+                        or not math.isfinite(start_price) or not math.isfinite(end_price)):
                     return item, None
-                return item, (latest - previous) / previous * 100.0
+                # Percentage change over the fetched lower-timeframe window.
+                return item, (end_price - start_price) / start_price * 100.0
             except (KeyError, TypeError, ValueError, OverflowError, TimeoutError, OSError, urllib.error.URLError):
                 return item, None
 
-        # Bounded concurrency keeps the additional confirmation scan lightweight.
+        # Keep additional candle requests bounded to protect service stability.
         with ThreadPoolExecutor(max_workers=5) as pool:
             rank_jobs = [pool.submit(_lower_timeframe_rank, item) for item in items]
             for job in as_completed(rank_jobs):
@@ -3010,15 +3012,15 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                     if move is None:
                         continue
                     side = str(item.get("direction") or "")
+                    # Signed score means the largest move in the signal's direction ranks first.
                     aligned_move = move if side == "شراء" else (-move if side == "بيع" else 0.0)
                     item["lower_timeframe_change_pct"] = round(move, 4)
                     item["timeframe_alignment_score"] = round(aligned_move, 4)
                 except Exception:
                     continue
 
-    # Prefer signals whose lower-timeframe movement confirms their higher-timeframe side;
-    # use the existing quality / reward-to-risk ranking as the tie-breaker.
-    # Missing lower-timeframe candles safely fall back to the existing score.
+    # Rank by aligned percentage change first; existing signal quality / reward-risk
+    # only breaks ties. If lower-timeframe data is unavailable, fall back safely.
     items.sort(
         key=lambda item: (
             item.get("timeframe_alignment_score", 0.0),
