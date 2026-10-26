@@ -74,6 +74,9 @@ def _site_session_token(expiry):
     sig = hmac.new(secret, msg, hashlib.sha256).hexdigest()
     return str(expiry) + "." + sig
 
+# Backward-compatible name used by the existing smoke tests.
+_market_session_token = _site_session_token
+
 def _valid_site_session(token):
     try:
         expiry_text, supplied = token.split(".", 1)
@@ -1483,12 +1486,14 @@ def _fetch_candle_data_uncached(market: str, symbol: str, interval: str):
         raw = payload.get("data", []) if isinstance(payload, dict) else []
         if isinstance(payload, dict) and payload.get("success") is False:
             raise ValueError("Binance Alpha klines unavailable")
-        return [{"time": int(k[0]) // 1000, "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
+        return [{"time": int(k[0]) // 1000, "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5]),
+                 "taker_buy_volume": float(k[9]) if len(k) > 9 else None}
                 for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
     if market in BINANCE:
         url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 210})
         raw = fetch_json(url, timeout=2)
-        return [{"time": int(k[0]) // 1000, "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
+        return [{"time": int(k[0]) // 1000, "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5]),
+                 "taker_buy_volume": float(k[9]) if len(k) > 9 else None}
                 for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
     if market not in YAHOO_MARKETS and market != "tasi_index":
         return []
@@ -2695,6 +2700,88 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
         item["ai_unavailable"] = True
         item["score_type"] = "درجة المناهج فقط؛ مراجعة الذكاء الاصطناعي غير متاحة دون مفتاح مزوّد"
     return candidates[:limit], True, "المناهج المحلية تعمل، لكن وزن الذكاء الاصطناعي 50% غير متاح حاليًا. فعّل مفتاح مزوّد نموذج ذكاء اصطناعي لإكمال الدمج."
+
+
+@app.get("/api/order-flow/{market}")
+def order_flow_scan(market: str, interval: str = Query("15m"), limit: int = Query(12, ge=1, le=20), refresh: bool = Query(False)):
+    """Experimental order-flow scan; true aggressor volume where available, otherwise a labelled candle proxy."""
+    market = (market or "").strip().lower()
+    allowed_markets = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
+    if market not in allowed_markets:
+        return JSONResponse({"ok": False, "items": [], "message": "السوق غير مدعوم."}, status_code=404)
+    if interval not in INTERVALS:
+        return JSONResponse({"ok": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
+    now = int(time.time())
+    cache_key = ("order-flow-v1", market, interval, limit)
+    with PUBLIC_IDEAS_LOCK:
+        cached = PUBLIC_IDEAS_CACHE.get(cache_key)
+        if not refresh and cached and now - cached[0] < 45:
+            return {**cached[1], "cached": True}
+    snapshot = market_data(market, limit=2000)
+    if not isinstance(snapshot, dict) or not snapshot.get("live") or snapshot.get("stale"):
+        return {"ok": True, "live": False, "market": market, "interval": interval, "items": [],
+                "message": "بيانات السوق غير محدثة؛ لم ننشئ فرصًا."}
+    symbols = []
+    for row in snapshot.get("items", []):
+        symbol = str(row.get("symbol") or row.get("ticker") or "").strip()
+        if symbol and symbol not in symbols:
+            symbols.append(symbol)
+        if len(symbols) >= limit:
+            break
+    items = []
+    real_flow = market in {"spot", "futures"}
+    for symbol in symbols:
+        try:
+            candles = candle_data(market, symbol, interval, force_refresh=refresh)
+            if len(candles) < 20:
+                continue
+            recent = candles[-12:]
+            ratios = []
+            for c in recent:
+                total = float(c.get("volume") or 0)
+                buy = c.get("taker_buy_volume")
+                if total > 0 and buy is not None:
+                    ratios.append(max(0.0, min(1.0, float(buy) / total)))
+            if real_flow and len(ratios) >= 8:
+                buy_ratio = sum(ratios[-8:]) / len(ratios[-8:])
+                quality = "real_taker_volume"
+                delta = (buy_ratio - 0.5) * 2
+            else:
+                pressures = []
+                for c in recent[-8:]:
+                    span = max(float(c["high"]) - float(c["low"]), 1e-12)
+                    body = (float(c["close"]) - float(c["open"])) / span
+                    location = ((float(c["close"]) - float(c["low"])) / span) * 2 - 1
+                    pressures.append(max(-1.0, min(1.0, 0.65 * body + 0.35 * location)))
+                delta = sum(pressures) / len(pressures)
+                buy_ratio = (delta + 1) / 2
+                quality = "candle_proxy"
+            last, prev = recent[-1], recent[-2]
+            price = float(last["close"])
+            if price <= 0:
+                continue
+            direction = "شراء" if delta >= 0.18 and price >= float(prev["close"]) else (
+                "بيع" if delta <= -0.18 and price <= float(prev["close"]) else "محايد")
+            volumes = [float(c.get("volume") or 0) for c in recent[-8:]]
+            baseline = sum(volumes[:-1]) / max(1, len(volumes) - 1)
+            items.append({
+                "symbol": symbol, "direction": direction, "entry": price,
+                "buy_pressure_pct": round(buy_ratio * 100, 1),
+                "sell_pressure_pct": round((1 - buy_ratio) * 100, 1),
+                "delta_pct": round(delta * 100, 1),
+                "last_volume_vs_avg": round(volumes[-1] / baseline, 2) if baseline > 0 else 0,
+                "data_quality": quality, "interval": interval, "time": int(last.get("time") or now),
+                "note": "ضغط حجم taker المنفذ" if quality == "real_taker_volume" else "تقدير من الشموع، وليس تدفق أوامر حقيقيًا"
+            })
+        except (KeyError, TypeError, ValueError, OverflowError, TimeoutError, OSError):
+            continue
+    items.sort(key=lambda x: abs(x["delta_pct"]) * (1.0 if x["direction"] != "محايد" else 0.35), reverse=True)
+    result = {"ok": True, "live": True, "market": market, "interval": interval, "items": items,
+              "scanned": len(symbols), "returned": len(items), "cached": False,
+              "message": "تجريبي: حجم taker متاح لسبوت/فيوتشر فقط عند توفره؛ بقية الأسواق تستخدم تقدير ضغط الشموع."}
+    with PUBLIC_IDEAS_LOCK:
+        PUBLIC_IDEAS_CACHE[cache_key] = (now, result)
+    return result
 
 
 @app.get("/api/signals/{market}")
