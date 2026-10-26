@@ -130,43 +130,6 @@ async def site_password_gate(request: Request, call_next):
             "spot", "futures", "alpha", "contracts", "us", "saudi", "forex"
         } else None
 
-    # Public read-only market universe endpoint: keep contract lists available
-    # across browsers even when a guest has no share/subscription cookie.
-    public_market_data = bool(re.fullmatch(r"/api/market/(spot|futures|alpha|contracts|us|saudi|forex)", path))
-    protected_market = (
-        (path in {"/market-direction", "/radar", "/gold", "/tasi-analysis"} or
-         path.startswith("/markets/") or path.startswith("/market/") or
-         (path.startswith("/api/market/") and not public_market_data) or
-         path.startswith("/api/signals/") or
-         path in {"/api/market-direction", "/api/public-ideas", "/api/trade-chart-data",
-                  "/api/universe-counts", "/api/tasi/analysis", "/api/futures-pro/signals"})
-    )
-    # Require PIN 2341 for market pages and their protected APIs; cookie grants 24-hour access.
-    public_market_data = bool(re.fullmatch(r"/api/market/(spot|futures|alpha|contracts|us|saudi|forex)", path))
-    protected_market = (
-        (path in {"/market-direction", "/radar", "/gold", "/tasi-analysis"} or
-         path.startswith("/markets/") or path.startswith("/market/") or
-         (path.startswith("/api/market/") and not public_market_data) or
-         path.startswith("/api/signals/") or
-         path in {"/api/market-direction", "/api/public-ideas", "/api/trade-chart-data",
-                  "/api/universe-counts", "/api/tasi/analysis", "/api/futures-pro/signals"})
-    )
-    if protected_market and not _has_market_access(request):
-        if path.startswith("/api/"):
-            return JSONResponse({"ok": False, "detail": "أدخل الرقم السري 2341 لفتح الأسواق لمدة 24 ساعة.", "code": "PIN_REQUIRED"}, status_code=403)
-        return HTMLResponse(
-            "<!doctype html><html lang='ar' dir='rtl'><meta charset='utf-8'>"
-            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-            "<title>فتح الأسواق | التداول الذكي PRO</title>"
-            "<body style='background:#080d18;color:#edf3ff;font:16px Tahoma;padding:24px;line-height:1.9'>"
-            "<main style='max-width:420px;margin:10vh auto;padding:24px;border:1px solid #263752;border-radius:18px;background:#101a2b'>"
-            "<h1 style='font-size:25px'>🔒 فتح الأسواق</h1><p>أدخل الرقم السري لفتح جميع الأسواق لمدة 24 ساعة.</p>"
-            "<form id='pinForm'><label for='pin'>الرقم السري</label><input id='pin' inputmode='numeric' autocomplete='one-time-code' type='password' maxlength='20' required style='box-sizing:border-box;width:100%;padding:14px;margin:8px 0 14px;border-radius:10px;border:1px solid #35516d;background:#07111f;color:white;font-size:22px;letter-spacing:6px'><button id='unlock' style='width:100%;padding:14px;border:0;border-radius:12px;background:#00bd91;color:#041610;font-weight:bold;font-size:16px;cursor:pointer'>فتح لمدة 24 ساعة</button></form>"
-            "<p id='result' aria-live='polite'></p><p><a style='color:#8dbaff' href='/account'>الحساب والاشتراك</a> · <a style='color:#8dbaff' href='/'>الرئيسية</a></p></main>"
-            "<script>const f=document.getElementById('pinForm'),b=document.getElementById('unlock'),m=document.getElementById('result');f.onsubmit=async e=>{e.preventDefault();b.disabled=true;m.textContent='جارٍ التحقق…';try{const r=await fetch('/api/market-pin',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:document.getElementById('pin').value})});const d=await r.json();if(!r.ok)throw new Error(d.detail||'الرقم السري غير صحيح');m.textContent='تم الفتح لمدة 24 ساعة.';location.reload()}catch(e){m.textContent=e.message||'تعذر الفتح';b.disabled=false}};</script></body></html>",
-            status_code=403
-        )
-
     if section_id:
         section_mode = _section_settings().get(section_id, "public")
         if section_mode == "closed" or (section_mode == "subscription" and not _has_market_access(request)):
@@ -182,36 +145,8 @@ async def site_password_gate(request: Request, call_next):
                 status_code=403
             )
 
-    # Optional legacy whole-site gate remains independent of the markets-only gate.
-    if not SITE_PASSWORD_GATE:
-        return await call_next(request)
+    return await call_next(request)
 
-    if path == "/login":
-        if request.method == "POST":
-            try:
-                payload = await request.json()
-                pin = str(payload.get("pin", "")) if isinstance(payload, dict) else ""
-            except Exception:
-                pin = ""
-            expected_password = os.getenv("SITE_PASSWORD", "")
-            if not expected_password:
-                return JSONResponse({"detail": "بوابة الموقع مفعلة لكن SITE_PASSWORD غير مضبوط في إعدادات الخدمة."}, status_code=503)
-            if not secrets.compare_digest(pin, expected_password):
-                return JSONResponse({"detail": "الرقم السري غير صحيح"}, status_code=401)
-            response = JSONResponse({"ok": True})
-            response.set_cookie("site_session", _site_session_token(int(time.time()) + 60 * 60 * 24 * 7),
-                                httponly=True, secure=True, samesite="lax", path="/", max_age=60 * 60 * 24 * 7)
-            return response
-        return await call_next(request)
-
-    token = request.cookies.get("site_session", "")
-    if _valid_site_session(token):
-        return await call_next(request)
-
-    if path.startswith("/api/") or request.method not in ("GET", "HEAD"):
-        return JSONResponse({"detail": "يلزم إدخال الرقم السري"}, status_code=401)
-
-    return HTMLResponse(LOGIN_HTML, status_code=200)
 # Production results survive restarts only when Northflank mounts a persistent volume at /data.
 # Keep DATA_DIR configurable, but warn loudly when /data is merely container-local storage.
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data/smart-trading-pro-data"))
@@ -446,27 +381,6 @@ async def billing_status(request: Request):
         pending = con.execute("SELECT id,plan_id,amount_cents,expires_at FROM payment_intents WHERE user_id=? AND status='pending' AND expires_at>? ORDER BY created_at DESC LIMIT 1", (user["id"],now)).fetchone()
     share_expiry = int(share["expires_at"]) if share else 0
     return {"ok":True,"has_access":expiry>now or share_expiry>now,"subscription_expires_at":expiry,"share_expires_at":share_expiry,"paid_plan":PLAN_LABELS.get(paid["plan_id"]) if paid else None,"pending":{"id":pending["id"],"plan_id":pending["plan_id"],"amount_usd":pending["amount_cents"]/100,"expires_at":pending["expires_at"]} if pending else None}
-
-@app.post("/api/market-pin")
-async def market_pin_unlock(request: Request):
-    try:
-        payload = await request.json()
-        pin = str(payload.get("pin", "")) if isinstance(payload, dict) else ""
-    except Exception:
-        pin = ""
-    expected = os.getenv("MARKET_ACCESS_PIN", "2341")
-    if not secrets.compare_digest(pin, expected):
-        raise HTTPException(status_code=401, detail="الرقم السري غير صحيح.")
-    now = int(time.time())
-    token = secrets.token_urlsafe(32)
-    expiry = now + 24 * 60 * 60
-    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    with _billing_db() as con:
-        con.execute("INSERT INTO guest_trials(token_hash,created_at,expires_at) VALUES(?,?,?)", (token_hash, now, expiry))
-    response = JSONResponse({"ok": True, "expires_at": expiry, "message": "تم فتح الأسواق لمدة 24 ساعة."})
-    response.set_cookie("guest_trial", token, max_age=24 * 60 * 60, httponly=True, secure=True, samesite="lax", path="/")
-    return response
-
 
 @app.post("/api/billing/guest-share")
 async def billing_guest_share(request: Request):
