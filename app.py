@@ -144,47 +144,7 @@ async def site_password_gate(request: Request, call_next):
          path in {"/api/market-direction", "/api/public-ideas", "/api/trade-chart-data",
                   "/api/universe-counts", "/api/tasi/analysis", "/api/futures-pro/signals"})
     )
-    # Require PIN 2341 for market pages and their protected APIs; cookie grants 24-hour access.
-    public_market_data = bool(re.fullmatch(r"/api/market/(spot|futures|alpha|contracts|us|saudi|forex)", path))
-    protected_market = (
-        (path in {"/market-direction", "/radar", "/gold", "/tasi-analysis"} or
-         path.startswith("/markets/") or path.startswith("/market/") or
-         (path.startswith("/api/market/") and not public_market_data) or
-         path.startswith("/api/signals/") or
-         path in {"/api/market-direction", "/api/public-ideas", "/api/trade-chart-data",
-                  "/api/universe-counts", "/api/tasi/analysis", "/api/futures-pro/signals"})
-    )
-    if protected_market and not _has_market_access(request):
-        if path.startswith("/api/"):
-            return JSONResponse({"ok": False, "detail": "أدخل الرقم السري 2341 لفتح الأسواق لمدة 24 ساعة.", "code": "PIN_REQUIRED"}, status_code=403)
-        return HTMLResponse(
-            "<!doctype html><html lang='ar' dir='rtl'><meta charset='utf-8'>"
-            "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-            "<title>فتح الأسواق | التداول الذكي PRO</title>"
-            "<body style='background:#080d18;color:#edf3ff;font:16px Tahoma;padding:24px;line-height:1.9'>"
-            "<main style='max-width:420px;margin:10vh auto;padding:24px;border:1px solid #263752;border-radius:18px;background:#101a2b'>"
-            "<h1 style='font-size:25px'>🔒 فتح الأسواق</h1><p>أدخل الرقم السري لفتح جميع الأسواق لمدة 24 ساعة.</p>"
-            "<form id='pinForm'><label for='pin'>الرقم السري</label><input id='pin' inputmode='numeric' autocomplete='one-time-code' type='password' maxlength='20' required style='box-sizing:border-box;width:100%;padding:14px;margin:8px 0 14px;border-radius:10px;border:1px solid #35516d;background:#07111f;color:white;font-size:22px;letter-spacing:6px'><button id='unlock' style='width:100%;padding:14px;border:0;border-radius:12px;background:#00bd91;color:#041610;font-weight:bold;font-size:16px;cursor:pointer'>فتح لمدة 24 ساعة</button></form>"
-            "<p id='result' aria-live='polite'></p><p><a style='color:#8dbaff' href='/account'>الحساب والاشتراك</a> · <a style='color:#8dbaff' href='/'>الرئيسية</a></p></main>"
-            "<script>const f=document.getElementById('pinForm'),b=document.getElementById('unlock'),m=document.getElementById('result');f.onsubmit=async e=>{e.preventDefault();b.disabled=true;m.textContent='جارٍ التحقق…';try{const r=await fetch('/api/market-pin',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:document.getElementById('pin').value})});const d=await r.json();if(!r.ok)throw new Error(d.detail||'الرقم السري غير صحيح');m.textContent='تم الفتح لمدة 24 ساعة.';location.reload()}catch(e){m.textContent=e.message||'تعذر الفتح';b.disabled=false}};</script></body></html>",
-            status_code=403
-        )
-
-    if section_id:
-        section_mode = _section_settings().get(section_id, "public")
-        if section_mode == "closed" or (section_mode == "subscription" and not _has_market_access(request)):
-            detail = "هذا القسم مغلق مؤقتًا." if section_mode == "closed" else "هذا القسم مخصص للمشتركين."
-            if path.startswith("/api/"):
-                return JSONResponse({"ok": False, "detail": detail}, status_code=403)
-            return HTMLResponse(
-                "<!doctype html><html lang='ar' dir='rtl'><meta charset='utf-8'>"
-                "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-                "<title>القسم غير متاح | التداول الذكي PRO</title>"
-                "<body style='background:#080d18;color:#edf3ff;font:16px Tahoma;padding:28px'>"
-                "<h1>القسم غير متاح حاليًا</h1><p>" + detail + "</p><a style='color:#8dbaff' href='/account'>فتح الحساب</a></body></html>",
-                status_code=403
-            )
-
+    # Market PIN gate was removed: market pages and read-only market APIs remain available publicly.
     # Optional legacy whole-site gate remains independent of the markets-only gate.
     if not SITE_PASSWORD_GATE:
         return await call_next(request)
