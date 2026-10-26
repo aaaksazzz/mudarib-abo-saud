@@ -2975,9 +2975,57 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         except (KeyError, TypeError, ValueError, OverflowError, ZeroDivisionError):
             return (-1.0, -1.0, -1.0, 0)
 
-    # Rank by blended 50/50 method and AI evidence score, then risk/reward and TP3 return.
-    # These are estimates, not guaranteed or backtested profits.
-    items.sort(key=_tp3_profit_rank, reverse=True)
+    # Multi-timeframe strategy: keep the selected higher timeframe as the signal
+    # timeframe, and rank its signals by aligned movement on the paired lower timeframe.
+    # 4H -> 15m, Daily -> 1H, Weekly -> 4H, Monthly -> Daily.
+    rank_interval = {"4h": "15m", "1d": "1h", "1w": "4h", "1M": "1d"}.get(interval)
+    for item in items:
+        item["rank_interval"] = rank_interval or interval
+        item["lower_timeframe_change_pct"] = None
+        item["timeframe_alignment_score"] = 0.0
+
+    if rank_interval and items:
+        def _lower_timeframe_rank(item):
+            symbol = str(item.get("symbol") or "").strip()
+            if not symbol:
+                return item, None
+            try:
+                candles = candle_data(market, symbol, rank_interval)
+                if len(candles) < 2:
+                    return item, None
+                previous = float(candles[-2].get("close") or 0)
+                latest = float(candles[-1].get("close") or 0)
+                if previous <= 0 or latest <= 0 or not math.isfinite(previous) or not math.isfinite(latest):
+                    return item, None
+                return item, (latest - previous) / previous * 100.0
+            except (KeyError, TypeError, ValueError, OverflowError, TimeoutError, OSError, urllib.error.URLError):
+                return item, None
+
+        # Bounded concurrency keeps the additional confirmation scan lightweight.
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            rank_jobs = [pool.submit(_lower_timeframe_rank, item) for item in items]
+            for job in as_completed(rank_jobs):
+                try:
+                    item, move = job.result()
+                    if move is None:
+                        continue
+                    side = str(item.get("direction") or "")
+                    aligned_move = move if side == "شراء" else (-move if side == "بيع" else 0.0)
+                    item["lower_timeframe_change_pct"] = round(move, 4)
+                    item["timeframe_alignment_score"] = round(aligned_move, 4)
+                except Exception:
+                    continue
+
+    # Prefer signals whose lower-timeframe movement confirms their higher-timeframe side;
+    # use the existing quality / reward-to-risk ranking as the tie-breaker.
+    # Missing lower-timeframe candles safely fall back to the existing score.
+    items.sort(
+        key=lambda item: (
+            item.get("timeframe_alignment_score", 0.0),
+            *_tp3_profit_rank(item)
+        ),
+        reverse=True
+    )
     print(
         "signal scan summary: "
         f"market={market} interval={interval} quote_rows={len(market_rows) if isinstance(market_rows, list) else 0} "
