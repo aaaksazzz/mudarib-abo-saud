@@ -2730,55 +2730,66 @@ def order_flow_scan(market: str, interval: str = Query("15m"), limit: int = Quer
             break
     items = []
     real_flow = market in {"spot", "futures"}
-    for symbol in symbols:
-        try:
-            candles = candle_data(market, symbol, interval, force_refresh=refresh)
-            if len(candles) < 20:
-                continue
-            recent = candles[-12:]
-            ratios = []
-            for c in recent:
-                total = float(c.get("volume") or 0)
-                buy = c.get("taker_buy_volume")
-                if total > 0 and buy is not None:
-                    ratios.append(max(0.0, min(1.0, float(buy) / total)))
-            if real_flow and len(ratios) >= 8:
-                buy_ratio = sum(ratios[-8:]) / len(ratios[-8:])
-                quality = "real_taker_volume"
-                delta = (buy_ratio - 0.5) * 2
-            else:
-                pressures = []
-                for c in recent[-8:]:
-                    span = max(float(c["high"]) - float(c["low"]), 1e-12)
-                    body = (float(c["close"]) - float(c["open"])) / span
-                    location = ((float(c["close"]) - float(c["low"])) / span) * 2 - 1
-                    pressures.append(max(-1.0, min(1.0, 0.65 * body + 0.35 * location)))
-                delta = sum(pressures) / len(pressures)
-                buy_ratio = (delta + 1) / 2
-                quality = "candle_proxy"
-            last, prev = recent[-1], recent[-2]
-            price = float(last["close"])
-            if price <= 0:
-                continue
-            direction = "شراء" if delta >= 0.18 and price >= float(prev["close"]) else (
-                "بيع" if delta <= -0.18 and price <= float(prev["close"]) else "محايد")
-            volumes = [float(c.get("volume") or 0) for c in recent[-8:]]
-            baseline = sum(volumes[:-1]) / max(1, len(volumes) - 1)
-            items.append({
-                "symbol": symbol, "direction": direction, "entry": price,
-                "buy_pressure_pct": round(buy_ratio * 100, 1),
-                "sell_pressure_pct": round((1 - buy_ratio) * 100, 1),
-                "delta_pct": round(delta * 100, 1),
-                "last_volume_vs_avg": round(volumes[-1] / baseline, 2) if baseline > 0 else 0,
-                "data_quality": quality, "interval": interval, "time": int(last.get("time") or now),
-                "note": "ضغط حجم taker المنفذ" if quality == "real_taker_volume" else "تقدير من الشموع، وليس تدفق أوامر حقيقيًا"
-            })
-        except (KeyError, TypeError, ValueError, OverflowError, TimeoutError, OSError):
-            continue
+    failed_symbols = 0
+
+    def analyze_symbol(symbol):
+        candles = candle_data(market, symbol, interval, force_refresh=refresh)
+        if len(candles) < 20:
+            return None
+        recent = candles[-12:]
+        ratios = []
+        for c in recent:
+            total = float(c.get("volume") or 0)
+            buy = c.get("taker_buy_volume")
+            if total > 0 and buy is not None:
+                ratios.append(max(0.0, min(1.0, float(buy) / total)))
+        if real_flow and len(ratios) >= 8:
+            buy_ratio = sum(ratios[-8:]) / len(ratios[-8:])
+            quality = "real_taker_volume"
+            delta = (buy_ratio - 0.5) * 2
+        else:
+            pressures = []
+            for c in recent[-8:]:
+                span = max(float(c["high"]) - float(c["low"]), 1e-12)
+                body = (float(c["close"]) - float(c["open"])) / span
+                location = ((float(c["close"]) - float(c["low"])) / span) * 2 - 1
+                pressures.append(max(-1.0, min(1.0, 0.65 * body + 0.35 * location)))
+            delta = sum(pressures) / len(pressures)
+            buy_ratio = (delta + 1) / 2
+            quality = "candle_proxy"
+        last, prev = recent[-1], recent[-2]
+        price = float(last["close"])
+        if price <= 0:
+            return None
+        direction = "شراء" if delta >= 0.18 and price >= float(prev["close"]) else (
+            "بيع" if delta <= -0.18 and price <= float(prev["close"]) else "محايد")
+        volumes = [float(c.get("volume") or 0) for c in recent[-8:]]
+        baseline = sum(volumes[:-1]) / max(1, len(volumes) - 1)
+        return {
+            "symbol": symbol, "direction": direction, "entry": price,
+            "buy_pressure_pct": round(buy_ratio * 100, 1),
+            "sell_pressure_pct": round((1 - buy_ratio) * 100, 1),
+            "delta_pct": round(delta * 100, 1),
+            "last_volume_vs_avg": round(volumes[-1] / baseline, 2) if baseline > 0 else 0,
+            "data_quality": quality, "interval": interval, "time": int(last.get("time") or now),
+            "note": "ضغط حجم taker المنفذ" if quality == "real_taker_volume" else "تقدير من الشموع، وليس تدفق أوامر حقيقيًا"
+        }
+
+    # Keep network pressure bounded while avoiding 20 sequential candle requests.
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = {pool.submit(analyze_symbol, symbol): symbol for symbol in symbols}
+        for future in as_completed(futures):
+            try:
+                item = future.result()
+                if item:
+                    items.append(item)
+            except (KeyError, TypeError, ValueError, OverflowError, TimeoutError, OSError, urllib.error.URLError):
+                failed_symbols += 1
     items.sort(key=lambda x: abs(x["delta_pct"]) * (1.0 if x["direction"] != "محايد" else 0.35), reverse=True)
     result = {"ok": True, "live": True, "market": market, "interval": interval, "items": items,
-              "scanned": len(symbols), "returned": len(items), "cached": False,
-              "message": "تجريبي: حجم taker متاح لسبوت/فيوتشر فقط عند توفره؛ بقية الأسواق تستخدم تقدير ضغط الشموع."}
+              "scanned": len(symbols), "returned": len(items), "failed": failed_symbols, "cached": False,
+              "message": ("لم تصل شموع صالحة للأصول المفحوصة؛ جرّب تحديثًا بعد قليل." if not items else
+                          "تجريبي: حجم taker متاح لسبوت/فيوتشر فقط عند توفره؛ بقية الأسواق تستخدم تقدير ضغط الشموع.")}
     with PUBLIC_IDEAS_LOCK:
         PUBLIC_IDEAS_CACHE[cache_key] = (now, result)
     return result
