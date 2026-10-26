@@ -74,6 +74,9 @@ def _site_session_token(expiry):
     sig = hmac.new(secret, msg, hashlib.sha256).hexdigest()
     return str(expiry) + "." + sig
 
+# Backward-compatible name used by the existing smoke tests.
+_market_session_token = _site_session_token
+
 def _valid_site_session(token):
     try:
         expiry_text, supplied = token.split(".", 1)
