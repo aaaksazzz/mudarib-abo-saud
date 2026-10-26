@@ -111,7 +111,7 @@ async def site_password_gate(request: Request, call_next):
         section_id = page_sections[path]
     elif path.startswith("/blog/"):
         section_id = "blog"
-    elif path.startswith("/api/market/"):
+    elif path.startswith("/api/market/") and not re.fullmatch(r"/api/market/(spot|futures|alpha|contracts|us|saudi|forex)", path):
         requested_market = path.rsplit("/", 1)[-1].lower()
         section_id = requested_market if requested_market in {
             "spot", "futures", "alpha", "contracts", "us", "saudi", "forex"
@@ -133,18 +133,6 @@ async def site_password_gate(request: Request, call_next):
             "spot", "futures", "alpha", "contracts", "us", "saudi", "forex"
         } else None
 
-    # Public read-only market universe endpoint: keep contract lists available
-    # across browsers even when a guest has no share/subscription cookie.
-    public_market_data = bool(re.fullmatch(r"/api/market/(spot|futures|alpha|contracts|us|saudi|forex)", path))
-    protected_market = (
-        (path in {"/market-direction", "/radar", "/gold", "/tasi-analysis"} or
-         path.startswith("/markets/") or path.startswith("/market/") or
-         (path.startswith("/api/market/") and not public_market_data) or
-         path.startswith("/api/signals/") or
-         path in {"/api/market-direction", "/api/public-ideas", "/api/trade-chart-data",
-                  "/api/universe-counts", "/api/tasi/analysis", "/api/futures-pro/signals"})
-    )
-    # Market pages are public by default; retain explicit admin section restrictions.
     if section_id:
         section_mode = _section_settings().get(section_id, "public")
         if section_mode == "closed" or (section_mode == "subscription" and not _has_market_access(request)):
@@ -160,36 +148,8 @@ async def site_password_gate(request: Request, call_next):
                 status_code=403
             )
 
-    # Optional legacy whole-site gate remains independent of the markets-only gate.
-    if not SITE_PASSWORD_GATE:
-        return await call_next(request)
+    return await call_next(request)
 
-    if path == "/login":
-        if request.method == "POST":
-            try:
-                payload = await request.json()
-                pin = str(payload.get("pin", "")) if isinstance(payload, dict) else ""
-            except Exception:
-                pin = ""
-            expected_password = os.getenv("SITE_PASSWORD", "")
-            if not expected_password:
-                return JSONResponse({"detail": "بوابة الموقع مفعلة لكن SITE_PASSWORD غير مضبوط في إعدادات الخدمة."}, status_code=503)
-            if not secrets.compare_digest(pin, expected_password):
-                return JSONResponse({"detail": "الرقم السري غير صحيح"}, status_code=401)
-            response = JSONResponse({"ok": True})
-            response.set_cookie("site_session", _site_session_token(int(time.time()) + 60 * 60 * 24 * 7),
-                                httponly=True, secure=True, samesite="lax", path="/", max_age=60 * 60 * 24 * 7)
-            return response
-        return await call_next(request)
-
-    token = request.cookies.get("site_session", "")
-    if _valid_site_session(token):
-        return await call_next(request)
-
-    if path.startswith("/api/") or request.method not in ("GET", "HEAD"):
-        return JSONResponse({"detail": "يلزم إدخال الرقم السري"}, status_code=401)
-
-    return HTMLResponse(LOGIN_HTML, status_code=200)
 # Production results survive restarts only when Northflank mounts a persistent volume at /data.
 # Keep DATA_DIR configurable, but warn loudly when /data is merely container-local storage.
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data/smart-trading-pro-data"))
@@ -424,27 +384,6 @@ async def billing_status(request: Request):
         pending = con.execute("SELECT id,plan_id,amount_cents,expires_at FROM payment_intents WHERE user_id=? AND status='pending' AND expires_at>? ORDER BY created_at DESC LIMIT 1", (user["id"],now)).fetchone()
     share_expiry = int(share["expires_at"]) if share else 0
     return {"ok":True,"has_access":expiry>now or share_expiry>now,"subscription_expires_at":expiry,"share_expires_at":share_expiry,"paid_plan":PLAN_LABELS.get(paid["plan_id"]) if paid else None,"pending":{"id":pending["id"],"plan_id":pending["plan_id"],"amount_usd":pending["amount_cents"]/100,"expires_at":pending["expires_at"]} if pending else None}
-
-@app.post("/api/market-pin")
-async def market_pin_unlock(request: Request):
-    try:
-        payload = await request.json()
-        pin = str(payload.get("pin", "")) if isinstance(payload, dict) else ""
-    except Exception:
-        pin = ""
-    expected = os.getenv("MARKET_ACCESS_PIN", "2341")
-    if not secrets.compare_digest(pin, expected):
-        raise HTTPException(status_code=401, detail="الرقم السري غير صحيح.")
-    now = int(time.time())
-    token = secrets.token_urlsafe(32)
-    expiry = now + 24 * 60 * 60
-    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
-    with _billing_db() as con:
-        con.execute("INSERT INTO guest_trials(token_hash,created_at,expires_at) VALUES(?,?,?)", (token_hash, now, expiry))
-    response = JSONResponse({"ok": True, "expires_at": expiry, "message": "تم فتح الأسواق لمدة 24 ساعة."})
-    response.set_cookie("guest_trial", token, max_age=24 * 60 * 60, httponly=True, secure=True, samesite="lax", path="/")
-    return response
-
 
 @app.post("/api/billing/guest-share")
 async def billing_guest_share(request: Request):
