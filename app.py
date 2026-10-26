@@ -2764,8 +2764,38 @@ def order_flow_scan(market: str, interval: str = Query("15m"), limit: int = Quer
         direction = "شراء" if delta >= 0.03 else ("بيع" if delta <= -0.03 else "محايد")
         volumes = [float(c.get("volume") or 0) for c in recent[-8:]]
         baseline = sum(volumes[:-1]) / max(1, len(volumes) - 1)
+        # Build transparent candle-range trade levels, only for directional readings.
+        ranges = []
+        for candle in recent[-14:]:
+            try:
+                high = float(candle.get("high") or 0)
+                low = float(candle.get("low") or 0)
+                close_prev = float(candle.get("close") or 0)
+                if high > low > 0:
+                    ranges.append(max(high - low, abs(high - close_prev), abs(low - close_prev)))
+            except (TypeError, ValueError):
+                continue
+        atr_proxy = sum(ranges) / len(ranges) if ranges else price * 0.01
+        risk_distance = max(atr_proxy * 1.2, price * 0.002)
+        levels = None
+        if direction == "شراء":
+            stop = price - risk_distance
+            levels = {"entry": price, "stop_loss": stop,
+                      "tp1": price + risk_distance, "tp2": price + risk_distance * 1.8,
+                      "tp3": price + risk_distance * 2.5}
+        elif direction == "بيع":
+            stop = price + risk_distance
+            levels = {"entry": price, "stop_loss": stop,
+                      "tp1": price - risk_distance, "tp2": price - risk_distance * 1.8,
+                      "tp3": price - risk_distance * 2.5}
+        risk_pct = risk_distance / price * 100 if price > 0 else 0
         return {
             "symbol": symbol, "direction": direction, "entry": price,
+            "levels": levels,
+            "risk_pct": round(risk_pct, 2),
+            "tp1_pct": round(risk_pct, 2), "tp2_pct": round(risk_pct * 1.8, 2),
+            "tp3_pct": round(risk_pct * 2.5, 2),
+            "levels_method": "مستويات تقديرية من متوسط مدى الشموع؛ ليست ضمانًا",
             "buy_pressure_pct": round(buy_ratio * 100, 1),
             "sell_pressure_pct": round((1 - buy_ratio) * 100, 1),
             "delta_pct": round(delta * 100, 1),
