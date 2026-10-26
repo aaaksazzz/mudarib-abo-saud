@@ -2761,8 +2761,7 @@ def order_flow_scan(market: str, interval: str = Query("15m"), limit: int = Quer
         price = float(last["close"])
         if price <= 0:
             return None
-        direction = "شراء" if delta >= 0.10 and price >= float(prev["close"]) else (
-            "بيع" if delta <= -0.10 and price <= float(prev["close"]) else "محايد")
+        direction = "شراء" if delta >= 0.03 else ("بيع" if delta <= -0.03 else "محايد")
         volumes = [float(c.get("volume") or 0) for c in recent[-8:]]
         baseline = sum(volumes[:-1]) / max(1, len(volumes) - 1)
         return {
