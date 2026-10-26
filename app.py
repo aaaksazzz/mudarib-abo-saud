@@ -2721,8 +2721,27 @@ def order_flow_scan(market: str, interval: str = Query("15m"), limit: int = Quer
     if not isinstance(snapshot, dict) or not snapshot.get("live") or snapshot.get("stale"):
         return {"ok": True, "live": False, "market": market, "interval": interval, "items": [],
                 "message": "بيانات السوق غير محدثة؛ لم ننشئ فرصًا."}
+    # Scan the most active movers first across every supported market.
+    # Rank by absolute 24h move, then traded value; this prioritizes volatility
+    # without adding candle requests or increasing the bounded scan workload.
+    def _rapid_mover_rank(row):
+        try:
+            move = abs(float(row.get("change_pct") or 0))
+            if not math.isfinite(move):
+                move = 0.0
+        except (TypeError, ValueError, OverflowError):
+            move = 0.0
+        try:
+            traded = float(row.get("quote_volume") or row.get("dollar_volume") or row.get("volume") or 0)
+            if not math.isfinite(traded) or traded < 0:
+                traded = 0.0
+        except (TypeError, ValueError, OverflowError):
+            traded = 0.0
+        return (move, traded)
+
+    active_rows = sorted(snapshot.get("items", []), key=_rapid_mover_rank, reverse=True)
     symbols = []
-    for row in snapshot.get("items", []):
+    for row in active_rows:
         symbol = str(row.get("symbol") or row.get("ticker") or "").strip()
         if symbol and symbol not in symbols:
             symbols.append(symbol)
