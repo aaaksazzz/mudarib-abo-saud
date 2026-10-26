@@ -1575,7 +1575,8 @@ def _fetch_candle_data_uncached(market: str, symbol: str, interval: str):
     if market in BINANCE:
         url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 210})
         raw = fetch_json(url, timeout=2)
-        return [{"time": int(k[0]) // 1000, "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
+        return [{"time": int(k[0]) // 1000, "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5]),
+                 "taker_buy_volume": float(k[9]) if len(k) > 9 else None}
                 for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
     if market not in YAHOO_MARKETS and market != "tasi_index":
         return []
