@@ -1674,11 +1674,15 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
                     if any(v <= 0 or not math.isfinite(v) for v in closes):
                         continue
                     previous, latest = closes[-2], closes[-1]
-                    # EMA 200 is the trend filter used by the previous strategy.
-                    alpha = 2.0 / 201.0
+                    # EMA 50 confirms momentum; EMA 200 defines the main trend.
+                    alpha50 = 2.0 / 51.0
+                    ema50 = closes[0]
+                    for close_value in closes[1:]:
+                        ema50 = close_value * alpha50 + ema50 * (1.0 - alpha50)
+                    alpha200 = 2.0 / 201.0
                     ema200 = closes[0]
                     for close_value in closes[1:]:
-                        ema200 = close_value * alpha + ema200 * (1.0 - alpha)
+                        ema200 = close_value * alpha200 + ema200 * (1.0 - alpha200)
                     swing = candles[-100:]
                     swing_high = max(float(c["high"]) for c in swing)
                     swing_low = min(float(c["low"]) for c in swing)
@@ -1689,10 +1693,11 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
                     row["candle_time"] = candles[-1].get("time")
                     row["interval"] = interval
                     row["candle_sample"] = len(candles)
+                    row["ema50"] = ema50
                     row["ema200"] = ema200
-                    row["market_direction"] = "صاعد" if latest > ema200 else "هابط" if latest < ema200 else "محايد"
+                    row["market_direction"] = "صاعد" if latest > ema200 and ema50 > ema200 else "هابط" if latest < ema200 and ema50 < ema200 else "محايد"
                     row["signal"] = None
-                    if swing_range > 0 and latest > ema200:
+                    if swing_range > 0 and latest > ema200 and ema50 > ema200:
                         retracement = (latest - swing_low) / swing_range
                         if 0.50 < retracement < 1.0:
                             entry = latest
@@ -1703,8 +1708,8 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
                             if stop < entry < tp3:
                                 row["signal"] = {"side": "BUY", "strength": "شراء قوي" if latest > ema200 * 1.01 else "شراء",
                                     "entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3,
-                                    "fibonacci_retracement": round(retracement * 100, 2), "ema200": ema200}
-                    elif swing_range > 0 and latest < ema200:
+                                    "fibonacci_retracement": round(retracement * 100, 2), "ema50": ema50, "ema200": ema200}
+                    elif swing_range > 0 and latest < ema200 and ema50 < ema200:
                         retracement = (swing_high - latest) / swing_range
                         if 0.50 < retracement < 1.0:
                             entry = latest
@@ -1715,7 +1720,7 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
                             if tp3 < entry < stop:
                                 row["signal"] = {"side": "SELL", "strength": "بيع قوي" if latest < ema200 * 0.99 else "بيع",
                                     "entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3,
-                                    "fibonacci_retracement": round(retracement * 100, 2), "ema200": ema200}
+                                    "fibonacci_retracement": round(retracement * 100, 2), "ema50": ema50, "ema200": ema200}
                     results.append(row)
                 except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError, KeyError):
                     continue
