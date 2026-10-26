@@ -144,7 +144,22 @@ async def site_password_gate(request: Request, call_next):
          path in {"/api/market-direction", "/api/public-ideas", "/api/trade-chart-data",
                   "/api/universe-counts", "/api/tasi/analysis", "/api/futures-pro/signals"})
     )
-    # Market PIN gate was removed: market pages and read-only market APIs remain available publicly.
+    # Market pages are public by default; retain explicit admin section restrictions.
+    if section_id:
+        section_mode = _section_settings().get(section_id, "public")
+        if section_mode == "closed" or (section_mode == "subscription" and not _has_market_access(request)):
+            detail = "هذا القسم مغلق مؤقتًا." if section_mode == "closed" else "هذا القسم مخصص للمشتركين."
+            if path.startswith("/api/"):
+                return JSONResponse({"ok": False, "detail": detail}, status_code=403)
+            return HTMLResponse(
+                "<!doctype html><html lang='ar' dir='rtl'><meta charset='utf-8'>"
+                "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+                "<title>القسم غير متاح | التداول الذكي PRO</title>"
+                "<body style='background:#080d18;color:#edf3ff;font:16px Tahoma;padding:28px'>"
+                "<h1>القسم غير متاح حاليًا</h1><p>" + detail + "</p><a style='color:#8dbaff' href='/account'>فتح الحساب</a></body></html>",
+                status_code=403
+            )
+
     # Optional legacy whole-site gate remains independent of the markets-only gate.
     if not SITE_PASSWORD_GATE:
         return await call_next(request)
