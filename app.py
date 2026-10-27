@@ -2368,54 +2368,6 @@ def _valid_external_trade(row):
     return True
 
 
-def _ema_series(values, period):
-    if len(values) < period:
-        return []
-    alpha = 2.0 / (period + 1.0)
-    current = sum(values[:period]) / period
-    result = [None] * (period - 1) + [current]
-    for value in values[period:]:
-        current = alpha * value + (1.0 - alpha) * current
-        result.append(current)
-    return result
-
-
-def _ema_alignment(market, symbol, interval):
-    """Require EMA20/EMA50 alignment on three configured timeframes and a fresh cross on the lead timeframe."""
-    timeframe_sets = {
-        "15m": ("15m", "30m", "1h"),
-        "1h": ("1h", "2h", "4h"),
-        "2h": ("2h", "4h", "1d"),
-        "4h": ("4h", "1d", "1w"),
-        "1d": ("1d", "1w", "1M"),
-    }
-    frames = timeframe_sets.get(interval)
-    if not frames:
-        return None
-    states = {}
-    for tf in frames:
-        candles = candle_data(market, symbol, tf)
-        closes = [float(c["close"]) for c in candles if c.get("close") is not None]
-        if len(closes) < 55 or not all(math.isfinite(v) and v > 0 for v in closes[-55:]):
-            return None
-        ema20 = _ema_series(closes, 20)
-        ema50 = _ema_series(closes, 50)
-        if len(ema20) < 2 or len(ema50) < 2 or None in (ema20[-1], ema50[-1], ema20[-2], ema50[-2]):
-            return None
-        states[tf] = {
-            "up": ema20[-1] > ema50[-1],
-            "down": ema20[-1] < ema50[-1],
-            "cross_up": ema20[-2] <= ema50[-2] and ema20[-1] > ema50[-1],
-            "cross_down": ema20[-2] >= ema50[-2] and ema20[-1] < ema50[-1],
-        }
-    lead = states[frames[0]]
-    if lead["cross_up"] and all(states[tf]["up"] for tf in frames[1:]):
-        return "شراء", frames
-    if lead["cross_down"] and all(states[tf]["down"] for tf in frames[1:]):
-        return "بيع", frames
-    return None
-
-
 def _technical_fallback_signal(market, symbol, interval):
     """Disabled: this site must not generate trades from technical indicators."""
     return None
