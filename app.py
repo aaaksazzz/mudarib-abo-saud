@@ -2918,10 +2918,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "ai_enabled": False,
         "ai_review_completed": False,
         "analysis_completed": bool(ai_review_completed),
-        "analysis_engine": "hybrid_methods_ai_review_50_50",
-        "method_weight_percent": 50,
-        "ai_review_weight_percent": 50,
-        "ai_provider_configured": bool(os.getenv("OPENAI_API_KEY", "").strip()),
+        "analysis_engine": "multi_timeframe_direction_v2",
+        "method_weight_percent": 100,
+        "ai_review_weight_percent": 0,
+        "ai_provider_configured": False,
         "technical_fallback_used": False,
         "technical_opportunities": 0,
         "external_opportunities": 0,
@@ -2935,6 +2935,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             saved_cache = read_json_file(SIGNALS_CACHE_PATH, {})
             if not isinstance(saved_cache, dict):
                 saved_cache = {}
+            saved_cache = {k: v for k, v in saved_cache.items() if isinstance(v, dict) and all(isinstance(x, dict) and x.get("method") == "multi_timeframe_direction_v2" for x in v.get("items", []))}
             saved_cache[f"{market}:{interval}"] = {
                 "updated_at": now,
                 "items": result.get("items", []),
@@ -2946,6 +2947,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             journal = read_json_file(RESULTS_PATH, [])
             if not isinstance(journal, list):
                 journal = []
+            # Purge all historical trades from the retired strategy before tracking new ones.
+            journal = [row for row in journal if isinstance(row, dict) and row.get("source") == "multi_timeframe_direction_v2"]
             # Update every open trade for this market from the newest real quote snapshot.
             current_prices = {}
             for quote in (market_rows if isinstance(market_rows, list) else []):
