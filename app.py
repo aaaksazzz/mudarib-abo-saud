@@ -2691,7 +2691,23 @@ def order_flow_scan(market: str, interval: str = Query("15m"), limit: int = Quer
         price = float(last["close"])
         if price <= 0:
             return None
-        direction = "شراء" if delta >= 0.03 else ("بيع" if delta <= -0.03 else "محايد")
+        closes = [float(c.get("close") or 0) for c in recent[-9:]]
+        valid_closes = [v for v in closes if v > 0]
+        if len(valid_closes) < 6:
+            return None
+        momentum_pct = (valid_closes[-1] / valid_closes[-4] - 1) * 100 if valid_closes[-4] > 0 else 0.0
+        previous_momentum_pct = (valid_closes[-4] / valid_closes[-7] - 1) * 100 if len(valid_closes) >= 7 and valid_closes[-7] > 0 else 0.0
+        acceleration_pct = momentum_pct - previous_momentum_pct
+        direction_votes = sum(1 if valid_closes[i] > valid_closes[i-1] else -1 if valid_closes[i] < valid_closes[i-1] else 0 for i in range(max(1, len(valid_closes)-4), len(valid_closes)))
+        consistency = abs(direction_votes) / max(1, min(4, len(valid_closes)-1))
+        pressure_direction = 1 if delta > 0 else -1 if delta < 0 else 0
+        momentum_direction = 1 if momentum_pct > 0 else -1 if momentum_pct < 0 else 0
+        if momentum_direction and pressure_direction and momentum_direction == pressure_direction:
+            direction = "شراء" if momentum_direction > 0 else "بيع"
+        elif abs(momentum_pct) >= 0.15 and abs(acceleration_pct) >= 0.05:
+            direction = "شراء" if momentum_pct > 0 else "بيع"
+        else:
+            direction = "محايد"
         volumes = [float(c.get("volume") or 0) for c in recent[-8:]]
         baseline = sum(volumes[:-1]) / max(1, len(volumes) - 1)
         # Build transparent candle-range trade levels, only for directional readings.
@@ -2729,6 +2745,10 @@ def order_flow_scan(market: str, interval: str = Query("15m"), limit: int = Quer
             "buy_pressure_pct": round(buy_ratio * 100, 1),
             "sell_pressure_pct": round((1 - buy_ratio) * 100, 1),
             "delta_pct": round(delta * 100, 1),
+            "momentum_pct": round(momentum_pct, 3),
+            "previous_momentum_pct": round(previous_momentum_pct, 3),
+            "acceleration_pct": round(acceleration_pct, 3),
+            "direction_consistency": round(consistency, 2),
             "last_volume_vs_avg": round(volumes[-1] / baseline, 2) if baseline > 0 else 0,
             "data_quality": quality, "interval": interval, "time": int(last.get("time") or now),
             "note": "ضغط حجم taker المنفذ" if quality == "real_taker_volume" else "تقدير من الشموع، وليس تدفق أوامر حقيقيًا"
@@ -2744,7 +2764,19 @@ def order_flow_scan(market: str, interval: str = Query("15m"), limit: int = Quer
                     items.append(item)
             except (KeyError, TypeError, ValueError, OverflowError, TimeoutError, OSError, urllib.error.URLError):
                 failed_symbols += 1
-    items.sort(key=lambda x: abs(x["delta_pct"]) * (1.0 if x["direction"] != "محايد" else 0.35), reverse=True)
+    for item in items:
+        move = abs(float(item.get("momentum_pct") or 0))
+        accel = abs(float(item.get("acceleration_pct") or 0))
+        volume_ratio = max(0.0, float(item.get("last_volume_vs_avg") or 0))
+        consistency = max(0.0, min(1.0, float(item.get("direction_consistency") or 0)))
+        pressure = max(float(item.get("buy_pressure_pct") or 0), float(item.get("sell_pressure_pct") or 0))
+        item["scan_score"] = int(round(min(100, min(35, move * 20) + min(20, accel * 20) +
+                                               min(20, max(0, volume_ratio - 0.5) * 15) +
+                                               consistency * 15 + max(0, pressure - 50) * 0.2)))
+        item["phase"] = ("تأكيد" if consistency >= 0.75 and move >= 0.15 else
+                         "بداية حركة" if move >= 0.10 and accel * (1 if item.get("direction") == "شراء" else -1) > 0 else
+                         "زخم ضعيف")
+    items.sort(key=lambda x: (x.get("direction") != "محايد", x.get("scan_score", 0)), reverse=True)
     result = {"ok": True, "live": True, "market": market, "interval": interval, "items": items,
               "scanned": len(symbols), "returned": len(items), "failed": failed_symbols, "cached": False,
               "message": ("لم تصل شموع صالحة للأصول المفحوصة؛ جرّب تحديثًا بعد قليل." if not items else
