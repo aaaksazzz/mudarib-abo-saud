@@ -2501,111 +2501,125 @@ def _ai_review_signal_batch(items, market, interval):
 
 
 def _ai_generate_market_signals(market, interval, market_rows, limit=20):
-    """Generate local price-action candidates from raw OHLCV; no API, indicators, or LLM."""
-    def _candidate_from_row(row):
+    """Generate trades only from the current Daily/4H/1H/15m direction-consensus strategy."""
+    frame_seconds = {"15m": 900, "30m": 1800, "1h": 3600, "2h": 7200,
+                     "4h": 14400, "1d": 86400, "1w": 604800, "1M": 2592000}
+    frame_names = ("1d", "4h", "1h", "15m")
+
+    def _valid_candles(symbol, tf):
+        try:
+            candles = candle_data(market, symbol, tf, force_refresh=(tf == interval))
+        except Exception:
+            return []
+        valid = []
+        for c in candles[-30:] if isinstance(candles, list) else []:
+            try:
+                row = {k: float(c[k]) for k in ("open", "high", "low", "close")}
+                if (all(math.isfinite(row[k]) and row[k] > 0 for k in row)
+                    and row["high"] >= max(row["open"], row["close"])
+                    and row["low"] <= min(row["open"], row["close"])
+                    and row["high"] >= row["low"]):
+                    valid.append(row)
+            except (KeyError, TypeError, ValueError, OverflowError):
+                continue
+        return valid
+
+    def _candidate(row):
         if not isinstance(row, dict):
             return None
         symbol = str(row.get("symbol") or "").strip().upper()
         if not symbol:
             return None
-        try:
-            candles = candle_data(market, symbol, interval, force_refresh=True)
-        except Exception as exc:
-            print(f"local candle analysis unavailable {market}/{symbol}: {type(exc).__name__}")
-            return None
-        raw = []
-        for candle in candles[-30:] if isinstance(candles, list) else []:
-            try:
-                x = {k: float(candle[k]) for k in ("open", "high", "low", "close")}
-                x["volume"] = float(candle.get("volume") or 0)
-                if (all(math.isfinite(x[k]) and x[k] > 0 for k in ("open", "high", "low", "close"))
-                    and x["high"] >= max(x["open"], x["close"])
-                    and x["low"] <= min(x["open"], x["close"])
-                    and x["high"] >= x["low"]):
-                    raw.append(x)
-            except (KeyError, TypeError, ValueError, OverflowError):
+        trends, changes, candles_by_tf = {}, {}, {}
+        for tf in frame_names:
+            candles = _valid_candles(symbol, tf)
+            candles_by_tf[tf] = candles
+            if len(candles) < 3:
+                trends[tf], changes[tf] = "غير متاح", None
                 continue
-        if len(raw) < 12:
+            sample = candles[-12:]
+            start_price = sample[0]["open"]
+            end_price = sample[-1]["close"]
+            move = (end_price - start_price) / start_price * 100.0 if start_price > 0 else 0
+            changes[tf] = round(move, 3)
+            trends[tf] = "صاعد" if move > 0.05 else "هابط" if move < -0.05 else "محايد"
+
+        daily, four_hour, hourly, quarter = (trends[tf] for tf in frame_names)
+        # Strict alignment: Daily + 4H + 15m must agree; 1H improves the rank.
+        if daily == four_hour == quarter == "صاعد":
+            side = "شراء"
+        elif daily == four_hour == quarter == "هابط":
+            side = "بيع"
+        else:
             return None
+        aligned = sum(1 for value in trends.values() if value == ("صاعد" if side == "شراء" else "هابط"))
+        score = min(100, 70 + aligned * 7)
+        selected = candles_by_tf.get(interval) or candles_by_tf.get("15m") or []
+        if len(selected) < 3:
+            return None
+        last = selected[-1]
+        close = last["close"]
         try:
-            price = float(row.get("price") or raw[-1]["close"])
+            price = float(row.get("price") or close)
         except (TypeError, ValueError, OverflowError):
-            price = raw[-1]["close"]
-        close = raw[-1]["close"]
-        if not math.isfinite(price) or price <= 0 or close <= 0 or abs(price - close) / close > 0.08:
+            price = close
+        if not math.isfinite(price) or price <= 0 or close <= 0 or abs(price-close)/close > 0.08:
             return None
-        recent, prior = raw[-3:], raw[-11:-3]
-        if len(prior) < 8:
-            return None
-        prior_high, prior_low = max(c["high"] for c in prior), min(c["low"] for c in prior)
-        up = sum(c["close"] > c["open"] for c in recent)
-        down = sum(c["close"] < c["open"] for c in recent)
-        last = raw[-1]
-        candle_range = max(last["high"] - last["low"], close * 0.001)
-        close_position = (last["close"] - last["low"]) / candle_range
-        side, score = None, 0
-        avg_volume = sum(c["volume"] for c in prior[-3:]) / 3
-        # Keep breakout confirmation meaningful, but avoid rejecting valid
-        # closes merely because they finish near the middle of the candle.
-        if close > prior_high and up >= 2 and close_position >= 0.55:
-            side, score = "شراء", min(88, 58 + 7 * up + (5 if last["volume"] > avg_volume else 0))
-        elif close < prior_low and down >= 2 and close_position <= 0.45:
-            side, score = "بيع", min(88, 58 + 7 * down + (5 if last["volume"] > avg_volume else 0))
-        if not side or score < 65:
-            return None
-        swing = raw[-8:]
-        # Conservative risk caps by timeframe. If market structure requires a wider stop,
-        # skip the setup instead of publishing a dangerously wide trade.
-        max_risk_pct = {
-            "15m": 0.008, "30m": 0.012, "1h": 0.018,
-            "2h": 0.025, "4h": 0.035, "1d": 0.05, "1w": 0.08, "1M": 0.12,
-        }.get(str(interval), 0.008)
-        min_risk = max(close * 0.001, abs(last["high"] - last["low"]) * 0.35)
+
+        swing = selected[-8:]
+        min_risk = max(close * 0.001, (last["high"] - last["low"]) * 0.35)
         if side == "شراء":
-            structural_stop = min(c["low"] for c in swing)
-            risk = max(close - structural_stop, min_risk)
-            if risk / close > max_risk_pct:
+            risk = max(close - min(c["low"] for c in swing), min_risk)
+            if risk / close > {"15m":.012,"30m":.018,"1h":.025,"2h":.035,"4h":.05,"1d":.07,"1w":.10,"1M":.15}.get(interval,.02):
                 return None
-            stop = close - risk
-            entry, tp1, tp2, tp3 = close, close + risk, close + risk * 1.3, close + risk * 1.6
+            stop, entry = close-risk, close
+            tp1, tp2, tp3 = close+risk, close+risk*1.5, close+risk*2
             if not stop < entry < tp1 < tp2 < tp3:
                 return None
         else:
-            structural_stop = max(c["high"] for c in swing)
-            risk = max(structural_stop - close, min_risk)
-            if risk / close > max_risk_pct:
+            risk = max(max(c["high"] for c in swing)-close, min_risk)
+            if risk / close > {"15m":.012,"30m":.018,"1h":.025,"2h":.035,"4h":.05,"1d":.07,"1w":.10,"1M":.15}.get(interval,.02):
                 return None
-            stop = close + risk
-            entry, tp1, tp2, tp3 = close, close - risk, close - risk * 1.3, close - risk * 1.6
+            stop, entry = close+risk, close
+            tp1, tp2, tp3 = close-risk, close-risk*1.5, close-risk*2
             if not stop > entry > tp1 > tp2 > tp3 or tp3 <= 0:
                 return None
+
         digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
         now = int(time.time())
-        # Every recommendation expires after 15 minutes, regardless of chart timeframe.
-        lifetime = 15 * 60
-        # Keep the direction produced by price-action analysis; never invert it.
-        # Targets stay staged and relatively close: 1.0R, 1.3R, 1.6R.
-        original_side = side
-        rationale = ("تحليل حركة السعر يشير إلى شراء؛ الأهداف متدرجة والوقف مرتبط ببنية السعر."
-                     if side == "شراء" else "تحليل حركة السعر يشير إلى بيع؛ الأهداف متدرجة والوقف مرتبط ببنية السعر.")
+        lifetime = frame_seconds.get(str(interval), 900)
+        profit_pct = abs(tp3-entry)/entry*100
+        loss_pct = abs(stop-entry)/entry*100
+        rationale = f"{side}: اتجاه اليومي و٤ ساعات و١٥ دقيقة متوافق؛ الساعة {'مؤيدة' if hourly == ('صاعد' if side == 'شراء' else 'هابط') else 'غير متوافقة'}."
         return {
-            "symbol": symbol, "direction": side, "original_direction": original_side,
-            "title": f"{side} {symbol} — تحليل حركة السعر",
-            "description": rationale + " تحليل قواعدي من الشموع الخام، وليس نموذج ذكاء اصطناعي لغوي.",
-            "source": "محرك تحليل محلي لحركة السعر", "url": "",
+            "symbol": symbol, "direction": side, "original_direction": side,
+            "title": f"{side} {symbol} — توافق الاتجاهات الأربعة",
+            "description": rationale + " هذه درجة توافق الاتجاه وليست احتمال ربح.",
+            "source": "محرك توافق الاتجاه اليومي/4H/1H/15m", "url": "",
             "published_at": now, "created_at": now, "age_hours": 0,
-            "market": market, "interval": interval, "expires_at": now + lifetime,
+            "market": market, "interval": interval, "expires_at": now+lifetime,
             "valid_for_seconds": lifetime, "price_updated_at": now, "price_fresh": True,
-            "freshness_label": "السعر مطابق تقريبًا لآخر شمعة", "live_price": round(price, digits),
-            "levels": {"entry": round(entry, digits), "stop_loss": round(stop, digits),
-                       "tp1": round(tp1, digits), "tp2": round(tp2, digits), "tp3": round(tp3, digits)},
-            "ai_score": score, "ai_reviewed": False, "generated_by_ai": False,
-            "ai_review": {"summary_ar": rationale, "risk_ar": "تحليل قواعدي غير مضمون؛ قد يفشل الاختراق أو يحدث انعكاس سريع.",
-                          "verdict": "تحليل محلي", "score_type": "درجة تحقق شروط حركة السعر وليست احتمال ربح"},
-            "external_source_weight": 0, "site_analysis_weight": 100, "signal_inverted": True,
-            "has_complete_levels": True, "level_source_note": "المستويات محسوبة من آخر شموع السوق الخام؛ ليست توصية خارجية.",
-            "method": "local_raw_candle_price_action_no_api"
+            "freshness_label": "السعر مطابق تقريبًا لآخر شمعة", "live_price": round(price,digits),
+            "levels": {"entry":round(entry,digits),"stop_loss":round(stop,digits),
+                       "tp1":round(tp1,digits),"tp2":round(tp2,digits),"tp3":round(tp3,digits)},
+            "ai_score": score, "combined_score": score, "method_score": score,
+            "score_type": "درجة توافق ٤ فريمات وليست نسبة نجاح",
+            "ai_reviewed": False, "generated_by_ai": False,
+            "ai_review": {"summary_ar":rationale,"risk_ar":"توافق الاتجاه لا يضمن النتيجة؛ قد ينعكس السوق.",
+                          "verdict":"توافق فريمات","score_type":"درجة توافق وليست احتمال ربح"},
+            "timeframe_trends":trends, "timeframe_change_pct":changes,
+            "timeframes_aligned":aligned, "timeframe_alignment_label":f"{aligned}/4 فريمات متوافقة",
+            "trend_strength":round(aligned/4*100),
+            "potential_profit_pct":round(profit_pct,2),"potential_loss_pct":round(loss_pct,2),
+            "tp1_profit_pct":round(abs(tp1-entry)/entry*100,2),
+            "tp2_profit_pct":round(abs(tp2-entry)/entry*100,2),
+            "tp3_profit_pct":round(profit_pct,2),
+            "risk_reward_tp3":round(profit_pct/loss_pct,2) if loss_pct else None,
+            "external_source_weight":0,"site_analysis_weight":100,
+            "has_complete_levels":True,"level_source_note":"مستويات مبنية على بنية الشموع الحالية.",
+            "method":"multi_timeframe_direction_v2"
         }
+
     unique_rows, seen = [], set()
     for row in market_rows if isinstance(market_rows, list) else []:
         symbol = str(row.get("symbol") or "").strip().upper() if isinstance(row, dict) else ""
@@ -2613,98 +2627,30 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
             seen.add(symbol)
             unique_rows.append(row)
 
-    # Prioritize coins with better *opportunity potential*, not volume alone.
-    # Liquidity helps execution; large 24h movement/range helps identify active coins.
-    # This is a scan-order heuristic, not a prediction or guarantee of profit.
-    def _number(row, keys):
-        for key in keys:
+    def _priority(row):
+        try:
+            volume = float(row.get("quote_volume") or row.get("quoteVolume") or row.get("volume") or 0)
+            change = abs(float(row.get("price_change_percent") or row.get("change_pct") or 0))
+            return math.log10(1 + max(0, volume)) * (1 + min(change, 25)/25)
+        except (TypeError, ValueError, OverflowError):
+            return 0
+    unique_rows.sort(key=_priority, reverse=True)
+    candidates = []
+    scan_cap = min(60, max(40, limit*3))
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        jobs = [pool.submit(_candidate, row) for row in unique_rows[:scan_cap]]
+        for job in as_completed(jobs):
             try:
-                value = float(row.get(key) or 0)
-                if math.isfinite(value):
-                    return value
-            except (TypeError, ValueError, OverflowError):
-                continue
-        return 0.0
-
-    def _opportunity_priority(row):
-        if not isinstance(row, dict):
-            return 0.0
-        liquidity = max(0.0, _number(row, (
-            "quote_volume", "quoteVolume", "quoteVolume24h", "dollar_volume",
-            "avg_dollar_volume_5d", "volume"
-        )))
-        change_pct = abs(_number(row, (
-            "price_change_percent", "priceChangePercent", "change_percent",
-            "changePercent", "price_change_pct", "change_pct"
-        )))
-        high = _number(row, ("high_price", "highPrice", "high"))
-        low = _number(row, ("low_price", "lowPrice", "low"))
-        price = _number(row, ("price", "lastPrice", "last_price"))
-        range_pct = ((high - low) / price * 100.0) if price > 0 and high >= low > 0 else 0.0
-        activity_pct = min(50.0, max(change_pct, range_pct))
-        liquidity_factor = math.log10(1.0 + liquidity)
-        # Cap the activity boost so extremely volatile, illiquid coins do not dominate.
-        return liquidity_factor * (1.0 + min(activity_pct, 25.0) / 25.0)
-
-    unique_rows.sort(key=_opportunity_priority, reverse=True)
-    scan_cap = min(60, max(40, limit * 3))
-    unique_rows = unique_rows[:scan_cap]
-    candidates, scanned_symbols = [], set()
-    batch_size = 20
-    for offset in range(0, len(unique_rows), batch_size):
-        batch = unique_rows[offset:offset + batch_size]
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            futures = {pool.submit(_candidate_from_row, row): str(row.get("symbol") or "").upper()
-                       for row in batch if isinstance(row, dict)}
-            for future in as_completed(futures):
-                scanned_symbols.add(futures[future])
-                try:
-                    item = future.result()
-                    if item:
-                        candidates.append(item)
-                except Exception as exc:
-                    print(f"local signal candidate failed {market}: {type(exc).__name__}")
-        candidates.sort(key=lambda item: item.get("ai_score", 0), reverse=True)
-        # Stop early when the high-liquidity batch already has enough candidates.
-        # Otherwise continue through progressively lower-liquidity assets.
-        if len(candidates) >= limit:
-            break
-    if not candidates:
-        return [], True, "اكتمل فحص المناهج المحلية؛ لم تتحقق شروط كافية لعرض صفقة."
-
-    # Blend method-engine evidence (50%) with a real model review (50%) when
-    # a provider key is configured. Never label rule-based scoring as AI.
-    method_names = [
-        "اتجاه وإغلاق الشموع", "اختراق نطاق سابق", "تتابع الشموع", "موضع الإغلاق داخل الشمعة",
-        "تأكيد الحجم", "اتساق الحركة", "كسر القمة/القاع", "سلامة مستويات المخاطرة"
-    ]
-    for item in candidates:
-        item["method_score"] = int(item.get("ai_score", 0))
-        item["method_score_weight"] = 50
-        item["ai_review_weight"] = 50
-        item["method_families_checked"] = method_names
-        item["combined_score"] = round(item["method_score"] * 0.5)
-        item["ai_reviewed"] = False
-        item["generated_by_ai"] = False
-
-    reviewed, ai_ok = _ai_review_signal_batch(candidates, market, interval)
-    if ai_ok:
-        for item in reviewed:
-            ai_score = int(item.get("ai_score", 50))
-            item["ai_evidence_score"] = ai_score
-            item["combined_score"] = round(item.get("method_score", 0) * 0.5 + ai_score * 0.5)
-            item["ai_reviewed"] = True
-            item["score_type"] = "درجة مركبة: 50% مناهج تحليل السعر + 50% مراجعة نموذج الذكاء الاصطناعي؛ ليست احتمال ربح"
-            item["description"] = (
-                str(item.get("ai_review", {}).get("summary_ar") or item.get("description") or "")
-                + " — التقييم المركب يوازن نتيجة المناهج مع مراجعة الذكاء الاصطناعي؛ لا يضمن الربح."
-            )
-        reviewed.sort(key=lambda item: item.get("combined_score", 0), reverse=True)
-        return reviewed[:limit], True, "تم دمج 50% مناهج تحليل السعر و50% مراجعة نموذج الذكاء الاصطناعي."
-    for item in candidates:
-        item["ai_unavailable"] = True
-        item["score_type"] = "درجة المناهج فقط؛ مراجعة الذكاء الاصطناعي غير متاحة دون مفتاح مزوّد"
-    return candidates[:limit], True, "المناهج المحلية تعمل، لكن وزن الذكاء الاصطناعي 50% غير متاح حاليًا. فعّل مفتاح مزوّد نموذج ذكاء اصطناعي لإكمال الدمج."
+                item = job.result()
+                if item:
+                    candidates.append(item)
+            except Exception as exc:
+                print(f"multi-timeframe candidate failed {market}: {type(exc).__name__}")
+    candidates.sort(key=lambda item: (item.get("timeframes_aligned",0),
+                                      item.get("trend_strength",0),
+                                      item.get("risk_reward_tp3",0)), reverse=True)
+    return candidates[:limit], True, ("تم الفحص باستراتيجية توافق اليومي و٤ ساعات والساعة و١٥ دقيقة."
+                                      if candidates else "لم تتوافق الفريمات المطلوبة؛ لا توجد صفقات مطابقة حاليًا.")
 
 
 @app.get("/api/order-flow/{market}")
@@ -2864,7 +2810,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     # All recommendations expire after 15 minutes, independent of selected timeframe.
     timeframe_lifetime = 15 * 60
     # Bump cache namespace so older timeframe-length recommendations cannot reappear.
-    cache_key = ("canonical_market_direction_v3_15m_expiry", market, interval, limit)
+    cache_key = ("multi_timeframe_direction_v2", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if not refresh and cached and now - cached[0] < 90:
@@ -3258,7 +3204,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                     "result": "OPEN", "status": "صفقة مفتوحة — متابعة السعر",
                     "progress": 0, "pnl_pct": 0, "last_price": current_prices.get(symbol, entry),
                     "last_checked_at": now, "created_at": now,
-                    "source": item.get("method") or "price-action scan"
+                    "source": item.get("method") or "multi_timeframe_direction_v2"
                 })
                 active_keys.add(active_key)
             write_json_file(RESULTS_PATH, journal[:2000])
