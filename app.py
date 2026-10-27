@@ -2234,7 +2234,15 @@ def public_results(limit: int = Query(100, ge=1, le=500)):
     rows = read_json_file(RESULTS_PATH, [])
     if not isinstance(rows, list):
         rows = []
-    rows = rows[:limit]
+    # Hide and purge historical journal rows from the retired strategy.
+    current_rows = [row for row in rows if isinstance(row, dict) and row.get("source") == "multi_timeframe_direction_v2"]
+    if current_rows != rows:
+        try:
+            with RESULTS_LOCK:
+                write_json_file(RESULTS_PATH, current_rows)
+        except (OSError, TypeError, ValueError):
+            pass
+    rows = current_rows[:limit]
     closed = [row for row in rows if str(row.get("result", "")).upper() in {"TP1", "TP2", "TP3", "SL"}]
     open_count = sum(1 for row in rows if str(row.get("result", "OPEN")).upper() not in {"TP1", "TP2", "TP3", "SL"})
     wins = sum(1 for row in closed if str(row.get("result", "")).upper() in {"TP1", "TP2", "TP3"})
@@ -2925,125 +2933,6 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             return (blended, rr, reward_pct, published)
         except (KeyError, TypeError, ValueError, OverflowError, ZeroDivisionError):
             return (-1.0, -1.0, -1.0, 0)
-
-    # Multi-timeframe ranking: use the full percentage change across the paired
-    # lower timeframe, not just the latest candle. Rank by strongest aligned move.
-    # 4H -> 15m, Daily -> 1H, Weekly -> 4H, Monthly -> Daily.
-    rank_interval = {"4h": "15m", "1d": "1h", "1w": "4h", "1M": "1d"}.get(interval)
-    for item in items:
-        item["rank_interval"] = rank_interval or interval
-        item["lower_timeframe_change_pct"] = None
-        item["timeframe_alignment_score"] = 0.0
-
-    if rank_interval and items:
-        def _lower_timeframe_rank(item):
-            symbol = str(item.get("symbol") or "").strip()
-            if not symbol:
-                return item, None
-            try:
-                candles = candle_data(market, symbol, rank_interval)
-                if len(candles) < 2:
-                    return item, None
-                start_price = float(candles[0].get("open") or candles[0].get("close") or 0)
-                end_price = float(candles[-1].get("close") or 0)
-                if (start_price <= 0 or end_price <= 0
-                        or not math.isfinite(start_price) or not math.isfinite(end_price)):
-                    return item, None
-                # Percentage change over the fetched lower-timeframe window.
-                return item, (end_price - start_price) / start_price * 100.0
-            except (KeyError, TypeError, ValueError, OverflowError, TimeoutError, OSError, urllib.error.URLError):
-                return item, None
-
-        # Keep additional candle requests bounded to protect service stability.
-        with ThreadPoolExecutor(max_workers=5) as pool:
-            rank_jobs = [pool.submit(_lower_timeframe_rank, item) for item in items]
-            for job in as_completed(rank_jobs):
-                try:
-                    item, move = job.result()
-                    if move is None:
-                        continue
-                    side = str(item.get("direction") or "")
-                    # Signed score means the largest move in the signal's direction ranks first.
-                    aligned_move = move if side == "شراء" else (-move if side == "بيع" else 0.0)
-                    item["lower_timeframe_change_pct"] = round(move, 4)
-                    item["timeframe_alignment_score"] = round(aligned_move, 4)
-                except Exception:
-                    continue
-
-    # Confirm each candidate against Daily, 4H, 1H and 15m candle direction.
-    # Bounded to the first 12 candidates and three workers to protect service stability.
-    def _multi_tf_review(item):
-        symbol = str(item.get("symbol") or "").strip()
-        side = str(item.get("direction") or "")
-        results = {}
-        aligned = 0
-        changes = {}
-        for tf in ("1d", "4h", "1h", "15m"):
-            try:
-                candles = candle_data(market, symbol, tf)
-                valid = [c for c in candles[-12:] if isinstance(c, dict)]
-                if len(valid) < 3:
-                    results[tf] = "غير متاح"
-                    changes[tf] = None
-                    continue
-                start = float(valid[0].get("open") or valid[0].get("close") or 0)
-                end = float(valid[-1].get("close") or 0)
-                if start <= 0 or end <= 0 or not math.isfinite(start) or not math.isfinite(end):
-                    results[tf] = "غير متاح"
-                    changes[tf] = None
-                    continue
-                move = (end - start) / start * 100.0
-                trend = "صاعد" if move > 0.05 else "هابط" if move < -0.05 else "محايد"
-                results[tf] = trend
-                changes[tf] = round(move, 3)
-                if (side == "شراء" and trend == "صاعد") or (side == "بيع" and trend == "هابط"):
-                    aligned += 1
-            except Exception:
-                results[tf] = "غير متاح"
-                changes[tf] = None
-        item["timeframe_trends"] = results
-        item["timeframe_change_pct"] = changes
-        item["timeframes_aligned"] = aligned
-        item["timeframe_alignment_label"] = f"{aligned}/4 فريمات متوافقة"
-        item["trend_strength"] = round(aligned / 4 * 100)
-        levels = item.get("levels") if isinstance(item.get("levels"), dict) else {}
-        try:
-            entry = float(levels["entry"])
-            stop = float(levels["stop_loss"])
-            targets = [float(levels[k]) for k in ("tp1", "tp2", "tp3")]
-            if entry > 0:
-                item["potential_profit_pct"] = round(abs(targets[2] - entry) / entry * 100, 2)
-                item["potential_loss_pct"] = round(abs(stop - entry) / entry * 100, 2)
-                item["tp1_profit_pct"] = round(abs(targets[0] - entry) / entry * 100, 2)
-                item["tp2_profit_pct"] = round(abs(targets[1] - entry) / entry * 100, 2)
-                item["tp3_profit_pct"] = round(abs(targets[2] - entry) / entry * 100, 2)
-                item["risk_reward_tp3"] = round(item["potential_profit_pct"] / item["potential_loss_pct"], 2) if item["potential_loss_pct"] else None
-        except (KeyError, TypeError, ValueError, OverflowError, ZeroDivisionError):
-            item["potential_profit_pct"] = None
-            item["potential_loss_pct"] = None
-        return item
-
-    if items:
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            jobs = [pool.submit(_multi_tf_review, item) for item in items[:12]]
-            for job in as_completed(jobs):
-                try:
-                    job.result()
-                except Exception:
-                    pass
-    for item in items[12:]:
-        levels = item.get("levels") if isinstance(item.get("levels"), dict) else {}
-        try:
-            entry = float(levels["entry"])
-            stop = float(levels["stop_loss"])
-            tp3 = float(levels["tp3"])
-            item["potential_profit_pct"] = round(abs(tp3 - entry) / entry * 100, 2)
-            item["potential_loss_pct"] = round(abs(stop - entry) / entry * 100, 2)
-            item["timeframes_aligned"] = None
-            item["timeframe_alignment_label"] = "لم يُفحص بعد"
-        except (KeyError, TypeError, ValueError, OverflowError, ZeroDivisionError):
-            item["potential_profit_pct"] = None
-            item["potential_loss_pct"] = None
 
     # Rank by multi-timeframe agreement first, then directional move and reward/risk.
     items.sort(
