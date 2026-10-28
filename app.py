@@ -2870,7 +2870,7 @@ def order_flow_scan(market: str, interval: str = Query("15m"), limit: int = Quer
 
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20), refresh: bool = Query(False)):
-    """Generate local rule-based price-action opportunities without API or external trade signals."""
+    """Serve public provider recommendations; do not generate trades from the retired local strategy."""
     market = (market or "").strip().lower()
     allowed_markets = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
     if market not in allowed_markets:
@@ -2879,6 +2879,61 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     if interval not in INTERVALS:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "الفريم غير مدعوم."}, status_code=422)
+
+    # Provider-only mode: never silently fall back to the retired in-house strategy.
+    if market == "futures":
+        provider_feed = futures_pro_live_signals(refresh=refresh)
+        provider_items = []
+        for raw in provider_feed.get("items", []):
+            targets = raw.get("targets") if isinstance(raw.get("targets"), list) else []
+            entries = raw.get("entry") if isinstance(raw.get("entry"), list) else []
+            try:
+                entry = float(entries[0])
+                stop = float(raw.get("stop_loss"))
+                targets = [float(v) for v in targets if math.isfinite(float(v)) and float(v) > 0]
+            except (TypeError, ValueError, IndexError, OverflowError):
+                continue
+            side = raw.get("side")
+            if len(targets) < 3 or not all(math.isfinite(v) and v > 0 for v in [entry, stop] + targets[:3]):
+                continue
+            if side == "شراء" and not (stop < entry < targets[0] <= targets[1] <= targets[2]):
+                continue
+            if side == "بيع" and not (stop > entry > targets[0] >= targets[1] >= targets[2]):
+                continue
+            published = int(raw.get("published_at") or 0)
+            if not published or int(time.time()) - published > 24 * 60 * 60:
+                continue
+            provider_items.append({
+                "id": "provider-" + str(raw.get("id", "")),
+                "symbol": str(raw.get("symbol", "")).replace("USDT", "/USDT"),
+                "direction": side,
+                "levels": {"entry": entry, "stop_loss": stop, "tp1": targets[0], "tp2": targets[1], "tp3": targets[2]},
+                "created_at": published,
+                "expires_at": published + 24 * 60 * 60,
+                "ai_score": 0,
+                "provider": raw.get("source", "مزود خارجي"),
+                "provider_url": raw.get("url"),
+                "published_at": published,
+                "raw_text": raw.get("raw_text", ""),
+                "status": raw.get("status", "توصية مزود خارجي — النتيجة غير متحققة"),
+            })
+        provider_items.sort(key=lambda x: x.get("published_at", 0), reverse=True)
+        return {
+            "ok": True, "live": bool(provider_items), "items": provider_items[:limit],
+            "count": min(len(provider_items), limit), "market": market, "interval": interval,
+            "source_mode": "public_signal_providers",
+            "message": provider_feed.get("note") if provider_items else
+                "ما لقينا توصية خارجية عامة مكتملة وحديثة فيها دخول و3 أهداف ووقف. ما راح نولّد صفقات من الاستراتيجية القديمة.",
+            "sources": provider_feed.get("sources", []), "updated_at": int(time.time())
+        }
+
+    # No verified free provider feed is wired for these markets yet. Keep the old strategy disabled.
+    return {
+        "ok": True, "live": False, "items": [], "count": 0,
+        "market": market, "interval": interval, "source_mode": "public_signal_providers",
+        "message": "مزودو التوصيات العامة المربوطون حاليًا لا يغطون هذا السوق؛ تم إيقاف الاستراتيجية القديمة ولن نعرض صفقات مصطنعة.",
+        "sources": [], "updated_at": int(time.time())
+    }
 
     now = int(time.time())
     # All recommendations expire after 15 minutes, independent of selected timeframe.
@@ -3598,9 +3653,35 @@ def _futures_pro_fetch_source(source):
 
 @app.get("/api/futures-pro/signals")
 def futures_pro_live_signals(refresh: bool = Query(False)):
-    """Legacy public Telegram signals endpoint disabled in AI-only mode."""
-    return {
-        "ok": True, "updated_at": int(time.time()), "items": [],
-        "sources": [], "errors": [],
-        "note": "تم إيقاف توصيات تيليجرام الخارجية. استخدم تحليل الذكاء الاصطناعي المستقل في صفحات الأسواق."
+    """Read recent, complete signals from public Telegram channel pages without API keys."""
+    now = int(time.time())
+    with _FUTURES_PRO_CACHE_LOCK:
+        if not refresh and now - int(_FUTURES_PRO_CACHE.get("at", 0)) < 90:
+            return {**_FUTURES_PRO_CACHE, "cached": True}
+    items, errors, live_sources = [], [], []
+    try:
+        with ThreadPoolExecutor(max_workers=min(5, len(FUTURES_PRO_TELEGRAM_SOURCES))) as pool:
+            futures = {pool.submit(_futures_pro_fetch_source, source): source for source in FUTURES_PRO_TELEGRAM_SOURCES}
+            for future in as_completed(futures, timeout=10):
+                source = futures[future]
+                try:
+                    found = future.result()
+                    live_sources.append(source["name"])
+                    items.extend(found)
+                except Exception as exc:
+                    errors.append({"source": source["name"], "error": type(exc).__name__})
+    except Exception as exc:
+        errors.append({"source": "public-feed", "error": type(exc).__name__})
+    unique = {}
+    for item in items:
+        unique[item.get("id")] = item
+    items = sorted(unique.values(), key=lambda item: int(item.get("published_at", 0)), reverse=True)
+    result = {
+        "ok": True, "updated_at": now, "items": items[:50],
+        "count": min(len(items), 50), "sources": live_sources, "errors": errors,
+        "note": "توصيات منشورة من قنوات تيليجرام عامة؛ لم يتم التحقق من نتائجها ولا يوجد ضمان للربح."
     }
+    with _FUTURES_PRO_CACHE_LOCK:
+        _FUTURES_PRO_CACHE.update(result)
+        _FUTURES_PRO_CACHE["at"] = now
+    return result
