@@ -753,10 +753,60 @@ def futures_crypto_symbols():
     return cached["symbols"] if cached["symbols"] else set()
 
 
+def _bybit_public_json(path, params, timeout=5):
+    """Read Bybit public market data without an API key; try its public host aliases."""
+    from urllib.parse import urlencode
+    query = urlencode(params)
+    last_error = None
+    for host in ("api.bybit.com", "api.bytick.com"):
+        try:
+            return fetch_json("https://" + host + path + "?" + query, timeout=timeout)
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError) as exc:
+            last_error = exc
+    if last_error:
+        raise last_error
+    raise urllib.error.URLError("Bybit public endpoints unavailable")
+
+
+def _bybit_market_tickers(market):
+    """Normalize Bybit's public spot/linear tickers to the app's USDT quote schema."""
+    category = "spot" if market == "spot" else "linear"
+    payload = _bybit_public_json("/v5/market/tickers", {"category": category}, timeout=5)
+    result = payload.get("result") or {}
+    raw = result.get("list") or []
+    rows = []
+    for item in raw:
+        symbol = str(item.get("symbol") or "").upper()
+        if not symbol.endswith("USDT"):
+            continue
+        base = symbol[:-4]
+        if not base or base in STABLES:
+            continue
+        try:
+            price = float(item.get("lastPrice") or 0)
+            change = float(item.get("price24hPcnt") or 0) * 100
+            quote_volume = float(item.get("turnover24h") or 0)
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if price <= 0 or not math.isfinite(price) or quote_volume < 1_000_000:
+            continue
+        rows.append({"symbol": symbol, "price": price, "change_pct": change,
+                     "quote_volume": quote_volume, "provider": "Bybit"})
+    rows.sort(key=lambda item: item["quote_volume"], reverse=True)
+    if not rows:
+        raise ValueError("Bybit returned no eligible USDT tickers")
+    return rows
+
+
 def _fetch_market_tickers_uncached(market):
     if market == "alpha":
         return alpha_market_tickers()
-    raw = fetch_json(BINANCE[market])
+    try:
+        raw = fetch_json(BINANCE[market])
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError):
+        if market in {"spot", "futures"}:
+            return _bybit_market_tickers(market)
+        raise
     crypto_futures = futures_crypto_symbols() if market == "futures" else None
     rows = []
     for item in raw:
@@ -1299,7 +1349,8 @@ def market_data(market: str, limit: int = Query(500, ge=1, le=2000)):
                 "ok": False, "market": market, "live": False, "items": [],
                 "message": "تعذر جلب الأسعار المباشرة الآن. حاول التحديث بعد قليل."
             }, status_code=503)
-    return {"ok": True, "market": market, "live": True, "provider": "Binance",
+    provider = (data[0].get("provider") if data and isinstance(data[0], dict) else None) or "Binance"
+    return {"ok": True, "market": market, "live": True, "provider": provider,
             "updated_at": int(now), "items": data[:limit]}
 
 
@@ -1491,10 +1542,38 @@ def _fetch_candle_data_uncached(market: str, symbol: str, interval: str):
                 for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
     if market in BINANCE:
         url = KLINES[market] + "?" + urlencode({"symbol": symbol, "interval": interval, "limit": 210})
-        raw = fetch_json(url, timeout=2)
-        return [{"time": int(k[0]) // 1000, "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5]),
-                 "taker_buy_volume": float(k[9]) if len(k) > 9 else None}
-                for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
+        try:
+            raw = fetch_json(url, timeout=2)
+            return [{"time": int(k[0]) // 1000, "open": float(k[1]), "high": float(k[2]), "low": float(k[3]), "close": float(k[4]), "volume": float(k[5]),
+                     "taker_buy_volume": float(k[9]) if len(k) > 9 else None}
+                    for k in raw if len(k) > 6 and int(k[6]) < int(time.time() * 1000)]
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError):
+            pass
+        # Public Bybit candles are the no-key backup for Binance spot/futures data.
+        bybit_interval = {"15m":"15", "30m":"30", "1h":"60", "2h":"120", "4h":"240", "1d":"D", "1w":"W", "1M":"M"}.get(interval)
+        if not bybit_interval or market not in {"spot", "futures"}:
+            return []
+        category = "spot" if market == "spot" else "linear"
+        payload = _bybit_public_json("/v5/market/kline", {
+            "category": category, "symbol": symbol, "interval": bybit_interval, "limit": 210
+        }, timeout=5)
+        rows = ((payload.get("result") or {}).get("list") or [])
+        seconds = INTERVAL_SECONDS.get(interval, 0)
+        candles = []
+        for k in rows:
+            try:
+                stamp = int(k[0]) // 1000
+                candle = {"time": stamp, "open": float(k[1]), "high": float(k[2]),
+                          "low": float(k[3]), "close": float(k[4]), "volume": float(k[5])}
+                if seconds and stamp + seconds < int(time.time()) and all(
+                    math.isfinite(candle[key]) and candle[key] > 0
+                    for key in ("open", "high", "low", "close")
+                ):
+                    candles.append(candle)
+            except (IndexError, TypeError, ValueError, OverflowError):
+                continue
+        candles.sort(key=lambda candle: candle["time"])
+        return candles[-210:]
     if market not in YAHOO_MARKETS and market != "tasi_index":
         return []
     yahoo_interval = {"15m":"15m", "30m":"15m", "1h":"60m", "2h":"60m", "4h":"60m", "1d":"1d", "1w":"1wk", "1M":"1mo"}.get(interval)
