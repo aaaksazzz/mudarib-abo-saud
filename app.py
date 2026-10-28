@@ -2606,9 +2606,12 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
                     candidates.append(item)
             except Exception as exc:
                 print(f"multi-timeframe candidate failed {market}: {type(exc).__name__}")
-    candidates.sort(key=lambda item: (item.get("timeframes_aligned",0),
-                                      item.get("trend_strength",0),
-                                      item.get("risk_reward_tp3",0)), reverse=True)
+    candidates.sort(key=lambda item: (
+        item.get("timeframes_aligned", 0),
+        abs(float((item.get("timeframe_change_pct") or {}).get("15m") or 0)),
+        item.get("risk_reward_tp3", 0),
+        item.get("trend_strength", 0)
+    ), reverse=True)
     return candidates[:limit], True, ("تم الفحص باستراتيجية توافق اليومي و٤ ساعات والساعة و١٥ دقيقة."
                                       if candidates else "لم تتوافق الفريمات المطلوبة؛ لا توجد صفقات مطابقة حاليًا.")
 
@@ -2880,16 +2883,30 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     # Link every displayed signal to this market's overall direction.
     # Bullish market => buys only; bearish market => sells only; neutral/unavailable => no signals.
     direction_snapshot = market_direction(market)
-    direction_code = direction_snapshot.get("direction") if isinstance(direction_snapshot, dict) else None
+    direction_is_fresh = (
+        isinstance(direction_snapshot, dict)
+        and bool(direction_snapshot.get("live", False))
+        and not bool(direction_snapshot.get("stale", False))
+    )
+    direction_code = direction_snapshot.get("direction") if direction_is_fresh else None
     market_trend = {
         "BULLISH": "صاعد",
         "BEARISH": "هابط",
         "NEUTRAL": "مختلط / محايد"
     }.get(direction_code, "غير متاح")
 
-    # Show both buy and sell signals; market-wide direction is informational only.
-
-
+    # A fresh market-wide direction is a mandatory gate, not just a label.
+    # Never publish buys in a bearish market, sells in a bullish market,
+    # or new trades when the market direction is neutral/unavailable.
+    if direction_code == "BULLISH":
+        items = [item for item in items if item.get("direction") == "شراء"]
+    elif direction_code == "BEARISH":
+        items = [item for item in items if item.get("direction") == "بيع"]
+    else:
+        items = []
+        ai_message = (
+            "اتجاه السوق محايد أو بياناته غير محدثة؛ أوقفنا التوصيات الجديدة حتى تتضح الصورة."
+        )
 
     def _tp3_profit_rank(item):
         """Prefer risk/reward and signal quality; use TP3 return to break ties."""
@@ -2922,8 +2939,9 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     items.sort(
         key=lambda item: (
             item.get("timeframes_aligned", 0) or 0,
-            item.get("timeframe_alignment_score", 0.0),
-            *_tp3_profit_rank(item)
+            abs(float((item.get("timeframe_change_pct") or {}).get("15m") or 0)),
+            *_tp3_profit_rank(item),
+            item.get("timeframe_alignment_score", 0.0)
         ),
         reverse=True
     )
@@ -2934,6 +2952,11 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         f"ai_key_configured={bool(os.getenv('OPENAI_API_KEY', '').strip())} "
         f"ai_completed={bool(ai_review_completed)} reason={str(ai_message)[:180]!r}"
     )
+    if direction_code in {"BULLISH", "BEARISH"} and not items:
+        ai_message = (
+            "اتجاه السوق " + market_trend +
+            " لكن ما فيه فرص اجتازت شروط توافق الفريمات واتجاه السوق حاليًا."
+        )
     result = {
         "ok": True, "live": bool(items), "market": market, "interval": interval,
         "market_trend": market_trend,
