@@ -2543,7 +2543,8 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
     """Generate trades on fresh MACD-line zero crossings and rank by price momentum."""
     frame_seconds = {"15m": 900, "30m": 1800, "1h": 3600, "2h": 7200,
                      "4h": 14400, "1d": 86400, "1w": 604800, "1M": 2592000}
-    frame_names = ("1d", "4h", "1h", "15m")
+    # Apply MACD zero-line crossover and multi-timeframe confirmation across every supported timeframe.
+    frame_names = tuple(frame_seconds)
 
     def _valid_candles(symbol, tf):
         try:
