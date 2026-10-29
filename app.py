@@ -3080,11 +3080,11 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         except (KeyError, TypeError, ValueError, OverflowError, ZeroDivisionError):
             return (-1.0, -1.0, -1.0, 0)
 
-    # Rank by multi-timeframe agreement first, then directional move and reward/risk.
+    # Rank the strongest price moves on the requested timeframe first, then MACD alignment and risk/reward.
     items.sort(
         key=lambda item: (
+            abs(float((item.get("timeframe_change_pct") or {}).get(interval) or 0)),
             item.get("timeframes_aligned", 0) or 0,
-            abs(float((item.get("timeframe_change_pct") or {}).get("15m") or 0)),
             *_tp3_profit_rank(item),
             item.get("timeframe_alignment_score", 0.0)
         ),
