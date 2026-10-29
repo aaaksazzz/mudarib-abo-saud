@@ -2591,7 +2591,10 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
             side = "بيع"
         else:
             return None
-        aligned = sum(1 for value in trends.values() if value == ("صاعد" if side == "شراء" else "هابط"))
+        # INVERTED STRATEGY: retain the original trend-confluence score, but trade the opposite side.
+        original_side = side
+        aligned = sum(1 for value in trends.values() if value == ("صاعد" if original_side == "شراء" else "هابط"))
+        side = "بيع" if original_side == "شراء" else "شراء"
         score = min(100, 70 + aligned * 7)
         selected = candles_by_tf.get(interval) or candles_by_tf.get("15m") or []
         if len(selected) < 3:
@@ -3032,10 +3035,11 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     # A fresh market-wide direction is a mandatory gate, not just a label.
     # Never publish buys in a bearish market, sells in a bullish market,
     # or new trades when the market direction is neutral/unavailable.
+    # Inverted strategy: bullish market context produces SELL candidates; bearish produces BUY.
     if direction_code == "BULLISH":
-        items = [item for item in items if item.get("direction") == "شراء"]
-    elif direction_code == "BEARISH":
         items = [item for item in items if item.get("direction") == "بيع"]
+    elif direction_code == "BEARISH":
+        items = [item for item in items if item.get("direction") == "شراء"]
     else:
         items = []
         ai_message = (
