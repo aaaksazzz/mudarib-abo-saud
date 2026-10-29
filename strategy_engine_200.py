@@ -32,7 +32,9 @@ FAMILIES = [
 ]
 METHOD_CATALOG = [
  {"id": f"M{i+1:03d}", "family": family, "family_ar": title, "method": method}
- for family, title, methods in FAMILIES for i, method in enumerate(methods)
+ for i, (family, title, method) in enumerate(
+     ( (family, title, method) for family, title, methods in FAMILIES for method in methods )
+ )
 ]
 assert len(METHOD_CATALOG) == 200
 
@@ -117,7 +119,7 @@ def analyze_200(candles):
     scores["patterns"]=_clamp(_sign(close[-1]-close[-5],atr*0.2))
     scores["ichimoku"]=_clamp((_sign(last-(_ema(high[-26:],9)+_ema(low[-26:],9))/2)+_sign(_ema(close[-min(52,len(close)):],26)-_ema(close[-min(52,len(close)):],9)))/2)
     scores["adx"]=_clamp(_sign(slope,0.4)*min(1,abs(slope)/1.5))
-    scores["oscillators"]=_clamp(_sign(50-rsi,10)*-1)
+    scores["oscillators"]=_clamp(_sign(rsi-50,10))
     scores["mean_reversion"]=_clamp(_sign(last-ema20,atr*0.8)*-1)
     scores["market_profile"]=_clamp(_sign(last-(sum(close[-20:])/20),atr*0.15))
     scores["liquidity"]=_clamp(_sign(lower_wick-upper_wick,candle_range*0.18))
@@ -153,7 +155,7 @@ def analyze_200(candles):
       "tp1":round(targets[0],10) if targets else None,"tp2":round(targets[1],10) if targets else None,"tp3":round(targets[2],10) if targets else None,
       "score_pct":round(abs(composite)*100,1),"family_agreement_pct":round(agreement*100,1),
       "families_bullish":bullish,"families_bearish":bearish,"families_total":len(scores),
-      "methods_catalogued":len(METHOD_CATALOG),"methods_scored":len(METHOD_CATALOG),
+      "methods_catalogued":len(METHOD_CATALOG),"independent_families_scored":len(scores),
       "family_scores":family_scores,"atr":round(atr,10),"rsi14":round(rsi,2),
       "ema20":round(ema20,10),"ema50":round(ema50,10),"ema200":round(ema200,10),
       "risk_reward":[1,2,3] if side else [],"method":"200-method catalogue / 20 evidence families"
