@@ -3050,17 +3050,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "NEUTRAL": "مختلط / محايد"
     }.get(direction_code, "غير متاح")
 
-    # A fresh market-wide direction remains mandatory; the inverted strategy trades opposite it.
-    # Inverted strategy: bullish market context produces SELL candidates; bearish produces BUY.
-    if direction_code == "BULLISH":
-        items = [item for item in items if item.get("direction") == "بيع"]
-    elif direction_code == "BEARISH":
-        items = [item for item in items if item.get("direction") == "شراء"]
-    else:
-        items = []
-        ai_message = (
-            "اتجاه السوق محايد أو بياناته غير محدثة؛ أوقفنا التوصيات الجديدة حتى تتضح الصورة."
-        )
+    # MACD zero-line crossover defines each trade direction; market-wide direction is
+    # displayed as context only and must not reverse or suppress a valid MACD crossover.
 
     def _tp3_profit_rank(item):
         """Prefer risk/reward and signal quality; use TP3 return to break ties."""
