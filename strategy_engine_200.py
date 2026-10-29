@@ -94,8 +94,8 @@ def analyze_200(candles):
     # MACD direction and recent momentum.
     ema12=_ema(close[-min(len(close),100):],12); ema26=_ema(close[-min(len(close),100):],26)
     macd=ema12-ema26
-    macd_hist=macd-(ema12-ema26) # neutral-safe when signal history isn't built
-    macd_hist = macd - _ema([_ema(close[:i+1],12)-_ema(close[:i+1],26) for i in range(max(25,len(close)-30),len(close))],9)
+    macd_series=[_ema(close[:i+1],12)-_ema(close[:i+1],26) for i in range(max(25,len(close)-30),len(close))]
+    macd_hist=macd_series[-1]-_ema(macd_series,9) if macd_series else 0.0
     # Trend / structure
     slope=(close[-1]-close[-min(10,len(close))])/max(atr,1e-12)
     hh=max(high[-20:]); ll=min(low[-20:])
@@ -109,7 +109,7 @@ def analyze_200(candles):
     # Family scores are independent-ish evidence groups; correlated indicators inside a family are not double-counted.
     scores={}
     scores["trend"]=_clamp((1 if last>ema20 else -1)+(1 if ema20>ema50 else -1)+(1 if ema50>ema200 else -1),-3,3)/3
-    scores["momentum"]=_clamp((1 if rsi>55 else -1 if rsi<45 else 0)*0.65 + _sign(macd)*0.35)
+    scores["momentum"]=_clamp((1 if rsi>55 else -1 if rsi<45 else 0)*0.55 + _sign(macd_hist, atr*0.01)*0.25 + _sign(macd)*0.20)
     scores["volatility"]=_clamp(_sign(slope,0.35)*0.65 + _sign((candle_range/atr)-1.1)*0.35)
     scores["volume"]=_clamp(_sign(body)*min(1.0,vol_ratio/1.5) if vol_ratio>=0.8 else 0.0)
     scores["structure"]=_clamp((_sign(last-close[-10],atr*0.15)+_sign(close[-10]-close[-20],atr*0.15))/2)
@@ -148,7 +148,6 @@ def analyze_200(candles):
         targets=[entry-risk,entry-2*risk,entry-3*risk]
     else:
         stop=None; targets=[]
-    catalog_scores=[{"id":m["id"],"family":m["family_ar"],"method":m["method"],"score":family_scores.get(m["family"],0.0)} for m in METHOD_CATALOG]
     return {
       "side":side,"strength":("شراء قوي" if side=="BUY" and composite>=0.45 else "شراء" if side=="BUY" else "بيع قوي" if side=="SELL" and composite<=-0.45 else "بيع" if side=="SELL" else "محايد"),
       "entry":round(entry,10),"stop_loss":round(stop,10) if stop is not None else None,
