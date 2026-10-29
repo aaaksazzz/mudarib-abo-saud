@@ -2540,7 +2540,7 @@ def _ai_review_signal_batch(items, market, interval):
 
 
 def _ai_generate_market_signals(market, interval, market_rows, limit=20):
-    """Generate trades only from the current Daily/4H/1H/15m direction-consensus strategy."""
+    """Generate trades on fresh MACD-line zero crossings and rank by price momentum."""
     frame_seconds = {"15m": 900, "30m": 1800, "1h": 3600, "2h": 7200,
                      "4h": 14400, "1d": 86400, "1w": 604800, "1M": 2592000}
     frame_names = ("1d", "4h", "1h", "15m")
@@ -2551,7 +2551,7 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
         except Exception:
             return []
         valid = []
-        for c in candles[-30:] if isinstance(candles, list) else []:
+        for c in candles[-100:] if isinstance(candles, list) else []:
             try:
                 row = {k: float(c[k]) for k in ("open", "high", "low", "close")}
                 if (all(math.isfinite(row[k]) and row[k] > 0 for k in row)
@@ -2569,12 +2569,12 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
         symbol = str(row.get("symbol") or "").strip().upper()
         if not symbol:
             return None
-        trends, changes, candles_by_tf = {}, {}, {}
+        trends, changes, candles_by_tf, macd_values = {}, {}, {}, {}
         for tf in frame_names:
             candles = _valid_candles(symbol, tf)
             candles_by_tf[tf] = candles
-            if len(candles) < 3:
-                trends[tf], changes[tf] = "غير متاح", None
+            if len(candles) < 35:
+                trends[tf], changes[tf], macd_values[tf] = "غير متاح", None, None
                 continue
             sample = candles[-12:]
             start_price = sample[0]["open"]
@@ -2582,23 +2582,39 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
             move = (end_price - start_price) / start_price * 100.0 if start_price > 0 else 0
             changes[tf] = round(move, 3)
             trends[tf] = "صاعد" if move > 0.05 else "هابط" if move < -0.05 else "محايد"
+            closes = [c["close"] for c in candles]
+            def _ema_series(values, period):
+                alpha = 2.0 / (period + 1.0)
+                out = []
+                ema = values[0]
+                for value in values:
+                    ema = value * alpha + ema * (1.0 - alpha)
+                    out.append(ema)
+                return out
+            ema12, ema26 = _ema_series(closes, 12), _ema_series(closes, 26)
+            macd_line = [a - b for a, b in zip(ema12, ema26)]
+            macd_values[tf] = {
+                "previous": macd_line[-2],
+                "current": macd_line[-1],
+                "cross_up": macd_line[-2] <= 0 < macd_line[-1],
+                "cross_down": macd_line[-2] >= 0 > macd_line[-1]
+            }
 
-        daily, four_hour, hourly, quarter = (trends[tf] for tf in frame_names)
-        # Strict alignment: Daily + 4H + 15m must agree; 1H improves the rank.
-        if daily == four_hour == quarter == "صاعد":
+        selected = candles_by_tf.get(interval) or []
+        macd = macd_values.get(interval)
+        if not macd or len(selected) < 35:
+            return None
+        # Trade only a fresh MACD-line crossing of the zero line; never invert its direction.
+        if macd["cross_up"]:
             side = "شراء"
-        elif daily == four_hour == quarter == "هابط":
+        elif macd["cross_down"]:
             side = "بيع"
         else:
             return None
-        # INVERTED STRATEGY: retain the original trend-confluence score, but trade the opposite side.
-        original_side = side
-        aligned = sum(1 for value in trends.values() if value == ("صاعد" if original_side == "شراء" else "هابط"))
-        side = "بيع" if original_side == "شراء" else "شراء"
-        score = min(100, 70 + aligned * 7)
-        selected = candles_by_tf.get(interval) or candles_by_tf.get("15m") or []
-        if len(selected) < 3:
-            return None
+        aligned = sum(1 for tf in frame_names if macd_values.get(tf) and
+                      ((macd_values[tf]["current"] > 0) if side == "شراء" else
+                       (macd_values[tf]["current"] < 0)))
+        score = min(98, 60 + aligned * 8)
         last = selected[-1]
         close = last["close"]
         try:
@@ -2632,12 +2648,12 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
         lifetime = frame_seconds.get(str(interval), 900)
         profit_pct = abs(tp3-entry)/entry*100
         loss_pct = abs(stop-entry)/entry*100
-        rationale = f"استراتيجية معكوسة: {side} عكس توافق اتجاه اليومي و٤ ساعات و١٥ دقيقة؛ الساعة {'تؤيد الاتجاه الأصلي' if hourly == ('صاعد' if original_side == 'شراء' else 'هابط') else 'غير متوافقة مع الاتجاه الأصلي'}."
+        rationale = f"تقاطع MACD مع خط الصفر: {side}؛ قيمة MACD الحالية {macd['current']:.8g} والسابق {macd['previous']:.8g}. تأكيد اتجاه MACD عبر الفريمات: {aligned}/4. درجة التوافق ليست احتمال ربح."
         return {
-            "symbol": symbol, "direction": side, "original_direction": original_side,
-            "title": f"{side} {symbol} — الاستراتيجية المعكوسة",
+            "symbol": symbol, "direction": side,
+            "title": f"{side} {symbol} — تقاطع MACD صفر",
             "description": rationale + " هذه درجة توافق الاتجاه وليست احتمال ربح.",
-            "source": "محرك توافق الاتجاه اليومي/4H/1H/15m", "url": "",
+            "source": "MACD 12/26 — تقاطع خط الصفر", "url": "",
             "published_at": now, "created_at": now, "age_hours": 0,
             "market": market, "interval": interval, "expires_at": now+lifetime,
             "valid_for_seconds": lifetime, "price_updated_at": now, "price_fresh": True,
@@ -2650,7 +2666,9 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
             "ai_review": {"summary_ar":rationale,"risk_ar":"توافق الاتجاه لا يضمن النتيجة؛ قد ينعكس السوق.",
                           "verdict":"توافق فريمات","score_type":"درجة توافق وليست احتمال ربح"},
             "timeframe_trends":trends, "timeframe_change_pct":changes,
-            "timeframes_aligned":aligned, "timeframe_alignment_label":f"{aligned}/4 فريمات توافق الاتجاه الأصلي قبل العكس",
+            "macd_zero_line": {"previous": macd["previous"], "current": macd["current"],
+                               "cross": "صعود" if side == "شراء" else "هبوط"},
+            "timeframes_aligned":aligned, "timeframe_alignment_label":f"{aligned}/4 فريمات تؤيد اتجاه MACD",
             "trend_strength":round(aligned/4*100),
             "potential_profit_pct":round(profit_pct,2),"potential_loss_pct":round(loss_pct,2),
             "tp1_profit_pct":round(abs(tp1-entry)/entry*100,2),
@@ -2659,7 +2677,7 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
             "risk_reward_tp3":round(profit_pct/loss_pct,2) if loss_pct else None,
             "external_source_weight":0,"site_analysis_weight":100,
             "has_complete_levels":True,"level_source_note":"مستويات مبنية على بنية الشموع الحالية.",
-            "method":"multi_timeframe_direction_v2"
+            "method":"macd_zero_cross_v1"
         }
 
     unique_rows, seen = [], set()
@@ -2689,13 +2707,13 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
             except Exception as exc:
                 print(f"multi-timeframe candidate failed {market}: {type(exc).__name__}")
     candidates.sort(key=lambda item: (
+        abs(float((item.get("timeframe_change_pct") or {}).get(interval) or 0)),
         item.get("timeframes_aligned", 0),
-        abs(float((item.get("timeframe_change_pct") or {}).get("15m") or 0)),
         item.get("risk_reward_tp3", 0),
         item.get("trend_strength", 0)
     ), reverse=True)
-    return candidates[:limit], True, ("تم الفحص باستراتيجية توافق اليومي و٤ ساعات والساعة و١٥ دقيقة."
-                                      if candidates else "لم تتوافق الفريمات المطلوبة؛ لا توجد صفقات مطابقة حاليًا.")
+    return candidates[:limit], True, ("تم الفحص بتقاطع MACD مع خط الصفر، وترتيب الفرص حسب أقوى تغير سعري على الفريم المحدد."
+                                      if candidates else "لا يوجد تقاطع MACD جديد لخط الصفر على الفريم المحدد حاليًا.")
 
 
 @app.get("/api/order-flow/{market}")
