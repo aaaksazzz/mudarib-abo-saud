@@ -2632,7 +2632,7 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
         lifetime = frame_seconds.get(str(interval), 900)
         profit_pct = abs(tp3-entry)/entry*100
         loss_pct = abs(stop-entry)/entry*100
-        rationale = f"{side}: اتجاه اليومي و٤ ساعات و١٥ دقيقة متوافق؛ الساعة {'مؤيدة' if hourly == ('صاعد' if side == 'شراء' else 'هابط') else 'غير متوافقة'}."
+        rationale = f"استراتيجية معكوسة: {side} عكس توافق اتجاه اليومي و٤ ساعات و١٥ دقيقة؛ الساعة {'تؤيد الاتجاه الأصلي' if hourly == ('صاعد' if original_side == 'شراء' else 'هابط') else 'غير متوافقة مع الاتجاه الأصلي'}."
         return {
             "symbol": symbol, "direction": side, "original_direction": original_side,
             "title": f"{side} {symbol} — الاستراتيجية المعكوسة",
