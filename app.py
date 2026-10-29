@@ -1753,53 +1753,21 @@ def market_timeframe_data(market: str, interval: str = Query("15m"), limit: int 
                     if any(v <= 0 or not math.isfinite(v) for v in closes):
                         continue
                     previous, latest = closes[-2], closes[-1]
-                    # EMA 50 confirms momentum; EMA 200 defines the main trend.
-                    alpha50 = 2.0 / 51.0
-                    ema50 = closes[0]
-                    for close_value in closes[1:]:
-                        ema50 = close_value * alpha50 + ema50 * (1.0 - alpha50)
-                    alpha200 = 2.0 / 201.0
-                    ema200 = closes[0]
-                    for close_value in closes[1:]:
-                        ema200 = close_value * alpha200 + ema200 * (1.0 - alpha200)
-                    swing = candles[-100:]
-                    swing_high = max(float(c["high"]) for c in swing)
-                    swing_low = min(float(c["low"]) for c in swing)
-                    swing_range = swing_high - swing_low
+                    # Multi-family technical engine: 200-method catalogue with family-level aggregation.
+                    from strategy_engine_200 import analyze_200
                     row = dict(quote)
                     row["price"] = latest
                     row["change_pct"] = (latest - previous) / previous * 100
                     row["candle_time"] = candles[-1].get("time")
                     row["interval"] = interval
                     row["candle_sample"] = len(candles)
-                    row["ema50"] = ema50
-                    row["ema200"] = ema200
-                    row["market_direction"] = "صاعد" if latest > ema200 and ema50 > ema200 else "هابط" if latest < ema200 and ema50 < ema200 else "محايد"
+                    analysis = analyze_200(candles)
+                    row["ema50"] = analysis.get("ema50") if analysis else None
+                    row["ema200"] = analysis.get("ema200") if analysis else None
+                    row["market_direction"] = "صاعد" if analysis and analysis["family_scores"].get("trend", 0) > 0.2 else "هابط" if analysis and analysis["family_scores"].get("trend", 0) < -0.2 else "محايد"
                     row["signal"] = None
-                    if swing_range > 0 and latest > ema200 and ema50 > ema200:
-                        retracement = (latest - swing_low) / swing_range
-                        if 0.50 < retracement < 1.0:
-                            entry = latest
-                            stop = swing_low
-                            tp1 = swing_low + swing_range * 1.0
-                            tp2 = swing_low + swing_range * 1.272
-                            tp3 = swing_low + swing_range * 1.618
-                            if stop < entry < tp3:
-                                row["signal"] = {"side": "BUY", "strength": "شراء قوي" if latest > ema200 * 1.01 else "شراء",
-                                    "entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3,
-                                    "fibonacci_retracement": round(retracement * 100, 2), "ema50": ema50, "ema200": ema200}
-                    elif swing_range > 0 and latest < ema200 and ema50 < ema200:
-                        retracement = (swing_high - latest) / swing_range
-                        if 0.50 < retracement < 1.0:
-                            entry = latest
-                            stop = swing_high
-                            tp1 = swing_high - swing_range * 1.0
-                            tp2 = swing_high - swing_range * 1.272
-                            tp3 = swing_high - swing_range * 1.618
-                            if tp3 < entry < stop:
-                                row["signal"] = {"side": "SELL", "strength": "بيع قوي" if latest < ema200 * 0.99 else "بيع",
-                                    "entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3,
-                                    "fibonacci_retracement": round(retracement * 100, 2), "ema50": ema50, "ema200": ema200}
+                    if analysis and analysis.get("side") in ("BUY", "SELL"):
+                        row["signal"] = analysis
                     results.append(row)
                 except (urllib.error.URLError, TimeoutError, ValueError, OSError, TypeError, KeyError):
                     continue
