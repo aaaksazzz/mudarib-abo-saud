@@ -2634,8 +2634,8 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
         loss_pct = abs(stop-entry)/entry*100
         rationale = f"{side}: اتجاه اليومي و٤ ساعات و١٥ دقيقة متوافق؛ الساعة {'مؤيدة' if hourly == ('صاعد' if side == 'شراء' else 'هابط') else 'غير متوافقة'}."
         return {
-            "symbol": symbol, "direction": side, "original_direction": side,
-            "title": f"{side} {symbol} — توافق الاتجاهات الأربعة",
+            "symbol": symbol, "direction": side, "original_direction": original_side,
+            "title": f"{side} {symbol} — الاستراتيجية المعكوسة",
             "description": rationale + " هذه درجة توافق الاتجاه وليست احتمال ربح.",
             "source": "محرك توافق الاتجاه اليومي/4H/1H/15m", "url": "",
             "published_at": now, "created_at": now, "age_hours": 0,
@@ -2650,7 +2650,7 @@ def _ai_generate_market_signals(market, interval, market_rows, limit=20):
             "ai_review": {"summary_ar":rationale,"risk_ar":"توافق الاتجاه لا يضمن النتيجة؛ قد ينعكس السوق.",
                           "verdict":"توافق فريمات","score_type":"درجة توافق وليست احتمال ربح"},
             "timeframe_trends":trends, "timeframe_change_pct":changes,
-            "timeframes_aligned":aligned, "timeframe_alignment_label":f"{aligned}/4 فريمات متوافقة",
+            "timeframes_aligned":aligned, "timeframe_alignment_label":f"{aligned}/4 فريمات توافق الاتجاه الأصلي قبل العكس",
             "trend_strength":round(aligned/4*100),
             "potential_profit_pct":round(profit_pct,2),"potential_loss_pct":round(loss_pct,2),
             "tp1_profit_pct":round(abs(tp1-entry)/entry*100,2),
@@ -3032,9 +3032,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "NEUTRAL": "مختلط / محايد"
     }.get(direction_code, "غير متاح")
 
-    # A fresh market-wide direction is a mandatory gate, not just a label.
-    # Never publish buys in a bearish market, sells in a bullish market,
-    # or new trades when the market direction is neutral/unavailable.
+    # A fresh market-wide direction remains mandatory; the inverted strategy trades opposite it.
     # Inverted strategy: bullish market context produces SELL candidates; bearish produces BUY.
     if direction_code == "BULLISH":
         items = [item for item in items if item.get("direction") == "بيع"]
