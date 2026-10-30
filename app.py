@@ -2513,12 +2513,15 @@ def _daily_vip_parse_signal(page_html, page_url, market):
         if stop <= entry or any(target >= entry for target in targets.values()):
             return None
         direction = "بيع"
-    age_hours = 0.0
     age_match = re.search(r"published\s+(\d+)\s*(m|h|d)\s+ago", plain, re.I)
-    if age_match:
-        amount, unit = int(age_match.group(1)), age_match.group(2).lower()
-        age_hours = amount / 60 if unit == "m" else amount if unit == "h" else amount * 24
-    # Keep setups explicitly marked Active even if older than 24 hours; closed/SL-hit setups are rejected above.
+    # A provider page without a verifiable publication age is not a fresh signal.
+    # Treating an unknown timestamp as "now" can resurrect old trades indefinitely.
+    if not age_match:
+        return None
+    amount, unit = int(age_match.group(1)), age_match.group(2).lower()
+    age_hours = amount / 60 if unit == "m" else amount if unit == "h" else amount * 24
+    if age_hours > 24:
+        return None
 
     now = int(time.time())
     published_at = now - int(age_hours * 3600)
