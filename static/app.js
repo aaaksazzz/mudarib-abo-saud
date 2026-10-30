@@ -1,5 +1,5 @@
 const $=s=>document.querySelector(s);
-let market="spot",timeframe="15m",busy=false,pending=false,timer=null;
+let market="spot",busy=false,pending=false,timer=null;
 const fmt=n=>Number(n).toLocaleString("en-US",{maximumFractionDigits:8});
 const compact=n=>{n=Number(n)||0;if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return fmt(n)};
 const pct=n=>(Number(n)>=0?"+":"")+Number(n).toFixed(2)+"%";
@@ -26,21 +26,21 @@ function renderSignals(rows){
   const side=x.side==="BUY"?1:-1;
   const tp1=pct(side*(x.tp1/x.entry-1)*100),tp2=pct(side*(x.tp2/x.entry-1)*100),tp3=pct(side*(x.tp3/x.entry-1)*100);
   const rank=i===0?"gold":i===1?"silver":"bronze";
-  return '<article class="trade"><div class="trade-head"><div class="trade-title"><span class="rank '+rank+'">'+(i+1)+'</span><b>'+safe(x.symbol)+'</b></div><span class="tag '+(x.side==="BUY"?"buy":"sell")+'">'+(x.side==="BUY"?"شراء":"بيع")+'</span></div><div class="trade-meta-top"><span>الإطار <b>'+safe(x.timeframe)+'</b></span><span>تغير 24س <b class="'+(x.change24h>=0?"up":"down")+'">'+pct(x.change24h)+'</b></span></div><div class="entry"><small>سعر الدخول</small><strong>'+fmt(x.entry)+'</strong></div><div class="levels"><div><small>TP1 · '+tp1+'</small><b>'+fmt(x.tp1)+'</b></div><div><small>TP2 · '+tp2+'</small><b>'+fmt(x.tp2)+'</b></div><div><small>TP3 · '+tp3+'</small><b>'+fmt(x.tp3)+'</b></div><div class="stop"><small>وقف الخسارة</small><b>'+fmt(x.stop_loss)+'</b></div></div><div class="trade-stats"><div class="trade-stat"><small>المخاطرة</small><b>'+x.risk_percent+'%</b></div><div class="trade-stat"><small>جودة الشروط</small><b>'+x.quality_score+'/100</b></div><div class="trade-stat"><small>RSI · حجم</small><b>'+x.rsi+' · '+compact(x.volume)+'</b></div></div></article>';
+  return '<article class="trade"><div class="trade-head"><div class="trade-title"><span class="rank '+rank+'">'+(i+1)+'</span><b>'+safe(x.symbol)+'</b></div><span class="tag '+(x.side==="BUY"?"buy":"sell")+'">'+(x.side==="BUY"?"شراء":"بيع")+'</span></div><div class="trade-meta-top"><span>تغير 24س <b class="'+(x.change24h>=0?"up":"down")+'">'+pct(x.change24h)+'</b></span></div><div class="entry"><small>سعر الدخول</small><strong>'+fmt(x.entry)+'</strong></div><div class="levels"><div><small>TP1 · '+tp1+'</small><b>'+fmt(x.tp1)+'</b></div><div><small>TP2 · '+tp2+'</small><b>'+fmt(x.tp2)+'</b></div><div><small>TP3 · '+tp3+'</small><b>'+fmt(x.tp3)+'</b></div><div class="stop"><small>وقف الخسارة</small><b>'+fmt(x.stop_loss)+'</b></div></div><div class="trade-stats"><div class="trade-stat"><small>المخاطرة</small><b>'+x.risk_percent+'%</b></div><div class="trade-stat"><small>جودة الشروط</small><b>'+x.quality_score+'/100</b></div><div class="trade-stat"><small>RSI · حجم</small><b>'+x.rsi+' · '+compact(x.volume)+'</b></div></div></article>';
  }).join("");
 }
 function renderOpen(rows){
  const root=$("#openTrades");$("#openCount").textContent=(rows?.length||0)+" مفتوحة";
  if(!rows||!rows.length){root.innerHTML='<div class="empty">لا توجد صفقات مفتوحة محفوظة لهذا السوق.</div>';return}
  const target=(name,value,hit)=>'<div class="'+(hit?"hit":"")+'"><small>'+name+(hit?" ✓":"")+'</small><b>'+fmt(value)+'</b></div>';
- root.innerHTML=rows.map(x=>'<article class="open-row"><div><b>'+safe(x.symbol)+'</b><small>'+safe(x.timeframe)+' · '+(x.side==="BUY"?"شراء":"بيع")+'</small></div><div><small>الدخول</small><b>'+fmt(x.entry)+'</b></div>'+target("TP1",x.tp1,x.tp1_hit)+target("TP2",x.tp2,x.tp2_hit)+target("TP3",x.tp3,x.tp3_hit)+'<div class="stop"><small>وقف الخسارة</small><b>'+fmt(x.stop_loss)+'</b></div><span class="tag">مفتوحة</span></article>').join("");
+ root.innerHTML=rows.map(x=>'<article class="open-row"><div><b>'+safe(x.symbol)+'</b><small>'+(x.side==="BUY"?"شراء":"بيع")+'</small></div><div><small>الدخول</small><b>'+fmt(x.entry)+'</b></div>'+target("TP1",x.tp1,x.tp1_hit)+target("TP2",x.tp2,x.tp2_hit)+target("TP3",x.tp3,x.tp3_hit)+'<div class="stop"><small>وقف الخسارة</small><b>'+fmt(x.stop_loss)+'</b></div><span class="tag">مفتوحة</span></article>').join("");
 }
 function renderClosed(rows){
  const closed=(rows||[]).filter(x=>x.status!=="OPEN").slice(0,12);
  $("#historyCount").textContent=closed.length+" مغلقة";
  const root=$("#closedTrades");
  if(!closed.length){root.innerHTML='<div class="empty">لا توجد نتائج مغلقة مسجلة بعد.</div>';return}
- root.innerHTML=closed.map(x=>'<article class="history-row"><div><b>'+safe(x.symbol)+'</b><small>'+safe(x.timeframe)+' · '+(x.side==="BUY"?"شراء":"بيع")+'</small></div><div><small>الدخول</small><b>'+fmt(x.entry)+'</b></div><div><small>النتيجة</small><b class="history-status '+(x.status==="TP3"?"tp":"sl")+'">'+(x.status==="TP3"?"وصل TP3":"وقف الخسارة")+'</b></div><div><small>تاريخ الإغلاق</small><b>'+new Date((x.closed_at||x.updated_at)*1000).toLocaleDateString("ar-SA")+'</b></div><div><small>الإطار</small><b>'+safe(x.timeframe)+'</b></div></article>').join("");
+ root.innerHTML=closed.map(x=>'<article class="history-row"><div><b>'+safe(x.symbol)+'</b><small>'+safe(x.timeframe)+' · '+(x.side==="BUY"?"شراء":"بيع")+'</small></div><div><small>الدخول</small><b>'+fmt(x.entry)+'</b></div><div><small>النتيجة</small><b class="history-status '+(x.status==="TP3"?"tp":"sl")+'">'+(x.status==="TP3"?"وصل TP3":"وقف الخسارة")+'</b></div><div><small>تاريخ الإغلاق</small><b>'+new Date((x.closed_at||x.updated_at)*1000).toLocaleDateString("ar-SA")+'</b></div></article>').join("");
 }
 async function loadMarketStatuses(){
  try{
@@ -61,12 +61,12 @@ async function load(){
  const refresh=$("#refresh");refresh.disabled=true;refresh.innerHTML="<span>↻</span> جارٍ التحديث";
  $("#health").textContent="جارٍ التحديث";$("#scanState").textContent="يفحص السوق";$("#scanState").className="";
  try{
-  const requestedMarket=market,requestedFrame=timeframe;
+  const requestedMarket=market;
   const [d,t]=await Promise.all([
-   get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(requestedFrame)),
+   get("/api/market/"+requestedMarket),
    get("/api/trades?market="+encodeURIComponent(requestedMarket),10000).catch(()=>({items:[]})) 
   ]);
-  if(requestedMarket!==market||requestedFrame!==timeframe){pending=true;return}
+  if(requestedMarket!==market){pending=true;return}
   $("#direction").textContent=d.direction_ar;$("#direction").className="direction-value "+(d.direction==="BUY"?"up":d.direction==="SELL"?"down":"neutral");
   $("#up").textContent=d.up;$("#down").textContent=d.down;$("#flat").textContent=d.flat??0;$("#total").textContent=d.total;
   const total=Math.max(1,Number(d.total)||0);
@@ -87,7 +87,6 @@ async function load(){
  }
 }
 $("#markets").addEventListener("click",e=>{const b=e.target.closest("[data-market]");if(!b||b.disabled)return;market=b.dataset.market;document.querySelectorAll("[data-market]").forEach(x=>x.classList.toggle("active",x===b));load()});
-$("#timeframes").addEventListener("click",e=>{const b=e.target.closest("[data-tf]");if(!b)return;timeframe=b.dataset.tf;document.querySelectorAll("[data-tf]").forEach(x=>x.classList.toggle("active",x===b));load()});
 $("#refresh").addEventListener("click",load);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden)load()});
 function tick(){ $("#clock").textContent=new Date().toLocaleTimeString("en-GB",{hour12:false}); }
