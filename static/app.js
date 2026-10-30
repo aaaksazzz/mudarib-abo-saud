@@ -106,6 +106,32 @@
       '<section class="surge-panel"><div class="surge-item-head"><h2 style="margin:0">الأصول وترتيب الحركة</h2><span class="surge-chip" id="surgeUpdated">آخر تحديث —</span></div><div id="surgeStatus" class="surge-muted" style="margin:10px 0">جاري تحميل البيانات…</div><div class="surge-table-wrap"><table class="surge-table"><thead><tr><th>#</th><th>الأصل</th><th>الاتجاه</th><th>التغير</th><th>قيمة التداول</th></tr></thead><tbody id="surgeRows"><tr><td colspan="5" class="surge-empty">جاري الاتصال…</td></tr></tbody></table></div></section>'+
       '<p class="surge-muted">الأسعار قد تتأخر حسب مزود البيانات. لا توجد أوامر تداول آلية، ولا تُعرض توصية غير موثقة.</p></div>';
     let busy=false;
+    const loadDailyVip=async()=>{
+      const out=$("surgeRecommendations"),label=$("signalSourceLabel");
+      if(!out)return;
+      if(!["spot","futures","alpha"].includes(m.api)){
+        out.innerHTML='<div class="surge-empty">لا توجد توصيات موثقة من Daily VIP لهذا السوق.</div>';
+        if(label)label.textContent="غير مدعوم";
+        return;
+      }
+      out.innerHTML='<div class="surge-empty">جاري جلب التوصيات المنشورة…</div>';
+      if(label)label.textContent="Daily VIP Signals";
+      try{
+        const data=await getJSON("/api/daily-vip/signals?market="+encodeURIComponent(m.api)+"&limit=20");
+        const rows=Array.isArray(data.items)?data.items:[];
+        if(!rows.length){out.innerHTML='<div class="surge-empty">'+esc(data.message||"لا توجد توصيات نشطة مكتملة الآن.")+'</div>';return}
+        const targetKeys=["tp1","tp2","tp3","tp4","tp5"];
+        out.innerHTML='<div class="surge-signal-grid">'+rows.map((x,i)=>{
+          const lv=x.levels||{},buy=x.original_direction==="LONG";
+          const entry=Number(lv.entry),stop=Number(lv.stop_loss);
+          const move=(v)=>{const n=Number(v);return Number.isFinite(n)&&entry>0?((buy?n-entry:entry-n)/entry*100).toFixed(2)+"%":"—"};
+          const entryText=price(lv.entry_min)+" – "+price(lv.entry_max);
+          const targets=targetKeys.map((key,index)=>'<div class="surge-target"><small>TP'+(index+1)+'</small><b dir="ltr">'+price(lv[key])+'</b><small>'+move(lv[key])+'</small></div>').join("");
+          const risk=Number.isFinite(stop)&&entry>0?((buy?entry-stop:stop-entry)/entry*100).toFixed(2)+"%":"—";
+          return '<article class="surge-signal-card"><div class="surge-signal-head"><b dir="ltr">'+esc(x.symbol)+'</b><span class="surge-rec-side '+(buy?"buy":"sell")+'">'+(buy?"شراء LONG":"بيع SHORT")+'</span></div><div class="surge-entry"><small>منطقة الدخول المنشورة</small><b dir="ltr">'+entryText+'</b></div><div class="surge-level-grid">'+targets+'<div class="surge-target stop"><small>وقف الخسارة</small><b dir="ltr">'+price(stop)+'</b><small>مخاطرة '+risk+'</small></div></div><div class="surge-signal-foot"><span>'+esc(x.status||"نشطة")+' · '+esc(x.age_hours)+" ساعة"+'</span><a href="'+esc(x.source_url)+'" target="_blank" rel="noopener noreferrer">المصدر الأصلي ↗</a></div></article>';
+        }).join("")+'</div>';
+      }catch(err){out.innerHTML='<div class="surge-empty">تعذر جلب توصيات Daily VIP: '+esc(err.message||"خطأ في المصدر")+'</div>'}
+    };
     const refresh=async()=>{
       if(busy)return;busy=true;
       $("surgeStatus").textContent="جاري تحميل قائمة الأصول…";$("surgeConnection").textContent="● جاري التحديث";
@@ -132,9 +158,10 @@
       }finally{busy=false}
     };
     refresh();
+    loadDailyVip();
     if(marketSignalRefreshTimer)clearInterval(marketSignalRefreshTimer);
     if(marketLiveTrackTimer)clearInterval(marketLiveTrackTimer);
-    marketSignalRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible"&&$("surgeRows"))refresh()},180000);
+    marketSignalRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible"&&$("surgeRows")){refresh();loadDailyVip()}},180000);
   }
   async function loadQuotes(m) {
     const out=$("quoteContent"), meta=$("quoteMeta"); if(!out)return;
