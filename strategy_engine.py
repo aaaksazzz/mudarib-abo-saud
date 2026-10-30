@@ -119,7 +119,8 @@ def _frame_analysis(candles):
     support = min(c["low"] for c in recent)
     volume_avg = sum(c["volume"] for c in candles[-21:-1]) / 20
     rel_volume = last["volume"] / volume_avg if volume_avg > 0 else 0
-    change = (closes[-1] / closes[-5] - 1.0) * 100.0
+    # One-candle percentage move: for the 15m scan this is the actual latest 15m change.
+    change = (closes[-1] / closes[-2] - 1.0) * 100.0
     up = last["close"] > ema20 > ema50
     down = last["close"] < ema20 < ema50
     if ema200 is not None:
