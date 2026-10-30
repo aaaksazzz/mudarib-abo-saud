@@ -4,6 +4,7 @@ This is a deterministic technical-analysis engine, not an AI model or a profit g
 """
 import math
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 FRAME_SECONDS = {"15m": 900, "30m": 1800, "1h": 3600, "2h": 7200,
@@ -20,6 +21,10 @@ FRAME_SETS = {
 }
 RISK_CAP = {"15m": .018, "30m": .022, "1h": .03, "2h": .04,
             "4h": .055, "1d": .08, "1w": .12, "1M": .18}
+
+# Rotate bounded batches so large markets are covered over successive scans.
+_SCAN_CURSORS = {}
+_SCAN_CURSOR_LOCK = threading.Lock()
 
 
 def _ema(values, period):
@@ -236,7 +241,17 @@ def generate_signals(market, interval, market_rows, limit, candle_loader):
             return (math.log10(1+max(0,volume)) * (1+min(change,25)/25), change)
         except (TypeError, ValueError, OverflowError):
             return (0,0)
-    candidates = sorted(unique.values(), key=priority, reverse=True)[:min(12,max(8,limit))]
+    ranked = sorted(unique.values(), key=priority, reverse=True)
+    batch_size = min(12, max(8, limit))
+    if len(ranked) <= batch_size:
+        candidates = ranked
+    else:
+        with _SCAN_CURSOR_LOCK:
+            offset = _SCAN_CURSORS.get(market, 0) % len(ranked)
+            candidates = ranked[offset:offset + batch_size]
+            if len(candidates) < batch_size:
+                candidates.extend(ranked[:batch_size - len(candidates)])
+            _SCAN_CURSORS[market] = (offset + batch_size) % len(ranked)
     results = []
     with ThreadPoolExecutor(max_workers=2) as pool:
         jobs = [pool.submit(_analyze_symbol, market, "15m", row, candle_loader) for row in candidates]

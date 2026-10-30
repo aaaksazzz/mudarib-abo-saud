@@ -67,3 +67,25 @@ def test_new_strategy_rejects_disagreement_between_4h_and_daily(monkeypatch):
     )
     assert completed is True
     assert items == []
+
+
+def test_large_market_scans_rotate_through_the_universe(monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        engine, "_analyze_symbol",
+        lambda market, interval, row, candle_loader: seen.append(row["symbol"]) or None
+    )
+    rows = [
+        {"symbol": f"COIN{i}USDT", "price": 1.0, "quote_volume": 1_000_000 - i}
+        for i in range(24)
+    ]
+    engine._SCAN_CURSORS.pop("rotation-test", None)
+    engine.generate_signals("rotation-test", "15m", rows, 20, lambda *args: [])
+    first = set(seen)
+    seen.clear()
+    engine.generate_signals("rotation-test", "15m", rows, 20, lambda *args: [])
+    second = set(seen)
+    assert len(first) == 12
+    assert len(second) == 12
+    assert first.isdisjoint(second)
+    assert first | second == {row["symbol"] for row in rows}
