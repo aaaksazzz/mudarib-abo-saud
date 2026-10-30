@@ -122,9 +122,9 @@ def test_results_endpoint_handles_empty_and_malformed_pnl(tmp_path, monkeypatch)
     path = tmp_path / "results.json"
     monkeypatch.setattr(app_module, "RESULTS_PATH", path)
     write_json_file(path, [
-        {"symbol": "AAA", "result": "TP1", "pnl_pct": "2.5", "source": "trend_4h_1d_rank_15m"},
-        {"symbol": "BBB", "result": "SL", "pnl_pct": "bad", "source": "trend_4h_1d_rank_15m"},
-        {"symbol": "CCC", "result": "مفتوحة", "pnl_pct": None, "source": "trend_4h_1d_rank_15m"},
+        {"symbol": "AAA", "result": "TP1", "pnl_pct": "2.5", "source": "trend_4h_1d_rank_15m_v2"},
+        {"symbol": "BBB", "result": "SL", "pnl_pct": "bad", "source": "trend_4h_1d_rank_15m_v2"},
+        {"symbol": "CCC", "result": "مفتوحة", "pnl_pct": None, "source": "trend_4h_1d_rank_15m_v2"},
     ])
     response = client.get("/api/results?limit=20")
     assert response.status_code == 200
@@ -254,14 +254,18 @@ def test_public_ideas_aggregates_recent_items_without_network():
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
-    assert data["sources_configured"] > 0
+    assert data["sources_configured"] == 0
+    assert data["sources_checked"] == 0
+    assert "متوقفة" in data["message"]
 
 def test_public_ideas_reads_direction_from_title_and_requires_all_ordered_levels():
     response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
-    assert data["sources_configured"] > 0
+    assert data["sources_configured"] == 0
+    assert data["sources_checked"] == 0
+    assert "متوقفة" in data["message"]
 
 def test_robots_sitemap_and_blog_are_available():
     robots = client.get("/robots.txt")
@@ -283,7 +287,9 @@ def test_public_ideas_auto_interval_and_futures_symbol_match():
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
-    assert data["sources_configured"] > 0
+    assert data["sources_configured"] == 0
+    assert data["sources_checked"] == 0
+    assert "متوقفة" in data["message"]
 
 def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     from pathlib import Path
@@ -296,7 +302,9 @@ def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     assert '"/api/signals/"+encodeURIComponent(m.api)+"?interval=15m&limit=20"' in js
     assert '"&interval=1d"' in js
     assert 'id="surgeIntervals"' not in js and 'data-interval="' not in js
-    assert 'x.interval' not in js and '4 ساعات + يومي · ترتيب 15 دقيقة' in js and 'الفريم:' in js
+    assert '4 ساعات + يومي · ترتيب 15 دقيقة' in js
+    assert 'id="surgeIntervals"' not in js and 'data-interval="' not in js
+    assert 'marketSignalRefreshTimer=setInterval' in js
     assert 'async function loadChart(m,symbol)' in js
 
 
@@ -346,14 +354,18 @@ def test_public_futures_ideas_require_title_ticker_and_valid_complete_levels():
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
-    assert data["sources_configured"] > 0
+    assert data["sources_configured"] == 0
+    assert data["sources_checked"] == 0
+    assert "متوقفة" in data["message"]
 
 def test_public_ideas_detect_timeframe_in_title_when_body_omits_it():
     response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
-    assert data["sources_configured"] > 0
+    assert data["sources_configured"] == 0
+    assert data["sources_checked"] == 0
+    assert "متوقفة" in data["message"]
 
 def test_public_idea_levels_parse_html_labels_and_numbered_target_variants():
     levels = app_module._public_idea_levels(
@@ -451,8 +463,8 @@ def test_home_refresh_does_not_rebuild_dashboard_twice():
     root = Path(__file__).resolve().parents[1] / "static"
     html = (root / "index.html").read_text(encoding="utf-8")
     js = (root / "app.js").read_text(encoding="utf-8")
-    assert '/static/app.css?v=20261030.bottomnav1' in html
-    assert '/static/app.js?v=20261030.signal-sources1' in html
+    assert '/static/app.css?v=20261030.prodesk1' in html
+    assert '/static/app.js?v=20261030.prodesk1' in html
     assert 'getJSON("/api/status")' in js
     home_start = js.index("function renderHome()")
     home_end = js.index("function renderMarketPage(", home_start)
@@ -490,7 +502,9 @@ def test_public_ideas_cache_respects_requested_limit():
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
-    assert data["sources_configured"] > 0
+    assert data["sources_configured"] == 0
+    assert data["sources_checked"] == 0
+    assert "متوقفة" in data["message"]
 
 def test_public_ideas_cached_results_expire_at_24_hours():
     now = int(time.time())
@@ -542,66 +556,20 @@ def test_daily_vip_signal_parser_preserves_all_published_levels():
     ]
 
 
-def test_daily_vip_endpoint_finds_signal_routes_embedded_in_page_state(monkeypatch):
-    index_page = '<script>window.__STATE__={"active":"/signals/apt-short-signal-2026-10-30","next":"https:\\/\\/dailyvipsignals.com\\/signals\\/hbar-short-signal-2026-10-30"}</script>'
-    detail_page = """
-    APT/USDT SHORT Signal
-    SHORT · 3×
-    Active Live — waiting for the first target
-    published 11h ago
-    Entry zone $0.58388 – $0.59374
-    Stop-loss $0.63592
-    Target 1 +2.0% $0.57704
-    Target 2 +4.0% $0.56526
-    Target 3 +7.0% $0.54760
-    Target 4 +11.0% $0.52404
-    Target 5 +16.0% $0.49460
-    """
+def test_daily_vip_endpoint_keeps_external_providers_disabled(monkeypatch):
     monkeypatch.setattr(
         app_module, "_daily_vip_fetch",
-        lambda url: index_page if url == app_module.DAILY_VIP_SIGNALS_URL else detail_page,
+        lambda url: (_ for _ in ()).throw(AssertionError("disabled provider must not be fetched")),
     )
-    app_module.DAILY_VIP_CACHE.clear()
-    response = client.get("/api/trade-feed?market=futures&refresh=true")
-    assert response.status_code == 200
-    assert response.json()["sources_checked"] == 2
-    assert response.json()["count"] == 2
-    assert {item["symbol"] for item in response.json()["items"]} == {"APTUSDT"}
-    app_module.DAILY_VIP_CACHE.clear()
-
-
-def test_daily_vip_endpoint_filters_shorts_from_spot_and_returns_futures(monkeypatch):
-    index_page = '<a href="https://dailyvipsignals.com/signals/apt-short-signal-2026-10-30?ref=active">View setup</a>'
-    detail_page = """
-    APT/USDT SHORT Signal
-    SHORT · 3×
-    Active Live — waiting for the first target
-    published 11h ago
-    Entry zone $0.58388 – $0.59374
-    Stop-loss $0.63592
-    Target 1 +2.0% $0.57704
-    Target 2 +4.0% $0.56526
-    Target 3 +7.0% $0.54760
-    Target 4 +11.0% $0.52404
-    Target 5 +16.0% $0.49460
-    """
-    monkeypatch.setattr(
-        app_module, "_daily_vip_fetch",
-        lambda url: index_page if url == app_module.DAILY_VIP_SIGNALS_URL else detail_page,
-    )
-    app_module.DAILY_VIP_CACHE.clear()
-    futures = client.get("/api/trade-feed?market=futures&refresh=true")
-    assert futures.status_code == 200
-    assert futures.json()["count"] == 1
-    assert "source" not in futures.json()
-    assert "source_url" not in futures.json()
-    assert "source" not in futures.json()["items"][0]
-    assert "source_url" not in futures.json()["items"][0]
-    assert "Daily VIP" not in str(futures.json())
-    spot = client.get("/api/trade-feed?market=spot&refresh=true")
-    assert spot.status_code == 200
-    assert spot.json()["items"] == []
-    app_module.DAILY_VIP_CACHE.clear()
+    for market in ("futures", "spot"):
+        response = client.get(f"/api/trade-feed?market={market}&refresh=true")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["items"] == []
+        assert data["count"] == 0
+        assert data["sources_configured"] == 0
+        assert data["sources_checked"] == 0
+        assert "إيقاف مزودي الصفقات الخارجيين" in data["message"]
 
 
 def test_customer_trade_payload_hides_provider_identity_and_external_urls():
@@ -664,24 +632,15 @@ def test_daily_vip_parser_rejects_explicitly_closed_win_or_loss():
     assert app_module._daily_vip_parse_signal(page, "https://provider.invalid/pump", "futures") is None
 
 
-def test_public_ideas_accept_explicit_entry_stop_and_tp1_without_inventing_more_targets(monkeypatch):
-    now = int(time.time())
-    fake = [{
-        "source": "Test public feed",
-        "title": "BTCUSDT BUY setup",
-        "description": "Entry: 100 Stop Loss: 95 TP1: 110",
-        "url": "https://example.com/btc-setup",
-        "published_at": now,
-    }]
-    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
-    app_module.PUBLIC_TRADE_IDEA_CACHE.clear()
+def test_public_ideas_does_not_fetch_disabled_external_sources(monkeypatch):
+    monkeypatch.setattr(
+        app_module, "_fetch_public_idea_feed",
+        lambda source, url: (_ for _ in ()).throw(AssertionError("external source must remain disabled")),
+    )
     response = client.get("/api/public-ideas?market=spot&limit=10&refresh=true")
     assert response.status_code == 200
     data = response.json()
-    assert data["count"] == 1
-    levels = data["items"][0]["levels"]
-    assert levels["entry"] == 100
-    assert levels["stop_loss"] == 95
-    assert levels["tp1"] == 110
-    assert levels["tp2"] is None
-    assert levels["tp3"] is None
+    assert data["items"] == []
+    assert data["count"] == 0
+    assert data["sources_configured"] == 0
+    assert "المصادر الخارجية متوقفة" in data["message"]
