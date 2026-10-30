@@ -107,21 +107,30 @@
     const loadDailyVip=async(force=false)=>{
       const out=$("surgeRecommendations"),label=$("signalSourceLabel");
       if(!out)return;
-      if(!["spot","futures","alpha","forex"].includes(m.api)){
+      if(!["spot","futures","alpha","forex","us","contracts","saudi"].includes(m.api)){
         out.innerHTML='<div class="surge-empty">لا توجد صفقات موثقة متاحة لهذا السوق حاليًا.</div>';
         if(label)label.textContent="غير مدعوم";
         return;
       }
       if(!force)out.innerHTML='<div class="surge-empty">جاري جلب التوصيات المنشورة…</div>';
-      if(label)label.textContent="محدثة";
+      if(label)label.textContent="فحص المصادر";
       try{
-        const data=await getJSON("/api/trade-feed?market="+encodeURIComponent(m.api)+"&limit=20"+(force?"&refresh=true":""));
-        const rows=(Array.isArray(data.items)?data.items:[]).slice().sort((a,b)=>{
+        const suffix=force?"&refresh=true":"";
+        const results=await Promise.allSettled([
+          getJSON("/api/trade-feed?market="+encodeURIComponent(m.api)+"&limit=20"+suffix),
+          getJSON("/api/public-ideas?market="+encodeURIComponent(m.api)+"&limit=30"+suffix)
+        ]);
+        const base=results[0].status==="fulfilled"?results[0].value:{items:[],message:""};
+        const external=results[1].status==="fulfilled"?results[1].value:{items:[],message:""};
+        const merged=[...(Array.isArray(base.items)?base.items:[]),...(Array.isArray(external.items)?external.items:[])];
+        const seen=new Set();
+        const rows=merged.filter(x=>{const key=String(x.source_url||"")+"|"+String(x.symbol||"")+"|"+String(x.direction||"")+"|"+String(x.published_at||"");if(seen.has(key))return false;seen.add(key);return true}).slice().sort((a,b)=>{
           const score=(x)=>{const v=x.levels||{},entry=Number(v.entry),stop=Number(v.stop_loss),target=Number(v.tp3),long=x.original_direction==="LONG";const risk=Math.abs(entry-stop),reward=Math.abs(target-entry);return entry>0&&risk>0&&target>0?reward/risk:-1};
           const delta=score(b)-score(a);
           return Math.abs(delta)>1e-9?delta:Number(b.published_at||0)-Number(a.published_at||0);
         });
-        if(!rows.length){out.innerHTML='<div class="surge-empty">'+esc(data.message||"لا توجد توصيات نشطة مكتملة الآن.")+'</div>';return}
+        if(label)label.textContent="مصادر مفحوصة: "+Number(base.sources_checked||0)+Number(external.sources_checked||0);
+        if(!rows.length){out.innerHTML='<div class="surge-empty">'+esc(external.message||base.message||"لا توجد توصيات نشطة مكتملة الآن.")+'</div>';return}
         const targetKeys=["tp1","tp2","tp3","tp4","tp5"];
         out.innerHTML='<div class="surge-signal-grid">'+rows.map((x,i)=>{
           const lv=x.levels||{},buy=x.original_direction==="LONG";
