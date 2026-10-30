@@ -2391,6 +2391,16 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "NEUTRAL": "مختلط / محايد"
     }.get(direction_code, "غير متاح")
 
+    # Enforce the documented market-wide direction gate:
+    # bullish markets show BUY only, bearish markets SELL only,
+    # and neutral/stale direction never produces a displayed trade.
+    if direction_code == "BULLISH":
+        items = [item for item in items if item.get("direction") == "شراء"]
+    elif direction_code == "BEARISH":
+        items = [item for item in items if item.get("direction") == "بيع"]
+    else:
+        items = []
+
     # Market-wide direction is context; the engine requires candle-level multi-factor confluence.
 
     # Final ranking is based ONLY on the latest 15-minute percentage change.
@@ -2422,7 +2432,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             " لكن ما فيه فرص اجتازت شروط توافق الفريمات واتجاه السوق حاليًا."
         )
     result = {
-        "ok": True, "live": bool(items), "market": market, "interval": interval,
+        "ok": True, "live": bool(snapshot_ok and snapshot.get("live", False) and not snapshot.get("stale", False)), "market": market, "interval": interval,
         "market_trend": market_trend,
         "items": items[:limit], "count": len(items[:limit]),
         "scanned": scanned_count,
