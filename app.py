@@ -2259,6 +2259,151 @@ def _public_idea_levels(value):
     tp2 = find(r"(?:\bTP\s*[-_#]?\s*2\b|\bT\s*2\b|\btarget\s*[-_#]?\s*2\b|\btake\s*profit\s*[-_#]?\s*2\b|الهدف\s*(?:الثاني|2)|هدف\s*2)")
     tp3 = find(r"(?:\bTP\s*[-_#]?\s*3\b|\bT\s*3\b|\btarget\s*[-_#]?\s*3\b|\btake\s*profit\s*[-_#]?\s*3\b|الهدف\s*(?:الثالث|3)|هدف\s*3)")
     return {"entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3}
+DAILY_VIP_SIGNALS_URL = "https://dailyvipsignals.com/signals"
+DAILY_VIP_CACHE = {}
+DAILY_VIP_CACHE_TTL = 60
+
+def _daily_vip_fetch(url):
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "SMART-TRADING-PRO/1.0 (+public signal attribution)", "Accept": "text/html"},
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        if getattr(response, "status", 200) != 200:
+            raise OSError("Daily VIP returned a non-success status")
+        return response.read(2_000_000).decode("utf-8", errors="replace")
+
+
+def _daily_vip_parse_signal(page_html, page_url, market):
+    plain = html_lib.unescape(re.sub(r"<[^>]+>", " ", page_html or ""))
+    plain = re.sub(r"\\s+", " ", plain)
+    title_match = re.search(r"([A-Z0-9]{2,20})/USDT\\s+(LONG|SHORT)\\s+Signal", plain, re.I)
+    if not title_match:
+        return None
+    symbol, raw_side = title_match.group(1).upper(), title_match.group(2).upper()
+    if not re.search(r"\\bActive\\b", plain, re.I):
+        return None
+    if market in {"spot", "alpha"} and raw_side != "LONG":
+        return None
+    entry_match = re.search(r"Entry zone\\s*\\$?([\\d,]+(?:\\.\\d+)?)\\s*[–-]\\s*\\$?([\\d,]+(?:\\.\\d+)?)", plain, re.I)
+    stop_match = re.search(r"Stop[- ]loss\\s*\\$?([\\d,]+(?:\\.\\d+)?)", plain, re.I)
+    if not entry_match or not stop_match:
+        return None
+    try:
+        entry_min, entry_max = (float(value.replace(",", "")) for value in entry_match.groups())
+        stop = float(stop_match.group(1).replace(",", ""))
+    except (TypeError, ValueError):
+        return None
+    entry = (entry_min + entry_max) / 2
+    if not all(math.isfinite(value) and value > 0 for value in (entry_min, entry_max, entry, stop)):
+        return None
+    targets = {}
+    for number in range(1, 6):
+        match = re.search(
+            r"Target\\s*" + str(number) + r"\\s*(?:\\+[\\d.]+\\s*%)?\\s*\\$?\\s*([\\d,]+(?:\\.\\d+)?)",
+            plain, re.I,
+        )
+        if not match:
+            return None
+        try:
+            targets["tp" + str(number)] = float(match.group(1).replace(",", ""))
+        except (TypeError, ValueError):
+            return None
+    values = [entry_min, entry_max, stop] + list(targets.values())
+    if not all(math.isfinite(value) and value > 0 for value in values):
+        return None
+    if raw_side == "LONG":
+        if stop >= entry or any(target <= entry for target in targets.values()):
+            return None
+        direction = "شراء"
+    else:
+        if stop <= entry or any(target >= entry for target in targets.values()):
+            return None
+        direction = "بيع"
+    age_hours = 0.0
+    age_match = re.search(r"published\\s+(\\d+)\\s*(m|h|d)\\s+ago", plain, re.I)
+    if age_match:
+        amount, unit = int(age_match.group(1)), age_match.group(2).lower()
+        age_hours = amount / 60 if unit == "m" else amount if unit == "h" else amount * 24
+    if age_hours > 24:
+        return None
+    now = int(time.time())
+    published_at = now - int(age_hours * 3600)
+    leverage_match = re.search(r"\\b" + re.escape(raw_side) + r"\\s+(\\d+)\\s*[×x]", plain, re.I)
+    return {
+        "symbol": symbol + "USDT",
+        "direction": direction,
+        "original_direction": raw_side,
+        "market": market,
+        "entry": entry,
+        "entry_min": entry_min,
+        "entry_max": entry_max,
+        "levels": {"entry": entry, "entry_min": entry_min, "entry_max": entry_max,
+                   "stop_loss": stop, **targets},
+        "leverage": int(leverage_match.group(1)) if leverage_match else None,
+        "published_at": published_at,
+        "age_hours": round(age_hours, 1),
+        "status": "نشطة حسب المصدر",
+        "source": "Daily VIP Signals",
+        "source_url": page_url,
+        "has_complete_levels": True,
+        "generated_by_site": False,
+    }
+
+
+@app.get("/api/daily-vip/signals")
+def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=1, le=20), refresh: bool = Query(False)):
+    """Import only complete, active, recent public crypto setups from Daily VIP Signals."""
+    market = (market or "").strip().lower()
+    if market not in {"spot", "futures", "alpha"}:
+        return {"ok": True, "market": market, "items": [], "count": 0,
+                "source": "Daily VIP Signals",
+                "message": "مصدر Daily VIP يغطي توصيات العملات الرقمية فقط، ولا يوفّر توصيات موثقة لهذا السوق."}
+    now = int(time.time())
+    cached = DAILY_VIP_CACHE.get(market)
+    if not refresh and cached and now - cached[0] < DAILY_VIP_CACHE_TTL:
+        data = dict(cached[1])
+        data["cached"] = True
+        return data
+    try:
+        index_html = _daily_vip_fetch(DAILY_VIP_SIGNALS_URL)
+        paths = list(dict.fromkeys(re.findall(
+            r'href=["\\'](/signals/[a-z0-9-]+)["\\']', index_html, re.I
+        )))[:12]
+        urls = ["https://dailyvipsignals.com" + path for path in paths]
+        items = []
+        failures = 0
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            futures = {pool.submit(_daily_vip_fetch, url): url for url in urls}
+            for future in as_completed(futures):
+                url = futures[future]
+                try:
+                    row = _daily_vip_parse_signal(future.result(), url, market)
+                    if row:
+                        items.append(row)
+                except Exception as exc:
+                    failures += 1
+                    print(f"Daily VIP signal fetch failed: {type(exc).__name__}")
+        items.sort(key=lambda row: row.get("published_at", 0), reverse=True)
+        data = {
+            "ok": True, "market": market, "items": items[:limit], "count": min(len(items), limit),
+            "source": "Daily VIP Signals", "source_url": DAILY_VIP_SIGNALS_URL,
+            "sources_checked": len(urls), "sources_failed": failures,
+            "message": "تم جلب التوصيات النشطة المكتملة المنشورة علنًا. تم استبعاد التوصيات الأقدم من 24 ساعة أو التي ينقصها أي مستوى."
+            if items else "لم توجد توصيات نشطة مكتملة وحديثة لهذا السوق في المصدر الآن.",
+        }
+        DAILY_VIP_CACHE[market] = (now, data)
+        return data
+    except Exception as exc:
+        print(f"Daily VIP source unavailable: {type(exc).__name__}: {exc}")
+        if cached:
+            return {**cached[1], "cached": True, "stale": True,
+                    "message": "تعذر تحديث Daily VIP؛ هذه آخر بيانات محفوظة مؤقتًا."}
+        return {"ok": False, "market": market, "items": [], "count": 0,
+                "source": "Daily VIP Signals",
+                "message": "تعذر الاتصال بمصدر Daily VIP الآن؛ لم نعرض صفقات تقديرية."}
+
+
 @app.get("/api/public-ideas")
 def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), limit: int = Query(20, ge=1, le=50), discover: bool = Query(False), refresh: bool = Query(False)):
     """Legacy public-ideas endpoint disabled: trade generation is AI-only."""
