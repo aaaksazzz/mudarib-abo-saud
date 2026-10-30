@@ -1,5 +1,5 @@
 const $=s=>document.querySelector(s);
-let market="spot",timeframe="15m",busy=false,timer=null;
+let market="spot",timeframe="15m",busy=false,pending=false,timer=null;
 const names={spot:"Binance Spot",futures:"Binance Futures",alpha:"Binance Alpha",saudi:"السوق السعودي",us:"الأسهم الأمريكية",contracts:"العقود الأمريكية",forex:"الفوركس والذهب"};
 const fmt=n=>Number(n).toLocaleString("en-US",{maximumFractionDigits:8});
 const safe=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -12,10 +12,11 @@ function renderSignals(rows){
 function renderOpen(rows){
  const root=$("#openTrades");
  if(!rows||!rows.length){root.innerHTML='<div class="empty">لا توجد صفقات مفتوحة محفوظة لهذا السوق.</div>';return}
- root.innerHTML=rows.map(x=>'<div class="open-row"><div><b>'+safe(x.symbol)+'</b><small>'+x.timeframe+' · '+(x.side==="BUY"?"شراء":"بيع")+'</small></div><div><small>الدخول</small><b>'+fmt(x.entry)+'</b></div><div><small>الأهداف</small><b>'+(x.tp1_hit?"TP1 ✓":"TP1 —")+' / '+(x.tp2_hit?"TP2 ✓":"TP2 —")+'</b></div><span class="tag">'+x.status+'</span></div>').join("");
+ const target=(name,value,hit)=>'<div><small>'+name+(hit?' ✓':'')+'</small><b>'+fmt(value)+'</b></div>';
+ root.innerHTML=rows.map(x=>'<article class="open-row"><div><b>'+safe(x.symbol)+'</b><small>'+safe(x.timeframe)+' · '+(x.side==="BUY"?"شراء":"بيع")+'</small></div><div><small>الدخول</small><b>'+fmt(x.entry)+'</b></div>'+target("TP1",x.tp1,x.tp1_hit)+target("TP2",x.tp2,x.tp2_hit)+target("TP3",x.tp3,x.tp3_hit)+'<div class="stop"><small>وقف الخسارة</small><b>'+fmt(x.stop_loss)+'</b></div><span class="tag">'+safe(x.status)+'</span></article>').join("");
 }
 async function load(){
- if(busy)return;busy=true;$("#health").textContent="● جارٍ التحديث";
+ if(busy){pending=true;return}busy=true;pending=false;$("#health").textContent="● جارٍ التحديث";
  try{
   const d=await get('/api/market/'+market+'?timeframe='+timeframe);
   $("#direction").textContent=d.direction_ar;$("#direction").className=d.direction==="BUY"?"up":d.direction==="SELL"?"down":"neutral";
@@ -24,7 +25,7 @@ async function load(){
   $("#source").textContent=d.source+" · "+d.strategy;renderSignals(d.signals);renderOpen(d.open_trades);
   $("#health").textContent="● متصل";$("#health").className="health ok";
  }catch(e){$("#cards").innerHTML='<div class="empty">'+safe(e.message)+'</div>';$("#health").textContent="● غير متصل";$("#health").className="health bad"}
- finally{busy=false}
+ finally{busy=false;if(pending){pending=false;load()}}
 }
 $("#markets").addEventListener("click",e=>{const b=e.target.closest("[data-market]");if(!b||b.disabled)return;market=b.dataset.market;document.querySelectorAll("[data-market]").forEach(x=>x.classList.toggle("active",x===b));load()});
 $("#timeframes").addEventListener("click",e=>{const b=e.target.closest("[data-tf]");if(!b)return;timeframe=b.dataset.tf;document.querySelectorAll("[data-tf]").forEach(x=>x.classList.toggle("active",x===b));load()});

@@ -167,8 +167,12 @@ def db():
             timeframe TEXT NOT NULL, side TEXT NOT NULL, entry REAL NOT NULL, stop_loss REAL NOT NULL,
             tp1 REAL NOT NULL, tp2 REAL NOT NULL, tp3 REAL NOT NULL, status TEXT NOT NULL DEFAULT 'OPEN',
             tp1_hit INTEGER NOT NULL DEFAULT 0, tp2_hit INTEGER NOT NULL DEFAULT 0,
+            tp3_hit INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, closed_at INTEGER
         )""")
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(trades)")}
+        if "tp3_hit" not in columns:
+            connection.execute("ALTER TABLE trades ADD COLUMN tp3_hit INTEGER NOT NULL DEFAULT 0")
         connection.commit()
         yield connection
         connection.commit()
@@ -182,6 +186,21 @@ def save_new_trades(kind, signals):
     now = int(time.time())
     with db() as connection:
         for signal in signals:
+            required = ("symbol", "timeframe", "side", "entry", "stop_loss", "tp1", "tp2", "tp3")
+            if any(key not in signal or signal[key] is None for key in required):
+                continue
+            try:
+                entry, stop, tp1, tp2, tp3 = (float(signal[key]) for key in ("entry", "stop_loss", "tp1", "tp2", "tp3"))
+            except (TypeError, ValueError):
+                continue
+            if not all(value > 0 for value in (entry, stop, tp1, tp2, tp3)):
+                continue
+            if signal["side"] == "BUY" and not (stop < entry < tp1 < tp2 < tp3):
+                continue
+            if signal["side"] == "SELL" and not (stop > entry > tp1 > tp2 > tp3):
+                continue
+            if signal["side"] not in ("BUY", "SELL"):
+                continue
             exists = connection.execute(
                 "SELECT id FROM trades WHERE market=? AND symbol=? AND timeframe=? AND status='OPEN'",
                 (kind, signal["symbol"], signal["timeframe"])
@@ -209,8 +228,8 @@ def update_open_trades(kind, prices):
             tp3_hit = price >= trade["tp3"] if side == "BUY" else price <= trade["tp3"]
             status = "SL" if stop_hit else ("TP3" if tp3_hit else "OPEN")
             connection.execute("""UPDATE trades SET tp1_hit=MAX(tp1_hit,?), tp2_hit=MAX(tp2_hit,?),
-                status=?,updated_at=?,closed_at=? WHERE id=?""",
-                (int(tp1_hit), int(tp2_hit), status, now, now if status != "OPEN" else None, trade["id"]))
+                tp3_hit=MAX(tp3_hit,?), status=?,updated_at=?,closed_at=? WHERE id=?""",
+                (int(tp1_hit), int(tp2_hit), int(tp3_hit), status, now, now if status != "OPEN" else None, trade["id"]))
         connection.commit()
 
 @app.get("/")
