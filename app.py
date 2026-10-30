@@ -2463,7 +2463,8 @@ def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=
         # Also accept concrete signal slugs embedded in the page-state JSON.
         # Synthetic /signals/page-* router paths are still rejected below.
         href_values.extend(re.findall(
-            r"""["'](/signals/[a-z0-9-]+)["']""", listing_text, re.I
+            r"""(?:https?://(?:www\.)?dailyvipsignals\.com)?(/signals/[a-z0-9-]+)""",
+            listing_text, re.I,
         ))
         paths = []
         for candidate in href_values:
