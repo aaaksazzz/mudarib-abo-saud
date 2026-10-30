@@ -8,6 +8,7 @@
 
 ## الأسواق ومصادر البيانات
 - Binance Spot وFutures: واجهات عامة مباشرة لا تحتاج مفاتيح API.
+- Binance Alpha: واجهات Binance العامة لقائمة الرموز ومعلومات أزواج USDT والشموع؛ لا تحتاج مفاتيح API.
 - Binance Alpha والأسهم السعودية والأمريكية والعقود والفوركس والذهب: تبقى غير متاحة حتى ربط مصدر عام موثوق ومسموح باستخدامه. لا يتم عرض أسعار أو توصيات وهمية.
 
 ## لوحة المنصة
@@ -24,6 +25,7 @@
 - `/api/markets`
 - `/api/market/spot?timeframe=15m`
 - `/api/market/futures?timeframe=1h`
+- `/api/market/alpha?timeframe=15m`
 - `/api/trades?market=spot`
 
 ## الاستراتيجية
