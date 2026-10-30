@@ -705,7 +705,7 @@ def alpha_market_tickers():
                 row = row[0] if row else None
             return normalize(row, symbol)
         # Bound concurrency to reduce 429 responses; per-token failures don't block the market.
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=2) as pool:
             futures = [pool.submit(fetch_ticker, symbol) for symbol in symbols]
             for future in as_completed(futures):
                 try:
@@ -2261,26 +2261,58 @@ def _public_idea_levels(value):
     return {"entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3}
 DAILY_VIP_SIGNALS_URL = "https://dailyvipsignals.com/signals"
 DAILY_VIP_CACHE = {}
-DAILY_VIP_CACHE_TTL = 60
+DAILY_VIP_CACHE_TTL = 180
 
 def _daily_vip_fetch(url):
+    # Use a normal browser-like request and bounded retries. The source can
+    # rate-limit bursts; never fan out dozens of simultaneous detail requests.
     request = urllib.request.Request(
         url,
-        headers={"User-Agent": "SMART-TRADING-PRO/1.0 (+public signal attribution)", "Accept": "text/html"},
+        headers={
+            "User-Agent": "Mozilla/5.0 (compatible; SMART-TRADING-PRO/1.0; +https://dailyvipsignals.com/)",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://dailyvipsignals.com/signals",
+            "Cache-Control": "no-cache",
+        },
     )
-    with urllib.request.urlopen(request, timeout=10) as response:
-        if getattr(response, "status", 200) != 200:
-            raise OSError("Daily VIP returned a non-success status")
-        return response.read(2_000_000).decode("utf-8", errors="replace")
+    last_error = None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(request, timeout=12) as response:
+                if getattr(response, "status", 200) != 200:
+                    raise OSError("Daily VIP returned HTTP " + str(response.status))
+                return response.read(2_000_000).decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            # Retry only transient throttling/server failures; a 403/404 is not
+            # fixed by hammering the provider again.
+            if exc.code not in {429, 500, 502, 503, 504} or attempt == 2:
+                raise
+            retry_after = exc.headers.get("Retry-After", "") if exc.headers else ""
+            try:
+                delay = min(2.0, max(0.5, float(retry_after)))
+            except (TypeError, ValueError):
+                delay = 0.5 * (attempt + 1)
+            time.sleep(delay)
+        except (urllib.error.URLError, TimeoutError) as exc:
+            last_error = exc
+            if attempt == 2:
+                raise
+            time.sleep(0.5 * (attempt + 1))
+    if last_error:
+        raise last_error
+    raise OSError("Daily VIP fetch failed")
 
 
 def _daily_vip_parse_signal(page_html, page_url, market):
     plain = html_lib.unescape(re.sub(r"<[^>]+>", " ", page_html or ""))
+    plain = plain.replace("\\u00a0", " ").replace("\u200b", "")
     plain = re.sub(r"\s+", " ", plain)
     plain = re.sub(r"\s*/\s*", "/", plain)
     plain = re.sub(r"\s*\$\s*", "$", plain)
-    plain = re.sub(r"(?<=\d)\s*[–—]\s*(?=\$?\d)", " – ", plain)
-    title_match = re.search(r"([A-Z0-9]{2,20})/USDT\s+(LONG|SHORT)\s+Signal", plain, re.I)
+    plain = re.sub(r"(?<=\d)\s*[–—−]\s*(?=\$?\d)", " – ", plain)
+    title_match = re.search(r"([A-Z0-9]{2,20})\s*/\s*USDT\s+(LONG|SHORT)\s+Signal", plain, re.I)
     if not title_match:
         return None
     symbol, raw_side = title_match.group(1).upper(), title_match.group(2).upper()
@@ -2383,7 +2415,7 @@ def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=
             path = re.sub(r"[?#].*$", "", candidate.strip())
             if re.fullmatch(r"/signals/[a-z0-9-]+", path, re.I) and path not in paths:
                 paths.append(path)
-        paths = paths[:30]
+        # The listing is ordered with current setups first; cap detail requests to protect the small host and provider.\n        paths = paths[:12]
         urls = ["https://dailyvipsignals.com" + path for path in paths]
         items = []
         failures = 0
@@ -2395,9 +2427,12 @@ def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=
                     row = _daily_vip_parse_signal(future.result(), url, market)
                     if row:
                         items.append(row)
+                except urllib.error.HTTPError as exc:
+                    failures += 1
+                    print(f"Daily VIP signal fetch failed: HTTP {exc.code} url={url}")
                 except Exception as exc:
                     failures += 1
-                    print(f"Daily VIP signal fetch failed: {type(exc).__name__}")
+                    print(f"Daily VIP signal fetch failed: {type(exc).__name__} url={url}")
         items.sort(key=lambda row: row.get("published_at", 0), reverse=True)
         data = {
             "ok": True, "market": market, "items": items[:limit], "count": min(len(items), limit),
