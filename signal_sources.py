@@ -9,6 +9,7 @@ import re
 import threading
 import time
 import urllib.request
+from external_signal_engine import invert_external_trade
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
@@ -182,7 +183,7 @@ def _extract_signal(row, now):
         tf = {"M15": "15m", "15M": "15m", "M30": "30m", "30M": "30m",
               "H1": "1h", "1H": "1h", "H4": "4h", "4H": "4h",
               "D1": "1d", "1D": "1d", "W1": "1w", "1W": "1w"}[token]
-    return {
+    parsed = {
         "symbol": symbol,
         "direction": "شراء" if side == "LONG" else "بيع",
         "original_direction": side,
@@ -206,6 +207,7 @@ def _extract_signal(row, now):
         "has_complete_levels": True,
         "generated_by_site": False,
     }
+    return invert_external_trade(parsed)
 
 
 def fetch_forex_signals(limit=20, refresh=False):
