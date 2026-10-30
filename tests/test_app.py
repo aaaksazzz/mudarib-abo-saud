@@ -75,3 +75,22 @@ def test_cache_reuses_successful_value():
     assert module.cached(key, 60, loader) == {"value": 7}
     assert module.cached(key, 60, loader) == {"value": 7}
     assert len(calls) == 1
+
+
+def test_market_response_includes_breadth_and_real_movers(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "market-test.sqlite3")
+    rows = [
+        {"symbol":"AAAUSDT","price":2.0,"volume":3_000_000,"change24h":8.0},
+        {"symbol":"BBBUSDT","price":1.0,"volume":2_000_000,"change24h":-4.0},
+        {"symbol":"CCCUSDT","price":3.0,"volume":1_500_000,"change24h":0.0},
+    ]
+    monkeypatch.setattr(module, "market_tickers", lambda kind: rows)
+    monkeypatch.setattr(module, "analyse_candidate", lambda *args: None)
+    response = client.get("/api/market/spot?timeframe=15m")
+    assert response.status_code == 200
+    payload = response.json
+    assert payload["up"] == 1
+    assert payload["down"] == 1
+    assert payload["flat"] == 1
+    assert payload["total"] == 3
+    assert {x["symbol"] for x in payload["movers"]} == {"AAAUSDT", "BBBUSDT"}
