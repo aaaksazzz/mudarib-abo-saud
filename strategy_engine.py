@@ -1,6 +1,8 @@
-"""Confluence-based multi-timeframe trading engine.
+"""Deterministic multi-timeframe strategy engine.
 
-This is a deterministic technical-analysis engine, not an AI model or a profit guarantee.
+4h and daily candle structure decide trade direction and eligibility.
+15m candles are used only to rank eligible opportunities and define execution risk.
+Scores describe evidence quality, never probability of profit.
 """
 import math
 import time
@@ -9,75 +11,77 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 FRAME_SECONDS = {"15m": 900, "30m": 1800, "1h": 3600, "2h": 7200,
                  "4h": 14400, "1d": 86400, "1w": 604800, "1M": 2592000}
-FRAME_SETS = {
-    "15m": ("15m", "1h", "4h", "1d"),
-    "30m": ("30m", "1h", "4h", "1d"),
-    "1h": ("1h", "4h", "1d"),
-    "2h": ("2h", "4h", "1d"),
-    "4h": ("4h", "1d", "1w"),
-    "1d": ("1d", "1w", "1M"),
-    "1w": ("1w", "1d", "1M"),
-    "1M": ("1M", "1w", "1d"),
-}
 RISK_CAP = {"15m": .018, "30m": .022, "1h": .03, "2h": .04,
             "4h": .055, "1d": .08, "1w": .12, "1M": .18}
-
-# Rotate bounded batches so large markets are covered over successive scans.
 _SCAN_CURSORS = {}
 _SCAN_CURSOR_LOCK = threading.Lock()
 
 
 def _ema(values, period):
+    if not values:
+        return 0.0
     alpha = 2.0 / (period + 1.0)
-    out = values[0]
+    out = float(values[0])
     for value in values[1:]:
-        out = alpha * value + (1.0 - alpha) * out
+        out = alpha * float(value) + (1.0 - alpha) * out
     return out
 
 
 def _rsi(values, period=14):
-    changes = [values[i] - values[i-1] for i in range(1, len(values))]
-    gains = [max(0.0, x) for x in changes[-period:]]
-    losses = [max(0.0, -x) for x in changes[-period:]]
-    avg_gain = sum(gains) / period
-    avg_loss = sum(losses) / period
+    if len(values) < period + 1:
+        return 50.0
+    changes = [values[i] - values[i - 1] for i in range(1, len(values))]
+    recent = changes[-period:]
+    avg_gain = sum(max(0.0, value) for value in recent) / period
+    avg_loss = sum(max(0.0, -value) for value in recent) / period
     if avg_loss <= 1e-15:
         return 100.0 if avg_gain > 0 else 50.0
     rs = avg_gain / avg_loss
-    return 100.0 - 100.0 / (1.0 + rs)
+    return 100.0 - (100.0 / (1.0 + rs))
 
 
 def _atr(candles, period=14):
-    trs = []
-    for i, candle in enumerate(candles):
-        high, low = candle["high"], candle["low"]
-        prev = candles[i-1]["close"] if i else candle["close"]
-        trs.append(max(high-low, abs(high-prev), abs(low-prev)))
-    return sum(trs[-period:]) / min(period, len(trs))
+    if not candles:
+        return 0.0
+    true_ranges = []
+    for index, candle in enumerate(candles):
+        previous_close = candles[index - 1]["close"] if index else candle["close"]
+        true_ranges.append(max(
+            candle["high"] - candle["low"],
+            abs(candle["high"] - previous_close),
+            abs(candle["low"] - previous_close)
+        ))
+    sample = true_ranges[-period:]
+    return sum(sample) / len(sample) if sample else 0.0
 
 
 def _adx(candles, period=14):
     if len(candles) < period + 2:
         return 0.0
-    plus, minus, tr = [], [], []
-    for i in range(1, len(candles)):
-        cur, prev = candles[i], candles[i-1]
-        up, down = cur["high"]-prev["high"], prev["low"]-cur["low"]
+    plus, minus, true_ranges = [], [], []
+    for index in range(1, len(candles)):
+        current, previous = candles[index], candles[index - 1]
+        up = current["high"] - previous["high"]
+        down = previous["low"] - current["low"]
         plus.append(up if up > down and up > 0 else 0.0)
         minus.append(down if down > up and down > 0 else 0.0)
-        tr.append(max(cur["high"]-cur["low"], abs(cur["high"]-prev["close"]),
-                      abs(cur["low"]-prev["close"])))
+        true_ranges.append(max(
+            current["high"] - current["low"],
+            abs(current["high"] - previous["close"]),
+            abs(current["low"] - previous["close"])
+        ))
     dx_values = []
-    for end in range(period, len(tr) + 1):
-        p = sum(plus[end-period:end]) / period
-        m = sum(minus[end-period:end]) / period
-        t = sum(tr[end-period:end]) / period
-        if t <= 0 or p + m <= 0:
+    for end in range(period, len(true_ranges) + 1):
+        p = sum(plus[end - period:end]) / period
+        m = sum(minus[end - period:end]) / period
+        tr = sum(true_ranges[end - period:end]) / period
+        if tr <= 0 or p + m <= 0:
             dx_values.append(0.0)
         else:
-            plus_di, minus_di = 100.0*p/t, 100.0*m/t
-            dx_values.append(abs(plus_di-minus_di)/(plus_di+minus_di)*100.0)
-    return sum(dx_values[-period:]) / min(period, len(dx_values)) if dx_values else 0.0
+            plus_di, minus_di = 100.0 * p / tr, 100.0 * m / tr
+            dx_values.append(abs(plus_di - minus_di) / (plus_di + minus_di) * 100.0)
+    sample = dx_values[-period:]
+    return sum(sample) / len(sample) if sample else 0.0
 
 
 def _valid_candles(raw):
@@ -85,11 +89,15 @@ def _valid_candles(raw):
     for candle in raw[-240:] if isinstance(raw, list) else []:
         try:
             row = {key: float(candle[key]) for key in ("open", "high", "low", "close", "volume")}
-            if (all(math.isfinite(row[k]) and row[k] > 0 for k in ("open", "high", "low", "close"))
+            valid = (
+                all(math.isfinite(row[key]) and row[key] > 0
+                    for key in ("open", "high", "low", "close"))
                 and math.isfinite(row["volume"]) and row["volume"] >= 0
                 and row["high"] >= max(row["open"], row["close"])
                 and row["low"] <= min(row["open"], row["close"])
-                and row["high"] >= row["low"]):
+                and row["high"] >= row["low"]
+            )
+            if valid:
                 rows.append(row)
         except (KeyError, TypeError, ValueError, OverflowError):
             continue
@@ -97,164 +105,238 @@ def _valid_candles(raw):
 
 
 def _frame_analysis(candles):
+    """Calculate trend, momentum, participation and nearby structure."""
     if len(candles) < 60:
         return None
-    closes = [c["close"] for c in candles]
+    closes = [candle["close"] for candle in candles]
     last = candles[-1]
-    ema20, ema50 = _ema(closes, 20), _ema(closes, 50)
+    ema20 = _ema(closes, 20)
+    ema50 = _ema(closes, 50)
     ema200 = _ema(closes, 200) if len(closes) >= 205 else None
+    prior_ema50 = _ema(closes[:-5], 50)
+    ema50_slope_pct = ((ema50 / prior_ema50) - 1.0) * 100.0 if prior_ema50 > 0 else 0.0
     rsi = _rsi(closes)
     atr = _atr(candles)
     adx = _adx(candles)
-    fast, slow = _ema(closes, 12), _ema(closes, 26)
-    macd = fast - slow
-    # MACD histogram momentum uses a smoothed signal line.
+
+    fast_ema = _ema(closes, 12)
+    slow_ema = _ema(closes, 26)
     macd_series = []
-    e12, e26 = closes[0], closes[0]
+    fast_state = slow_state = closes[0]
     for value in closes:
-        e12 = value*(2/13) + e12*(11/13)
-        e26 = value*(2/27) + e26*(25/27)
-        macd_series.append(e12-e26)
-    signal = _ema(macd_series, 9)
-    hist = macd - signal
-    previous_hist = (_ema(macd_series[:-1], 9) if len(macd_series) > 1 else signal)
-    previous_hist = macd_series[-2] - previous_hist
-    recent = candles[-20:-1]
-    resistance = max(c["high"] for c in recent)
-    support = min(c["low"] for c in recent)
-    volume_avg = sum(c["volume"] for c in candles[-21:-1]) / 20
-    rel_volume = last["volume"] / volume_avg if volume_avg > 0 else 0
-    # One-candle percentage move: for the 15m scan this is the actual latest 15m change.
-    change = (closes[-1] / closes[-2] - 1.0) * 100.0
-    up = last["close"] > ema20 > ema50
-    down = last["close"] < ema20 < ema50
+        fast_state = value * (2.0 / 13.0) + fast_state * (11.0 / 13.0)
+        slow_state = value * (2.0 / 27.0) + slow_state * (25.0 / 27.0)
+        macd_series.append(fast_state - slow_state)
+    macd_signal = _ema(macd_series, 9)
+    previous_signal = _ema(macd_series[:-1], 9)
+    macd_hist = (fast_ema - slow_ema) - macd_signal
+    previous_hist = macd_series[-2] - previous_signal if len(macd_series) > 1 else macd_hist
+
+    previous_candles = candles[-21:-1]
+    resistance = max(candle["high"] for candle in previous_candles)
+    support = min(candle["low"] for candle in previous_candles)
+    average_volume = sum(candle["volume"] for candle in previous_candles) / max(1, len(previous_candles))
+    relative_volume = last["volume"] / average_volume if average_volume > 0 else 0.0
+    change_pct = (closes[-1] / closes[-2] - 1.0) * 100.0
+
+    bullish = last["close"] > ema20 > ema50 and ema50_slope_pct > 0
+    bearish = last["close"] < ema20 < ema50 and ema50_slope_pct < 0
     if ema200 is not None:
-        up = up and last["close"] > ema200
-        down = down and last["close"] < ema200
-    direction = "صاعد" if up else "هابط" if down else "محايد"
-    return {"direction": direction, "rsi": rsi, "adx": adx, "atr": atr,
-            "ema20": ema20, "ema50": ema50, "ema200": ema200,
-            "macd_hist": hist, "previous_macd_hist": previous_hist,
-            "relative_volume": rel_volume, "resistance": resistance,
-            "support": support, "change_pct": change, "last": last}
+        bullish = bullish and last["close"] > ema200
+        bearish = bearish and last["close"] < ema200
+    direction = "صاعد" if bullish else "هابط" if bearish else "محايد"
+    candle_range = max(1e-12, last["high"] - last["low"])
+    close_location = (last["close"] - last["low"]) / candle_range
+
+    return {
+        "direction": direction, "rsi": rsi, "adx": adx, "atr": atr,
+        "ema20": ema20, "ema50": ema50, "ema200": ema200,
+        "ema50_slope_pct": ema50_slope_pct,
+        "macd_hist": macd_hist, "previous_macd_hist": previous_hist,
+        "relative_volume": relative_volume, "resistance": resistance,
+        "support": support, "change_pct": change_pct,
+        "close_location": close_location, "last": last
+    }
+
+
+def _frame_confirms(frame, side):
+    """Require trend, RSI and MACD agreement on both decision timeframes."""
+    if not frame:
+        return False
+    if side == "شراء":
+        return (
+            frame.get("direction") == "صاعد"
+            and 50.0 <= float(frame.get("rsi", 50.0)) <= 76.0
+            and float(frame.get("macd_hist", 0.0)) > 0
+            and float(frame.get("ema50_slope_pct", 0.0)) > 0
+            and float(frame.get("adx", 0.0)) >= 15.0
+        )
+    return (
+        frame.get("direction") == "هابط"
+        and 24.0 <= float(frame.get("rsi", 50.0)) < 50.0
+        and float(frame.get("macd_hist", 0.0)) < 0
+        and float(frame.get("ema50_slope_pct", 0.0)) < 0
+        and float(frame.get("adx", 0.0)) >= 15.0
+    )
+
+
+def _evidence_score(fast, four_hour, daily, side):
+    """A transparent confluence score, explicitly not a win probability."""
+    score = 40.0
+    for frame in (four_hour, daily):
+        score += min(10.0, max(0.0, (float(frame["adx"]) - 15.0) * 0.4))
+        score += 5.0
+        hist = float(frame["macd_hist"])
+        if (side == "شراء" and hist > float(frame.get("previous_macd_hist", 0.0))) or (
+            side == "بيع" and hist < float(frame.get("previous_macd_hist", 0.0))
+        ):
+            score += 3.0
+    rsi = float(fast["rsi"])
+    if (side == "شراء" and 50 <= rsi <= 72) or (side == "بيع" and 28 <= rsi < 50):
+        score += 8.0
+    fast_hist = float(fast["macd_hist"])
+    if (side == "شراء" and fast_hist > 0) or (side == "بيع" and fast_hist < 0):
+        score += 5.0
+    score += min(8.0, max(0.0, (float(fast.get("relative_volume", 0.0)) - 0.7) * 5.0))
+    location = float(fast.get("close_location", 0.5))
+    if (side == "شراء" and location >= 0.65) or (side == "بيع" and location <= 0.35):
+        score += 5.0
+    return max(0, min(100, int(round(score))))
 
 
 def _analyze_symbol(market, interval, row, candle_loader):
-    """4h and daily decide direction; 15m momentum ranks candidates."""
+    """4h and daily decide side; the selected timeframe ranks eligible trades and defines execution."""
     symbol = str(row.get("symbol") or "").strip().upper()
     if not symbol:
         return None
-    frames = ("15m", "4h", "1d")
-    analyses, raw_by_frame = {}, {}
+    execution_interval = interval if interval in FRAME_SECONDS else "15m"
+    frames = tuple(dict.fromkeys((execution_interval, "4h", "1d")))
+    analyses, candles_by_frame = {}, {}
     for frame in frames:
         try:
-            raw_by_frame[frame] = _valid_candles(candle_loader(market, symbol, frame))
+            candles_by_frame[frame] = _valid_candles(candle_loader(market, symbol, frame))
         except Exception:
-            raw_by_frame[frame] = []
-        analyses[frame] = _frame_analysis(raw_by_frame[frame]) if raw_by_frame[frame] else None
+            candles_by_frame[frame] = []
+        analyses[frame] = _frame_analysis(candles_by_frame[frame]) if candles_by_frame[frame] else None
     if any(analyses.get(frame) is None for frame in frames):
         return None
-    fast, four_hour, daily = analyses["15m"], analyses["4h"], analyses["1d"]
-    def frame_signal(frame):
-        if frame["direction"] == "صاعد":
-            return "شراء قوي" if frame["adx"] >= 25 else "شراء"
-        if frame["direction"] == "هابط":
-            return "بيع قوي" if frame["adx"] >= 25 else "بيع"
-        return "محايد"
 
-    four_hour_signal = frame_signal(four_hour)
-    daily_signal = frame_signal(daily)
-    bullish = {"شراء", "شراء قوي"}
-    bearish = {"بيع", "بيع قوي"}
-    if four_hour_signal in bullish and daily_signal in bullish:
+    fast = analyses[execution_interval]
+    four_hour, daily = analyses["4h"], analyses["1d"]
+    if four_hour["direction"] == daily["direction"] == "صاعد":
         side = "شراء"
-    elif four_hour_signal in bearish and daily_signal in bearish:
+    elif four_hour["direction"] == daily["direction"] == "هابط":
         side = "بيع"
     else:
         return None
-    entry, atr = float(fast["last"]["close"]), float(fast["atr"])
+    if not _frame_confirms(four_hour, side) or not _frame_confirms(daily, side):
+        return None
+
+    entry = float(fast["last"]["close"])
+    atr = float(fast["atr"])
     if not math.isfinite(entry) or entry <= 0 or not math.isfinite(atr) or atr <= 0:
         return None
-    risk = max(atr * 1.5, entry * 0.002)
-    if risk <= 0 or risk / entry > RISK_CAP.get("15m", .018):
-        return None
-    swing = raw_by_frame["15m"][-12:]
+    initial_risk = max(atr * 1.5, entry * 0.002)
+    recent_swing = candles_by_frame[execution_interval][-12:]
     if side == "شراء":
-        stop = min(entry-risk, min(c["low"] for c in swing)-atr*.15)
-        risk = entry-stop
-        tp1, tp2, tp3 = entry+risk, entry+2*risk, entry+3*risk
+        stop = min(entry - initial_risk, min(candle["low"] for candle in recent_swing) - atr * 0.15)
+        risk = entry - stop
+        tp1, tp2, tp3 = entry + risk, entry + 2 * risk, entry + 3 * risk
     else:
-        stop = max(entry+risk, max(c["high"] for c in swing)+atr*.15)
-        risk = stop-entry
-        tp1, tp2, tp3 = entry-risk, entry-2*risk, entry-3*risk
-    if risk <= 0 or risk / entry > RISK_CAP.get("15m", .018) or tp3 <= 0:
+        stop = max(entry + initial_risk, max(candle["high"] for candle in recent_swing) + atr * 0.15)
+        risk = stop - entry
+        tp1, tp2, tp3 = entry - risk, entry - 2 * risk, entry - 3 * risk
+    if risk <= 0 or risk / entry > RISK_CAP[execution_interval] or tp3 <= 0:
         return None
-    strong = four_hour_signal in {"شراء قوي", "بيع قوي"} and daily_signal in {"شراء قوي", "بيع قوي"}
+
+    score = _evidence_score(fast, four_hour, daily, side)
+    strong = (
+        score >= 82
+        and float(four_hour["adx"]) >= 25
+        and float(daily["adx"]) >= 25
+    )
     label = ("شراء قوي" if strong else "شراء") if side == "شراء" else ("بيع قوي" if strong else "بيع")
     now = int(time.time())
     digits = 10 if entry < .001 else 8 if entry < 1 else 5 if entry < 100 else 3 if entry < 10000 else 2
-    changes = {frame: round(analyses[frame]["change_pct"], 3) for frame in frames}
-    profit_pct, loss_pct = abs(tp3-entry)/entry*100, abs(stop-entry)/entry*100
-    evidence_score = min(98, int(50 + min(25, (four_hour["adx"]+daily["adx"])/4)))
-    rationale = "اتجاه 4 ساعات واليومي متفقان؛ تغير 15 دقيقة للترتيب فقط. الدرجة ليست نسبة نجاح."
+    changes = {frame: round(float(analyses[frame]["change_pct"]), 3) for frame in frames}
+    profit_pct = abs(tp3 - entry) / entry * 100.0
+    loss_pct = abs(stop - entry) / entry * 100.0
     return {
-        "id": f"trend-4h-1d-{market}-{symbol}-{now}", "symbol": symbol,
+        "id": f"mft-v3-{market}-{symbol}-{now}", "symbol": symbol,
         "direction": side, "signal_label": label, "title": f"{label} {symbol}",
-        "description": rationale, "source": "تحليل اتجاه 4 ساعات + يومي",
+        "description": f"اتجاه 4 ساعات واليومي يحدد القرار؛ فريم التنفيذ والترتيب {execution_interval} مع تأكيد RSI وMACD وADX.",
+        "source": "محرك فني متعدد العوامل v3",
         "url": "", "published_at": now, "created_at": now, "age_hours": 0,
-        "market": market, "interval": "15m", "expires_at": now+900,
-        "valid_for_seconds": 900, "price_updated_at": now, "price_fresh": True,
-        "freshness_label": "آخر إغلاق شمعة 15 دقيقة",
+        "market": market, "interval": execution_interval,
+        "expires_at": now + FRAME_SECONDS[execution_interval],
+        "valid_for_seconds": FRAME_SECONDS[execution_interval],
+        "price_updated_at": now, "price_fresh": True,
+        "freshness_label": f"آخر إغلاق شمعة {execution_interval}",
         "live_price": round(float(row.get("price") or entry), digits),
-        "levels": {"entry": round(entry,digits), "stop_loss": round(stop,digits),
-                   "tp1": round(tp1,digits), "tp2": round(tp2,digits), "tp3": round(tp3,digits)},
-        "ai_score": evidence_score, "combined_score": evidence_score,
-        "method_score": evidence_score, "score_type": "درجة قوة الاتجاه وليست احتمال نجاح",
+        "levels": {"entry": round(entry, digits), "stop_loss": round(stop, digits),
+                   "tp1": round(tp1, digits), "tp2": round(tp2, digits), "tp3": round(tp3, digits)},
+        "ai_score": score, "combined_score": score, "method_score": score,
+        "strength_score": score, "score_type": "درجة جودة الأدلة من 100 وليست نسبة نجاح",
         "ai_reviewed": False, "generated_by_ai": False,
         "timeframes_aligned": 2,
         "timeframe_trends": {frame: analyses[frame]["direction"] for frame in frames},
-        "timeframe_signals": {"4h": four_hour_signal, "1d": daily_signal},
-        "timeframe_change_pct": changes, "change_15m_pct": changes["15m"],
-        "timeframe_alignment_label": "4h + يومي متفقان",
-        "trend_strength": evidence_score, "potential_profit_pct": round(profit_pct,2),
-        "potential_loss_pct": round(loss_pct,2),
-        "tp1_profit_pct": round(abs(tp1-entry)/entry*100,2),
-        "tp2_profit_pct": round(abs(tp2-entry)/entry*100,2),
-        "tp3_profit_pct": round(profit_pct,2),
-        "risk_reward_tp3": round(profit_pct/loss_pct,2) if loss_pct else None,
+        "timeframe_signals": {
+            "4h": "شراء قوي" if side == "شراء" and four_hour["adx"] >= 25 else
+                  "شراء" if side == "شراء" else
+                  "بيع قوي" if four_hour["adx"] >= 25 else "بيع",
+            "1d": "شراء قوي" if side == "شراء" and daily["adx"] >= 25 else
+                  "شراء" if side == "شراء" else
+                  "بيع قوي" if daily["adx"] >= 25 else "بيع"
+        },
+        "timeframe_change_pct": changes,
+        "change_interval_pct": changes[execution_interval],
+        "change_15m_pct": changes.get("15m", 0.0),
+        "timeframe_alignment_label": "4 ساعات + يومي متفقان",
+        "trend_strength": score,
+        "potential_profit_pct": round(profit_pct, 2),
+        "potential_loss_pct": round(loss_pct, 2),
+        "tp1_profit_pct": round(abs(tp1 - entry) / entry * 100, 2),
+        "tp2_profit_pct": round(abs(tp2 - entry) / entry * 100, 2),
+        "tp3_profit_pct": round(profit_pct, 2),
+        "risk_reward_tp3": round(profit_pct / loss_pct, 2) if loss_pct else None,
         "external_source_weight": 0, "site_analysis_weight": 100,
         "has_complete_levels": True,
-        "level_source_note": "المستويات مبنية على ATR لشموع 15 دقيقة.",
-        "method": "trend_4h_1d_rank_15m_v2"
+        "level_source_note": f"الدخول من إغلاق شمعة {execution_interval}؛ الوقف حسب ATR وبنية آخر 12 شمعة؛ الأهداف 1:1 و1:2 و1:3.",
+        "method": "multi_factor_4h_1d_selected_interval_v3"
     }
 
+
 def generate_signals(market, interval, market_rows, limit, candle_loader):
-    """4h/daily agreement determines side; 15m percentage move ranks the list."""
+    """Scan a bounded rotating batch and rank by the selected execution timeframe."""
     unique = {}
     for row in market_rows if isinstance(market_rows, list) else []:
         if isinstance(row, dict) and row.get("symbol"):
             unique.setdefault(str(row["symbol"]).upper(), row)
+
     def priority(row):
         try:
             volume = float(row.get("quote_volume") or row.get("dollar_volume") or row.get("volume") or 0)
             change = abs(float(row.get("change_pct") or 0))
-            return (math.log10(1+max(0,volume)) * (1+min(change,25)/25), change)
+            return (math.log10(1.0 + max(0.0, volume)) * (1.0 + min(change, 25.0) / 25.0), change)
         except (TypeError, ValueError, OverflowError):
-            return (0,0)
+            return (0.0, 0.0)
+
     ranked = sorted(unique.values(), key=priority, reverse=True)
     batch_size = min(12, max(8, limit))
     if len(ranked) <= batch_size:
         candidates = ranked
     else:
         with _SCAN_CURSOR_LOCK:
-            offset = _SCAN_CURSORS.get(market, 0) % len(ranked)
+            cursor_key = (market, interval)
+            offset = _SCAN_CURSORS.get(cursor_key, 0) % len(ranked)
             candidates = ranked[offset:offset + batch_size]
             if len(candidates) < batch_size:
                 candidates.extend(ranked[:batch_size - len(candidates)])
-            _SCAN_CURSORS[market] = (offset + batch_size) % len(ranked)
+            _SCAN_CURSORS[cursor_key] = (offset + batch_size) % len(ranked)
+
     results = []
     with ThreadPoolExecutor(max_workers=2) as pool:
-        jobs = [pool.submit(_analyze_symbol, market, "15m", row, candle_loader) for row in candidates]
+        jobs = [pool.submit(_analyze_symbol, market, interval, row, candle_loader) for row in candidates]
         for job in as_completed(jobs):
             try:
                 item = job.result()
@@ -262,10 +344,13 @@ def generate_signals(market, interval, market_rows, limit, candle_loader):
                     results.append(item)
             except Exception:
                 continue
+
     results.sort(key=lambda item: (
         0 if item["direction"] == "شراء" else 1,
-        -item.get("change_15m_pct", 0) if item["direction"] == "شراء"
-        else item.get("change_15m_pct", 0)
+        -float(item.get("change_interval_pct", 0.0)) if item["direction"] == "شراء"
+        else float(item.get("change_interval_pct", 0.0))
     ))
-    return results[:limit], True, ("تم اعتماد توافق 4 ساعات واليومي، والترتيب حسب تغير 15 دقيقة."
-                                   if results else "لا توجد فرصة تحقق توافق 4 ساعات واليومي حاليًا.")
+    return results[:limit], True, (
+        f"تم فحص توافق 4 ساعات واليومي؛ التنفيذ والترتيب حسب تغير {interval}."
+        if results else f"لا توجد فرصة اجتازت شروط توافق 4 ساعات واليومي والزخم وإدارة المخاطر على فريم {interval} حاليًا."
+    )

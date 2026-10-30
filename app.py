@@ -2064,15 +2064,16 @@ def public_results(limit: int = Query(100, ge=1, le=500)):
     rows = read_json_file(RESULTS_PATH, [])
     if not isinstance(rows, list):
         rows = []
-    # Hide and purge historical journal rows from the retired strategy.
-    current_rows = [row for row in rows if isinstance(row, dict) and row.get("source") == "trend_4h_1d_rank_15m_v2"]
-    if current_rows != rows:
+    # Preserve completed and still-open records from earlier strategy versions.
+    # Open trades must remain trackable until TP3 or stop-loss is reached.
+    rows = [row for row in rows if isinstance(row, dict)]
+    def _created_at(row):
         try:
-            with RESULTS_LOCK:
-                write_json_file(RESULTS_PATH, current_rows)
-        except (OSError, TypeError, ValueError):
-            pass
-    rows = current_rows[:limit]
+            return int(float(row.get("created_at") or 0))
+        except (TypeError, ValueError, OverflowError):
+            return 0
+    rows.sort(key=_created_at, reverse=True)
+    rows = rows[:limit]
     closed = [row for row in rows if str(row.get("result", "")).upper() in {"TP1", "TP2", "TP3", "SL"}]
     open_count = sum(1 for row in rows if str(row.get("result", "OPEN")).upper() not in {"TP1", "TP2", "TP3", "SL"})
     wins = sum(1 for row in closed if str(row.get("result", "")).upper() in {"TP1", "TP2", "TP3"})
@@ -2307,13 +2308,11 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     if interval not in INTERVALS:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "الفريم غير مدعوم."}, status_code=422)
-    interval = "15m"
-
-    # Generate recommendations locally from fresh OHLCV candles for every supported market.
+    # The selected timeframe controls entry, ATR stop, expiry and ranking.
+    # 4h + daily remain the higher-timeframe direction gate in the strategy engine.
     now = int(time.time())
-    # New strategy: fixed 15m ranking with 4h/daily trend agreement.
-    timeframe_lifetime = 15 * 60
-    cache_key = ("trend_4h_1d_rank_15m_v2", market, "15m", limit)
+    timeframe_lifetime = INTERVAL_SECONDS.get(interval, 15 * 60)
+    cache_key = ("multi_factor_4h_1d_selected_interval_v3", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if not refresh and cached and now - cached[0] < 90:
@@ -2403,20 +2402,18 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
 
     # Market-wide direction is context; the engine requires candle-level multi-factor confluence.
 
-    # Final ranking is based ONLY on the latest 15-minute percentage change.
-    # The 4h and daily signals decide eligibility and direction; 15m never changes the side.
-    def _change_15m(item):
+    # The selected timeframe ranks eligible trades; 4h + daily decide direction.
+    def _selected_change(item):
         try:
-            value = float(item.get("change_15m_pct"))
+            value = float(item.get("change_interval_pct", item.get("change_15m_pct", 0.0)))
             return value if math.isfinite(value) else 0.0
         except (TypeError, ValueError, OverflowError):
             return 0.0
 
-    # BUY: strongest positive 15m change first. SELL: strongest negative first.
     items.sort(
         key=lambda item: (
             0 if item.get("direction") == "شراء" else 1,
-            -_change_15m(item) if item.get("direction") == "شراء" else _change_15m(item)
+            -_selected_change(item) if item.get("direction") == "شراء" else _selected_change(item)
         )
     )
     print(
@@ -2447,7 +2444,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "ai_enabled": False,
         "ai_review_completed": False,
         "analysis_completed": bool(ai_review_completed),
-        "analysis_engine": "trend_4h_1d_rank_15m_v2",
+        "analysis_engine": "multi_factor_4h_1d_selected_interval_v3",
         "method_weight_percent": 100,
         "ai_review_weight_percent": 0,
         "ai_provider_configured": False,
@@ -2464,7 +2461,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             saved_cache = read_json_file(SIGNALS_CACHE_PATH, {})
             if not isinstance(saved_cache, dict):
                 saved_cache = {}
-            saved_cache = {k: v for k, v in saved_cache.items() if isinstance(v, dict) and all(isinstance(x, dict) and x.get("method") == "trend_4h_1d_rank_15m_v2" for x in v.get("items", []))}
+            saved_cache = {k: v for k, v in saved_cache.items() if isinstance(v, dict) and all(isinstance(x, dict) and x.get("method") == "multi_factor_4h_1d_selected_interval_v3" for x in v.get("items", []))}
             saved_cache[f"{market}:{interval}"] = {
                 "updated_at": now,
                 "items": result.get("items", []),
@@ -2476,8 +2473,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             journal = read_json_file(RESULTS_PATH, [])
             if not isinstance(journal, list):
                 journal = []
-            # Keep only records generated by the current engine; legacy strategy records are retired.
-            journal = [row for row in journal if isinstance(row, dict) and row.get("source") == "trend_4h_1d_rank_15m_v2"]
+            # Preserve every existing trade record, including records from earlier strategy versions.
+            journal = [row for row in journal if isinstance(row, dict)]
             # Update every open trade for this market from the newest real quote snapshot.
             current_prices = {}
             for quote in (market_rows if isinstance(market_rows, list) else []):
@@ -2573,7 +2570,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                     "result": "OPEN", "status": "صفقة مفتوحة — متابعة السعر",
                     "progress": 0, "pnl_pct": 0, "last_price": current_prices.get(symbol, entry),
                     "last_checked_at": now, "created_at": now,
-                    "source": item.get("method") or "trend_4h_1d_rank_15m_v2"
+                    "source": item.get("method") or "multi_factor_4h_1d_selected_interval_v3"
                 })
                 active_keys.add(active_key)
             # Preserve every open trade even if the journal grows; cap only closed

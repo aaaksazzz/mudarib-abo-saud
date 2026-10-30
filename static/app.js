@@ -101,11 +101,20 @@
       '.market-bias-main{display:flex;flex-direction:column;justify-content:center;gap:5px}.market-bias-kicker{color:#90a9c5;font-size:11px;font-weight:800;letter-spacing:.08em}.market-bias-value{font-size:clamp(28px,4vw,40px);font-weight:950;line-height:1.25}.market-bias-value.up{color:#35d6a0}.market-bias-value.down{color:#ff7184}.market-bias-value.flat{color:#e9c36e}.market-bias-note{color:#9bb0c8;font-size:12px}'+
       '.market-bias-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;align-items:stretch}.market-bias-stat{padding:12px;border:1px solid #233b55;border-radius:13px;background:#0a1726}.market-bias-stat small{display:block;color:#90a9c5;font-size:11px}.market-bias-stat b{display:block;font-size:clamp(17px,2.4vw,24px);margin-top:6px}.market-bias-bar{grid-column:1/-1;height:8px;display:flex;overflow:hidden;border-radius:99px;background:#25364b}.market-bias-bar .up{background:#35d6a0}.market-bias-bar .down{background:#ff7184}.market-bias-bar .flat{background:#65758b}.market-bias-foot{grid-column:1/-1;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;color:#839ab5;font-size:10px}.market-bias-refresh{border:1px solid #2d4965;background:#132a42;color:#dceaff;border-radius:10px;padding:7px 11px;font-size:11px;font-weight:800;cursor:pointer}'+
       '@media(max-width:650px){.market-bias{grid-template-columns:1fr}.market-bias-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.market-bias-stat{padding:10px 8px}}'+
+      '.market-timeframe-panel{margin:0 0 15px;padding:13px;border:1px solid #294968;border-radius:15px;background:#0b1728}.market-timeframe-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:11px}.market-timeframe-heading b{font-size:13px;color:#e6f0ff}.market-timeframe-heading small{font-size:10px;color:#8fa6c0}.market-timeframe-buttons{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px}.market-timeframe-btn{min-height:42px;padding:8px 5px;border:1px solid #2b4560;border-radius:10px;background:#101f32;color:#b9cce2;font:700 12px Tahoma,Arial,sans-serif;cursor:pointer}.market-timeframe-btn.active{border-color:#38cda0;background:linear-gradient(135deg,#123d39,#15304a);color:#72f0c1;box-shadow:inset 0 0 0 1px #38cda044}.market-timeframe-btn:focus-visible{outline:2px solid #72b7ff;outline-offset:2px}@media(max-width:650px){.market-timeframe-buttons{grid-template-columns:repeat(3,minmax(0,1fr))}.market-timeframe-heading{align-items:flex-start;flex-direction:column}}'+
       '</style>'+
       '<div class="surge-page surge-pro-layout">'+
       '<header class="surge-pro-header"><div><span class="surge-kicker">SMART TRADING PRO <i></i> MARKET INTELLIGENCE</span><h1>'+esc(m.name)+'</h1><p>'+esc(m.sub)+'</p></div><span class="surge-live-pill"><i></i> متابعة مباشرة</span></header>'+
       '<section class="market-bias" id="marketBiasPanel"><div class="market-bias-main"><span class="market-bias-kicker">اتجاه السوق الآن</span><strong class="market-bias-value flat" id="marketBiasValue">جاري التحليل</strong><span class="market-bias-note" id="marketBiasNote">نقيس اتساع السوق من الأصول المتاحة</span></div><div class="market-bias-stats"><div class="market-bias-stat"><small>أصول صاعدة</small><b class="surge-pos" id="marketBiasUp">—</b></div><div class="market-bias-stat"><small>أصول هابطة</small><b class="surge-neg" id="marketBiasDown">—</b></div><div class="market-bias-stat"><small>شبه مستقرة</small><b id="marketBiasFlat">—</b></div><div class="market-bias-bar"><span class="up" id="marketBiasUpBar" style="width:0%"></span><span class="flat" id="marketBiasFlatBar" style="width:0%"></span><span class="down" id="marketBiasDownBar" style="width:0%"></span></div><div class="market-bias-foot"><span id="marketBiasBreadth">بانتظار بيانات الأصول</span><span id="marketBiasUpdated">—</span><button class="market-bias-refresh" id="refreshMarketBias" type="button">تحديث الاتجاه</button></div></div></section>'+
-      '<section class="surge-method-strip"><div><small>اتجاه رئيسي</small><b>4 ساعات + يومي</b><em>لا توصية عند اختلاف الاتجاه</em></div><div><small>ترتيب الفرص</small><b>تغير 15 دقيقة</b><em>الأقوى حركة في الأعلى</em></div><div><small>إدارة المخاطر</small><b>دخول · أهداف · وقف</b><em>المستويات حسب التحليل</em></div></section>'+
+      '<section class="market-timeframe-panel"><div class="market-timeframe-heading"><b>اختر الفريم</b><small>التوصيات ومستويات الدخول تتغير حسب الفريم</small></div><div class="market-timeframe-buttons" id="marketTimeframes" role="group" aria-label="الفريم الزمني">'+
+      '<button type="button" class="market-timeframe-btn active" data-market-interval="15m" aria-pressed="true">15 دقيقة</button>'+
+      '<button type="button" class="market-timeframe-btn" data-market-interval="1h" aria-pressed="false">ساعة</button>'+
+      '<button type="button" class="market-timeframe-btn" data-market-interval="4h" aria-pressed="false">4 ساعات</button>'+
+      '<button type="button" class="market-timeframe-btn" data-market-interval="1d" aria-pressed="false">يومي</button>'+
+      '<button type="button" class="market-timeframe-btn" data-market-interval="1w" aria-pressed="false">أسبوعي</button>'+
+      '<button type="button" class="market-timeframe-btn" data-market-interval="1M" aria-pressed="false">شهري</button>'+
+      '</div></section>'+
+      '<section class="surge-method-strip"><div><small>اتجاه رئيسي</small><b>4 ساعات + يومي</b><em>لا توصية عند اختلاف الاتجاه</em></div><div><small>فريم التنفيذ والترتيب</small><b>حسب الفريم المختار</b><em>تتغير الإشارة والدخول والوقف معه</em></div><div><small>إدارة المخاطر</small><b>دخول · أهداف · وقف</b><em>المستويات محسوبة من شموع الفريم</em></div></section>'+
       '<section class="surge-results-panel"><div class="surge-results-heading"><div><span class="surge-kicker">TRADE OPPORTUNITIES</span><h2>فرص السوق</h2><p>أفضل الفرص المكتملة من تحليل السوق الداخلي، مرتبة من الأقوى إلى الأضعف</p></div><span class="surge-chip" id="signalSourceLabel">جاري الفحص</span></div><div id="surgeRecommendations" class="surge-empty">جاري تحليل الأصول على الفريمات المطلوبة…</div></section>'+
       '<p class="surge-disclaimer">التحليل آلي للمساعدة في اتخاذ القرار، وليس ضماناً للربح. تحقق من الأسعار قبل تنفيذ أي صفقة.</p>'+
       '</div>';
@@ -142,6 +151,8 @@
     if(marketDirectionRefreshTimer)clearInterval(marketDirectionRefreshTimer);
     marketDirectionRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible")loadMarketBias()},60000);
     let forceNextMarketRefresh=false;
+    let selectedMarketInterval="15m";
+    const marketIntervalLabels={"15m":"15 دقيقة","1h":"ساعة","4h":"4 ساعات","1d":"يومي","1w":"أسبوعي","1M":"شهري"};
     const loadMarketSignals=async()=>{
       const force=forceNextMarketRefresh;forceNextMarketRefresh=false;
       const out=$("surgeRecommendations"),label=$("signalSourceLabel");
@@ -154,14 +165,14 @@
       if(!force)out.innerHTML='<div class="surge-empty">جاري تحليل بيانات السوق داخل الموقع…</div>';
       if(label)label.textContent="تحليل داخلي";
       try{
-        const result=await getJSON("/api/signals/"+encodeURIComponent(m.api)+"?interval=15m&limit=20"+(force?"&refresh=true":""));
+        const result=await getJSON("/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedMarketInterval)+"&limit=20"+(force?"&refresh=true":""));
         const base=result&&Array.isArray(result.items)?result:{items:[],message:"لا توجد بيانات تحليل مكتملة."};
         
         const merged=base.items;
         const seen=new Set();
         const rows=merged.filter(x=>{const key=String(x.symbol||"")+"|"+String(x.direction||"");if(seen.has(key))return false;seen.add(key);return true});
         if(label)label.textContent="تحليل الموقع الداخلي";
-        if(!rows.length){out.innerHTML='<div class="surge-no-trades"><span>⌁</span><b>لا توجد فرصة مطابقة حالياً</b><p>ننتظر توافق اتجاه 4 ساعات واليومي، ثم نرتب الأصول حسب تغير 15 دقيقة.</p><small>عدم ظهور صفقة أفضل من عرض توصية غير مكتملة.</small></div>';return}
+        if(!rows.length){out.innerHTML='<div class="surge-no-trades"><span>⌁</span><b>لا توجد فرصة مطابقة حالياً</b><p>ننتظر توافق اتجاه 4 ساعات واليومي، ثم نرتب الأصول حسب تغير '+marketIntervalLabels[selectedMarketInterval]+'.</p><small>عدم ظهور صفقة أفضل من عرض توصية غير مكتملة.</small></div>';return}
         const targetKeys=["tp1","tp2","tp3","tp4","tp5"];
         out.innerHTML='<div class="surge-signal-grid">'+rows.map((x,i)=>{
           const lv=x.levels||{},buy=x.direction==="شراء";
@@ -172,14 +183,28 @@
           const risk=Number.isFinite(stop)&&entry>0?((buy?entry-stop:stop-entry)/entry*100).toFixed(2)+"%":"—";
           const sourceLink=x.source_url?'<a class="surge-link" href="'+esc(x.source_url)+'" target="_blank" rel="noopener noreferrer">فتح المنشور</a>':"";
           const sourceName=esc(x.source||"تحليل الموقع");
-          const timeframe=esc("4 ساعات + يومي · ترتيب 15 دقيقة");
-          const qualityNote='<small>تغير 15د: '+Number(x.change_15m_pct||0).toFixed(2)+'% · الدرجة ليست نسبة نجاح</small>';
+          const timeframe=esc("اتجاه 4 ساعات + يومي · تنفيذ "+marketIntervalLabels[selectedMarketInterval]);
+          const qualityNote='<small>تغير '+esc(marketIntervalLabels[selectedMarketInterval])+': '+Number(x.change_interval_pct??x.change_15m_pct??0).toFixed(2)+'% · الدرجة ليست نسبة نجاح</small>';
           return '<article class="surge-signal-card"><div class="surge-signal-head"><span class="surge-rank">#'+(i+1)+'</span><b dir="ltr">'+esc(x.symbol)+'</b><span class="surge-rec-side '+(buy?"buy":"sell")+'">'+esc(x.signal_label||x.direction)+'</span></div><div class="surge-signal-meta"><span>4 ساعات <b>'+esc(x.timeframe_trends?.["4h"]||"—")+'</b></span><span>اليومي <b>'+esc(x.timeframe_trends?.["1d"]||"—")+'</b></span><span>تغير 15د <b>'+Number(x.change_15m_pct||0).toFixed(2)+'%</b></span></div><div class="surge-entry"><small>سعر الدخول</small><b dir="ltr">'+entryText+'</b></div><div class="surge-level-grid">'+targets+'<div class="surge-target stop"><small>وقف الخسارة</small><b dir="ltr">'+price(stop)+'</b><small>مخاطرة '+risk+'</small></div></div><div class="surge-signal-foot"><span>'+timeframe+'</span><span>'+qualityNote+'</span></div></article>';
         }).join("")+'</div>';
       }catch(err){out.innerHTML='<div class="surge-empty">تعذر تحديث الصفقات حالياً. حاول لاحقاً.</div>'}
     };
 
-    // تحديث هادئ كل 45 ثانية؛ يمنع الاعتماد على فتح الصفحة فقط.
+    $("marketTimeframes")?.addEventListener("click",event=>{
+      const button=event.target.closest("[data-market-interval]");
+      if(!button)return;
+      const next=button.dataset.marketInterval;
+      if(!marketIntervalLabels[next]||next===selectedMarketInterval)return;
+      selectedMarketInterval=next;
+      $("marketTimeframes").querySelectorAll("[data-market-interval]").forEach(item=>{
+        const active=item===button;
+        item.classList.toggle("active",active);
+        item.setAttribute("aria-pressed",active?"true":"false");
+      });
+      forceNextMarketRefresh=true;
+      loadMarketSignals();
+    });
+    // تحديث هادئ كل 5 دقائق؛ يمنع الاعتماد على فتح الصفحة فقط.
     if(marketSignalRefreshTimer)clearInterval(marketSignalRefreshTimer);
     if(marketLiveTrackTimer)clearInterval(marketLiveTrackTimer);
     loadMarketSignals();

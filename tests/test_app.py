@@ -122,18 +122,21 @@ def test_results_endpoint_handles_empty_and_malformed_pnl(tmp_path, monkeypatch)
     path = tmp_path / "results.json"
     monkeypatch.setattr(app_module, "RESULTS_PATH", path)
     write_json_file(path, [
-        {"symbol": "AAA", "result": "TP1", "pnl_pct": "2.5", "source": "trend_4h_1d_rank_15m_v2"},
-        {"symbol": "BBB", "result": "SL", "pnl_pct": "bad", "source": "trend_4h_1d_rank_15m_v2"},
-        {"symbol": "CCC", "result": "مفتوحة", "pnl_pct": None, "source": "trend_4h_1d_rank_15m_v2"},
+        {"symbol": "AAA", "result": "TP1", "pnl_pct": "2.5", "source": "multi_factor_4h_1d_selected_interval_v3"},
+        {"symbol": "BBB", "result": "SL", "pnl_pct": "bad", "source": "multi_factor_4h_1d_selected_interval_v3"},
+        {"symbol": "CCC", "result": "مفتوحة", "pnl_pct": None, "source": "multi_factor_4h_1d_selected_interval_v3"},
+        {"symbol": "OLD", "result": "OPEN", "pnl_pct": 0, "source": "legacy_strategy_v2"},
     ])
     response = client.get("/api/results?limit=20")
     assert response.status_code == 200
     data = response.json()
-    assert data["total"] == 3
+    assert data["total"] == 4
     assert data["closed"] == 2
+    assert data["open"] == 2
     assert data["wins"] == 1
     assert data["losses"] == 1
     assert data["profitable"] == 1
+    assert any(row["symbol"] == "OLD" for row in data["items"])
 
 
 def _fake_ai_signal(market, interval, symbol="TESTUSDT"):
@@ -215,15 +218,17 @@ def test_signal_endpoint_accepts_daily_weekly_and_monthly_frames(monkeypatch):
     monkeypatch.setattr(app_module, "market_data", lambda market, limit=2000: {
         "ok": True, "live": True, "stale": False, "items": []
     })
+    requested = []
     monkeypatch.setattr(app_module, "_generate_pro_market_signals",
-                        lambda market, interval, market_rows, limit: ([], True, "لا توجد فرصة"))
+                        lambda market, interval, market_rows, limit: (requested.append(interval) or [], True, "لا توجد فرصة"))
     monkeypatch.setattr(app_module, "market_direction", lambda market: {"direction": "NEUTRAL"})
     app_module.PUBLIC_IDEAS_CACHE.clear()
-    for interval in ("1d", "1w", "1M"):
+    for interval in ("15m", "1h", "4h", "1d", "1w", "1M"):
         response = client.get(f"/api/signals/spot?interval={interval}&refresh=true")
         assert response.status_code == 200
-        assert response.json()["interval"] == "15m"
+        assert response.json()["interval"] == interval
         assert response.json()["items"] == []
+    assert requested == ["15m", "1h", "4h", "1d", "1w", "1M"]
 
 
 def test_public_news_aggregates_recent_items_without_network(monkeypatch):
@@ -270,11 +275,17 @@ def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     js = (root / "app.js").read_text(encoding="utf-8")
     assert 'href="/markets/spot"' in html and 'href="/markets/futures"' in html
     assert 'const loadMarketSignals=async()=>{' in js
-    assert '"/api/signals/"+encodeURIComponent(m.api)+"?interval=15m&limit=20"' in js
-    assert '"&interval=1d"' in js
-    assert 'id="surgeIntervals"' not in js and 'data-interval="' not in js
-    assert '4 ساعات + يومي · ترتيب 15 دقيقة' in js
-    assert 'id="surgeIntervals"' not in js and 'data-interval="' not in js
+    assert '"/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedMarketInterval)+"&limit=20"' in js
+    assert 'id="marketTimeframes"' in js
+    assert 'data-market-interval="15m"' in js
+    assert 'data-market-interval="1h"' in js
+    assert 'data-market-interval="4h"' in js
+    assert 'data-market-interval="1d"' in js
+    assert 'data-market-interval="1w"' in js
+    assert 'data-market-interval="1M"' in js
+    assert 'اتجاه 4 ساعات + يومي · تنفيذ ' in js
+    assert js.index('id="marketBiasPanel"') < js.index('id="marketTimeframes"') < js.index('id="surgeRecommendations"')
+    assert '/static/app.js?v=20261030.marketframes1' in html
     assert 'marketSignalRefreshTimer=setInterval' in js
     assert 'async function loadChart(m,symbol)' in js
 
@@ -355,8 +366,8 @@ def test_home_refresh_does_not_rebuild_dashboard_twice():
     root = Path(__file__).resolve().parents[1] / "static"
     html = (root / "index.html").read_text(encoding="utf-8")
     js = (root / "app.js").read_text(encoding="utf-8")
-    assert '/static/app.css?v=20261030.prodesk2' in html
-    assert '/static/app.js?v=20261030.prodesk3' in html
+    assert '/static/app.css?v=20261030.compat1' in html
+    assert '/static/app.js?v=20261030.marketframes1' in html
     assert 'getJSON("/api/status")' in js
     home_start = js.index("function renderHome()")
     home_end = js.index("function renderMarketPage(", home_start)
