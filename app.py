@@ -2850,6 +2850,7 @@ def order_flow_scan(market: str, interval: str = Query("15m"), limit: int = Quer
     def analyze_symbol(symbol):
         candles = candle_data(market, symbol, interval, force_refresh=refresh)
         if len(candles) < 20:
+            return None
 
         recent = candles[-12:]
         ratios = []
@@ -2875,10 +2876,12 @@ def order_flow_scan(market: str, interval: str = Query("15m"), limit: int = Quer
         last, prev = recent[-1], recent[-2]
         price = float(last["close"])
         if price <= 0:
+            return None
 
         closes = [float(c.get("close") or 0) for c in recent[-9:]]
         valid_closes = [v for v in closes if v > 0]
         if len(valid_closes) < 6:
+            return None
 
         momentum_pct = (valid_closes[-1] / valid_closes[-4] - 1) * 100 if valid_closes[-4] > 0 else 0.0
         previous_momentum_pct = (valid_closes[-4] / valid_closes[-7] - 1) * 100 if len(valid_closes) >= 7 and valid_closes[-7] > 0 else 0.0
