@@ -14,7 +14,7 @@ def test_health_and_home():
     health = client.get("/api/health")
     assert health.status_code == 200
     assert health.json["database"] == "ok"
-    assert set(health.json["live_markets"]) == {"spot", "futures", "alpha"}
+    assert set(health.json["live_markets"]) == {"spot", "futures", "alpha", "forex"}
 
 def test_timeframe_validation():
     response = client.get("/api/market/spot?timeframe=5m")
@@ -136,3 +136,53 @@ def test_alpha_market_endpoint_accepts_public_provider(tmp_path, monkeypatch):
     assert response.json['market'] == 'alpha'
     assert response.json['source'] == 'Binance Alpha public market data'
     assert response.json['total'] == 1
+
+
+def test_provider_registry_is_honest_and_lists_real_fallbacks():
+    response = client.get("/api/providers")
+    assert response.status_code == 200
+    markets = {item["id"]: item for item in response.json["markets"]}
+    assert markets["spot"]["status"] == "configured"
+    assert "api-gcp.binance.com" in markets["spot"]["fallbacks"]
+    assert markets["forex"]["primary"] == "BiQuote public REST"
+    assert markets["saudi"]["status"] == "provider_required"
+    assert markets["us"]["status"] == "provider_required"
+    assert markets["contracts"]["status"] == "provider_required"
+
+
+def test_biquote_candles_ignore_open_bar(monkeypatch):
+    module.CACHE.pop("forex:EURUSD:15m", None)
+    payload = {"bars": [
+        {"openTime": "2026-10-31T10:00:00Z", "open": 1.0, "high": 1.2,
+         "low": 0.9, "close": 1.1, "tickVolume": 10, "isOpen": False},
+        {"openTime": "2026-10-31T10:15:00Z", "open": 1.1, "high": 1.3,
+         "low": 1.0, "close": 1.2, "tickVolume": 8, "isOpen": True},
+    ]}
+    monkeypatch.setattr(module, "fetch_json", lambda *args, **kwargs: payload)
+    rows = module.candles("forex", "EURUSD", "15m")
+    assert len(rows) == 1
+    assert rows[0]["close"] == 1.1
+    assert rows[0]["volume"] == 10
+
+
+def test_biquote_market_tickers_reject_stale_and_closed_quotes(monkeypatch):
+    module.CACHE.pop("biquote:active-symbols", None)
+    module.CACHE.pop("biquote:latest:EURUSD,XAUUSD,GBPUSD", None)
+    def fake_fetch(url, params=None):
+        if url.endswith("/api/active"):
+            return [
+                {"name": "EURUSD", "type": "Forex"},
+                {"name": "XAUUSD", "type": "Commodity"},
+                {"name": "GBPUSD", "type": "Forex"},
+            ]
+        return [
+            {"symbol": "EURUSD", "mid": 1.1, "dayDiffPercent": 0.5,
+             "quoteAgeSeconds": 2, "marketState": "open", "stale": False},
+            {"symbol": "XAUUSD", "mid": 2000, "dayDiffPercent": 0.2,
+             "quoteAgeSeconds": 900, "marketState": "open", "stale": True},
+            {"symbol": "GBPUSD", "mid": 1.25, "dayDiffPercent": -0.3,
+             "quoteAgeSeconds": 0, "marketState": "closed", "stale": False},
+        ]
+    monkeypatch.setattr(module, "fetch_json", fake_fetch)
+    rows = module.biquote_market_tickers()
+    assert [row["symbol"] for row in rows] == ["EURUSD"]
