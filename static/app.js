@@ -104,7 +104,9 @@
       '<section class="surge-panel"><div class="surge-item-head"><h2 style="margin:0">📡 توصيات من فرص التداول</h2><span class="surge-chip" id="signalSourceLabel">محدثة</span></div><div id="surgeRecommendations" class="surge-empty">تظهر هنا الصفقات المكتملة بعد التحقق من الأسعار والمستويات وحالة الصفقة.</div><p class="surge-muted" style="margin-top:10px">الصفقات مرتبة حسب العائد المحتمل مقارنة بالمخاطرة، وعند التعادل تظهر الأحدث أولاً.</p></section>'+
       ''+
       '</div>';
-    const loadDailyVip=async(force=false)=>{
+    let forceNextDailyVip=false;
+    const loadDailyVip=async()=>{
+      const force=forceNextDailyVip;forceNextDailyVip=false;
       const out=$("surgeRecommendations"),label=$("signalSourceLabel");
       if(!out)return;
       if(!["spot","futures","alpha","forex","us","contracts","saudi"].includes(m.api)){
@@ -117,7 +119,7 @@
       try{
         const suffix=force?"&refresh=true":"";
         const results=await Promise.allSettled([
-          getJSON("/api/trade-feed?market="+encodeURIComponent(m.api)+"&limit=20"+suffix),
+          getJSON("/api/trade-feed?market="+encodeURIComponent(m.api)+"&limit=20"+(force?"&refresh=true":"")),
           getJSON("/api/public-ideas?market="+encodeURIComponent(m.api)+"&limit=30"+suffix)
         ]);
         const base=results[0].status==="fulfilled"?results[0].value:{items:[],message:""};
@@ -152,7 +154,7 @@
     if(marketSignalRefreshTimer)clearInterval(marketSignalRefreshTimer);
     if(marketLiveTrackTimer)clearInterval(marketLiveTrackTimer);
     loadDailyVip();
-    marketSignalRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible")loadDailyVip(true)},45000);
+    marketSignalRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible"){forceNextDailyVip=true;loadDailyVip()}},45000);
   }
   async function loadQuotes(m) {
     const out=$("quoteContent"), meta=$("quoteMeta"); if(!out)return;
