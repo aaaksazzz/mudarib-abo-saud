@@ -3022,7 +3022,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                     "result": "OPEN", "status": "صفقة مفتوحة — متابعة السعر",
                     "progress": 0, "pnl_pct": 0, "last_price": current_prices.get(symbol, entry),
                     "last_checked_at": now, "created_at": now,
-                    "source": item.get("method") or "multi_timeframe_direction_v2"
+                    "source": item.get("method") or "pro_confluence_v1"
                 })
                 active_keys.add(active_key)
             write_json_file(RESULTS_PATH, journal[:2000])
