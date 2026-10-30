@@ -20,9 +20,7 @@
     "/markets/forex-gold":"forex"
   };
   const marketKey = pathToMarket[path];
-  const scanIntervalOrder = ["15m","1h","4h","1d","1w","1M"];
-  let scanCycleIndex = 0;
-  let selectedInterval = "15m";
+  let selectedInterval = "1d";
   let marketSignalRefreshTimer = null;
   let marketLiveTrackTimer = null;
   let marketSignalRefreshBusy = false;
@@ -187,8 +185,8 @@
   async function loadChart(m,symbol) {
     currentChartSymbol=symbol;
     const out=$("chartContent"),meta=$("chartMeta"),badge=$("chartSymbol");if(!out)return;
-    badge.textContent=symbol;out.innerHTML='<div class="loading">جاري تحميل الشموع الفعلية…</div>';meta.textContent=m.name+" · "+selectedInterval;
-    try {const d=await getJSON("/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(symbol)+"&interval="+encodeURIComponent(selectedInterval));out.innerHTML=drawCandles(d.items||[]);meta.textContent=m.source+" · "+selectedInterval+" · "+(d.items||[]).length+" شمعة"}
+    badge.textContent=symbol;out.innerHTML='<div class="loading">جاري تحميل الشموع الفعلية…</div>';meta.textContent=m.name;
+    try {const d=await getJSON("/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(symbol)+"&interval=1d);out.innerHTML=drawCandles(d.items||[]);meta.textContent=m.source+" · "+(d.items||[]).length+" شمعة"}
     catch(err){out.innerHTML=empty("الشارت غير متاح",err.message);meta.textContent="لا توجد بيانات شموع مؤكدة"}
   }
   function signalCard(x, rank=0, marketKey="") {
@@ -373,18 +371,16 @@
     return '<div id="tasiChart">'+drawCandles(items)+'</div><div class="muted" style="margin-top:8px">'+esc(label||"شموع المؤشر الفعلية")+'</div>';
   }
   async function renderTasi() {
-    view.innerHTML=pageHeader("تحليل تاسي العام","تحليل المؤشر العام وليس توصية على سهم منفرد.","السوق السعودي")+
-      '<section class="panel"><div class="panel-head"><h2>الفريم</h2><button class="button small" id="tasiRefresh">تحديث التحليل</button></div><div class="frame-list" id="tasiFrames">'+["15m","1h","4h","1d","1w","1M"].map(f=>'<button class="frame '+(f==="1d"?"active":"")+'" data-frame="'+f+'">'+f+'</button>').join("")+'</div><div id="tasiContent" class="loading">جاري طلب التحليل…</div></section>';
-    let frame="1d";
+    view.innerHTML=pageHeader("تحليل تاسي العام","قراءة يومية للمؤشر العام دون قوائم فريمات أو أزرار تغيير.","السوق السعودي")+
+      '<section class="panel"><div class="panel-head"><h2>قراءة المؤشر</h2><button class="button small" id="tasiRefresh">تحديث التحليل</button></div><div id="tasiContent" class="loading">جاري طلب التحليل…</div></section>';
     const load=async()=>{
       const out=$("tasiContent");out.innerHTML='<div class="loading">تحميل بيانات المؤشر…</div>';
       try {
-        const d=await getJSON("/api/tasi/analysis?interval="+encodeURIComponent(frame));
+        const d=await getJSON("/api/tasi/analysis?interval=1d");
         const stats=[["آخر سعر",price(d.price)],["التغير",pct(d.change_pct)],["الاتجاه",d.trend||"—"],["الدعم",price(d.support)],["المقاومة",price(d.resistance)],["السيناريو",d.scenario||"—"]];
-        out.innerHTML='<div class="feature-grid">'+stats.map(x=>'<div class="feature-card"><small>'+esc(x[0])+'</small><strong>'+esc(x[1])+'</strong></div>').join("")+'</div><div class="panel" style="margin:14px 0"><div class="panel-head"><h2>شموع تاسي</h2><span class="pill">'+esc(frame)+'</span></div>'+renderCandleChart(d.candles||[],(d.provider||"مصدر عام")+(d.delayed?" · قد تكون البيانات متأخرة":""))+'</div><div class="feature-grid">'+[["الدخول المشروط",price(d.entry)],["وقف الخسارة",price(d.stop_loss)],["الهدف الأول",price(d.tp1)],["الهدف الثاني",price(d.tp2)],["الهدف الثالث",price(d.tp3)]].map(x=>'<div class="feature-card"><small>'+esc(x[0])+'</small><strong>'+esc(x[1])+'</strong></div>').join("")+'</div><p class="muted">'+esc(d.message||"")+'</p>';
+        out.innerHTML='<div class="feature-grid">'+stats.map(x=>'<div class="feature-card"><small>'+esc(x[0])+'</small><strong>'+esc(x[1])+'</strong></div>').join("")+'</div><div class="panel" style="margin:14px 0"><div class="panel-head"><h3>الرسم السعري</h3><span class="muted">قراءة يومية ثابتة</span></div>'+renderCandleChart(d.candles||[],"شموع يومية فعلية")+'</div><div class="feature-grid">'+[["الدخول المشروط",price(d.entry)],["وقف الخسارة",price(d.stop_loss)],["الهدف الأول",price(d.tp1)],["الهدف الثاني",price(d.tp2)],["الهدف الثالث",price(d.tp3)]].map(x=>'<div class="feature-card"><small>'+esc(x[0])+'</small><strong>'+esc(x[1])+'</strong></div>').join("")+'</div><p class="muted">'+esc(d.message||"")+'</p>';
       } catch(err){out.innerHTML=empty("تعذر جلب تحليل تاسي",err.message)}
     };
-    $("tasiFrames").addEventListener("click",e=>{const b=e.target.closest("[data-frame]");if(!b)return;frame=b.dataset.frame;$("tasiFrames").querySelectorAll("button").forEach(x=>x.classList.toggle("active",x===b));load()});
     $("tasiRefresh").addEventListener("click",load);
     await load();
   }
