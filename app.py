@@ -2367,7 +2367,7 @@ def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=
         return data
     try:
         index_html = _daily_vip_fetch(DAILY_VIP_SIGNALS_URL)
-        href_values = re.findall(r"""href\\s*=\\s*(['"])(.*?)\\1""", index_html, re.I)
+        href_values = re.findall(r"""href\s*=\s*(['"])(.*?)\1""", index_html, re.I)
         paths = []
         for _, href in href_values:
             href = html_lib.unescape(href.strip())
