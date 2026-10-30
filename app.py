@@ -3229,14 +3229,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                     row["status"] = "وصل الهدف الأول — المتابعة مستمرة"
                 else:
                     row["status"] = "صفقة مفتوحة — متابعة السعر"
-            # Keep open trades for up to 24 hours regardless of the internal scan interval.
-            journal = [
-                row for row in journal
-                if isinstance(row, dict) and (
-                    str(row.get("result", "OPEN")).upper() in closed_results
-                    or (now - int(row.get("created_at") or now)) <= 24 * 60 * 60
-                )
-            ]
+            # Never expire an open trade by age. Keep following it until the stop
+            # is reached or every configured target (TP1, TP2 and TP3) is reached.
+            # Closed trades remain in the journal as historical results.
+            journal = [row for row in journal if isinstance(row, dict)]
             # One active record per market/symbol/timeframe/direction prevents every
             # price refresh from creating another copy of the same old opportunity.
             active_keys = {
@@ -3271,7 +3267,11 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                     "source": item.get("method") or "pro_confluence_v1"
                 })
                 active_keys.add(active_key)
-            write_json_file(RESULTS_PATH, journal[:2000])
+            # Preserve every open trade even if the journal grows; cap only closed
+            # history so an old closed record can never evict an active position.
+            open_rows = [row for row in journal if str(row.get("result", "OPEN")).upper() not in closed_results]
+            closed_rows = [row for row in journal if str(row.get("result", "OPEN")).upper() in closed_results]
+            write_json_file(RESULTS_PATH, open_rows + closed_rows[:2000])
     except (OSError, TypeError, ValueError) as exc:
         print(f"signal persistence failed {market}/{interval}: {type(exc).__name__}")
     with PUBLIC_IDEAS_LOCK:
