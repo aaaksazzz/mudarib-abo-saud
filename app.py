@@ -11,6 +11,7 @@ from flask import Flask, jsonify, request, send_from_directory
 
 app = Flask(__name__, static_folder="static")
 BASES = {"spot": "https://api.binance.com", "futures": "https://fapi.binance.com"}
+ALPHA_BASE = "https://www.binance.com"
 FRAMES = {"15m", "1h", "4h", "1d"}
 STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "EUR"}
 CACHE = {}
@@ -26,7 +27,7 @@ DB_PATH = Path(os.environ.get("DB_PATH", str(DATA_DIR / "trades.sqlite3")))
 MARKETS = [
     {"id": "spot", "name": "Binance Spot", "provider": "Binance", "status": "live"},
     {"id": "futures", "name": "Binance Futures", "provider": "Binance", "status": "live"},
-    {"id": "alpha", "name": "Binance Alpha", "provider": None, "status": "provider_required"},
+    {"id": "alpha", "name": "Binance Alpha", "provider": "Binance public Alpha data", "status": "live"},
     {"id": "saudi", "name": "السوق السعودي", "provider": None, "status": "provider_required"},
     {"id": "us", "name": "الأسهم الأمريكية", "provider": None, "status": "provider_required"},
     {"id": "contracts", "name": "العقود الأمريكية", "provider": None, "status": "provider_required"},
@@ -56,7 +57,41 @@ def fetch_json(url, params=None):
     response.raise_for_status()
     return response.json()
 
+def alpha_market_tickers():
+    token_url = ALPHA_BASE + "/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list"
+    info_url = ALPHA_BASE + "/bapi/defi/v1/public/alpha-trade/get-exchange-info"
+    token_response = cached("alpha:tokens", 180, lambda: fetch_json(token_url))
+    info_response = cached("alpha:exchange-info", 300, lambda: fetch_json(info_url))
+    if not token_response.get("success") or not info_response.get("success"):
+        raise requests.RequestException("Binance Alpha public market data unavailable")
+    data = token_response.get("data") or []
+    info = info_response.get("data") or {}
+    tradable = {
+        row.get("symbol") for row in info.get("symbols", [])
+        if row.get("status") == "TRADING" and row.get("quoteAsset") == "USDT"
+    }
+    output = []
+    for token in data:
+        symbol_id = str(token.get("alphaId") or "")
+        pair = symbol_id + "USDT"
+        if not symbol_id.startswith("ALPHA_") or pair not in tradable or token.get("offline"):
+            continue
+        try:
+            price = float(token.get("price") or 0)
+            volume = float(token.get("volume24h") or 0)
+            change = float(token.get("percentChange24h") or 0)
+        except (TypeError, ValueError):
+            continue
+        if price > 0 and volume > 0:
+            output.append({
+                "symbol": pair, "price": price, "volume": volume,
+                "change24h": change, "asset": token.get("symbol") or symbol_id,
+            })
+    return output
+
 def market_tickers(kind):
+    if kind == "alpha":
+        return cached("alpha:universe", 60, alpha_market_tickers)
     base = BASES[kind]
     path = "/api/v3/ticker/24hr" if kind == "spot" else "/fapi/v1/ticker/24hr"
     rows = cached(kind + ":tickers", 20, lambda: fetch_json(base + path))
@@ -76,9 +111,17 @@ def market_tickers(kind):
     return output
 
 def candles(kind, symbol, interval):
-    path = "/api/v3/klines" if kind == "spot" else "/fapi/v1/klines"
-    raw = cached(f"{kind}:{symbol}:{interval}", 45,
-                 lambda: fetch_json(BASES[kind] + path, {"symbol": symbol, "interval": interval, "limit": 100}))
+    if kind == "alpha":
+        path = "/bapi/defi/v1/public/alpha-trade/klines"
+        payload = cached(f"{kind}:{symbol}:{interval}", 45, lambda: fetch_json(
+            ALPHA_BASE + path, {"symbol": symbol, "interval": interval, "limit": 100}))
+        if not payload.get("success"):
+            raise requests.RequestException("Binance Alpha candles unavailable")
+        raw = payload.get("data") or []
+    else:
+        path = "/api/v3/klines" if kind == "spot" else "/fapi/v1/klines"
+        raw = cached(f"{kind}:{symbol}:{interval}", 45,
+                     lambda: fetch_json(BASES[kind] + path, {"symbol": symbol, "interval": interval, "limit": 100}))
     rows = []
     for item in raw:
         try:
@@ -273,7 +316,7 @@ def markets():
 
 @app.get("/api/market/<kind>")
 def market(kind):
-    if kind not in BASES:
+    if kind not in BASES and kind != "alpha":
         return jsonify({"ok": False, "status": "provider_required", "message": "مزود البيانات لهذا السوق غير مربوط؛ لن نعرض بيانات غير موثوقة.", "signals": []}), 503
     interval = request.args.get("timeframe", "15m")
     if interval not in FRAMES:
@@ -311,7 +354,7 @@ def market(kind):
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": interval,
             "movers": movers, "signals": signals, "open_trades": active, "updated": int(time.time()),
-            "source": "Binance public market data", "strategy": "EMA20/50 + RSI14 + ATR14 + 4h/1d confirmation",
+            "source": "Binance Alpha public market data" if kind == "alpha" else "Binance public market data", "strategy": "EMA20/50 + RSI14 + ATR14 + 4h/1d confirmation",
             "score_note": "درجة جودة الشروط وليست نسبة نجاح أو احتمال ربح."
         })
     except requests.RequestException:
