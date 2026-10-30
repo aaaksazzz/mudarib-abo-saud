@@ -17,6 +17,7 @@ import urllib.error
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from signal_sources import fetch_forex_signals
+from external_signal_engine import invert_external_trade
 from fastapi import FastAPI, Query, Depends, Request, HTTPException
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -2376,7 +2377,7 @@ def public_ideas(market: str = Query("futures"),
             "has_complete_levels": True, "source_performance_verified": False,
             "status": "صفقة منشورة من مصدر خارجي؛ الأداء غير مدقق",
         }
-        unique[row["id"]] = row
+        unique[row["id"]] = invert_external_trade(row)
     items = sorted(unique.values(), key=lambda item: item["published_at"], reverse=True)
     response = {
         "ok": True, "market": market, "items": items[:limit], "count": min(len(items), limit),
@@ -2472,8 +2473,7 @@ def _daily_vip_parse_signal(page_html, page_url, market):
     )
     if closed_marker or not active_marker:
         return None
-    if market in {"spot", "alpha"} and raw_side != "LONG":
-        return None
+    # Include both provider directions on every crypto market; the site reverses them.
     entry_match = re.search(r"Entry(?:\s+zone)?\s*\$?([\d,]+(?:\.[\d]+)?)\s*[–-]\s*\$?([\d,]+(?:\.[\d]+)?)", plain, re.I)
     stop_match = re.search(r"Stop[- ]loss\s*\$?([\d,]+(?:\.\d+)?)", plain, re.I)
     if not entry_match or not stop_match:
@@ -2523,7 +2523,7 @@ def _daily_vip_parse_signal(page_html, page_url, market):
     now = int(time.time())
     published_at = now - int(age_hours * 3600)
     leverage_match = re.search(r"\b" + re.escape(raw_side) + r"\s*[·:]?\s*(\d+)\s*[×x]", plain, re.I)
-    return {
+    parsed = {
         "symbol": symbol + "USDT",
         "direction": direction,
         "original_direction": raw_side,
@@ -2542,6 +2542,9 @@ def _daily_vip_parse_signal(page_html, page_url, market):
         "has_complete_levels": True,
         "generated_by_site": False,
     }
+    if now - published_at > 24 * 60 * 60:
+        return None
+    return invert_external_trade(parsed)
 
 
 def _daily_vip_customer_payload(data):
