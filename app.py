@@ -2277,6 +2277,9 @@ def _daily_vip_fetch(url):
 def _daily_vip_parse_signal(page_html, page_url, market):
     plain = html_lib.unescape(re.sub(r"<[^>]+>", " ", page_html or ""))
     plain = re.sub(r"\s+", " ", plain)
+    plain = re.sub(r"\s*/\s*", "/", plain)
+    plain = re.sub(r"\s*\$\s*", "$", plain)
+    plain = re.sub(r"(?<=\d)\s*[–—]\s*(?=\$?\d)", " – ", plain)
     title_match = re.search(r"([A-Z0-9]{2,20})/USDT\s+(LONG|SHORT)\s+Signal", plain, re.I)
     if not title_match:
         return None
@@ -2300,7 +2303,7 @@ def _daily_vip_parse_signal(page_html, page_url, market):
     targets = {}
     for number in range(1, 6):
         match = re.search(
-            r"Target\s*" + str(number) + r"\s*(?:\+[\d.]+\s*%)?\s*\$?\s*([\d,]+(?:\.\d+)?)",
+            r"Target\s*" + str(number) + r"\s*(?:[+−-]\s*[\d.]+\s*%)?\s*\$?\s*([\d,]+(?:\.\d+)?)",
             plain, re.I,
         )
         if not match:
