@@ -289,7 +289,7 @@ def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     assert 'data-market-interval="1M"' in js
     assert 'اتجاه 4 ساعات + يومي · تنفيذ ' in js
     assert js.index('id="marketBiasPanel"') < js.index('id="marketTimeframes"') < js.index('id="surgeRecommendations"')
-    assert '/static/app.js?v=20261030.signalfix2' in html
+    assert '/static/app.js?v=20261031.signalfix3' in html
     assert 'marketSignalRefreshTimer=setInterval' in js
     assert 'async function loadChart(m,symbol)' in js
 
@@ -371,7 +371,7 @@ def test_home_refresh_does_not_rebuild_dashboard_twice():
     html = (root / "index.html").read_text(encoding="utf-8")
     js = (root / "app.js").read_text(encoding="utf-8")
     assert '/static/app.css?v=20261030.compat1' in html
-    assert '/static/app.js?v=20261030.signalfix2' in html
+    assert '/static/app.js?v=20261031.signalfix3' in html
     assert 'getJSON("/api/status")' in js
     home_start = js.index("function renderHome()")
     home_end = js.index("function renderMarketPage(", home_start)
