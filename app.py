@@ -2262,7 +2262,8 @@ def _public_idea_levels(value):
     return {"entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3}
 
 # Market-specific public trade-idea aggregation. These are candidate feeds, not
-# verified signal providers; only explicit entry/SL/TP1-TP3 posts are published.
+# verified signal providers; publish only explicit entry/SL/TP1 setups, retaining
+# any additional targets the source actually provides.
 PUBLIC_TRADE_IDEA_CACHE = {}
 PUBLIC_TRADE_IDEA_CACHE_TTL = 180
 PUBLIC_TRADE_IDEA_MARKET_FEEDS = {
@@ -2353,19 +2354,14 @@ def public_ideas(market: str = Query("futures"),
         symbol = _public_idea_extract_symbol(market, combined)
         levels = _public_idea_levels(combined)
         interval = _public_idea_interval(combined)
-        if not direction or not symbol or not all(
-            isinstance(levels.get(key), (int, float)) and levels.get(key) > 0
-            for key in ("entry", "stop_loss", "tp1", "tp2", "tp3")
-        ):
+        # Publish a real setup when entry, stop and at least TP1 are explicit.
+        # TP2/TP3 remain blank if the source did not publish them; never invent levels.
+        validation_row = {"direction": direction, "levels": levels}
+        if not direction or not symbol or not _public_idea_levels_ordered(validation_row):
             rejected += 1
             continue
         entry, stop = levels["entry"], levels["stop_loss"]
-        targets = [levels["tp1"], levels["tp2"], levels["tp3"]]
-        ordered = (stop < entry < targets[0] < targets[1] < targets[2]) if direction == "شراء" else (
-            targets[2] < targets[1] < targets[0] < entry < stop)
-        if not ordered:
-            rejected += 1
-            continue
+        targets = [levels.get(key) for key in ("tp1", "tp2", "tp3")]
         row = {
             "id": str(raw.get("url") or raw.get("title") or "")[:500],
             "market": market, "symbol": symbol, "direction": direction,
