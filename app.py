@@ -282,7 +282,13 @@ def market(kind):
         assets = cached(kind + ":universe", 20, lambda: market_tickers(kind))
         up = sum(1 for row in assets if row["change24h"] > 0)
         down = sum(1 for row in assets if row["change24h"] < 0)
+        flat = len(assets) - up - down
         direction = "BUY" if up > down else ("SELL" if down > up else "NEUTRAL")
+        gainers = sorted((row for row in assets if row["change24h"] > 0),
+                         key=lambda row: row["change24h"], reverse=True)[:3]
+        losers = sorted((row for row in assets if row["change24h"] < 0),
+                        key=lambda row: row["change24h"])[:3]
+        movers = gainers + losers
         prices = {row["symbol"]: row["price"] for row in assets}
         update_open_trades(kind, prices)
         candidates = sorted(assets, key=lambda row: (abs(row["change24h"]), row["volume"]), reverse=True)[:10]
@@ -303,8 +309,8 @@ def market(kind):
             ).fetchall()]
         return jsonify({
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
-            "up": up, "down": down, "total": len(assets), "timeframe": interval,
-            "signals": signals, "open_trades": active, "updated": int(time.time()),
+            "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": interval,
+            "movers": movers, "signals": signals, "open_trades": active, "updated": int(time.time()),
             "source": "Binance public market data", "strategy": "EMA20/50 + RSI14 + ATR14 + 4h/1d confirmation",
             "score_note": "درجة جودة الشروط وليست نسبة نجاح أو احتمال ربح."
         })
