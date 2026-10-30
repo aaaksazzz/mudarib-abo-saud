@@ -139,7 +139,7 @@
           const entry=Number(lv.entry),stop=Number(lv.stop_loss);
           const move=(v)=>{const n=Number(v);return Number.isFinite(n)&&entry>0?((buy?n-entry:entry-n)/entry*100).toFixed(2)+"%":"—"};
           const entryText=price(lv.entry_min)+" – "+price(lv.entry_max);
-          const targets=targetKeys.map((key,index)=>'<div class="surge-target"><small>TP'+(index+1)+'</small><b dir="ltr">'+price(lv[key])+'</b><small>'+move(lv[key])+'</small></div>').join("");
+          const targets=targetKeys.filter(key=>Number.isFinite(Number(lv[key]))&&Number(lv[key])>0).map(key=>{const index=Number(key.slice(2));return '<div class="surge-target"><small>TP'+index+'</small><b dir="ltr">'+price(lv[key])+'</b><small>'+move(lv[key])+'</small></div>'}).join("");
           const risk=Number.isFinite(stop)&&entry>0?((buy?entry-stop:stop-entry)/entry*100).toFixed(2)+"%":"—";
           const sourceLink=x.source_url?'<a class="surge-link" href="'+esc(x.source_url)+'" target="_blank" rel="noopener noreferrer">فتح المنشور</a>':"";
           const sourceName=esc(x.source||"مصدر عام");
