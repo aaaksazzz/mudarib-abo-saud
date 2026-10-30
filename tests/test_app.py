@@ -162,7 +162,7 @@ def test_signal_endpoint_uses_internal_analysis_only(monkeypatch):
     })
     monkeypatch.setattr(app_module, "_generate_pro_market_signals",
                         lambda market, interval, market_rows, limit: ([_fake_ai_signal(market, interval)], True, "AI test"))
-    monkeypatch.setattr(app_module, "market_direction", lambda market: {"direction": "BULLISH"})
+    monkeypatch.setattr(app_module, "market_direction", lambda market: {"direction": "BULLISH", "live": True, "stale": False})
     app_module.PUBLIC_IDEAS_CACHE.clear()
     response = client.get("/api/signals/spot?interval=15m&refresh=true")
     assert response.status_code == 200
@@ -356,7 +356,7 @@ def test_home_refresh_does_not_rebuild_dashboard_twice():
     html = (root / "index.html").read_text(encoding="utf-8")
     js = (root / "app.js").read_text(encoding="utf-8")
     assert '/static/app.css?v=20261030.prodesk2' in html
-    assert '/static/app.js?v=20261030.prodesk2' in html
+    assert '/static/app.js?v=20261030.prodesk3' in html
     assert 'getJSON("/api/status")' in js
     home_start = js.index("function renderHome()")
     home_end = js.index("function renderMarketPage(", home_start)
