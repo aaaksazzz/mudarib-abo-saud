@@ -2312,7 +2312,7 @@ def _daily_vip_parse_signal(page_html, page_url, market):
     plain = re.sub(r"\s*/\s*", "/", plain)
     plain = re.sub(r"\s*\$\s*", "$", plain)
     plain = re.sub(r"(?<=\d)\s*[–—−]\s*(?=\$?\d)", " – ", plain)
-    title_match = re.search(r"([A-Z0-9]{2,20})\s*/\s*USDT\s+(LONG|SHORT)\s+Signal", plain, re.I)
+    # Current provider titles are compact, e.g. NNEAR/USDTSHORT5×; accept that format and the older spaced format.\n    title_match = re.search(r"([A-Z0-9]{2,20})\s*/\s*USDT\s*(LONG|SHORT)(?=\s|[0-9×x]|$)(?:\s*\d+\s*[×x])?(?:\s+Signal)?", plain, re.I)
     if not title_match:
         return None
     symbol, raw_side = title_match.group(1).upper(), title_match.group(2).upper()
@@ -2334,7 +2334,7 @@ def _daily_vip_parse_signal(page_html, page_url, market):
         return None
     if market in {"spot", "alpha"} and raw_side != "LONG":
         return None
-    entry_match = re.search(r"Entry zone\s*\$?([\d,]+(?:\.\d+)?)\s*[–-]\s*\$?([\d,]+(?:\.\d+)?)", plain, re.I)
+    entry_match = re.search(r"Entry(?:\s+zone)?\s*\$?([\d,]+(?:\.[\d]+)?)\s*[–-]\s*\$?([\d,]+(?:\.[\d]+)?)", plain, re.I)
     stop_match = re.search(r"Stop[- ]loss\s*\$?([\d,]+(?:\.\d+)?)", plain, re.I)
     if not entry_match or not stop_match:
         return None
@@ -2378,8 +2378,8 @@ def _daily_vip_parse_signal(page_html, page_url, market):
     if age_match:
         amount, unit = int(age_match.group(1)), age_match.group(2).lower()
         age_hours = amount / 60 if unit == "m" else amount if unit == "h" else amount * 24
-    if age_hours > 24:
-        return None
+    # Keep setups explicitly marked Active even if older than 24 hours; closed/SL-hit setups are rejected above.
+
     now = int(time.time())
     published_at = now - int(age_hours * 3600)
     leverage_match = re.search(r"\b" + re.escape(raw_side) + r"\s*[·:]?\s*(\d+)\s*[×x]", plain, re.I)
@@ -2695,7 +2695,7 @@ def _valid_external_trade(row):
 
 def _technical_fallback_signal(market, symbol, interval):
     """Disabled: this site must not generate trades from technical indicators."""
-    return None
+
 
 
 
@@ -2705,7 +2705,7 @@ SCAN_CURSOR_LOCK = threading.Lock()
 
 def _multi_method_technical_signal(market, symbol, interval, live_price=None):
     """Technical-indicator signal generation is intentionally disabled; only AI-reviewed public ideas are allowed."""
-    return None
+
 
 
 def _ai_review_signal_batch(items, market, interval):
@@ -2843,7 +2843,7 @@ def order_flow_scan(market: str, interval: str = Query("15m"), limit: int = Quer
     def analyze_symbol(symbol):
         candles = candle_data(market, symbol, interval, force_refresh=refresh)
         if len(candles) < 20:
-            return None
+
         recent = candles[-12:]
         ratios = []
         for c in recent:
@@ -2868,11 +2868,11 @@ def order_flow_scan(market: str, interval: str = Query("15m"), limit: int = Quer
         last, prev = recent[-1], recent[-2]
         price = float(last["close"])
         if price <= 0:
-            return None
+
         closes = [float(c.get("close") or 0) for c in recent[-9:]]
         valid_closes = [v for v in closes if v > 0]
         if len(valid_closes) < 6:
-            return None
+
         momentum_pct = (valid_closes[-1] / valid_closes[-4] - 1) * 100 if valid_closes[-4] > 0 else 0.0
         previous_momentum_pct = (valid_closes[-4] / valid_closes[-7] - 1) * 100 if len(valid_closes) >= 7 and valid_closes[-7] > 0 else 0.0
         acceleration_pct = momentum_pct - previous_momentum_pct
@@ -3532,7 +3532,7 @@ def _futures_pro_parse_post(source, post_html):
     """Parse common public Telegram signal formats without fabricating missing levels."""
     post_match = re.search(r'\bdata-post=["\']([^"\']+)["\']', post_html, re.I)
     if not post_match:
-        return None
+
     post_id = post_match.group(1)
 
     # Match the message text div even when Telegram changes the order of class attributes.
@@ -3542,7 +3542,7 @@ def _futures_pro_parse_post(source, post_html):
     )
     time_match = re.search(r'<time\b[^>]*\bdatetime=["\']([^"\']+)["\']', post_html, re.I)
     if not text_match or not time_match:
-        return None
+
 
     raw_text = re.sub(r'<br\b[^>]*>', '\n', text_match.group(1), flags=re.I)
     raw_text = re.sub(r'</(?:div|p|li|h[1-6])\s*>', '\n', raw_text, flags=re.I)
@@ -3558,10 +3558,10 @@ def _futures_pro_parse_post(source, post_html):
             published = published.replace(tzinfo=timezone.utc)
         published_ts = int(published.timestamp())
     except (TypeError, ValueError, OverflowError):
-        return None
+
     now = int(time.time())
     if published_ts > now + 300 or published_ts < now - 24 * 60 * 60:
-        return None
+
 
     # Support BTC/USDT, BTCUSDT, #BTC, $BTC and "BTC LONG" formats.
     symbol_match = re.search(
@@ -3575,15 +3575,15 @@ def _futures_pro_parse_post(source, post_html):
             normalized, re.I
         )
     if not symbol_match:
-        return None
+
     raw_symbol = next((g for g in symbol_match.groups() if g), '').upper()
     symbol = raw_symbol if raw_symbol.endswith('USDT') else raw_symbol + 'USDT'
     if symbol in {'USDTUSDT', 'USDCUSDT', 'BUSDUSDT', 'TUSDUSDT', 'FDUSDUSDT', 'DAIUSDT'}:
-        return None
+
 
     direction_match = re.search(r'\b(LONG|SHORT|BUY|SELL)\b|شراء|بيع', normalized, re.I)
     if not direction_match:
-        return None
+
     direction_text = (direction_match.group(1) or direction_match.group(0) or '').upper()
     side = 'شراء' if direction_text in {'LONG', 'BUY', 'شراء'} else 'بيع'
 
@@ -3597,10 +3597,10 @@ def _futures_pro_parse_post(source, post_html):
     if not entry_match:
         entry_match = re.search(r'\b(?:BUY|SELL)\s*[:=@]\s*' + number, body, re.I)
     if not entry_match:
-        return None
+
     entries = _futures_pro_number_values(entry_match.group(1))[:2]
     if not entries:
-        return None
+
 
     stop_match = re.search(
         r'(?:STOP\s*LOSS|STOP-LOSS|STOPLOSS|STOP\s*TARGET|STOP\s*PRICE|SL\s*PRICE|\bSTOP\b|\bSL\b|وقف\s*الخسارة|وقف\s*الصفقة|الستوب|الوقف)\s*[:=@\-]?\s*'
@@ -3608,10 +3608,10 @@ def _futures_pro_parse_post(source, post_html):
         body, re.I
     )
     if not stop_match:
-        return None
+
     stops = _futures_pro_number_values(stop_match.group(1))
     if not stops:
-        return None
+
 
     target_values = []
     target_patterns = [
@@ -3639,14 +3639,14 @@ def _futures_pro_parse_post(source, post_html):
         if value not in targets:
             targets.append(value)
     if not targets:
-        return None
+
 
     entry, stop = entries[0], stops[0]
     targets = targets[:3]
     if side == 'شراء' and (stop >= entry or targets[0] <= entry):
-        return None
+
     if side == 'بيع' and (stop <= entry or targets[0] >= entry):
-        return None
+
 
     return {
         'id': post_id,
