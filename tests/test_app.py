@@ -43,8 +43,19 @@ def test_trade_tracker_marks_targets_and_stop(tmp_path, monkeypatch):
     with module.db() as connection:
         row = connection.execute("SELECT * FROM trades").fetchone()
     assert row["tp1_hit"] == 1
+    assert row["tp3_hit"] == 0
     assert row["status"] == "OPEN"
     module.update_open_trades("spot", {"TESTUSDT":116})
     with module.db() as connection:
         row = connection.execute("SELECT * FROM trades").fetchone()
+    assert row["tp3_hit"] == 1
     assert row["status"] == "TP3"
+
+
+def test_invalid_trade_levels_are_not_saved(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "trades.sqlite3")
+    invalid = {"symbol":"BADUSDT","timeframe":"15m","side":"BUY","entry":100,
+               "stop_loss":105,"tp1":104,"tp2":110,"tp3":115}
+    module.save_new_trades("spot", [invalid])
+    with module.db() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM trades").fetchone()[0] == 0
