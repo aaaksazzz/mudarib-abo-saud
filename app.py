@@ -2370,9 +2370,9 @@ def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=
         # The public listing may expose signal routes in hrefs, data attributes,
         # or its embedded page-state JSON. Normalize escaped URLs before scanning.
         listing_text = html_lib.unescape(index_html or "")
-        listing_text = listing_text.replace(r"\\/", "/").replace(r"\\u002F", "/")
+        listing_text = listing_text.replace(r"\/", "/").replace(r"\u002F", "/")
         route_candidates = re.findall(
-            r"""(?:https?://(?:www\\.)?dailyvipsignals\\.com)?(/signals/[a-z0-9-]+)""",
+            r"""(?:https?://(?:www\.)?dailyvipsignals\.com)?(/signals/[a-z0-9-]+)""",
             listing_text, re.I,
         )
         paths = []
