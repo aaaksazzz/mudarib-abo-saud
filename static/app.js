@@ -184,7 +184,7 @@
     if(marketSignalRefreshTimer)clearInterval(marketSignalRefreshTimer);
     if(marketLiveTrackTimer)clearInterval(marketLiveTrackTimer);
     loadDailyVip();
-    marketSignalRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible"){forceNextDailyVip=true;loadDailyVip()}},45000);
+    marketSignalRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible")loadDailyVip()},300000);
   }
   async function loadQuotes(m) {
     const out=$("quoteContent"), meta=$("quoteMeta"); if(!out)return;
