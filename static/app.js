@@ -100,7 +100,7 @@
       '</style>'+
       '<div class="surge-page">'+
       '<div class="surge-top"><span class="eyebrow">SMART TRADING PRO</span><h1 class="page-title surge-market-title" style="margin:8px 0 0">'+esc(m.name)+'</h1><div class="surge-market-sub">'+esc(m.source.toUpperCase())+' · MARKET</div><p class="muted">'+esc(m.sub)+'</p></div>'+
-      '<section class="surge-hero"><div><h2>🧭 اتجاه السوق</h2><p>قراءة عامة من تغيّر أسعار الأصول خلال 24 ساعة، مستقلة عن التوصيات. لا توجد فريمات أو استراتيجية تولّد صفقات في هذه الصفحة.</p></div><span class="surge-chip" id="surgeConnection">● جاري الاتصال</span></section>'+
+      '<section class="surge-hero"><div><h2>🧭 اتجاه السوق</h2><p>قراءة عامة من تغيّر أسعار الأصول خلال 24 ساعة، مستقلة عن التوصيات. لا توجد استراتيجية تولّد صفقات في هذه الصفحة.</p></div><span class="surge-chip" id="surgeConnection">● جاري الاتصال</span></section>'+
       '<section class="surge-stats"><div class="surge-stat"><small>الأصول المفحوصة</small><strong id="surgeCount">—</strong></div><div class="surge-stat"><small>صاعد</small><strong id="surgeUp" class="surge-pos">—</strong></div><div class="surge-stat"><small>هابط</small><strong id="surgeDown" class="surge-neg">—</strong></div><div class="surge-stat"><small>اتجاه السوق</small><strong id="surgeDirectionValue">—</strong></div></section>'+
       '<section class="surge-panel"><div class="surge-item-head"><h2 style="margin:0">📡 التوصيات المنشورة</h2><span class="surge-chip" id="signalSourceLabel">مصدر خارجي</span></div><div id="surgeRecommendations" class="surge-empty">لم يتم ربط موجّه التوصيات الخارجي بالخادم بعد؛ لن نعرض صفقات مولّدة أو أهدافًا تقديرية.</div><p style="margin-top:10px"><a class="surge-link" href="https://dailyvipsignals.com/signals" target="_blank" rel="noopener">عرض توصيات Daily VIP Signals الأصلية ↗</a></p><p class="surge-muted" style="margin-top:8px">هذا المصدر مخصص للعملات الرقمية؛ لا يُستخدم للأسهم أو السوق السعودي أو الفوركس.</p></section>'+
       '<section class="surge-panel"><div class="surge-item-head"><h2 style="margin:0">الأصول وترتيب الحركة</h2><span class="surge-chip" id="surgeUpdated">آخر تحديث —</span></div><div id="surgeStatus" class="surge-muted" style="margin:10px 0">جاري تحميل البيانات…</div><div class="surge-table-wrap"><table class="surge-table"><thead><tr><th>#</th><th>الأصل</th><th>الاتجاه</th><th>التغير</th><th>قيمة التداول</th></tr></thead><tbody id="surgeRows"><tr><td colspan="5" class="surge-empty">جاري الاتصال…</td></tr></tbody></table></div></section>'+
@@ -186,7 +186,7 @@
     currentChartSymbol=symbol;
     const out=$("chartContent"),meta=$("chartMeta"),badge=$("chartSymbol");if(!out)return;
     badge.textContent=symbol;out.innerHTML='<div class="loading">جاري تحميل الشموع الفعلية…</div>';meta.textContent=m.name;
-    try {const d=await getJSON("/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(symbol)+"&interval=1d);out.innerHTML=drawCandles(d.items||[]);meta.textContent=m.source+" · "+(d.items||[]).length+" شمعة"}
+    try {const d=await getJSON("/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(symbol)+"&interval=1d");out.innerHTML=drawCandles(d.items||[]);meta.textContent=m.source+" · "+(d.items||[]).length+" شمعة"}
     catch(err){out.innerHTML=empty("الشارت غير متاح",err.message);meta.textContent="لا توجد بيانات شموع مؤكدة"}
   }
   function signalCard(x, rank=0, marketKey="") {
@@ -209,7 +209,6 @@
       '<div class="level target"><small>الهدف الأول</small><strong>'+price(tp1)+'</strong><small class="positive">ربح محتمل '+pctTo(tp1,true)+'</small></div>'+
       '<div class="level target"><small>الهدف الثاني</small><strong>'+price(tp2)+'</strong><small class="positive">ربح محتمل '+pctTo(tp2,true)+'</small></div>'+
       '<div class="level target"><small>الهدف الثالث</small><strong>'+price(tp3)+'</strong><small class="positive">ربح محتمل '+pctTo(tp3,true)+'</small></div></div>'+
-      (x.timeframe_trends?'<div class="panel" style="margin-top:10px;padding:10px"><strong>توافق الفريمات: '+esc(x.timeframes_aligned??0)+'/4</strong><div class="muted" style="margin-top:5px">اليومي: '+esc(x.timeframe_trends["1d"]||"غير متاح")+' · ٤ ساعات: '+esc(x.timeframe_trends["4h"]||"غير متاح")+' · الساعة: '+esc(x.timeframe_trends["1h"]||"غير متاح")+' · ١٥ دقيقة: '+esc(x.timeframe_trends["15m"]||"غير متاح")+'</div><div class="muted">الربح المحتمل حتى TP3: '+esc(x.potential_profit_pct==null?"—":Number(x.potential_profit_pct).toFixed(2)+"%")+' · الخسارة المحتملة حتى SL: '+esc(x.potential_loss_pct==null?"—":Number(x.potential_loss_pct).toFixed(2)+"%")+'</div></div>':"")+
       '<div class="trade-live-tracker" data-live-symbol="'+esc(x.symbol||"")+'" data-live-market="'+esc(marketKey||x.market||"")+'" data-live-direction="'+esc(side)+'"><span>متابعة الصفقة الحية</span><strong data-live-status>جارٍ ربط سجل الصفقة…</strong><small data-live-price>آخر سعر: —</small></div>'+
       (x.url&&/^https?:\/\//i.test(x.url)?'<p class="muted" style="margin-top:10px"><a href="'+esc(x.url)+'" target="_blank" rel="noopener noreferrer">فتح المنشور الأصلي للمصدر ↗</a> · الاتجاه الأصلي: '+esc(x.original_direction||"—")+'</p>':"")+
       '<div class="toolbar" style="margin-top:12px"><button type="button" class="button small" data-inline-chart="1" data-symbol="'+esc(x.symbol||"")+'" data-frame="'+esc(x.interval||selectedInterval)+'" data-entry="'+esc(entry)+'" data-stop="'+esc(stop)+'" data-tp1="'+esc(tp1)+'" data-tp2="'+esc(tp2)+'" data-tp3="'+esc(tp3)+'">عرض الشارت داخل الصفقة</button></div><div data-chart-box data-open="0" style="margin-top:10px"></div><div class="muted" style="margin-top:10px">'+esc(x.status||"النسب تقديرية من سعر الدخول إلى الهدف/الوقف، قبل الرسوم والانزلاق")+'</div></article>';
@@ -306,14 +305,14 @@
           ["نسبة النجاح",d.win_rate==null?"—":d.win_rate+"%","%"]
         ];
         $("resultStats").innerHTML=stats.map((s,i)=>'<div class="feature-card result-stat result-stat-'+i+'"><span class="result-stat-icon">'+esc(s[2])+'</span><small>'+esc(s[0])+'</small><strong>'+esc(s[1])+'</strong></div>').join("");
-        out.innerHTML=items.length?'<div class="table-wrap"><table><thead><tr><th>الأصل</th><th>السوق / الفريم</th><th>الاتجاه</th><th>الدخول</th><th>وقف الخسارة</th><th>النتيجة</th><th>الأداء</th></tr></thead><tbody>'+items.map(x=>{
+        out.innerHTML=items.length?'<div class="table-wrap"><table><thead><tr><th>الأصل</th><th>السوق</th><th>الاتجاه</th><th>الدخول</th><th>وقف الخسارة</th><th>النتيجة</th><th>الأداء</th></tr></thead><tbody>'+items.map(x=>{
           const status=String(x.result||"OPEN").toUpperCase();
           const statusLabel=({OPEN:"مفتوحة",TP1:"هدف 1",TP2:"هدف 2",TP3:"هدف 3",SL:"وقف خسارة"})[status]||status;
           const closed=["TP1","TP2","TP3","SL"].includes(status);
           const side=x.side==="BUY"||x.side==="شراء"?"شراء":x.side==="SELL"||x.side==="بيع"?"بيع":x.side||"—";
           const pnl=x.pnl_pct==null?"—":pct(x.pnl_pct);
           return '<tr><td dir="ltr"><strong>'+esc(x.symbol||"—")+'</strong></td><td>'+esc(x.market||"—")+' / '+esc(x.interval||"—")+'</td><td>'+esc(side)+'</td><td class="ltr">'+price(x.entry)+'</td><td class="ltr">'+price(x.stop_loss)+'</td><td><span class="result-status '+(closed?"is-closed":"is-open")+'">'+esc(statusLabel)+'</span></td><td class="'+(Number(x.pnl_pct)>0?"positive":Number(x.pnl_pct)<0?"negative":"muted")+'">'+esc(pnl)+'</td></tr>';
-        }).join("")+'</tbody></table></div>':empty("السجل جاهز وينتظر أول فرصة","الفحص يعمل تلقائيًا في الخلفية لكل سوق وفريم. ستظهر الفرص هنا عند اكتشافها، ولن تُحتسب نتيجة مالية قبل تأكيدها.");
+        }).join("")+'</tbody></table></div>':empty("السجل جاهز وينتظر أول فرصة","ستظهر هنا التوصيات المرتبطة بمصدرها عند توفرها، ولن تُحتسب نتيجة مالية قبل تأكيدها.");
       } catch(err) {
         out.innerHTML=empty("تعذر تحميل سجل النتائج",err.message||"تحقق من اتصال الخادم ثم حاول مرة أخرى.")+'<div style="margin-top:12px"><button class="button secondary" id="retryResults">إعادة المحاولة</button></div>';
         $("retryResults")?.addEventListener("click",load);
