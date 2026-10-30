@@ -104,7 +104,7 @@
       '<section class="surge-panel"><div class="surge-item-head"><h2 style="margin:0">📡 توصيات من فرص التداول</h2><span class="surge-chip" id="signalSourceLabel">محدثة</span></div><div id="surgeRecommendations" class="surge-empty">تظهر هنا الصفقات المكتملة بعد التحقق من الأسعار والمستويات وحالة الصفقة.</div><p class="surge-muted" style="margin-top:10px">الصفقات مرتبة حسب العائد المحتمل مقارنة بالمخاطرة، وعند التعادل تظهر الأحدث أولاً.</p></section>'+
       ''+
       '</div>';
-    const loadDailyVip=async()=>{
+    const loadDailyVip=async(force=false)=>{
       const out=$("surgeRecommendations"),label=$("signalSourceLabel");
       if(!out)return;
       if(!["spot","futures","alpha","forex"].includes(m.api)){
@@ -112,10 +112,10 @@
         if(label)label.textContent="غير مدعوم";
         return;
       }
-      out.innerHTML='<div class="surge-empty">جاري جلب التوصيات المنشورة…</div>';
+      if(!force)out.innerHTML='<div class="surge-empty">جاري جلب التوصيات المنشورة…</div>';
       if(label)label.textContent="محدثة";
       try{
-        const data=await getJSON("/api/trade-feed?market="+encodeURIComponent(m.api)+"&limit=20");
+        const data=await getJSON("/api/trade-feed?market="+encodeURIComponent(m.api)+"&limit=20"+(force?"&refresh=true":""));
         const rows=(Array.isArray(data.items)?data.items:[]).slice().sort((a,b)=>{
           const score=(x)=>{const v=x.levels||{},entry=Number(v.entry),stop=Number(v.stop_loss),target=Number(v.tp3),long=x.original_direction==="LONG";const risk=Math.abs(entry-stop),reward=Math.abs(target-entry);return entry>0&&risk>0&&target>0?reward/risk:-1};
           const delta=score(b)-score(a);
@@ -138,9 +138,12 @@
         }).join("")+'</div>';
       }catch(err){out.innerHTML='<div class="surge-empty">تعذر تحديث الصفقات حالياً. حاول لاحقاً.</div>'}
     };
+
+    // تحديث هادئ كل 45 ثانية؛ يمنع الاعتماد على فتح الصفحة فقط.
     if(marketSignalRefreshTimer)clearInterval(marketSignalRefreshTimer);
     if(marketLiveTrackTimer)clearInterval(marketLiveTrackTimer);
     loadDailyVip();
+    marketSignalRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible")loadDailyVip(true)},45000);
   }
   async function loadQuotes(m) {
     const out=$("quoteContent"), meta=$("quoteMeta"); if(!out)return;
