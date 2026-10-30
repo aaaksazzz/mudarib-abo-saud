@@ -293,10 +293,10 @@ def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     html = (root / "index.html").read_text(encoding="utf-8")
     js = (root / "app.js").read_text(encoding="utf-8")
     assert 'href="/markets/spot"' in html and 'href="/markets/futures"' in html
-    assert 'async function loadSignals(m)' in js
-    assert '"/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(frame)+"&limit=20"' in js
-    assert '"/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(symbol)+"&interval="+encodeURIComponent(frame)' in js
-    assert 'data-frame="' in js and '"15m","1h","4h","1d","1w","1M"' in js
+    assert 'const loadDailyVip=async()=>{' in js
+    assert '"/api/daily-vip/signals?market="+encodeURIComponent(m.api)+"&limit=20"' in js
+    assert '"&interval=1d"' in js
+    assert 'id="surgeIntervals"' not in js and 'data-interval="' not in js
     assert 'async function loadChart(m,symbol)' in js
 
 
@@ -440,7 +440,8 @@ def test_tasi_page_includes_candle_chart_and_refresh_controls():
     assert 'id="tasiChart"' in js
     assert 'id="tasiRefresh"' in js
     assert "function renderCandleChart(items,label)" in js
-    assert 'getJSON("/api/tasi/analysis?interval="+encodeURIComponent(frame))' in js
+    assert 'getJSON("/api/tasi/analysis?interval=1d")' in js
+    assert 'id="tasiFrames"' not in js
 
 
 def test_home_refresh_does_not_rebuild_dashboard_twice():
@@ -450,7 +451,7 @@ def test_home_refresh_does_not_rebuild_dashboard_twice():
     html = (root / "index.html").read_text(encoding="utf-8")
     js = (root / "app.js").read_text(encoding="utf-8")
     assert '/static/app.css?v=20261021.1' in html
-    assert '/static/app.js?v=20261022.1' in html
+    assert '/static/app.js?v=20261030.dailyvip1' in html
     assert 'getJSON("/api/status")' in js
     home_start = js.index("function renderHome()")
     home_end = js.index("function renderMarketPage(", home_start)
