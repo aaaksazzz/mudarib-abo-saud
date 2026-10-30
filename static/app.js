@@ -101,7 +101,7 @@
       '<div class="surge-top"><span class="eyebrow">SMART TRADING PRO</span><h1 class="page-title surge-market-title" style="margin:8px 0 0">'+esc(m.name)+'</h1><div class="surge-market-sub">'+esc(m.source.toUpperCase())+' · MARKET</div><p class="muted">'+esc(m.sub)+'</p></div>'+
       ''+
       ''+
-      '<section class="surge-panel"><div class="surge-item-head"><h2 style="margin:0">📡 صفقات SMART TRADING PRO</h2><span class="surge-chip" id="signalSourceLabel">SMART TRADING PRO</span></div><div id="surgeRecommendations" class="surge-empty">تظهر هنا الصفقات المعتمدة للنشر عبر SMART TRADING PRO. لا نعرض مستويات دخول أو أهدافًا غير موثقة.</div><p class="surge-muted" style="margin-top:10px">الصفقات مرتبة من الأحدث إلى الأقدم، مع عرض مستوياتها المنشورة كما هي.</p></section>'+
+      '<section class="surge-panel"><div class="surge-item-head"><h2 style="margin:0">📡 صفقات SMART TRADING PRO</h2><span class="surge-chip" id="signalSourceLabel">SMART TRADING PRO</span></div><div id="surgeRecommendations" class="surge-empty">تظهر هنا الصفقات المعتمدة للنشر عبر SMART TRADING PRO. لا نعرض مستويات دخول أو أهدافًا غير موثقة.</div><p class="surge-muted" style="margin-top:10px">الصفقات مرتبة حسب العائد المحتمل مقارنة بالمخاطرة، وعند التعادل تظهر الأحدث أولاً.</p></section>'+
       ''+
       '</div>';
     const loadDailyVip=async()=>{
