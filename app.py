@@ -2339,8 +2339,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     else:
         items, ai_review_completed, ai_message = _generate_pro_market_signals(market, interval, market_rows, limit)
     skipped = 0
-    # Report the actual breadth of the scan, matching the wider universe
-    # analyzed by _generate_pro_market_signals (up to 60 symbols for a 20-signal request).
+    # Report the actual bounded rotating batch; the full universe is visited over successive scans.
     scanned_count = min(len(market_rows), min(12, max(8, limit)))
     source_buy_count = sum(1 for item in items if item.get("direction") == "شراء")
     source_sell_count = sum(1 for item in items if item.get("direction") == "بيع")
@@ -2375,6 +2374,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         and now < int(item.get("expires_at") or (int(item.get("created_at") or now) + timeframe_lifetime))
     ]
 
+    qualified_before_direction = len(items)
+
     # Link every displayed signal to this market's overall direction.
     # Bullish market => buys only; bearish market => sells only; neutral/unavailable => no signals.
     direction_snapshot = market_direction(market)
@@ -2397,6 +2398,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         items = [item for item in items if item.get("direction") == "شراء"]
     elif direction_code == "BEARISH":
         items = [item for item in items if item.get("direction") == "بيع"]
+
+    qualified_after_direction = len(items)
 
     # Market-wide direction is context; the engine requires candle-level multi-factor confluence.
 
@@ -2431,6 +2434,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "market_trend": market_trend,
         "items": items[:limit], "count": len(items[:limit]),
         "scanned": scanned_count,
+        "universe_size": len(market_rows) if isinstance(market_rows, list) else 0,
+        "candidate_batch_size": min(12, max(8, limit)),
+        "qualified_before_market_direction": qualified_before_direction,
+        "qualified_after_market_direction": qualified_after_direction,
         "sources_checked": 0,
         "sources_failed": 0,
         "skipped_invalid_levels": skipped,
