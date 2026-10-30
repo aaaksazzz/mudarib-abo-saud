@@ -17,24 +17,23 @@ client.cookies.set(
 )
 
 
-def test_news_and_tasi_analysis_pages_require_market_pin():
+def test_news_and_tasi_analysis_pages_are_public():
     anonymous = TestClient(app, base_url="https://testserver")
     for path in ("/news", "/tasi-analysis"):
         response = anonymous.get(path)
         assert response.status_code == 200
-        assert "أدخل الرقم السري للمتابعة" in response.text
+        assert "أدخل الرقم السري للمتابعة" not in response.text
     api_response = anonymous.get("/api/news?market=spot")
-    assert api_response.status_code == 401
+    assert api_response.status_code == 200
 
 
-def test_market_pin_session_lasts_seven_days():
+
+def test_legacy_market_pin_route_is_disabled():
     anonymous = TestClient(app, base_url="https://testserver")
-    response = anonymous.post("/market-unlock", json={"pin": os.getenv("MARKET_ACCESS_PASSWORD") or os.getenv("SITE_PASSWORD", "2341")})
-    assert response.status_code == 200
-    cookie = response.headers.get("set-cookie", "")
-    assert "max-age=604800" in cookie.lower()
-    assert "httponly" in cookie.lower()
-    assert "secure" in cookie.lower()
+    response = anonymous.post("/market-unlock", json={"pin": "2341"})
+    assert response.status_code == 404
+    assert anonymous.get("/markets/spot").status_code == 200
+
 
 
 def test_health_endpoint_is_available():
@@ -123,9 +122,9 @@ def test_results_endpoint_handles_empty_and_malformed_pnl(tmp_path, monkeypatch)
     path = tmp_path / "results.json"
     monkeypatch.setattr(app_module, "RESULTS_PATH", path)
     write_json_file(path, [
-        {"symbol": "AAA", "result": "TP1", "pnl_pct": "2.5"},
-        {"symbol": "BBB", "result": "SL", "pnl_pct": "bad"},
-        {"symbol": "CCC", "result": "مفتوحة", "pnl_pct": None},
+        {"symbol": "AAA", "result": "TP1", "pnl_pct": "2.5", "source": "pro_confluence_v1"},
+        {"symbol": "BBB", "result": "SL", "pnl_pct": "bad", "source": "pro_confluence_v1"},
+        {"symbol": "CCC", "result": "مفتوحة", "pnl_pct": None, "source": "pro_confluence_v1"},
     ])
     response = client.get("/api/results?limit=20")
     assert response.status_code == 200
@@ -450,7 +449,7 @@ def test_home_refresh_does_not_rebuild_dashboard_twice():
     root = Path(__file__).resolve().parents[1] / "static"
     html = (root / "index.html").read_text(encoding="utf-8")
     js = (root / "app.js").read_text(encoding="utf-8")
-    assert '/static/app.css?v=20261021.1' in html
+    assert '/static/app.css?v=20261025.premium-trade-cards1' in html
     assert '/static/app.js?v=20261030.dailyvip1' in html
     assert 'getJSON("/api/status")' in js
     home_start = js.index("function renderHome()")
