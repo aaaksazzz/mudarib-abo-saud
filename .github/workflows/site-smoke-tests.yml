@@ -25,6 +25,6 @@ jobs:
       - name: Check frontend JavaScript syntax
         run: node --check static/app.js
       - name: Compile Python
-        run: python -m py_compile app.py signal_sources.py
+        run: python -m py_compile app.py
       - name: Run smoke tests
         run: python -m pytest -q

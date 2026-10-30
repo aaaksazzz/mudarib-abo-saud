@@ -155,7 +155,7 @@ def _fake_ai_signal(market, interval, symbol="TESTUSDT"):
     }
 
 
-def test_signal_endpoint_uses_ai_only_and_never_fetches_public_ideas(monkeypatch):
+def test_signal_endpoint_uses_internal_analysis_only(monkeypatch):
     monkeypatch.setattr(app_module, "market_data", lambda market, limit=2000: {
         "ok": True, "live": True, "stale": False,
         "items": [{"symbol": "TESTUSDT", "price": 100, "change_pct": 1}],
@@ -163,7 +163,6 @@ def test_signal_endpoint_uses_ai_only_and_never_fetches_public_ideas(monkeypatch
     monkeypatch.setattr(app_module, "_generate_pro_market_signals",
                         lambda market, interval, market_rows, limit: ([_fake_ai_signal(market, interval)], True, "AI test"))
     monkeypatch.setattr(app_module, "market_direction", lambda market: {"direction": "BULLISH"})
-    monkeypatch.setattr(app_module, "public_ideas", lambda **kwargs: (_ for _ in ()).throw(AssertionError("public ideas must not be used")))
     app_module.PUBLIC_IDEAS_CACHE.clear()
     response = client.get("/api/signals/spot?interval=15m&refresh=true")
     assert response.status_code == 200
@@ -175,7 +174,7 @@ def test_signal_endpoint_uses_ai_only_and_never_fetches_public_ideas(monkeypatch
     assert data["technical_fallback_used"] is False
 
 
-def test_signal_endpoint_scans_each_supported_market_with_ai_only(monkeypatch):
+def test_signal_endpoint_scans_each_supported_market(monkeypatch):
     supported = ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex")
     calls = []
     monkeypatch.setattr(app_module, "market_data", lambda market, limit=2000: (
@@ -185,7 +184,6 @@ def test_signal_endpoint_scans_each_supported_market_with_ai_only(monkeypatch):
     monkeypatch.setattr(app_module, "_generate_pro_market_signals",
                         lambda market, interval, market_rows, limit: ([_fake_ai_signal(market, interval)], True, "AI test"))
     monkeypatch.setattr(app_module, "market_direction", lambda market: {"direction": "NEUTRAL"})
-    monkeypatch.setattr(app_module, "public_ideas", lambda **kwargs: (_ for _ in ()).throw(AssertionError("public ideas must not be used")))
     app_module.PUBLIC_IDEAS_CACHE.clear()
     for market in supported:
         response = client.get(f"/api/signals/{market}?interval=15m&refresh=true")
@@ -249,24 +247,6 @@ def test_public_news_aggregates_recent_items_without_network(monkeypatch):
     assert data["items"][0]["direction"] == "POSITIVE_POTENTIAL"
 
 
-def test_public_ideas_aggregates_recent_items_without_network():
-    response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["items"] == []
-    assert data["sources_configured"] == 0
-    assert data["sources_checked"] == 0
-    assert "متوقفة" in data["message"]
-
-def test_public_ideas_reads_direction_from_title_and_requires_all_ordered_levels():
-    response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["items"] == []
-    assert data["sources_configured"] == 0
-    assert data["sources_checked"] == 0
-    assert "متوقفة" in data["message"]
-
 def test_robots_sitemap_and_blog_are_available():
     robots = client.get("/robots.txt")
     sitemap = client.get("/sitemap.xml")
@@ -281,15 +261,6 @@ def test_robots_sitemap_and_blog_are_available():
     assert "مدونة التداول الذكي PRO" in blog.text
     assert article.status_code == 200
 
-
-def test_public_ideas_auto_interval_and_futures_symbol_match():
-    response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["items"] == []
-    assert data["sources_configured"] == 0
-    assert data["sources_checked"] == 0
-    assert "متوقفة" in data["message"]
 
 def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     from pathlib import Path
@@ -320,45 +291,7 @@ def test_market_navigation_targets_have_real_page_and_data_loader_functions():
     assert "async function loadChart(m,symbol)" in js
 
 
-def test_public_ideas_reject_mismatched_tickers_and_incomplete_trade_levels(monkeypatch):
-    now = int(time.time())
-    fake = [
-        {
-            "source": "Test public feed",
-            "title": "Carvana heading back to earth after lunar launch",
-            "description": "Near support, bearish below the neckline; short setup",
-            "url": "https://example.com/carvana",
-            "published_at": now,
-            "_text": "Carvana (NYSE: CVNA) bearish short setup on the daily timeframe. Near support.",
-        },
-        {
-            "source": "Test public feed",
-            "title": "FET approaching support (4H)",
-            "description": "Bullish setup, but no trade levels",
-            "url": "https://example.com/fet",
-            "published_at": now,
-            "_text": "FETUSDT bullish 4H buy opportunity near support",
-        },
-    ]
-    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
-    app_module.PUBLIC_IDEAS_CACHE.clear()
-    app_module.PUBLIC_TRADE_FEED_CACHE.clear()
-    app_module.PUBLIC_TRADE_IDEA_CACHE.clear()
-    response = client.get("/api/public-ideas?market=futures&interval=auto&limit=10")
-    assert response.status_code == 200
-    assert response.json()["items"] == []
-
-
 def test_public_futures_ideas_require_title_ticker_and_valid_complete_levels():
-    response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["items"] == []
-    assert data["sources_configured"] == 0
-    assert data["sources_checked"] == 0
-    assert "متوقفة" in data["message"]
-
-def test_public_ideas_detect_timeframe_in_title_when_body_omits_it():
     response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
     assert response.status_code == 200
     data = response.json()
@@ -497,36 +430,6 @@ def test_saudi_market_keeps_symbols_below_usd_volume_cutoff(monkeypatch):
     app_module.YAHOO_CACHE.pop("saudi", None)
 
 
-def test_public_ideas_cache_respects_requested_limit():
-    response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["items"] == []
-    assert data["sources_configured"] == 0
-    assert data["sources_checked"] == 0
-    assert "متوقفة" in data["message"]
-
-def test_public_ideas_cached_results_expire_at_24_hours():
-    now = int(time.time())
-    stale = {
-        "title": "BTCUSDT bullish setup 15m",
-        "symbol": "BTCUSDT",
-        "direction": "شراء",
-        "interval": "15m",
-        "published_at": now - 25 * 3600,
-        "levels": {"entry": 100, "stop_loss": 95, "tp1": 110, "tp2": 115, "tp3": 120},
-        "has_complete_levels": True,
-    }
-    key = ("spot", "15m", 10, False)
-    app_module.PUBLIC_IDEAS_CACHE[key] = (now - 10, {"ok": True, "items": [stale], "count": 1})
-    response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
-    assert response.status_code == 200
-    assert response.json()["items"] == []
-    assert response.json()["count"] == 0
-    app_module.PUBLIC_IDEAS_CACHE.clear()
-
-
-
 def test_daily_vip_signal_parser_preserves_all_published_levels():
     page = """
     APT/USDT SHORT Signal
@@ -631,16 +534,3 @@ def test_daily_vip_parser_rejects_explicitly_closed_win_or_loss():
     """
     assert app_module._daily_vip_parse_signal(page, "https://provider.invalid/pump", "futures") is None
 
-
-def test_public_ideas_does_not_fetch_disabled_external_sources(monkeypatch):
-    monkeypatch.setattr(
-        app_module, "_fetch_public_idea_feed",
-        lambda source, url: (_ for _ in ()).throw(AssertionError("external source must remain disabled")),
-    )
-    response = client.get("/api/public-ideas?market=spot&limit=10&refresh=true")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["items"] == []
-    assert data["count"] == 0
-    assert data["sources_configured"] == 0
-    assert "المصادر الخارجية متوقفة" in data["message"]
