@@ -2434,7 +2434,7 @@ def _daily_vip_customer_payload(data):
 
 @app.get("/api/trade-feed")
 def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=1, le=20), refresh: bool = Query(False)):
-    """Return normalized, validated trade setups without exposing provider identity to customers."""
+    """Fetch, validate and diagnose public provider trade setups without fabricating levels."""
     market = (market or "").strip().lower()
     if market == "forex":
         return fetch_forex_signals(limit=limit, refresh=refresh)
@@ -2449,76 +2449,97 @@ def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=
         data = dict(cached[1])
         data["cached"] = True
         return _daily_vip_customer_payload(data)
+
     try:
         index_html = _daily_vip_fetch(DAILY_VIP_SIGNALS_URL)
-        # Extract actual anchor destinations only. A broad scan of the full HTML
-        # also matched internal routes such as /signals/page-<hash>, which are
-        # listing/router pages and return 404 rather than signal details.
         listing_text = html_lib.unescape(index_html or "")
-        listing_text = listing_text.replace(r"\/", "/").replace(r"\u002F", "/")
+        listing_text = listing_text.replace(r"\\/", "/").replace(r"\\u002F", "/")
         href_values = re.findall(
-            r"""(?:href|data-href)\s*=\s*["']([^"'<>]+)["']""",
+            r"""(?:href|data-href)\\s*=\\s*["']([^"'<>]+)["']""",
             listing_text, re.I,
         )
-        # Also accept concrete signal slugs embedded in the page-state JSON.
-        # Synthetic /signals/page-* router paths are still rejected below.
         href_values.extend(re.findall(
-            r"""(?:https?://(?:www\.)?dailyvipsignals\.com)?(/signals/[a-z0-9-]+)""",
+            r"""(?:https?://(?:www\\.)?dailyvipsignals\\.com)?(/signals/[a-z0-9-]+)""",
             listing_text, re.I,
         ))
         paths = []
         for candidate in href_values:
-            candidate = candidate.strip().replace(r"\/", "/")
+            candidate = candidate.strip().replace(r"\\/", "/")
             parsed_path = re.match(
-                r"""^(?:https?://(?:www\.)?dailyvipsignals\.com)?(/signals/[a-z0-9-]+)(?:[?#].*)?$""",
+                r"""^(?:https?://(?:www\\.)?dailyvipsignals\\.com)?(/signals/[a-z0-9-]+)(?:[?#].*)?$""",
                 candidate, re.I,
             )
             if not parsed_path:
                 continue
             path = parsed_path.group(1)
-            # Ignore synthetic page/router identifiers; only request signal slugs.
             if path.lower().startswith("/signals/page-") or path in paths:
                 continue
             paths.append(path)
-        # The listing is ordered with current setups first; cap detail requests to protect the small host and provider.\n        paths = paths[:12]
+        # Keep upstream traffic bounded for the 512 MB production service.
+        paths = paths[:12]
         urls = ["https://dailyvipsignals.com" + path for path in paths]
-        items = []
-        failures = 0
+        items, fetch_failures, pages_read, parse_rejections = [], 0, 0, 0
+        http_errors = {}
         with ThreadPoolExecutor(max_workers=2) as pool:
             futures = {pool.submit(_daily_vip_fetch, url): url for url in urls}
             for future in as_completed(futures):
                 url = futures[future]
                 try:
-                    row = _daily_vip_parse_signal(future.result(), url, market)
+                    page_html = future.result()
+                    pages_read += 1
+                    row = _daily_vip_parse_signal(page_html, url, market)
                     if row:
                         items.append(row)
+                    else:
+                        parse_rejections += 1
                 except urllib.error.HTTPError as exc:
-                    failures += 1
-                    print(f"Daily VIP signal fetch failed: HTTP {exc.code} url={url}")
+                    fetch_failures += 1
+                    http_errors[str(exc.code)] = http_errors.get(str(exc.code), 0) + 1
+                    print(f"Daily VIP detail fetch HTTP {exc.code}: {url}")
                 except Exception as exc:
-                    failures += 1
-                    print(f"Daily VIP signal fetch failed: {type(exc).__name__} url={url}")
-        items.sort(key=lambda row: row.get("published_at", 0), reverse=True)
+                    fetch_failures += 1
+                    print(f"Daily VIP detail fetch {type(exc).__name__}: {url}")
+
+        # De-duplicate provider pages that resolve to the same actual setup.
+        unique = {}
+        for row in items:
+            key = (row.get("symbol"), row.get("original_direction"),
+                   row.get("entry_min"), row.get("entry_max"), row.get("stop_loss"))
+            unique[key] = row
+        items = sorted(unique.values(), key=lambda row: row.get("published_at", 0), reverse=True)
+
+        if items:
+            message = "تم استخراج صفقات مكتملة ونشطة من صفحات المصدر. حالة النتائج والأداء غير مدققة مستقلًا."
+        elif not paths:
+            message = "تم الوصول إلى المصدر، لكن صفحة القائمة لم تُرجع روابط صفقات قابلة للقراءة."
+        elif fetch_failures and pages_read == 0:
+            message = "ظهرت روابط توصيات، لكن تعذّر تحميل صفحات تفاصيلها من المصدر. راجع حالة الاتصال أو الحظر المؤقت."
+        elif fetch_failures:
+            message = "تم تحميل بعض صفحات التفاصيل، وتعذّر تحميل صفحات أخرى؛ ولم تُستخرج صفقة مكتملة من الصفحات المقروءة."
+        else:
+            message = "تم تحميل صفحات التفاصيل بنجاح، لكن لم تجتز أي صفحة شروط الصفقة النشطة واكتمال الدخول والوقف وثلاثة أهداف."
+
         data = {
-            "ok": True, "market": market, "items": items[:limit], "count": min(len(items), limit),
+            "ok": True, "market": market, "items": items[:limit],
+            "count": min(len(items), limit),
             "source": "Daily VIP Signals", "source_url": DAILY_VIP_SIGNALS_URL,
-            "sources_checked": len(urls), "sources_failed": failures,
-            "message": "تم جلب التوصيات النشطة المكتملة المنشورة علنًا. تم استبعاد التوصيات الأقدم من 24 ساعة أو التي ينقصها أي مستوى."
-            if items else (
-                "لم يعثر الموقع على روابط توصيات في صفحة المصدر؛ تعذر قراءة قائمة الإشارات."
-                if not paths else
-                "عثر الموقع على صفحات توصيات لكنه لم يستطع استخراج صفقة مكتملة ونشطة من تفاصيلها."
-            ),
+            "sources_checked": len(urls), "sources_failed": fetch_failures,
+            "detail_pages_read": pages_read, "signals_rejected": parse_rejections,
+            "http_errors": http_errors, "message": message,
         }
+        # Cache only successful reads/diagnostics; refresh=true bypasses this cache.
         DAILY_VIP_CACHE[market] = (now, data)
         return _daily_vip_customer_payload(data)
     except Exception as exc:
-        print(f"Daily VIP source unavailable: {type(exc).__name__}: {exc}")
+        print(f"Daily VIP listing unavailable: {type(exc).__name__}: {exc}")
         if cached:
             return _daily_vip_customer_payload({**cached[1], "cached": True, "stale": True,
-                    "message": "تعذر تحديث الصفقات؛ هذه آخر بيانات محفوظة مؤقتًا."})
-        return {"ok": False, "market": market, "items": [], "count": 0,
-                "message": "تعذر تحديث الصفقات حاليًا؛ لم نعرض صفقات تقديرية."}
+                    "message": "تعذر تحديث قائمة المصدر؛ عُرضت آخر بيانات محفوظة مؤقتًا."})
+        return _daily_vip_customer_payload({
+            "ok": False, "market": market, "items": [], "count": 0,
+            "sources_checked": 0, "sources_failed": 1,
+            "message": "تعذر الاتصال بمصدر التوصيات حاليًا؛ لم نعرض صفقات تقديرية."
+        })
 
 
 @app.get("/api/public-ideas")
