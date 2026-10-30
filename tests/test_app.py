@@ -16,9 +16,17 @@ def test_health_and_home():
     assert health.json["database"] == "ok"
     assert set(health.json["live_markets"]) == {"spot", "futures", "alpha", "forex"}
 
-def test_timeframe_validation():
+def test_timeframe_is_fixed_to_15m(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "fixed-timeframe.sqlite3")
+    module.CACHE.pop("spot:universe", None)
+    monkeypatch.setattr(module, "market_tickers", lambda kind: [
+        {"symbol": "AAAUSDT", "price": 2.0, "volume": 2_000_000, "change24h": 1.0}
+    ])
+    monkeypatch.setattr(module, "analyse_candidate", lambda *args: None)
     response = client.get("/api/market/spot?timeframe=5m")
-    assert response.status_code == 400
+    assert response.status_code == 200
+    assert response.json["timeframe"] == "15m"
+    assert module.SCAN_INTERVAL == "15m"
 
 def test_unconfigured_markets_are_not_fabricated():
     response = client.get("/api/market/saudi")
@@ -80,6 +88,7 @@ def test_cache_reuses_successful_value():
 
 def test_market_response_includes_breadth_and_real_movers(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "market-test.sqlite3")
+    module.CACHE.pop("spot:universe", None)
     rows = [
         {"symbol":"AAAUSDT","price":2.0,"volume":3_000_000,"change24h":8.0},
         {"symbol":"BBBUSDT","price":1.0,"volume":2_000_000,"change24h":-4.0},
