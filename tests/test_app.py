@@ -254,14 +254,14 @@ def test_public_ideas_aggregates_recent_items_without_network():
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
-    assert "تم إيقاف التوصيات الخارجية" in data["message"]
+    assert data["sources_configured"] > 0
 
 def test_public_ideas_reads_direction_from_title_and_requires_all_ordered_levels():
     response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
-    assert "تم إيقاف التوصيات الخارجية" in data["message"]
+    assert data["sources_configured"] > 0
 
 def test_robots_sitemap_and_blog_are_available():
     robots = client.get("/robots.txt")
@@ -283,7 +283,7 @@ def test_public_ideas_auto_interval_and_futures_symbol_match():
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
-    assert "تم إيقاف التوصيات الخارجية" in data["message"]
+    assert data["sources_configured"] > 0
 
 def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     from pathlib import Path
@@ -335,6 +335,7 @@ def test_public_ideas_reject_mismatched_tickers_and_incomplete_trade_levels(monk
     monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
     app_module.PUBLIC_IDEAS_CACHE.clear()
     app_module.PUBLIC_TRADE_FEED_CACHE.clear()
+    app_module.PUBLIC_TRADE_IDEA_CACHE.clear()
     response = client.get("/api/public-ideas?market=futures&interval=auto&limit=10")
     assert response.status_code == 200
     assert response.json()["items"] == []
@@ -345,14 +346,14 @@ def test_public_futures_ideas_require_title_ticker_and_valid_complete_levels():
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
-    assert "تم إيقاف التوصيات الخارجية" in data["message"]
+    assert data["sources_configured"] > 0
 
 def test_public_ideas_detect_timeframe_in_title_when_body_omits_it():
     response = client.get("/api/public-ideas?market=spot&interval=15m&limit=10")
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
-    assert "تم إيقاف التوصيات الخارجية" in data["message"]
+    assert data["sources_configured"] > 0
 
 def test_public_idea_levels_parse_html_labels_and_numbered_target_variants():
     levels = app_module._public_idea_levels(
@@ -489,7 +490,7 @@ def test_public_ideas_cache_respects_requested_limit():
     assert response.status_code == 200
     data = response.json()
     assert data["items"] == []
-    assert "تم إيقاف التوصيات الخارجية" in data["message"]
+    assert data["sources_configured"] > 0
 
 def test_public_ideas_cached_results_expire_at_24_hours():
     now = int(time.time())
