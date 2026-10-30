@@ -3529,27 +3529,26 @@ def _futures_pro_number_values(text):
 
 
 def _futures_pro_parse_post(source, post_html):
-    """Parse common public Telegram signal formats without fabricating missing levels."""
+    """Parse a recent Telegram post into a validated trade without inventing prices."""
     post_match = re.search(r'\bdata-post=["\']([^"\']+)["\']', post_html, re.I)
     if not post_match:
-
+        return None
     post_id = post_match.group(1)
 
-    # Match the message text div even when Telegram changes the order of class attributes.
     text_match = re.search(
         r'<div\b(?=[^>]*\bclass=["\'][^"\']*\btgme_widget_message_text\b[^"\']*["\'])[^>]*>(.*?)</div>',
         post_html, re.S | re.I
     )
     time_match = re.search(r'<time\b[^>]*\bdatetime=["\']([^"\']+)["\']', post_html, re.I)
     if not text_match or not time_match:
-
+        return None
 
     raw_text = re.sub(r'<br\b[^>]*>', '\n', text_match.group(1), flags=re.I)
     raw_text = re.sub(r'</(?:div|p|li|h[1-6])\s*>', '\n', raw_text, flags=re.I)
     raw_text = re.sub(r'<[^>]+>', ' ', raw_text)
     body = html_lib.unescape(raw_text).replace('\xa0', ' ')
     body = re.sub(r'[ \t\r]+', ' ', body)
-    body = re.sub(r'\n\s*\n+', '\n', body).strip()
+    body = re.sub(r'\n[ \t]*\n+', '\n', body).strip()
     normalized = body.upper()
 
     try:
@@ -3558,12 +3557,12 @@ def _futures_pro_parse_post(source, post_html):
             published = published.replace(tzinfo=timezone.utc)
         published_ts = int(published.timestamp())
     except (TypeError, ValueError, OverflowError):
+        return None
 
     now = int(time.time())
     if published_ts > now + 300 or published_ts < now - 24 * 60 * 60:
+        return None
 
-
-    # Support BTC/USDT, BTCUSDT, #BTC, $BTC and "BTC LONG" formats.
     symbol_match = re.search(
         r'(?:#|\$)?\b([A-Z0-9]{2,15})\s*[/_-]\s*USDT\b|'
         r'\b([A-Z0-9]{2,15})USDT\b|(?:#|\$)\b([A-Z0-9]{2,15})\b',
@@ -3575,78 +3574,82 @@ def _futures_pro_parse_post(source, post_html):
             normalized, re.I
         )
     if not symbol_match:
+        return None
 
     raw_symbol = next((g for g in symbol_match.groups() if g), '').upper()
     symbol = raw_symbol if raw_symbol.endswith('USDT') else raw_symbol + 'USDT'
     if symbol in {'USDTUSDT', 'USDCUSDT', 'BUSDUSDT', 'TUSDUSDT', 'FDUSDUSDT', 'DAIUSDT'}:
-
+        return None
 
     direction_match = re.search(r'\b(LONG|SHORT|BUY|SELL)\b|شراء|بيع', normalized, re.I)
     if not direction_match:
-
+        return None
     direction_text = (direction_match.group(1) or direction_match.group(0) or '').upper()
     side = 'شراء' if direction_text in {'LONG', 'BUY', 'شراء'} else 'بيع'
 
     number = r'([0-9][0-9,]*(?:\.[0-9]+)?|[0-9]*\.[0-9]+)'
     entry_match = re.search(
-        r'(?:ENTRY(?:\s*(?:PRICE|POINT|ZONE|RANGE|LEVEL|AREA))?|OPEN\s*PRICE|ENTRY\s*AREA|ENTRY\s*ZONE|BUY\s*ZONE|SELL\s*ZONE|'
-        r'BUY\s*PRICE|SELL\s*PRICE|سعر\s*الدخول|سعر\s*الشراء|سعر\s*البيع|منطقة\s*الدخول|الدخول\s*من|شراء\s*من|بيع\s*من|الدخول)\s*[:=@\-]?\s*'
+        r'(?:ENTRY(?:\s*(?:PRICE|POINT|ZONE|RANGE|LEVEL|AREA))?|OPEN\s*PRICE|'
+        r'BUY\s*ZONE|SELL\s*ZONE|BUY\s*PRICE|SELL\s*PRICE|'
+        r'سعر\s*الدخول|سعر\s*الشراء|سعر\s*البيع|منطقة\s*الدخول|الدخول\s*من|'
+        r'شراء\s*من|بيع\s*من|الدخول)\s*[:=@\-]?\s*'
         r'(' + number + r'(?:\s*[-–]\s*' + number + r')?)',
         body, re.I
     )
     if not entry_match:
         entry_match = re.search(r'\b(?:BUY|SELL)\s*[:=@]\s*' + number, body, re.I)
     if not entry_match:
-
+        return None
     entries = _futures_pro_number_values(entry_match.group(1))[:2]
     if not entries:
-
+        return None
 
     stop_match = re.search(
-        r'(?:STOP\s*LOSS|STOP-LOSS|STOPLOSS|STOP\s*TARGET|STOP\s*PRICE|SL\s*PRICE|\bSTOP\b|\bSL\b|وقف\s*الخسارة|وقف\s*الصفقة|الستوب|الوقف)\s*[:=@\-]?\s*'
-        r'(' + number + r')',
+        r'(?:STOP\s*LOSS|STOP-LOSS|STOPLOSS|STOP\s*PRICE|SL\s*PRICE|\bSTOP\b|\bSL\b|'
+        r'وقف\s*الخسارة|وقف\s*الصفقة|الستوب|الوقف)\s*[:=@\-]?\s*' + number,
         body, re.I
     )
     if not stop_match:
-
+        return None
     stops = _futures_pro_number_values(stop_match.group(1))
     if not stops:
+        return None
+    stop = stops[0]
 
-
+    # Parse numbered targets individually, then fall back to a multiline target section.
     target_values = []
-    target_patterns = [
-        r'(?:TAKE\s*PROFIT(?:\s*TARGETS?)?|TAKE-PROFIT(?:\s*TARGETS?)?|PROFIT\s*TARGETS?|TARGETS?|'
-        r'\bTP\s*\d*\b|الهدف(?:\s*\d+)?)\s*[:=@\-]?\s*([^\n;|]+)',
-    ]
-    for pattern in target_patterns:
-        for match in re.finditer(pattern, body, re.I):
-            target_values.extend(_futures_pro_number_values(match.group(1)))
-    # Many Telegram channels put the target heading on its own line and list
-    # targets below it as emoji-prefixed lines. Parse the whole section up to SL,
-    # rather than inspecting only the heading's (usually empty) line.
+    for match in re.finditer(
+        r'(?:\bTP\s*\d*\b|TAKE\s*PROFIT(?:\s*TARGETS?)?|TAKE-PROFIT|'
+        r'PROFIT\s*TARGETS?|TARGETS?|الهدف(?:\s*\d+)?)\s*[:=@\-]?\s*'
+        r'(' + number + r')',
+        body, re.I
+    ):
+        target_values.extend(_futures_pro_number_values(match.group(1)))
+
     if not target_values:
-        targets_section = re.search(
+        section = re.search(
             r'(?:TAKE\s*PROFIT(?:\s*TARGETS?)?|TAKE-PROFIT(?:\s*TARGETS?)?|'
             r'PROFIT\s*TARGETS?|TARGETS?|الأهداف|الاهداف)\s*[:\-]?\s*(.*?)'
-            r'(?=(?:STOP\s*LOSS|STOP-LOSS|STOPLOSS|SL\s*PRICE|\bSL\b|'
-            r'وقف\s*الخسارة|وقف\s*الصفقة|الستوب|الوقف)\s*[:=@\-]?\s*' + number + r'|$)',
+            r'(?=(?:STOP\s*LOSS|STOP-LOSS|STOPLOSS|\bSL\b|وقف\s*الخسارة|'
+            r'وقف\s*الصفقة|الستوب|الوقف)\s*[:=@\-]?\s*' + number + r'|$)',
             body, re.I | re.S
         )
-        if targets_section:
-            target_values.extend(_futures_pro_number_values(targets_section.group(1)))
+        if section:
+            target_values.extend(_futures_pro_number_values(section.group(1)))
+
     targets = []
     for value in target_values:
         if value not in targets:
             targets.append(value)
-    if not targets:
-
-
-    entry, stop = entries[0], stops[0]
     targets = targets[:3]
-    if side == 'شراء' and (stop >= entry or targets[0] <= entry):
+    if not targets:
+        return None
 
-    if side == 'بيع' and (stop <= entry or targets[0] >= entry):
-
+    entry = entries[0]
+    if side == 'شراء' and (stop >= entry or any(t <= entry for t in targets)):
+        return None
+    if side == 'بيع' and (stop <= entry or any(t >= entry for t in targets)):
+        return None
 
     return {
         'id': post_id,
@@ -3661,7 +3664,7 @@ def _futures_pro_parse_post(source, post_html):
         'stop_loss': stop,
         'targets': targets,
         'raw_text': body[:1200],
-        'status': 'إشارة منشورة حديثًا — لم تُتحقق نتيجة الصفقة بعد',
+        'status': 'إشارة منشورة حديثًا — بانتظار متابعة السعر',
     }
 
 def _futures_pro_fetch_source(source):
