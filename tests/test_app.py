@@ -451,7 +451,7 @@ def test_home_refresh_does_not_rebuild_dashboard_twice():
     html = (root / "index.html").read_text(encoding="utf-8")
     js = (root / "app.js").read_text(encoding="utf-8")
     assert '/static/app.css?v=20261030.trades-only2' in html
-    assert '/static/app.js?v=20261030.trades-only3' in html
+    assert '/static/app.js?v=20261030.trades-only4' in html
     assert 'getJSON("/api/status")' in js
     home_start = js.index("function renderHome()")
     home_end = js.index("function renderMarketPage(", home_start)
@@ -592,8 +592,33 @@ def test_daily_vip_endpoint_filters_shorts_from_spot_and_returns_futures(monkeyp
     futures = client.get("/api/daily-vip/signals?market=futures&refresh=true")
     assert futures.status_code == 200
     assert futures.json()["count"] == 1
-    assert futures.json()["items"][0]["source"] == "Daily VIP Signals"
+    assert "source" not in futures.json()
+    assert "source_url" not in futures.json()
+    assert "source" not in futures.json()["items"][0]
+    assert "source_url" not in futures.json()["items"][0]
+    assert "Daily VIP" not in str(futures.json())
     spot = client.get("/api/daily-vip/signals?market=spot&refresh=true")
     assert spot.status_code == 200
     assert spot.json()["items"] == []
     app_module.DAILY_VIP_CACHE.clear()
+
+
+def test_customer_trade_payload_hides_provider_identity_and_external_urls():
+    payload = app_module._daily_vip_customer_payload({
+        "ok": True,
+        "source": "Private Provider",
+        "source_url": "https://provider.example/signals",
+        "message": "Daily VIP data",
+        "items": [{
+            "symbol": "TESTUSDT",
+            "source": "Private Provider",
+            "source_url": "https://provider.example/trade/1",
+            "levels": {"entry": 100, "stop_loss": 95, "tp1": 110},
+        }],
+    })
+    assert "source" not in payload and "source_url" not in payload
+    assert "Private Provider" not in str(payload)
+    assert "provider.example" not in str(payload)
+    assert "source" not in payload["items"][0]
+    assert "source_url" not in payload["items"][0]
+    assert "TESTUSDT" in str(payload)
