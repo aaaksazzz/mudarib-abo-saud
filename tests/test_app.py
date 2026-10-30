@@ -296,7 +296,7 @@ def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     assert '"/api/trade-feed?market="+encodeURIComponent(m.api)+"&limit=20"' in js
     assert '"&interval=1d"' in js
     assert 'id="surgeIntervals"' not in js and 'data-interval="' not in js
-    assert 'x.interval' not in js and 'فريم' not in js
+    assert 'x.interval' not in js and 'x.timeframe' in js and 'الفريم:' in js
     assert 'async function loadChart(m,symbol)' in js
 
 
@@ -450,8 +450,8 @@ def test_home_refresh_does_not_rebuild_dashboard_twice():
     root = Path(__file__).resolve().parents[1] / "static"
     html = (root / "index.html").read_text(encoding="utf-8")
     js = (root / "app.js").read_text(encoding="utf-8")
-    assert '/static/app.css?v=20261030.trades-only2' in html
-    assert '/static/app.js?v=20261030.trades-only4' in html
+    assert '/static/app.css?v=20261030.bottomnav1' in html
+    assert '/static/app.js?v=20261030.bottomnav1' in html
     assert 'getJSON("/api/status")' in js
     home_start = js.index("function renderHome()")
     home_end = js.index("function renderMarketPage(", home_start)
