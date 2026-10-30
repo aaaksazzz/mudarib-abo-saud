@@ -2500,13 +2500,7 @@ def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=
                     fetch_failures += 1
                     print(f"Daily VIP detail fetch {type(exc).__name__}: {url}")
 
-        # De-duplicate provider pages that resolve to the same actual setup.
-        unique = {}
-        for row in items:
-            key = (row.get("symbol"), row.get("original_direction"),
-                   row.get("entry_min"), row.get("entry_max"), row.get("stop_loss"))
-            unique[key] = row
-        items = sorted(unique.values(), key=lambda row: row.get("published_at", 0), reverse=True)
+        items = sorted(items, key=lambda row: row.get("published_at", 0), reverse=True)
 
         if items:
             message = "تم استخراج صفقات مكتملة ونشطة من صفحات المصدر. حالة النتائج والأداء غير مدققة مستقلًا."
