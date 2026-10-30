@@ -240,4 +240,4 @@ def generate_signals(market, interval, market_rows, limit, candle_loader):
         else item.get("change_15m_pct", 0)
     ))
     return results[:limit], True, ("تم اعتماد توافق 4 ساعات واليومي، والترتيب حسب تغير 15 دقيقة."
-                                   if results else "لا توجد أصول تحقق توافق 4 ساعات واليومي حاليًا.")
+                                   if results else "لا توجد فرصة تحقق توافق 4 ساعات واليومي حاليًا.")
