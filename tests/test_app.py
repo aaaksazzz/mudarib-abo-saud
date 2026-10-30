@@ -218,15 +218,17 @@ def test_signal_endpoint_accepts_daily_weekly_and_monthly_frames(monkeypatch):
     monkeypatch.setattr(app_module, "market_data", lambda market, limit=2000: {
         "ok": True, "live": True, "stale": False, "items": []
     })
+    requested = []
     monkeypatch.setattr(app_module, "_generate_pro_market_signals",
-                        lambda market, interval, market_rows, limit: ([], True, "لا توجد فرصة"))
+                        lambda market, interval, market_rows, limit: (requested.append(interval) or [], True, "لا توجد فرصة"))
     monkeypatch.setattr(app_module, "market_direction", lambda market: {"direction": "NEUTRAL"})
     app_module.PUBLIC_IDEAS_CACHE.clear()
-    for interval in ("1d", "1w", "1M"):
+    for interval in ("15m", "1h", "4h", "1d", "1w", "1M"):
         response = client.get(f"/api/signals/spot?interval={interval}&refresh=true")
         assert response.status_code == 200
-        assert response.json()["interval"] == "15m"
+        assert response.json()["interval"] == interval
         assert response.json()["items"] == []
+    assert requested == ["15m", "1h", "4h", "1d", "1w", "1M"]
 
 
 def test_public_news_aggregates_recent_items_without_network(monkeypatch):
@@ -273,11 +275,15 @@ def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     js = (root / "app.js").read_text(encoding="utf-8")
     assert 'href="/markets/spot"' in html and 'href="/markets/futures"' in html
     assert 'const loadMarketSignals=async()=>{' in js
-    assert '"/api/signals/"+encodeURIComponent(m.api)+"?interval=15m&limit=20"' in js
-    assert '"&interval=1d"' in js
-    assert 'id="surgeIntervals"' not in js and 'data-interval="' not in js
-    assert '4 ساعات + يومي · ترتيب 15 دقيقة' in js
-    assert 'id="surgeIntervals"' not in js and 'data-interval="' not in js
+    assert '"/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedMarketInterval)+"&limit=20"' in js
+    assert 'id="marketTimeframes"' in js
+    assert 'data-market-interval="15m"' in js
+    assert 'data-market-interval="1h"' in js
+    assert 'data-market-interval="4h"' in js
+    assert 'data-market-interval="1d"' in js
+    assert 'data-market-interval="1w"' in js
+    assert 'data-market-interval="1M"' in js
+    assert 'اتجاه 4 ساعات + يومي · تنفيذ ' in js
     assert 'marketSignalRefreshTimer=setInterval' in js
     assert 'async function loadChart(m,symbol)' in js
 
