@@ -388,3 +388,20 @@ def test_saudi_market_keeps_symbols_below_usd_volume_cutoff(monkeypatch):
     assert {item["symbol"] for item in response.json()["items"]} == {"2222.SR", "1120.SR"}
     app_module.YAHOO_CACHE.pop("saudi", None)
 
+
+
+
+def test_responsive_and_browser_compatibility_assets_are_present():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "static"
+    html = (root / "index.html").read_text(encoding="utf-8")
+    css = (root / "app.css").read_text(encoding="utf-8")
+    assert 'name="viewport"' in html
+    assert "width=device-width" in html
+    assert "/static/app.css?v=20261030.compat1" in html
+    assert "@media (min-width:761px) and (max-width:1024px)" in css
+    assert "@media (max-width:480px)" in css
+    assert "-webkit-overflow-scrolling:touch" in css
+    assert "env(safe-area-inset-bottom)" in css
+    assert "overflow-wrap:anywhere" in css
