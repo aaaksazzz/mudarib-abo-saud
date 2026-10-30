@@ -118,7 +118,7 @@ def test_large_market_scans_rotate_through_the_universe(monkeypatch):
         {"symbol": f"COIN{i}USDT", "price": 1.0, "quote_volume": 1_000_000 - i}
         for i in range(24)
     ]
-    engine._SCAN_CURSORS.pop("rotation-test", None)
+    engine._SCAN_CURSORS.pop(("rotation-test", "15m"), None)
     engine.generate_signals("rotation-test", "15m", rows, 20, lambda *args: [])
     first = set(seen)
     seen.clear()
@@ -128,3 +128,30 @@ def test_large_market_scans_rotate_through_the_universe(monkeypatch):
     assert len(second) == 12
     assert first.isdisjoint(second)
     assert first | second == {row["symbol"] for row in rows}
+
+
+
+def test_selected_timeframe_controls_entry_expiry_and_ranking(monkeypatch):
+    candles = []
+    price = 100.0
+    for _ in range(90):
+        open_price = price
+        price += 0.04
+        candles.append({
+            "open": open_price, "high": price + 0.4, "low": open_price - 0.2,
+            "close": price, "volume": 100.0
+        })
+    monkeypatch.setattr(engine, "_frame_analysis", lambda rows: _bullish_frame(rows[-1]))
+    items, completed, _ = engine.generate_signals(
+        "spot", "1h", [{"symbol": "TESTUSDT", "price": price, "quote_volume": 5_000_000}],
+        10, lambda market, symbol, frame: candles
+    )
+    assert completed is True
+    assert items
+    trade = items[0]
+    assert trade["interval"] == "1h"
+    assert trade["valid_for_seconds"] == 3600
+    assert trade["change_interval_pct"] == trade["timeframe_change_pct"]["1h"]
+    assert trade["timeframe_trends"]["4h"] == "صاعد"
+    assert trade["timeframe_trends"]["1d"] == "صاعد"
+    assert trade["levels"]["entry"] > 0
