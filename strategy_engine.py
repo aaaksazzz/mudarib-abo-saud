@@ -62,12 +62,17 @@ def _adx(candles, period=14):
         minus.append(down if down > up and down > 0 else 0.0)
         tr.append(max(cur["high"]-cur["low"], abs(cur["high"]-prev["close"]),
                       abs(cur["low"]-prev["close"])))
-    p = sum(plus[-period:]) / period
-    m = sum(minus[-period:]) / period
-    t = sum(tr[-period:]) / period
-    if t <= 0 or p + m <= 0:
-        return 0.0
-    return abs((p-m)/(p+m))*100.0
+    dx_values = []
+    for end in range(period, len(tr) + 1):
+        p = sum(plus[end-period:end]) / period
+        m = sum(minus[end-period:end]) / period
+        t = sum(tr[end-period:end]) / period
+        if t <= 0 or p + m <= 0:
+            dx_values.append(0.0)
+        else:
+            plus_di, minus_di = 100.0*p/t, 100.0*m/t
+            dx_values.append(abs(plus_di-minus_di)/(plus_di+minus_di)*100.0)
+    return sum(dx_values[-period:]) / min(period, len(dx_values)) if dx_values else 0.0
 
 
 def _valid_candles(raw):
@@ -75,7 +80,8 @@ def _valid_candles(raw):
     for candle in raw[-240:] if isinstance(raw, list) else []:
         try:
             row = {key: float(candle[key]) for key in ("open", "high", "low", "close", "volume")}
-            if (all(math.isfinite(v) and v > 0 for v in row.values())
+            if (all(math.isfinite(row[k]) and row[k] > 0 for k in ("open", "high", "low", "close"))
+                and math.isfinite(row["volume"]) and row["volume"] >= 0
                 and row["high"] >= max(row["open"], row["close"])
                 and row["low"] <= min(row["open"], row["close"])
                 and row["high"] >= row["low"]):
@@ -168,7 +174,6 @@ def _analyze_symbol(market, interval, row, candle_loader):
     elif main["rsi"] <= 48 and main["rsi"] >= 30:
         short_score += 10
     if main["adx"] >= 20:
-        (long_score if main["direction"] == "صاعد" else short_score).__class__
         if main["direction"] == "صاعد":
             long_score += min(10, (main["adx"]-20)*0.5)
         elif main["direction"] == "هابط":
