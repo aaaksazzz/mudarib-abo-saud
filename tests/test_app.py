@@ -647,6 +647,26 @@ def test_daily_vip_parser_accepts_active_trade_after_tp3_hit_without_active_badg
     assert row["age_hours"] == 18
 
 
+def test_daily_vip_parser_rejects_missing_or_expired_publication_age():
+    page = """
+    APT/USDT SHORT Signal
+    SHORT · 3×
+    Active Live — waiting for the first target
+    Entry zone $0.58388 – $0.59374
+    Stop-loss $0.63592
+    Target 1 $0.57704
+    Target 2 $0.56526
+    Target 3 $0.54760
+    """
+    assert app_module._daily_vip_parse_signal(
+        page, "https://provider.invalid/undated", "futures"
+    ) is None
+    expired = page.replace("Active Live", "Active Live · published 25h ago")
+    assert app_module._daily_vip_parse_signal(
+        expired, "https://provider.invalid/expired", "futures"
+    ) is None
+
+
 def test_daily_vip_parser_rejects_explicitly_closed_win_or_loss():
     page = """
     PUMP/USDT LONG Signal
