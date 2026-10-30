@@ -122,9 +122,9 @@ def test_results_endpoint_handles_empty_and_malformed_pnl(tmp_path, monkeypatch)
     path = tmp_path / "results.json"
     monkeypatch.setattr(app_module, "RESULTS_PATH", path)
     write_json_file(path, [
-        {"symbol": "AAA", "result": "TP1", "pnl_pct": "2.5", "source": "pro_confluence_v1"},
-        {"symbol": "BBB", "result": "SL", "pnl_pct": "bad", "source": "pro_confluence_v1"},
-        {"symbol": "CCC", "result": "مفتوحة", "pnl_pct": None, "source": "pro_confluence_v1"},
+        {"symbol": "AAA", "result": "TP1", "pnl_pct": "2.5", "source": "trend_4h_1d_rank_15m"},
+        {"symbol": "BBB", "result": "SL", "pnl_pct": "bad", "source": "trend_4h_1d_rank_15m"},
+        {"symbol": "CCC", "result": "مفتوحة", "pnl_pct": None, "source": "trend_4h_1d_rank_15m"},
     ])
     response = client.get("/api/results?limit=20")
     assert response.status_code == 200
@@ -224,7 +224,7 @@ def test_signal_endpoint_accepts_daily_weekly_and_monthly_frames(monkeypatch):
     for interval in ("1d", "1w", "1M"):
         response = client.get(f"/api/signals/spot?interval={interval}&refresh=true")
         assert response.status_code == 200
-        assert response.json()["interval"] == interval
+        assert response.json()["interval"] == "15m"
         assert response.json()["items"] == []
 
 
@@ -293,10 +293,10 @@ def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     js = (root / "app.js").read_text(encoding="utf-8")
     assert 'href="/markets/spot"' in html and 'href="/markets/futures"' in html
     assert 'const loadDailyVip=async()=>{' in js
-    assert '"/api/trade-feed?market="+encodeURIComponent(m.api)+"&limit=20"' in js
+    assert '"/api/signals/"+encodeURIComponent(m.api)+"?interval=15m&limit=20"' in js
     assert '"&interval=1d"' in js
     assert 'id="surgeIntervals"' not in js and 'data-interval="' not in js
-    assert 'x.interval' not in js and 'x.timeframe' in js and 'الفريم:' in js
+    assert 'x.interval' not in js and '4 ساعات + يومي · ترتيب 15 دقيقة' in js and 'الفريم:' in js
     assert 'async function loadChart(m,symbol)' in js
 
 
