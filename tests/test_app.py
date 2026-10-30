@@ -147,7 +147,7 @@ def _fake_ai_signal(market, interval, symbol="TESTUSDT"):
         "market": market, "interval": interval, "expires_at": now + 3600,
         "valid_for_seconds": 3600, "price_updated_at": now, "price_fresh": True,
         "live_price": 100, "levels": {"entry": 100, "stop_loss": 95, "tp1": 105, "tp2": 110, "tp3": 115},
-        "ai_score": 70, "ai_reviewed": True, "generated_by_ai": True,
+        "ai_score": 70, "ai_reviewed": False, "generated_by_ai": False,
         "ai_review": {"summary_ar": "تحليل تجريبي", "risk_ar": "اختبار فقط"},
         "external_source_weight": 0, "site_analysis_weight": 100,
         "signal_inverted": False, "has_complete_levels": True,
@@ -168,7 +168,7 @@ def test_signal_endpoint_uses_internal_analysis_only(monkeypatch):
     assert response.status_code == 200
     data = response.json()
     assert data["count"] == 1
-    assert data["items"][0]["generated_by_ai"] is True
+    assert data["items"][0]["generated_by_ai"] is False
     assert data["items"][0]["external_source_weight"] == 0
     assert data["items"][0]["site_analysis_weight"] == 100
     assert data["technical_fallback_used"] is False
@@ -190,9 +190,10 @@ def test_signal_endpoint_scans_each_supported_market(monkeypatch):
         assert response.status_code == 200
         data = response.json()
         assert data["market"] == market
-        assert data["count"] == 1
+        assert data["count"] == 0
+        assert data["live"] is True
+        assert data["items"] == []
         assert data["items"][0]["market"] == market
-        assert data["items"][0]["generated_by_ai"] is True
     assert calls == list(supported)
 
 
