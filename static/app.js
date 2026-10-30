@@ -101,7 +101,7 @@
       '<div class="surge-top"><span class="eyebrow">SMART TRADING PRO</span><h1 class="page-title surge-market-title" style="margin:8px 0 0">'+esc(m.name)+'</h1><div class="surge-market-sub">'+esc(m.source.toUpperCase())+' · MARKET</div><p class="muted">'+esc(m.sub)+'</p></div>'+
       '<section class="surge-hero"><div><h2>🧭 اتجاه السوق</h2><p>قراءة عامة من تغيّر أسعار الأصول خلال 24 ساعة، مستقلة عن التوصيات. لا توجد استراتيجية تولّد صفقات في هذه الصفحة.</p></div><span class="surge-chip" id="surgeConnection">● جاري الاتصال</span></section>'+
       '<section class="surge-stats"><div class="surge-stat"><small>الأصول المفحوصة</small><strong id="surgeCount">—</strong></div><div class="surge-stat"><small>صاعد</small><strong id="surgeUp" class="surge-pos">—</strong></div><div class="surge-stat"><small>هابط</small><strong id="surgeDown" class="surge-neg">—</strong></div><div class="surge-stat"><small>اتجاه السوق</small><strong id="surgeDirectionValue">—</strong></div></section>'+
-      '<section class="surge-panel"><div class="surge-item-head"><h2 style="margin:0">📡 التوصيات المنشورة</h2><span class="surge-chip" id="signalSourceLabel">مصدر خارجي</span></div><div id="surgeRecommendations" class="surge-empty">لم يتم ربط موجّه التوصيات الخارجي بالخادم بعد؛ لن نعرض صفقات مولّدة أو أهدافًا تقديرية.</div><p style="margin-top:10px"><a class="surge-link" href="https://dailyvipsignals.com/signals" target="_blank" rel="noopener">عرض توصيات Daily VIP Signals الأصلية ↗</a></p><p class="surge-muted" style="margin-top:8px">هذا المصدر مخصص للعملات الرقمية؛ لا يُستخدم للأسهم أو السوق السعودي أو الفوركس.</p></section>'+
+      '<section class="surge-panel"><div class="surge-item-head"><h2 style="margin:0">📡 صفقات SMART TRADING PRO</h2><span class="surge-chip" id="signalSourceLabel">SMART TRADING PRO</span></div><div id="surgeRecommendations" class="surge-empty">تظهر هنا الصفقات المعتمدة للنشر عبر SMART TRADING PRO. لا نعرض مستويات دخول أو أهدافًا غير موثقة.</div><p class="surge-muted" style="margin-top:10px">قد تتضمن الصفقات المنشورة توصيات أو بيانات من مزودين خارجيين؛ تُحفظ تفاصيل الإسناد في رابط تفاصيل كل توصية، وتُعرض التوصيات المتاحة فقط للأسواق التي يدعمها مصدرها.</p></section>'+
       '<section class="surge-panel"><div class="surge-item-head"><h2 style="margin:0">الأصول وترتيب الحركة</h2><span class="surge-chip" id="surgeUpdated">آخر تحديث —</span></div><div id="surgeStatus" class="surge-muted" style="margin:10px 0">جاري تحميل البيانات…</div><div class="surge-table-wrap"><table class="surge-table"><thead><tr><th>#</th><th>الأصل</th><th>الاتجاه</th><th>التغير</th><th>قيمة التداول</th></tr></thead><tbody id="surgeRows"><tr><td colspan="5" class="surge-empty">جاري الاتصال…</td></tr></tbody></table></div></section>'+
       '<p class="surge-muted">الأسعار قد تتأخر حسب مزود البيانات. لا توجد أوامر تداول آلية، ولا تُعرض توصية غير موثقة.</p></div>';
     let busy=false;
@@ -109,12 +109,12 @@
       const out=$("surgeRecommendations"),label=$("signalSourceLabel");
       if(!out)return;
       if(!["spot","futures","alpha"].includes(m.api)){
-        out.innerHTML='<div class="surge-empty">لا توجد توصيات موثقة من Daily VIP لهذا السوق.</div>';
+        out.innerHTML='<div class="surge-empty">لا توجد صفقات موثقة متاحة لهذا السوق حاليًا.</div>';
         if(label)label.textContent="غير مدعوم";
         return;
       }
       out.innerHTML='<div class="surge-empty">جاري جلب التوصيات المنشورة…</div>';
-      if(label)label.textContent="Daily VIP Signals";
+      if(label)label.textContent="SMART TRADING PRO";
       try{
         const data=await getJSON("/api/daily-vip/signals?market="+encodeURIComponent(m.api)+"&limit=20");
         const rows=Array.isArray(data.items)?data.items:[];
@@ -127,9 +127,9 @@
           const entryText=price(lv.entry_min)+" – "+price(lv.entry_max);
           const targets=targetKeys.map((key,index)=>'<div class="surge-target"><small>TP'+(index+1)+'</small><b dir="ltr">'+price(lv[key])+'</b><small>'+move(lv[key])+'</small></div>').join("");
           const risk=Number.isFinite(stop)&&entry>0?((buy?entry-stop:stop-entry)/entry*100).toFixed(2)+"%":"—";
-          return '<article class="surge-signal-card"><div class="surge-signal-head"><b dir="ltr">'+esc(x.symbol)+'</b><span class="surge-rec-side '+(buy?"buy":"sell")+'">'+(buy?"شراء LONG":"بيع SHORT")+'</span></div><div class="surge-entry"><small>منطقة الدخول المنشورة</small><b dir="ltr">'+entryText+'</b></div><div class="surge-level-grid">'+targets+'<div class="surge-target stop"><small>وقف الخسارة</small><b dir="ltr">'+price(stop)+'</b><small>مخاطرة '+risk+'</small></div></div><div class="surge-signal-foot"><span>'+esc(x.status||"نشطة")+' · '+esc(x.age_hours)+" ساعة"+'</span><a href="'+esc(x.source_url)+'" target="_blank" rel="noopener noreferrer">المصدر الأصلي ↗</a></div></article>';
+          return '<article class="surge-signal-card"><div class="surge-signal-head"><b dir="ltr">'+esc(x.symbol)+'</b><span class="surge-rec-side '+(buy?"buy":"sell")+'">'+(buy?"شراء LONG":"بيع SHORT")+'</span></div><div class="surge-entry"><small>منطقة الدخول المنشورة</small><b dir="ltr">'+entryText+'</b></div><div class="surge-level-grid">'+targets+'<div class="surge-target stop"><small>وقف الخسارة</small><b dir="ltr">'+price(stop)+'</b><small>مخاطرة '+risk+'</small></div></div><div class="surge-signal-foot"><span>'+esc(x.status||"نشطة")+' · '+esc(x.age_hours)+" ساعة"+'</span><a href="'+esc(x.source_url)+'" target="_blank" rel="noopener noreferrer">تفاصيل التوصية والمصدر ↗</a></div></article>';
         }).join("")+'</div>';
-      }catch(err){out.innerHTML='<div class="surge-empty">تعذر جلب توصيات Daily VIP: '+esc(err.message||"خطأ في المصدر")+'</div>'}
+      }catch(err){out.innerHTML='<div class="surge-empty">تعذر تحميل الصفقات: '+esc(err.message||"خطأ في المصدر")+'</div>'}
     };
     const refresh=async()=>{
       if(busy)return;busy=true;
