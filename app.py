@@ -2064,15 +2064,11 @@ def public_results(limit: int = Query(100, ge=1, le=500)):
     rows = read_json_file(RESULTS_PATH, [])
     if not isinstance(rows, list):
         rows = []
-    # Hide and purge historical journal rows from the retired strategy.
-    current_rows = [row for row in rows if isinstance(row, dict) and row.get("source") == "multi_factor_4h_1d_rank_15m_v3"]
-    if current_rows != rows:
-        try:
-            with RESULTS_LOCK:
-                write_json_file(RESULTS_PATH, current_rows)
-        except (OSError, TypeError, ValueError):
-            pass
-    rows = current_rows[:limit]
+    # Preserve completed and still-open records from earlier strategy versions.
+    # Open trades must remain trackable until TP3 or stop-loss is reached.
+    rows = [row for row in rows if isinstance(row, dict)]
+    rows.sort(key=lambda row: int(row.get("created_at") or 0), reverse=True)
+    rows = rows[:limit]
     closed = [row for row in rows if str(row.get("result", "")).upper() in {"TP1", "TP2", "TP3", "SL"}]
     open_count = sum(1 for row in rows if str(row.get("result", "OPEN")).upper() not in {"TP1", "TP2", "TP3", "SL"})
     wins = sum(1 for row in closed if str(row.get("result", "")).upper() in {"TP1", "TP2", "TP3"})
