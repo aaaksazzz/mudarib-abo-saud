@@ -2,26 +2,65 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#080d18"><title>التداول الذكي PRO</title>
-<meta name="description" content="متابعة وتحليل الأسواق ببيانات عامة ومصادر واضحة.">
-<link rel="stylesheet" href="/static/app.css?v=20261031.fix1">
-<script src="/static/app.js?v=20261031.fix1" defer></script>
+<meta name="theme-color" content="#070b12"><title>AS Trading PRO | التداول الذكي</title>
+<meta name="description" content="منصة احترافية لمراقبة الأسواق والاتجاهات والفرص الفنية ببيانات عامة ومصادر واضحة.">
+<link rel="preconnect" href="https://api.binance.com"><link rel="preconnect" href="https://fapi.binance.com">
+<link rel="stylesheet" href="/static/app.css?v=20261031.pro2">
+<script src="/static/app.js?v=20261031.pro2" defer></script>
 </head>
 <body>
-<header class="topbar"><a class="brand" href="/"><span class="logo" aria-label="AS">AS</span><span><b>التداول الذكي <i>PRO</i></b><small>منصة متابعة الأسواق والتحليل الفني</small></span></a><span id="health" class="health">● فحص الاتصال</span></header>
-<main class="wrap">
-<section class="hero"><div><span class="eyebrow">SMART TRADING PRO</span><h1>قراءة واضحة لحركة الأسواق</h1><p>بيانات مباشرة من المصدر المتاح، اتجاه السوق، وفرص فنية مكتملة المستويات. لا نعرض بيانات أو صفقات مختلقة.</p></div><button id="refresh" class="primary">تحديث البيانات ↻</button></section>
-<section id="markets" class="markets" aria-label="اختيار السوق">
-<button data-market="spot" class="active">Binance Spot</button><button data-market="futures">Binance Futures</button>
-<button data-market="alpha" disabled>Alpha · غير مربوط</button><button data-market="saudi" disabled>السعودي · غير مربوط</button>
-<button data-market="us" disabled>الأسهم الأمريكية · غير مربوط</button><button data-market="contracts" disabled>العقود الأمريكية · غير مربوط</button><button data-market="forex" disabled>الفوركس والذهب · غير مربوط</button>
-</section>
-<section class="direction panel"><div><small>اتجاه السوق العام</small><h2 id="direction">—</h2><p id="directionNote">يُحسب من عدد الأصول الصاعدة والهابطة في السوق.</p></div><div class="stats"><div><small>أصول صاعدة</small><b id="up">—</b></div><div><small>أصول هابطة</small><b id="down">—</b></div><div><small>إجمالي الأصول</small><b id="total">—</b></div></div></section>
-<section class="panel"><div class="section-head"><div><small>TIMEFRAME</small><h2>الإطار الزمني</h2></div><div id="timeframes" class="frames"><button data-tf="15m" class="active">15 دقيقة</button><button data-tf="1h">ساعة</button><button data-tf="4h">4 ساعات</button><button data-tf="1d">يومي</button></div></div></section>
-<section class="section-head title-row"><div><small>LIVE SCANNER</small><h2>أفضل الفرص الفنية</h2></div><span id="updated">—</span></section>
-<section id="cards" class="cards"><div class="empty">جارٍ تحميل بيانات السوق...</div></section>
-<section class="panel"><div class="section-head"><div><small>TRADE TRACKER</small><h2>الصفقات المفتوحة</h2></div><span class="muted">تتحدث عند تحديث بيانات السوق</span></div><div id="openTrades" class="trade-list"><div class="empty">لا توجد صفقات محفوظة.</div></div></section>
-<p class="disclaimer">المستويات تحليلية وليست توصية مضمونة. درجة الجودة ليست نسبة نجاح. لا يتم تنفيذ أوامر تداول آلية.</p>
-<footer>التداول الذكي PRO · <span id="source">المصدر: —</span></footer>
+<div class="app-shell">
+<header class="topbar">
+ <a class="brand" href="/" aria-label="AS Trading PRO"><span class="logo">AS</span><span class="brand-copy"><b>AS <i>TRADING PRO</i></b><small>منصة الأسواق والتحليل الذكي</small></span></a>
+ <div class="top-status"><span class="live-dot"></span><span id="health">فحص الاتصال</span><span class="top-divider"></span><span id="clock">--:--:--</span></div>
+</header>
+<main class="main">
+ <section class="welcome">
+  <div><div class="eyebrow"><span class="eyebrow-line"></span> MARKET INTELLIGENCE TERMINAL</div><h1>مركز <span>الأسواق</span></h1><p>راقب اتجاه السوق، تابع حركة الأصول، واكتشف الفرص الفنية من بيانات المصدر مباشرة.</p></div>
+  <button id="refresh" class="refresh-btn"><span>↻</span> تحديث البيانات</button>
+ </section>
+ <section class="market-switcher">
+  <div class="switcher-heading"><span>اختر السوق</span><small>مصادر مستقلة لكل سوق</small></div>
+  <div id="markets" class="market-list">
+   <button data-market="spot" class="market-tab active"><span class="market-icon crypto">₿</span><span><b>Spot</b><small>Binance</small></span><i class="tab-state"></i></button>
+   <button data-market="futures" class="market-tab"><span class="market-icon futures">↗</span><span><b>Futures</b><small>Binance</small></span><i class="tab-state"></i></button>
+   <button data-market="alpha" class="market-tab" disabled><span class="market-icon alpha">α</span><span><b>Alpha</b><small>غير متاح</small></span></button>
+   <button data-market="saudi" class="market-tab" disabled><span class="market-icon saudi">ر.س</span><span><b>السعودي</b><small>غير متاح</small></span></button>
+   <button data-market="us" class="market-tab" disabled><span class="market-icon usa">$</span><span><b>الأسهم الأمريكية</b><small>غير متاح</small></span></button>
+   <button data-market="contracts" class="market-tab" disabled><span class="market-icon contracts">⌁</span><span><b>العقود</b><small>غير متاح</small></span></button>
+   <button data-market="forex" class="market-tab" disabled><span class="market-icon forex">FX</span><span><b>الفوركس والذهب</b><small>غير متاح</small></span></button>
+  </div>
+ </section>
+ <section class="overview-grid">
+  <article class="panel direction-panel">
+   <div class="panel-top"><div><span class="kicker">MARKET BREADTH · 24H</span><h2>توجه السوق</h2></div><span class="live-pill"><i></i> مباشر</span></div>
+   <div class="direction-main"><div><small>الاتجاه العام</small><strong id="direction" class="direction-value">—</strong></div><div class="breadth-total"><b id="total">—</b><small>أصل مفحوص</small></div></div>
+   <div class="breadth-bar"><span id="upBar"></span><span id="downBar"></span><span id="flatBar"></span></div>
+   <div class="breadth-legend"><span><i class="legend-up"></i> صاعد <b id="up">—</b></span><span><i class="legend-down"></i> هابط <b id="down">—</b></span><span><i class="legend-flat"></i> محايد <b id="flat">—</b></span></div>
+   <p class="panel-note">الاتجاه محسوب من عدد الأصول الرابحة والخاسرة خلال 24 ساعة.</p>
+  </article>
+  <article class="panel scan-panel">
+   <div class="panel-top"><div><span class="kicker">SCAN CONFIGURATION</span><h2>إعداد الفحص</h2></div><span class="scan-symbol">⌁</span></div>
+   <div class="scan-row"><span>الإطار الزمني</span><div id="timeframes" class="frames"><button data-tf="15m" class="active">15د</button><button data-tf="1h">1س</button><button data-tf="4h">4س</button><button data-tf="1d">يومي</button></div></div>
+   <div class="scan-row"><span>آخر تحديث</span><b id="updated">—</b></div>
+   <div class="scan-row"><span>مصدر البيانات</span><b id="sourceShort">Binance Public</b></div>
+   <div class="scan-row"><span>حالة الفحص</span><b id="scanState" class="state-good">جاهز</b></div>
+  </article>
+ </section>
+ <section class="section-heading"><div><span class="kicker">MARKET MOVERS</span><h2>الأصول الأكثر حركة</h2></div><span class="section-caption">تغير 24 ساعة · أعلى السيولة المتاحة</span></section>
+ <section id="movers" class="movers-grid"><div class="empty">جارٍ تحميل حركة الأصول...</div></section>
+ <section class="section-heading opportunity-heading"><div><span class="kicker">AI TECHNICAL SCANNER</span><h2>أفضل الفرص الفنية</h2><p>أعلى ثلاث فرص استوفت شروط الفحص متعدد الأطر.</p></div><span class="ranking-note">TOP 3 · حسب جودة الشروط</span></section>
+ <section id="cards" class="cards"><div class="empty">جارٍ تحليل السوق...</div></section>
+ <section class="panel tracker-panel">
+  <div class="section-heading tracker-heading"><div><span class="kicker">POSITION MONITOR</span><h2>متابعة الصفقات</h2><p>تتبع تلقائي لمستويات الأهداف ووقف الخسارة عند تحديث السوق.</p></div><span id="openCount" class="count-pill">0 مفتوحة</span></div>
+  <div id="openTrades" class="trade-list"><div class="empty">لا توجد صفقات مفتوحة محفوظة لهذا السوق.</div></div>
+ </section>
+ <section class="panel history-panel">
+  <div class="section-heading tracker-heading"><div><span class="kicker">TRADE HISTORY</span><h2>سجل النتائج</h2><p>الصفقات التي وصلت إلى الهدف الثالث أو وقف الخسارة.</p></div><span id="historyCount" class="count-pill">0 مغلقة</span></div>
+  <div id="closedTrades" class="trade-list"><div class="empty">لا توجد نتائج مغلقة مسجلة بعد.</div></div>
+ </section>
+ <footer class="footer"><span class="footer-brand">AS TRADING PRO</span><span id="source">مصدر البيانات: —</span><span>تحليل آلي · تنفيذ يدوي فقط</span></footer>
+ <p class="disclaimer">المعلومات للتحليل والمتابعة وليست ضمانًا للربح أو توصية استثمارية. درجة جودة الشروط ليست نسبة نجاح. لا ينفذ الموقع أوامر تداول آلية.</p>
 </main>
+</div>
 </body></html>
