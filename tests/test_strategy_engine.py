@@ -54,12 +54,13 @@ def test_new_strategy_rejects_disagreement_between_4h_and_daily(monkeypatch):
                "previous_macd_hist": .2, "relative_volume": 1.5,
                "resistance": 110, "support": 90, "change_pct": 1.5, "last": candles[-1]}
     bearish = dict(bullish, direction="هابط", change_pct=-1.5)
+    calls = {"n": 0}
     def frame_analysis(rows):
-        # Each timeframe receives distinct candle dictionaries from this loader.
-        return dict(bullish if rows[0].get("frame") != "1d" else bearish, last=rows[-1])
+        calls["n"] += 1
+        return dict(bullish if calls["n"] < 3 else bearish, last=rows[-1])
     monkeypatch.setattr(engine, "_frame_analysis", frame_analysis)
     def loader(market, symbol, frame):
-        return [dict(c, frame=frame) for c in candles]
+        return candles
     items, completed, _ = engine.generate_signals(
         "spot", "15m", [{"symbol": "TESTUSDT", "price": price, "quote_volume": 5000000}],
         10, loader
