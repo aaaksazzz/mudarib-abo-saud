@@ -2386,20 +2386,41 @@ def _daily_vip_parse_signal(page_html, page_url, market):
     }
 
 
+def _daily_vip_customer_payload(data):
+    """Keep provider identity and URLs server-side; expose only normalized trade data."""
+    payload = dict(data or {})
+    payload.pop("source", None)
+    payload.pop("source_url", None)
+    safe_items = []
+    for item in payload.get("items", []) if isinstance(payload.get("items"), list) else []:
+        if not isinstance(item, dict):
+            continue
+        row = dict(item)
+        row.pop("source", None)
+        row.pop("source_url", None)
+        safe_items.append(row)
+    payload["items"] = safe_items
+    message = str(payload.get("message") or "")
+    message = message.replace("Daily VIP", "مزود البيانات").replace("DAILY VIP", "مزود البيانات")
+    payload["message"] = message
+    return payload
+
+
 @app.get("/api/daily-vip/signals")
 def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=1, le=20), refresh: bool = Query(False)):
-    """Import only complete, active, recent public crypto setups from Daily VIP Signals."""
+    """Return normalized, validated trade setups without exposing provider identity to customers."""
     market = (market or "").strip().lower()
     if market not in {"spot", "futures", "alpha"}:
-        return {"ok": True, "market": market, "items": [], "count": 0,
-                "source": "Daily VIP Signals",
-                "message": "مصدر Daily VIP يغطي توصيات العملات الرقمية فقط، ولا يوفّر توصيات موثقة لهذا السوق."}
+        return _daily_vip_customer_payload({
+            "ok": True, "market": market, "items": [], "count": 0,
+            "message": "لا توجد صفقات موثقة متاحة لهذا السوق حاليًا."
+        })
     now = int(time.time())
     cached = DAILY_VIP_CACHE.get(market)
     if not refresh and cached and now - cached[0] < DAILY_VIP_CACHE_TTL:
         data = dict(cached[1])
         data["cached"] = True
-        return data
+        return _daily_vip_customer_payload(data)
     try:
         index_html = _daily_vip_fetch(DAILY_VIP_SIGNALS_URL)
         # The public listing may expose signal routes in hrefs, data attributes,
@@ -2446,15 +2467,14 @@ def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=
             ),
         }
         DAILY_VIP_CACHE[market] = (now, data)
-        return data
+        return _daily_vip_customer_payload(data)
     except Exception as exc:
         print(f"Daily VIP source unavailable: {type(exc).__name__}: {exc}")
         if cached:
-            return {**cached[1], "cached": True, "stale": True,
-                    "message": "تعذر تحديث Daily VIP؛ هذه آخر بيانات محفوظة مؤقتًا."}
+            return _daily_vip_customer_payload({**cached[1], "cached": True, "stale": True,
+                    "message": "تعذر تحديث الصفقات؛ هذه آخر بيانات محفوظة مؤقتًا."})
         return {"ok": False, "market": market, "items": [], "count": 0,
-                "source": "Daily VIP Signals",
-                "message": "تعذر الاتصال بمصدر Daily VIP الآن؛ لم نعرض صفقات تقديرية."}
+                "message": "تعذر تحديث الصفقات حاليًا؛ لم نعرض صفقات تقديرية."}
 
 
 @app.get("/api/public-ideas")
