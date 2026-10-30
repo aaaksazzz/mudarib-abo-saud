@@ -127,7 +127,7 @@ async def site_password_gate(request: Request, call_next):
         section_id = "news"
     elif path in {"/api/tasi/analysis"}:
         section_id = "tasi"
-    elif path in {"/api/market-direction", "/api/public-ideas", "/api/trade-chart-data", "/api/universe-counts"}:
+    elif path in {"/api/market-direction", "/api/public-ideas", "/api/daily-vip/signals", "/api/trade-chart-data", "/api/universe-counts"}:
         requested_market = str(request.query_params.get("market") or "").lower()
         section_id = requested_market if requested_market in {
             "spot", "futures", "alpha", "contracts", "us", "saudi", "forex"
