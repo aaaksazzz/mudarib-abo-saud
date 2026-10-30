@@ -2067,7 +2067,12 @@ def public_results(limit: int = Query(100, ge=1, le=500)):
     # Preserve completed and still-open records from earlier strategy versions.
     # Open trades must remain trackable until TP3 or stop-loss is reached.
     rows = [row for row in rows if isinstance(row, dict)]
-    rows.sort(key=lambda row: int(row.get("created_at") or 0), reverse=True)
+    def _created_at(row):
+        try:
+            return int(float(row.get("created_at") or 0))
+        except (TypeError, ValueError, OverflowError):
+            return 0
+    rows.sort(key=_created_at, reverse=True)
     rows = rows[:limit]
     closed = [row for row in rows if str(row.get("result", "")).upper() in {"TP1", "TP2", "TP3", "SL"}]
     open_count = sum(1 for row in rows if str(row.get("result", "OPEN")).upper() not in {"TP1", "TP2", "TP3", "SL"})
