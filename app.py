@@ -17,6 +17,7 @@ STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "EUR"}
 CACHE = {}
 CACHE_LOCK = threading.Lock()
 CACHE_KEY_LOCKS = {}
+MAX_CACHE_ENTRIES = 500
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 try:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -49,7 +50,21 @@ def cached(key, ttl, loader):
                 return item[1]
         value = loader()
         with CACHE_LOCK:
-            CACHE[key] = (time.time(), value)
+            now = time.time()
+            CACHE[key] = (now, value)
+            # Bound process memory: discard expired entries, then oldest entries.
+            expired = [cache_key for cache_key, (created, _) in CACHE.items()
+                       if now - created > 600]
+            for cache_key in expired:
+                CACHE.pop(cache_key, None)
+            if len(CACHE) > MAX_CACHE_ENTRIES:
+                oldest = sorted(CACHE.items(), key=lambda pair: pair[1][0])
+                for cache_key, _ in oldest[:len(CACHE) - MAX_CACHE_ENTRIES]:
+                    CACHE.pop(cache_key, None)
+            # Locks for evicted keys are safe to remove once no request owns them.
+            for cache_key, old_lock in list(CACHE_KEY_LOCKS.items()):
+                if cache_key not in CACHE and not old_lock.locked():
+                    CACHE_KEY_LOCKS.pop(cache_key, None)
         return value
 
 def fetch_json(url, params=None):
@@ -253,8 +268,8 @@ def save_new_trades(kind, signals):
             if signal["side"] not in ("BUY", "SELL"):
                 continue
             exists = connection.execute(
-                "SELECT id FROM trades WHERE market=? AND symbol=? AND timeframe=? AND status='OPEN'",
-                (kind, signal["symbol"], signal["timeframe"])
+                "SELECT id FROM trades WHERE market=? AND symbol=? AND status='OPEN' LIMIT 1",
+                (kind, signal["symbol"])
             ).fetchone()
             if not exists:
                 connection.execute("""INSERT INTO trades
@@ -334,10 +349,10 @@ def market(kind):
         movers = gainers + losers
         prices = {row["symbol"]: row["price"] for row in assets}
         update_open_trades(kind, prices)
-        candidates = sorted(assets, key=lambda row: (abs(row["change24h"]), row["volume"]), reverse=True)[:10]
+        candidates = sorted(assets, key=lambda row: (abs(row["change24h"]), row["volume"]), reverse=True)[:6]
         signals = []
         if direction != "NEUTRAL":
-            with ThreadPoolExecutor(max_workers=6) as pool:
+            with ThreadPoolExecutor(max_workers=3) as pool:
                 jobs = [pool.submit(analyse_candidate, kind, row, interval, direction) for row in candidates]
                 for job in as_completed(jobs):
                     signal = job.result()
