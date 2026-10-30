@@ -2453,20 +2453,20 @@ def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=
     try:
         index_html = _daily_vip_fetch(DAILY_VIP_SIGNALS_URL)
         listing_text = html_lib.unescape(index_html or "")
-        listing_text = listing_text.replace(r"\\/", "/").replace(r"\\u002F", "/")
+        listing_text = listing_text.replace(r"\/", "/").replace(r"\u002F", "/")
         href_values = re.findall(
-            r"""(?:href|data-href)\\s*=\\s*["']([^"'<>]+)["']""",
+            r"""(?:href|data-href)\s*=\s*["']([^"'<>]+)["']""",
             listing_text, re.I,
         )
         href_values.extend(re.findall(
-            r"""(?:https?://(?:www\\.)?dailyvipsignals\\.com)?(/signals/[a-z0-9-]+)""",
+            r"""(?:https?://(?:www\.)?dailyvipsignals\.com)?(/signals/[a-z0-9-]+)""",
             listing_text, re.I,
         ))
         paths = []
         for candidate in href_values:
-            candidate = candidate.strip().replace(r"\\/", "/")
+            candidate = candidate.strip().replace(r"\/", "/")
             parsed_path = re.match(
-                r"""^(?:https?://(?:www\\.)?dailyvipsignals\\.com)?(/signals/[a-z0-9-]+)(?:[?#].*)?$""",
+                r"""^(?:https?://(?:www\.)?dailyvipsignals\.com)?(/signals/[a-z0-9-]+)(?:[?#].*)?$""",
                 candidate, re.I,
             )
             if not parsed_path:
