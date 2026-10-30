@@ -16,6 +16,7 @@ import urllib.request
 import urllib.error
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from signal_sources import fetch_forex_signals
 from fastapi import FastAPI, Query, Depends, Request, HTTPException
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -2432,6 +2433,8 @@ def _daily_vip_customer_payload(data):
 def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=1, le=20), refresh: bool = Query(False)):
     """Return normalized, validated trade setups without exposing provider identity to customers."""
     market = (market or "").strip().lower()
+    if market == "forex":
+        return fetch_forex_signals(limit=limit, refresh=refresh)
     if market not in {"spot", "futures", "alpha"}:
         return _daily_vip_customer_payload({
             "ok": True, "market": market, "items": [], "count": 0,
