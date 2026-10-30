@@ -3132,6 +3132,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     if interval not in INTERVALS:
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "الفريم غير مدعوم."}, status_code=422)
+    interval = "15m"
 
     # Generate recommendations locally from fresh OHLCV candles for every supported market.
     now = int(time.time())
