@@ -21,6 +21,7 @@
   };
   const marketKey = pathToMarket[path];
   let marketSignalRefreshTimer = null;
+  let marketDirectionRefreshTimer = null;
   let marketLiveTrackTimer = null;
   let marketSignalRefreshBusy = false;
   let lastMarketItems = [];
@@ -96,13 +97,50 @@
       '.surge-hero,.surge-panel{border:1px solid #20415d;background:linear-gradient(110deg,#0b2034,#0b1626);border-radius:16px;padding:16px;margin-bottom:14px}.surge-hero{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.surge-hero h2{margin:0 0 7px}.surge-hero p,.surge-muted{color:#a9bfd5;font-size:12px;line-height:1.8;margin:0}.surge-chip{border:1px solid #244661;border-radius:99px;padding:6px 10px;color:#91a8c0;font-size:11px}'+
       '.surge-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}.surge-stat{background:#0c1d2e;border:1px solid #18334a;border-radius:14px;padding:13px}.surge-stat small{color:#91a8c0;font-size:12px}.surge-stat strong{display:block;font-size:clamp(18px,2.2vw,25px);margin-top:8px}.surge-pos{color:#16d99a}.surge-neg{color:#ff647c}.surge-list{display:grid;gap:9px}.surge-item{border:1px solid rgba(91,155,205,.28);border-radius:14px;padding:13px;background:#0a1726}.surge-item-head{display:flex;justify-content:space-between;gap:10px;align-items:center}.surge-table-wrap{overflow:auto}.surge-table{border-collapse:collapse;width:100%;min-width:430px}.surge-table th,.surge-table td{text-align:right;padding:10px 8px;border-bottom:1px solid #142b3e;font-size:12px}.surge-table th{color:#91a8c0}.surge-empty{padding:20px;text-align:center;color:#91a8c0;font-size:12px}.surge-link{color:#6effcb;text-decoration:underline;font-weight:800}'+
       '@media(max-width:650px){.surge-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}'+
+      '.market-bias{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,2fr);gap:14px;margin:0 0 16px;padding:18px;border:1px solid #294968;border-radius:18px;background:linear-gradient(115deg,#10243a,#0b1728);box-shadow:0 14px 36px #0003}'+
+      '.market-bias-main{display:flex;flex-direction:column;justify-content:center;gap:5px}.market-bias-kicker{color:#90a9c5;font-size:11px;font-weight:800;letter-spacing:.08em}.market-bias-value{font-size:clamp(28px,4vw,40px);font-weight:950;line-height:1.25}.market-bias-value.up{color:#35d6a0}.market-bias-value.down{color:#ff7184}.market-bias-value.flat{color:#e9c36e}.market-bias-note{color:#9bb0c8;font-size:12px}'+
+      '.market-bias-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;align-items:stretch}.market-bias-stat{padding:12px;border:1px solid #233b55;border-radius:13px;background:#0a1726}.market-bias-stat small{display:block;color:#90a9c5;font-size:11px}.market-bias-stat b{display:block;font-size:clamp(17px,2.4vw,24px);margin-top:6px}.market-bias-bar{grid-column:1/-1;height:8px;display:flex;overflow:hidden;border-radius:99px;background:#25364b}.market-bias-bar .up{background:#35d6a0}.market-bias-bar .down{background:#ff7184}.market-bias-bar .flat{background:#65758b}.market-bias-foot{grid-column:1/-1;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;color:#839ab5;font-size:10px}.market-bias-refresh{border:1px solid #2d4965;background:#132a42;color:#dceaff;border-radius:10px;padding:7px 11px;font-size:11px;font-weight:800;cursor:pointer}'+
+      '@media(max-width:650px){.market-bias{grid-template-columns:1fr}.market-bias-stats{grid-template-columns:repeat(3,minmax(0,1fr))}.market-bias-stat{padding:10px 8px}}'+
       '</style>'+
       '<div class="surge-page surge-pro-layout">'+
       '<header class="surge-pro-header"><div><span class="surge-kicker">SMART TRADING PRO <i></i> FUTURES DESK</span><h1>'+esc(m.name)+'</h1><p>'+esc(m.sub)+'</p></div><span class="surge-live-pill"><i></i> متابعة مباشرة</span></header>'+
+      '<section class="market-bias" id="marketBiasPanel"><div class="market-bias-main"><span class="market-bias-kicker">اتجاه السوق الآن</span><strong class="market-bias-value flat" id="marketBiasValue">جاري التحليل</strong><span class="market-bias-note" id="marketBiasNote">نقيس اتساع السوق من الأصول المتاحة</span></div><div class="market-bias-stats"><div class="market-bias-stat"><small>أصول صاعدة</small><b class="surge-pos" id="marketBiasUp">—</b></div><div class="market-bias-stat"><small>أصول هابطة</small><b class="surge-neg" id="marketBiasDown">—</b></div><div class="market-bias-stat"><small>شبه مستقرة</small><b id="marketBiasFlat">—</b></div><div class="market-bias-bar"><span class="up" id="marketBiasUpBar" style="width:0%"></span><span class="flat" id="marketBiasFlatBar" style="width:0%"></span><span class="down" id="marketBiasDownBar" style="width:0%"></span></div><div class="market-bias-foot"><span id="marketBiasBreadth">بانتظار بيانات الأصول</span><span id="marketBiasUpdated">—</span><button class="market-bias-refresh" id="refreshMarketBias" type="button">تحديث الاتجاه</button></div></div></section>'+
       '<section class="surge-method-strip"><div><small>اتجاه رئيسي</small><b>4 ساعات + يومي</b><em>لا توصية عند اختلاف الاتجاه</em></div><div><small>ترتيب الفرص</small><b>تغير 15 دقيقة</b><em>الأقوى حركة في الأعلى</em></div><div><small>إدارة المخاطر</small><b>دخول · أهداف · وقف</b><em>المستويات حسب التحليل</em></div></section>'+
       '<section class="surge-results-panel"><div class="surge-results-heading"><div><span class="surge-kicker">TRADE OPPORTUNITIES</span><h2>الفرص المتاحة</h2><p>شراء عند توافق الاتجاه الصاعد، وبيع عند توافق الاتجاه الهابط</p></div><span class="surge-chip" id="signalSourceLabel">جاري الفحص</span></div><div id="surgeRecommendations" class="surge-empty">جاري تحليل الأصول على الفريمات المطلوبة…</div></section>'+
       '<p class="surge-disclaimer">التحليل آلي للمساعدة في اتخاذ القرار، وليس ضماناً للربح. تحقق من الأسعار قبل تنفيذ أي صفقة.</p>'+
       '</div>';
+    let marketDirectionBusy=false;
+    const loadMarketBias=async()=>{
+      if(marketDirectionBusy)return;
+      marketDirectionBusy=true;
+      const value=$("marketBiasValue"),note=$("marketBiasNote");
+      try{
+        const d=await getJSON("/api/market-direction?market="+encodeURIComponent(m.api));
+        if(!d||d.ok===false)throw new Error(d?.message||"بيانات الاتجاه غير متاحة");
+        const up=Math.max(0,Number(d.assets_up)||0),down=Math.max(0,Number(d.assets_down)||0),flat=Math.max(0,Number(d.assets_flat)||0);
+        const total=up+down+flat,dir=String(d.direction||"NEUTRAL").toUpperCase();
+        const label=dir==="BULLISH"?"صاعد":dir==="BEARISH"?"هابط":"عرضي / غير حاسم";
+        const tone=dir==="BULLISH"?"up":dir==="BEARISH"?"down":"flat";
+        if(value){value.textContent=label;value.className="market-bias-value "+tone}
+        if(note)note.textContent=(d.stale?"آخر قراءة محفوظة — البيانات الحالية متأخرة":"قراءة اتساع السوق من تغير الأصول المتاحة")+" · متوسط التغير "+pct(d.price_change_pct);
+        $("marketBiasUp").textContent=up.toLocaleString("en-US");
+        $("marketBiasDown").textContent=down.toLocaleString("en-US");
+        $("marketBiasFlat").textContent=flat.toLocaleString("en-US");
+        $("marketBiasUpBar").style.width=(total?up/total*100:0)+"%";
+        $("marketBiasFlatBar").style.width=(total?flat/total*100:0)+"%";
+        $("marketBiasDownBar").style.width=(total?down/total*100:0)+"%";
+        $("marketBiasBreadth").textContent="تم قياس "+total.toLocaleString("en-US")+" أصل · الصاعد "+(total?Math.round(up/total*100):0)+"% · الهابط "+(total?Math.round(down/total*100):0)+"%";
+        $("marketBiasUpdated").textContent=(d.stale?"آخر تحديث محفوظ: ":"آخر تحديث: ")+timeText(d.updated_at);
+      }catch(err){
+        if(value){value.textContent="الاتجاه غير متاح";value.className="market-bias-value flat"}
+        if(note)note.textContent=err.message||"تعذر تحميل اتجاه السوق الآن";
+        $("marketBiasBreadth").textContent="لم تصل بيانات كافية لتحديد الاتجاه";
+      }finally{marketDirectionBusy=false}
+    };
+    $("refreshMarketBias")?.addEventListener("click",loadMarketBias);
+    loadMarketBias();
+    if(marketDirectionRefreshTimer)clearInterval(marketDirectionRefreshTimer);
+    marketDirectionRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible")loadMarketBias()},60000);
     let forceNextDailyVip=false;
     const loadDailyVip=async()=>{
       const force=forceNextDailyVip;forceNextDailyVip=false;
