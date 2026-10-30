@@ -61,7 +61,7 @@ def test_new_strategy_rejects_insufficient_candle_history(monkeypatch):
         for _ in range(12)
     ]
     monkeypatch.setattr(app_module, "candle_data", lambda *args, **kwargs: candles)
-    items, completed, message = app_module._ai_generate_market_signals(
+    items, completed, message = app_module._generate_pro_market_signals(
         "spot", "15m", [{"symbol": "TESTUSDT", "price": 99.7}], limit=20
     )
     assert completed is True
@@ -161,7 +161,7 @@ def test_signal_endpoint_uses_ai_only_and_never_fetches_public_ideas(monkeypatch
         "ok": True, "live": True, "stale": False,
         "items": [{"symbol": "TESTUSDT", "price": 100, "change_pct": 1}],
     })
-    monkeypatch.setattr(app_module, "_ai_generate_market_signals",
+    monkeypatch.setattr(app_module, "_generate_pro_market_signals",
                         lambda market, interval, market_rows, limit: ([_fake_ai_signal(market, interval)], True, "AI test"))
     monkeypatch.setattr(app_module, "market_direction", lambda market: {"direction": "BULLISH"})
     monkeypatch.setattr(app_module, "public_ideas", lambda **kwargs: (_ for _ in ()).throw(AssertionError("public ideas must not be used")))
@@ -183,7 +183,7 @@ def test_signal_endpoint_scans_each_supported_market_with_ai_only(monkeypatch):
         calls.append(market) or {"ok": True, "live": True, "stale": False,
         "items": [{"symbol": "TESTUSDT", "price": 100, "change_pct": 1}]}
     ))
-    monkeypatch.setattr(app_module, "_ai_generate_market_signals",
+    monkeypatch.setattr(app_module, "_generate_pro_market_signals",
                         lambda market, interval, market_rows, limit: ([_fake_ai_signal(market, interval)], True, "AI test"))
     monkeypatch.setattr(app_module, "market_direction", lambda market: {"direction": "NEUTRAL"})
     monkeypatch.setattr(app_module, "public_ideas", lambda **kwargs: (_ for _ in ()).throw(AssertionError("public ideas must not be used")))
@@ -204,7 +204,7 @@ def test_signal_endpoint_skips_ai_when_market_data_is_stale(monkeypatch):
         "ok": True, "live": False, "stale": True,
         "items": [{"symbol": "BTCUSDT", "price": 100}],
     })
-    monkeypatch.setattr(app_module, "_ai_generate_market_signals",
+    monkeypatch.setattr(app_module, "_generate_pro_market_signals",
                         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("must not generate from stale prices")))
     app_module.PUBLIC_IDEAS_CACHE.clear()
     response = client.get("/api/signals/spot?interval=15m&refresh=true")
@@ -218,7 +218,7 @@ def test_signal_endpoint_accepts_daily_weekly_and_monthly_frames(monkeypatch):
     monkeypatch.setattr(app_module, "market_data", lambda market, limit=2000: {
         "ok": True, "live": True, "stale": False, "items": []
     })
-    monkeypatch.setattr(app_module, "_ai_generate_market_signals",
+    monkeypatch.setattr(app_module, "_generate_pro_market_signals",
                         lambda market, interval, market_rows, limit: ([], True, "لا توجد فرصة"))
     monkeypatch.setattr(app_module, "market_direction", lambda market: {"direction": "NEUTRAL"})
     app_module.PUBLIC_IDEAS_CACHE.clear()
