@@ -2260,6 +2260,139 @@ def _public_idea_levels(value):
     tp2 = find(r"(?:\bTP\s*[-_#]?\s*2\b|\bT\s*2\b|\btarget\s*[-_#]?\s*2\b|\btake\s*profit\s*[-_#]?\s*2\b|الهدف\s*(?:الثاني|2)|هدف\s*2)")
     tp3 = find(r"(?:\bTP\s*[-_#]?\s*3\b|\bT\s*3\b|\btarget\s*[-_#]?\s*3\b|\btake\s*profit\s*[-_#]?\s*3\b|الهدف\s*(?:الثالث|3)|هدف\s*3)")
     return {"entry": entry, "stop_loss": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3}
+
+# Market-specific public trade-idea aggregation. These are candidate feeds, not
+# verified signal providers; only explicit entry/SL/TP1-TP3 posts are published.
+PUBLIC_TRADE_IDEA_CACHE = {}
+PUBLIC_TRADE_IDEA_CACHE_TTL = 180
+PUBLIC_TRADE_IDEA_MARKET_FEEDS = {
+    "spot": ("TradingView عربي", "TradingView", "Reddit — Crypto Markets",
+             "Reddit — CryptoCurrency", "Reddit — CryptoMarkets", "Reddit — Altcoin",
+             "Google News — Crypto trade setups", "Google News — Altcoin futures",
+             "Google News — BTC technical setup", "Google News — ETH futures setup",
+             "Google News — crypto scalping", "Google News — Crypto short setups"),
+    "futures": ("TradingView عربي", "TradingView", "Reddit — Crypto Markets",
+                "Reddit — CryptoCurrency", "Reddit — CryptoMarkets", "Reddit — FuturesTrading",
+                "Reddit — Altcoin", "Google News — Futures trade setups",
+                "Google News — Crypto trade setups", "Google News — Crypto short setups",
+                "Google News — Futures short setups", "Google News — Altcoin futures",
+                "Google News — BTC technical setup", "Google News — ETH futures setup",
+                "Google News — crypto scalping"),
+    "alpha": ("TradingView عربي", "TradingView", "Reddit — Crypto Markets",
+              "Reddit — CryptoCurrency", "Reddit — Altcoin",
+              "Google News — Altcoin futures", "Google News — Crypto trade setups"),
+    "us": ("TradingView", "Reddit — Stocks", "Google News — US stocks trade setups",
+           "Google News — US stock short setups"),
+    "contracts": ("TradingView", "Reddit — FuturesTrading",
+                  "Google News — Futures trade setups", "Google News — Futures short setups"),
+    "saudi": ("TradingView عربي", "Reddit — Stocks", "Google News — Saudi stocks"),
+    "forex": ("TradingView عربي", "TradingView", "Investing.com - Forex",
+              "Reddit — Forex", "Google News — Forex trade setups",
+              "Google News — Gold trade setups", "Google News — Forex sell setups",
+              "Google News — Gold sell setups"),
+}
+
+def _public_idea_extract_symbol(market, value):
+    text_value = str(value or "").upper().replace("/", "")
+    # Prefer explicit exchange-style tickers and supported FX/metal pairs.
+    tokens = re.findall(r"(?<![A-Z0-9])([A-Z0-9]{2,15}(?:USDT|USDC|USD)?|[0-9]{3,5}(?:\.SR)?)(?![A-Z0-9])", text_value)
+    for token in tokens:
+        token = token.strip()
+        if _public_idea_symbol_matches_market(market, token, value):
+            if market in {"spot", "futures", "alpha"} and token.endswith(("USDT", "USDC", "USD")):
+                return token
+            return token
+    if market == "forex":
+        for token in ("XAUUSD", "XAGUSD", "EURUSD", "GBPUSD", "USDJPY", "AUDUSD",
+                      "USDCAD", "USDCHF", "NZDUSD", "EURGBP", "EURJPY", "GBPJPY"):
+            if token in text_value and _public_idea_symbol_matches_market(market, token, value):
+                return token
+    return ""
+
+@app.get("/api/public-ideas")
+def public_external_trade_ideas(market: str = Query("futures"),
+                                limit: int = Query(20, ge=1, le=50),
+                                refresh: bool = Query(False)):
+    """Return only complete, fresh third-party trade ideas from market-relevant public feeds."""
+    market = str(market or "").strip().lower()
+    if market not in PUBLIC_TRADE_IDEA_MARKET_FEEDS:
+        return JSONResponse({"ok": False, "market": market, "items": [],
+                             "message": "السوق غير مدعوم."}, status_code=422)
+    now = int(time.time())
+    cached = PUBLIC_TRADE_IDEA_CACHE.get(market)
+    if not refresh and cached and now - cached[0] < PUBLIC_TRADE_IDEA_CACHE_TTL:
+        data = dict(cached[1])
+        data["cached"] = True
+        data["items"] = data.get("items", [])[:limit]
+        data["count"] = len(data["items"])
+        return data
+    names = set(PUBLIC_TRADE_IDEA_MARKET_FEEDS[market])
+    feeds = [(name, url) for name, url in PUBLIC_TRADE_IDEA_FEEDS if name in names]
+    gathered, failed, failed_sources = [], 0, []
+    # Keep requests bounded for the small production container.
+    with ThreadPoolExecutor(max_workers=min(4, max(1, len(feeds)))) as pool:
+        futures = {pool.submit(_fetch_public_idea_feed, name, url): name for name, url in feeds}
+        for future in as_completed(futures):
+            name = futures[future]
+            try:
+                gathered.extend(future.result())
+            except Exception as exc:
+                failed += 1
+                failed_sources.append({"source": name, "error": type(exc).__name__})
+    cutoff = now - 24 * 60 * 60
+    unique = {}
+    rejected = 0
+    for raw in gathered:
+        published = int(raw.get("published_at") or 0)
+        if published < cutoff or published > now:
+            rejected += 1
+            continue
+        combined = (str(raw.get("title") or "") + " " +
+                    str(raw.get("description") or "")).strip()
+        direction = _public_idea_direction(combined)
+        symbol = _public_idea_extract_symbol(market, combined)
+        levels = _public_idea_levels(combined)
+        interval = _public_idea_interval(combined)
+        if not direction or not symbol or not all(
+            isinstance(levels.get(key), (int, float)) and levels.get(key) > 0
+            for key in ("entry", "stop_loss", "tp1", "tp2", "tp3")
+        ):
+            rejected += 1
+            continue
+        entry, stop = levels["entry"], levels["stop_loss"]
+        targets = [levels["tp1"], levels["tp2"], levels["tp3"]]
+        ordered = (stop < entry < targets[0] < targets[1] < targets[2]) if direction == "شراء" else (
+            targets[2] < targets[1] < targets[0] < entry < stop)
+        if not ordered:
+            rejected += 1
+            continue
+        row = {
+            "id": str(raw.get("url") or raw.get("title") or "")[:500],
+            "market": market, "symbol": symbol, "direction": direction,
+            "entry": entry, "levels": levels, "interval": interval or "غير محدد",
+            "timeframe_provided": bool(interval), "published_at": published,
+            "source": raw.get("source"), "source_url": raw.get("url"),
+            "title": raw.get("title"), "description": raw.get("description"),
+            "raw_text": combined[:1800], "generated_by_site": False,
+            "has_complete_levels": True, "source_performance_verified": False,
+            "status": "صفقة منشورة من مصدر خارجي؛ الأداء غير مدقق",
+        }
+        unique[row["id"]] = row
+    items = sorted(unique.values(), key=lambda item: item["published_at"], reverse=True)
+    response = {
+        "ok": True, "market": market, "items": items[:limit], "count": min(len(items), limit),
+        "sources_configured": len(feeds), "sources_checked": len(feeds) - failed,
+        "sources_failed": failed, "failed_sources": failed_sources,
+        "candidate_posts_read": len(gathered), "posts_rejected": rejected,
+        "updated_at": now, "max_age_hours": 24,
+        "message": ("تم استخراج صفقات خارجية مكتملة؛ لم يتم التحقق من سجل أرباح المصادر."
+                    if items else
+                    "لم تُستخرج صفقة مكتملة من المصادر المقروءة. لم تُنشأ مستويات تقديرية."),
+    }
+    PUBLIC_TRADE_IDEA_CACHE[market] = (now, response)
+    return response
+
+
 DAILY_VIP_SIGNALS_URL = "https://dailyvipsignals.com/signals"
 DAILY_VIP_CACHE = {}
 DAILY_VIP_CACHE_TTL = 180
