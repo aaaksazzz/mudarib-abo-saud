@@ -2323,10 +2323,12 @@ def _daily_vip_parse_signal(page_html, page_url, market):
         r"\b(?:WIN|LOSS|CLOSED)\b|\b(?:SL|stop[- ]loss)\s+hit\b",
         plain, re.I,
     )
-    active_marker = re.search(r"\bActive\b", plain, re.I) or (
-        re.search(r"\bTP[1-4]\s+hit\b", plain, re.I)
-        and re.search(r"\b[1-4]\s+of\s+5\s+targets?\s+hit\b", plain, re.I)
-        and re.search(r"trade\s+is\s+in\s+profit", plain, re.I)
+    # Keep setups that are explicitly active, including those where one or more
+    # targets have already been reached. A TP hit does not close the trade.
+    active_marker = bool(
+        re.search(r"\bActive\b", plain, re.I)
+        or re.search(r"\bTP\s*[1-5]\s*(?:hit|reached|filled)\b", plain, re.I)
+        or re.search(r"\b[1-5]\s+of\s+5\s+targets?\s+(?:hit|reached)\b", plain, re.I)
     )
     if closed_marker or not active_marker:
         return None
@@ -2351,7 +2353,11 @@ def _daily_vip_parse_signal(page_html, page_url, market):
             plain, re.I,
         )
         if not match:
-            return None
+            # The customer card displays TP1-TP3. Later targets are optional
+            # because some provider detail layouts omit them from the page text.
+            if number <= 3:
+                return None
+            continue
         try:
             targets["tp" + str(number)] = float(match.group(1).replace(",", ""))
         except (TypeError, ValueError):
@@ -2452,7 +2458,7 @@ def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=
         urls = ["https://dailyvipsignals.com" + path for path in paths]
         items = []
         failures = 0
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=2) as pool:
             futures = {pool.submit(_daily_vip_fetch, url): url for url in urls}
             for future in as_completed(futures):
                 url = futures[future]
