@@ -541,6 +541,33 @@ def test_daily_vip_signal_parser_preserves_all_published_levels():
     ]
 
 
+def test_daily_vip_endpoint_finds_signal_routes_embedded_in_page_state(monkeypatch):
+    index_page = '<script>window.__STATE__={"active":"/signals/apt-short-signal-2026-10-30","next":"https:\\/\\/dailyvipsignals.com\\/signals\\/hbar-short-signal-2026-10-30"}</script>'
+    detail_page = """
+    APT/USDT SHORT Signal
+    SHORT · 3×
+    Active Live — waiting for the first target
+    published 11h ago
+    Entry zone $0.58388 – $0.59374
+    Stop-loss $0.63592
+    Target 1 +2.0% $0.57704
+    Target 2 +4.0% $0.56526
+    Target 3 +7.0% $0.54760
+    Target 4 +11.0% $0.52404
+    Target 5 +16.0% $0.49460
+    """
+    monkeypatch.setattr(
+        app_module, "_daily_vip_fetch",
+        lambda url: index_page if url == app_module.DAILY_VIP_SIGNALS_URL else detail_page,
+    )
+    app_module.DAILY_VIP_CACHE.clear()
+    response = client.get("/api/daily-vip/signals?market=futures&refresh=true")
+    assert response.status_code == 200
+    assert response.json()["count"] == 1
+    assert response.json()["items"][0]["symbol"] == "APTUSDT"
+    app_module.DAILY_VIP_CACHE.clear()
+
+
 def test_daily_vip_endpoint_filters_shorts_from_spot_and_returns_futures(monkeypatch):
     index_page = '<a href="https://dailyvipsignals.com/signals/apt-short-signal-2026-10-30?ref=active">View setup</a>'
     detail_page = """
