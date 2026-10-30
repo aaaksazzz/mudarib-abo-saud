@@ -2367,10 +2367,19 @@ def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=
         return data
     try:
         index_html = _daily_vip_fetch(DAILY_VIP_SIGNALS_URL)
-        paths = list(dict.fromkeys(re.findall(
-            r"href=['\"](?:https?://(?:www\\.)?dailyvipsignals\\.com)?(/signals/[a-z0-9-]+)(?:[?#][^'\"]*)?['\"]",
-            index_html, re.I
-        )))[:30]
+        href_values = re.findall(r"""href\\s*=\\s*(['"])(.*?)\\1""", index_html, re.I)
+        paths = []
+        for _, href in href_values:
+            href = html_lib.unescape(href.strip())
+            if href.startswith("https://dailyvipsignals.com"):
+                href = href[len("https://dailyvipsignals.com"):]
+            elif href.startswith("https://www.dailyvipsignals.com"):
+                href = href[len("https://www.dailyvipsignals.com"):]
+            if href.startswith("/signals/"):
+                path = re.sub(r"[?#].*$", "", href)
+                if re.fullmatch(r"/signals/[a-z0-9-]+", path, re.I) and path not in paths:
+                    paths.append(path)
+        paths = paths[:30]
         urls = ["https://dailyvipsignals.com" + path for path in paths]
         items = []
         failures = 0
@@ -2391,7 +2400,11 @@ def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=
             "source": "Daily VIP Signals", "source_url": DAILY_VIP_SIGNALS_URL,
             "sources_checked": len(urls), "sources_failed": failures,
             "message": "تم جلب التوصيات النشطة المكتملة المنشورة علنًا. تم استبعاد التوصيات الأقدم من 24 ساعة أو التي ينقصها أي مستوى."
-            if items else "لم توجد توصيات نشطة مكتملة وحديثة لهذا السوق في المصدر الآن.",
+            if items else (
+                "لم يعثر الموقع على روابط توصيات في صفحة المصدر؛ تعذر قراءة قائمة الإشارات."
+                if not paths else
+                "عثر الموقع على صفحات توصيات لكنه لم يستطع استخراج صفقة مكتملة ونشطة من تفاصيلها."
+            ),
         }
         DAILY_VIP_CACHE[market] = (now, data)
         return data
