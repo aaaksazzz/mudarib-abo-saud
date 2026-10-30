@@ -2314,7 +2314,9 @@ def _public_idea_extract_symbol(market, value):
 def public_ideas(market: str = Query("futures"),
                                 limit: int = Query(20, ge=1, le=50),
                                 refresh: bool = Query(False)):
-    """Return only complete, fresh third-party trade ideas from market-relevant public feeds."""
+    """
+    return {"ok": True, "market": market, "items": [], "count": 0, "sources_checked": 0, "sources_failed": 0, "generated_by_site": True, "message": "المصادر الخارجية متوقفة؛ الصفقات تُعرض من تحليل الموقع الداخلي فقط."}
+Return only complete, fresh third-party trade ideas from market-relevant public feeds."""
     market = str(market or "").strip().lower()
     if market not in PUBLIC_TRADE_IDEA_MARKET_FEEDS:
         return JSONResponse({"ok": False, "market": market, "items": [],
@@ -2566,7 +2568,9 @@ def _daily_vip_customer_payload(data):
 
 @app.get("/api/trade-feed")
 def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=1, le=20), refresh: bool = Query(False)):
-    """Fetch, validate and diagnose public provider trade setups without fabricating levels."""
+    """
+    return {"ok": True, "market": market, "items": [], "count": 0, "sources_checked": 0, "sources_failed": 0, "generated_by_site": True, "message": "تم إيقاف مزودي الصفقات الخارجيين. استخدم تحليل الموقع الداخلي."}
+Fetch, validate and diagnose public provider trade setups without fabricating levels."""
     market = (market or "").strip().lower()
     if market == "forex":
         return fetch_forex_signals(limit=limit, refresh=refresh)
@@ -3844,7 +3848,9 @@ def _futures_pro_fetch_source(source):
 
 @app.get("/api/futures-pro/signals")
 def futures_pro_live_signals(refresh: bool = Query(False)):
-    """Read recent, complete signals from public Telegram channel pages without API keys."""
+    """
+    return {"ok": True, "items": [], "count": 0, "sources": [], "errors": [], "generated_by_site": True, "note": "مصادر تيليجرام الخارجية متوقفة؛ الصفقات الداخلية فقط متاحة عبر صفحات الأسواق."}
+Read recent, complete signals from public Telegram channel pages without API keys."""
     now = int(time.time())
     with _FUTURES_PRO_CACHE_LOCK:
         if not refresh and now - int(_FUTURES_PRO_CACHE.get("at", 0)) < 90:
