@@ -236,9 +236,9 @@ def generate_signals(market, interval, market_rows, limit, candle_loader):
             return (math.log10(1+max(0,volume)) * (1+min(change,25)/25), change)
         except (TypeError, ValueError, OverflowError):
             return (0,0)
-    candidates = sorted(unique.values(), key=priority, reverse=True)[:min(30,max(12,limit*2))]
+    candidates = sorted(unique.values(), key=priority, reverse=True)[:min(12,max(8,limit))]
     results = []
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=2) as pool:
         jobs = [pool.submit(_analyze_symbol, market, "15m", row, candle_loader) for row in candidates]
         for job in as_completed(jobs):
             try:
