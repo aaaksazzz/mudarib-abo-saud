@@ -2672,15 +2672,6 @@ def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=
         })
 
 
-@app.get("/api/public-ideas")
-def public_ideas(market: str = Query("spot"), interval: str = Query("auto"), limit: int = Query(20, ge=1, le=50), discover: bool = Query(False), refresh: bool = Query(False)):
-    """Legacy public-ideas endpoint disabled: trade generation is AI-only."""
-    return JSONResponse({
-        "ok": True, "market": market, "interval": interval, "items": [], "count": 0,
-        "sources_checked": 0, "sources_failed": 0, "discovery_enabled": False,
-        "message": "تم إيقاف التوصيات الخارجية. فرص التداول تُحلل بالذكاء الاصطناعي من بيانات السوق الخام فقط."
-    }, status_code=200)
-
 @app.get("/api/site/sections")
 def site_sections():
     return {"ok": True, "sections": {
