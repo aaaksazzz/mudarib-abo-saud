@@ -98,10 +98,10 @@
       '@media(max-width:650px){.surge-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}'+
       '</style>'+
       '<div class="surge-page">'+
-      '<div class="surge-top"><span class="eyebrow">SMART TRADING PRO</span><h1 class="page-title surge-market-title" style="margin:8px 0 0">'+esc(m.name)+'</h1><div class="surge-market-sub">'+esc(m.source.toUpperCase())+' · MARKET</div><p class="muted">'+esc(m.sub)+'</p></div>'+
+      '<div class="surge-top"><span class="eyebrow">SMART TRADING PRO</span><h1 class="page-title surge-market-title" style="margin:8px 0 0">'+esc(m.name)+'</h1><div class="surge-market-sub">'+(['spot','futures','alpha'].includes(m.api)?'DAILY VIP SIGNALS · EXTERNAL SOURCE':esc(m.source.toUpperCase())+' · MARKET')+'</div><p class="muted">'+esc(m.sub)+'</p></div>'+
       ''+
       ''+
-      '<section class="surge-panel"><div class="surge-item-head"><h2 style="margin:0">📡 صفقات SMART TRADING PRO</h2><span class="surge-chip" id="signalSourceLabel">SMART TRADING PRO</span></div><div id="surgeRecommendations" class="surge-empty">تظهر هنا الصفقات المعتمدة للنشر عبر SMART TRADING PRO. لا نعرض مستويات دخول أو أهدافًا غير موثقة.</div><p class="surge-muted" style="margin-top:10px">الصفقات مرتبة حسب العائد المحتمل مقارنة بالمخاطرة، وعند التعادل تظهر الأحدث أولاً.</p></section>'+
+      '<section class="surge-panel"><div class="surge-item-head"><h2 style="margin:0">📡 توصيات من Daily VIP Signals</h2><span class="surge-chip" id="signalSourceLabel">Daily VIP Signals</span></div><div id="surgeRecommendations" class="surge-empty">تظهر هنا التوصيات المنشورة من Daily VIP Signals بعد التحقق من اكتمال مستوياتها وحالتها.</div><p class="surge-muted" style="margin-top:10px">الصفقات مرتبة حسب العائد المحتمل مقارنة بالمخاطرة، وعند التعادل تظهر الأحدث أولاً.</p></section>'+
       ''+
       '</div>';
     const loadDailyVip=async()=>{
@@ -113,7 +113,7 @@
         return;
       }
       out.innerHTML='<div class="surge-empty">جاري جلب التوصيات المنشورة…</div>';
-      if(label)label.textContent="SMART TRADING PRO";
+      if(label)label.textContent="Daily VIP Signals";
       try{
         const data=await getJSON("/api/daily-vip/signals?market="+encodeURIComponent(m.api)+"&limit=20");
         const rows=(Array.isArray(data.items)?data.items:[]).slice().sort((a,b)=>{
