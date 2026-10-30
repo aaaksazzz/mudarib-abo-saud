@@ -2,6 +2,7 @@ import os
 import sqlite3
 import threading
 import time
+from datetime import datetime
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -11,7 +12,9 @@ from flask import Flask, jsonify, request, send_from_directory
 
 app = Flask(__name__, static_folder="static")
 BASES = {"spot": "https://api.binance.com", "futures": "https://fapi.binance.com"}
+SPOT_BASES = ["https://api.binance.com", "https://api-gcp.binance.com", "https://api1.binance.com", "https://api2.binance.com", "https://api3.binance.com", "https://api4.binance.com", "https://data-api.binance.vision"]
 ALPHA_BASE = "https://www.binance.com"
+BIQUOTE_BASE = "https://biquote.io"
 SCAN_INTERVAL = "15m"
 STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "EUR"}
 CACHE = {}
@@ -31,7 +34,7 @@ MARKETS = [
     {"id": "saudi", "name": "السوق السعودي", "provider": None, "status": "provider_required"},
     {"id": "us", "name": "الأسهم الأمريكية", "provider": None, "status": "provider_required"},
     {"id": "contracts", "name": "العقود الأمريكية", "provider": None, "status": "provider_required"},
-    {"id": "forex", "name": "الفوركس والذهب", "provider": None, "status": "provider_required"},
+    {"id": "forex", "name": "الفوركس والذهب", "provider": "BiQuote public FX/Metals feed (no key)", "status": "live"},
 ]
 
 def cached(key, ttl, loader):
@@ -56,6 +59,103 @@ def fetch_json(url, params=None):
     response = requests.get(url, params=params, timeout=(3.5, 7), headers={"User-Agent": "SmartTradingPro/2.0"})
     response.raise_for_status()
     return response.json()
+
+
+def fetch_first_json(urls, params=None):
+    """Try documented public endpoints in order; never return cached stale data on total failure."""
+    errors = []
+    for url in urls:
+        try:
+            return fetch_json(url, params)
+        except requests.RequestException as exc:
+            errors.append(f"{url}: {exc}")
+    raise requests.RequestException("All public provider endpoints failed: " + " | ".join(errors[-3:]))
+
+
+def biquote_market_tickers():
+    """Discover live FX/metal symbols from BiQuote and batch-fetch fresh quotes."""
+    symbols_payload = cached(
+        "biquote:active-symbols", 120,
+        lambda: fetch_json(BIQUOTE_BASE + "/api/active")
+    )
+    if not isinstance(symbols_payload, list):
+        raise requests.RequestException("BiQuote returned an invalid symbol catalogue")
+    symbols = []
+    for row in symbols_payload:
+        if not isinstance(row, dict):
+            continue
+        symbol = str(row.get("name") or row.get("symbol") or "").upper()
+        kind = str(row.get("type") or "").lower()
+        if symbol and kind in ("forex", "commodity"):
+            symbols.append(symbol)
+    symbols = list(dict.fromkeys(symbols))
+    output = []
+    for offset in range(0, len(symbols), 40):
+        batch = symbols[offset:offset + 40]
+        if not batch:
+            continue
+        params = [("symbols", symbol) for symbol in batch]
+        payload = cached(
+            "biquote:latest:" + ",".join(batch), 20,
+            lambda params=params: fetch_json(BIQUOTE_BASE + "/api/latest", params)
+        )
+        if isinstance(payload, dict):
+            rows = payload.get("items") or payload.get("data") or payload.get("quotes") or []
+            if not rows and all(isinstance(v, dict) for v in payload.values()):
+                rows = list(payload.values())
+        elif isinstance(payload, list):
+            rows = payload
+        else:
+            rows = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            symbol = str(row.get("symbol") or row.get("name") or "").upper()
+            try:
+                price = float(row.get("mid") or row.get("last") or 0)
+                change = float(row.get("dayDiffPercent") or row.get("changePercent") or 0)
+                age = float(row.get("quoteAgeSeconds", 0))
+            except (TypeError, ValueError):
+                continue
+            if (symbol in batch and price > 0 and not row.get("stale", False)
+                    and age <= 300 and str(row.get("marketState", "open")).lower() == "open"):
+                output.append({
+                    "symbol": symbol, "price": price, "volume": 0.0,
+                    "change24h": change, "quote_age_seconds": age,
+                })
+    if not output:
+        raise requests.RequestException("BiQuote has no fresh open FX/metal quotes")
+    return output
+
+
+def biquote_candles(symbol, interval):
+    payload = fetch_json(
+        BIQUOTE_BASE + f"/api/{symbol}/ohlc",
+        {"interval": interval, "limit": 100},
+    )
+    bars = payload.get("bars") if isinstance(payload, dict) else None
+    if not isinstance(bars, list):
+        raise requests.RequestException("BiQuote returned invalid OHLC bars")
+    rows = []
+    for bar in bars:
+        if not isinstance(bar, dict) or bar.get("isOpen"):
+            continue
+        try:
+            stamp = str(bar["openTime"]).replace("Z", "+00:00")
+            timestamp = int(datetime.fromisoformat(stamp).timestamp() * 1000)
+            row = {
+                "open": float(bar["open"]), "high": float(bar["high"]),
+                "low": float(bar["low"]), "close": float(bar["close"]),
+                "volume": float(bar.get("tickVolume") or bar.get("volume") or 0),
+                "time": timestamp,
+            }
+        except (KeyError, TypeError, ValueError):
+            continue
+        if row["close"] > 0 and row["high"] >= row["low"]:
+            rows.append(row)
+    rows.sort(key=lambda item: item["time"])
+    return rows
+
 
 def alpha_market_tickers():
     token_url = ALPHA_BASE + "/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list"
@@ -92,9 +192,14 @@ def alpha_market_tickers():
 def market_tickers(kind):
     if kind == "alpha":
         return cached("alpha:universe", 60, alpha_market_tickers)
+    if kind == "forex":
+        return cached("forex:universe", 20, biquote_market_tickers)
     base = BASES[kind]
     path = "/api/v3/ticker/24hr" if kind == "spot" else "/fapi/v1/ticker/24hr"
-    rows = cached(kind + ":tickers", 20, lambda: fetch_json(base + path))
+    if kind == "spot":
+        rows = cached(kind + ":tickers", 20, lambda: fetch_first_json([host + path for host in SPOT_BASES]))
+    else:
+        rows = cached(kind + ":tickers", 20, lambda: fetch_json(base + path))
     output = []
     for row in rows:
         symbol = str(row.get("symbol", ""))
@@ -111,6 +216,8 @@ def market_tickers(kind):
     return output
 
 def candles(kind, symbol, interval):
+    if kind == "forex":
+        return cached(f"{kind}:{symbol}:{interval}", 45, lambda: biquote_candles(symbol, interval))
     if kind == "alpha":
         path = "/bapi/defi/v1/public/alpha-trade/klines"
         payload = cached(f"{kind}:{symbol}:{interval}", 45, lambda: fetch_json(
@@ -310,9 +417,33 @@ def health():
 def markets():
     return jsonify({"markets": MARKETS})
 
+
+@app.get("/api/providers")
+def providers():
+    """Expose provider truth: configured, verified fallback routes versus candidates not integrated."""
+    return jsonify({"markets": [
+        {"id": "spot", "primary": "Binance Public REST", "fallbacks": [
+            "api-gcp.binance.com", "api1.binance.com", "api2.binance.com",
+            "api3.binance.com", "api4.binance.com", "data-api.binance.vision"
+        ], "status": "configured", "note": "Official public endpoints; spot fallback is active."},
+        {"id": "futures", "primary": "Binance USD-M Futures REST", "fallbacks": [],
+         "status": "single_source", "note": "Only one documented public base endpoint; no fake mirrors configured."},
+        {"id": "alpha", "primary": "Binance Alpha public endpoints", "fallbacks": [],
+         "status": "single_source", "note": "No verified equivalent Alpha public backup."},
+        {"id": "forex", "primary": "BiQuote public REST", "fallbacks": [],
+         "status": "configured_unverified_runtime", "note": "No-key FX/metal quotes and 15m OHLC; source must pass live freshness checks."},
+        {"id": "saudi", "primary": None, "fallbacks": [],
+         "status": "provider_required", "note": "No verified no-key 15m OHLC source integrated."},
+        {"id": "us", "primary": None, "fallbacks": [],
+         "status": "provider_required", "note": "No licensed, verified no-key 15m OHLC source integrated."},
+        {"id": "contracts", "primary": None, "fallbacks": [],
+         "status": "provider_required", "note": "No verified no-key 15m futures/options source integrated."}
+    ]})
+
+
 @app.get("/api/market/<kind>")
 def market(kind):
-    if kind not in BASES and kind != "alpha":
+    if kind not in BASES and kind not in ("alpha", "forex"):
         return jsonify({"ok": False, "status": "provider_required", "message": "مزود البيانات لهذا السوق غير مربوط؛ لن نعرض بيانات غير موثوقة.", "signals": []}), 503
     try:
         assets = cached(kind + ":universe", 20, lambda: market_tickers(kind))
@@ -347,7 +478,7 @@ def market(kind):
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": SCAN_INTERVAL,
             "movers": movers, "signals": signals, "open_trades": active, "updated": int(time.time()),
-            "source": "Binance Alpha public market data" if kind == "alpha" else "Binance public market data", "strategy": "15m EMA20/50 + RSI14 + ATR14",
+            "source": ("Binance Alpha public market data" if kind == "alpha" else "BiQuote public FX/Metals feed" if kind == "forex" else "Binance public market data"), "strategy": "15m EMA20/50 + RSI14 + ATR14",
             "score_note": "درجة جودة الشروط وليست نسبة نجاح أو احتمال ربح."
         })
     except requests.RequestException:
