@@ -141,9 +141,9 @@
     loadMarketBias();
     if(marketDirectionRefreshTimer)clearInterval(marketDirectionRefreshTimer);
     marketDirectionRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible")loadMarketBias()},60000);
-    let forceNextDailyVip=false;
-    const loadDailyVip=async()=>{
-      const force=forceNextDailyVip;forceNextDailyVip=false;
+    let forceNextMarketRefresh=false;
+    const loadMarketSignals=async()=>{
+      const force=forceNextMarketRefresh;forceNextMarketRefresh=false;
       const out=$("surgeRecommendations"),label=$("signalSourceLabel");
       if(!out)return;
       if(!["spot","futures","alpha","forex","us","contracts","saudi"].includes(m.api)){
@@ -154,7 +154,6 @@
       if(!force)out.innerHTML='<div class="surge-empty">جاري تحليل بيانات السوق داخل الموقع…</div>';
       if(label)label.textContent="تحليل داخلي";
       try{
-        const suffix=force?"&refresh=true":"";
         const result=await getJSON("/api/signals/"+encodeURIComponent(m.api)+"?interval=15m&limit=20"+(force?"&refresh=true":""));
         const base=result&&Array.isArray(result.items)?result:{items:[],message:"لا توجد بيانات تحليل مكتملة."};
         
@@ -183,8 +182,8 @@
     // تحديث هادئ كل 45 ثانية؛ يمنع الاعتماد على فتح الصفحة فقط.
     if(marketSignalRefreshTimer)clearInterval(marketSignalRefreshTimer);
     if(marketLiveTrackTimer)clearInterval(marketLiveTrackTimer);
-    loadDailyVip();
-    marketSignalRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible")loadDailyVip()},300000);
+    loadMarketSignals();
+    marketSignalRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible")loadMarketSignals()},300000);
   }
   async function loadQuotes(m) {
     const out=$("quoteContent"), meta=$("quoteMeta"); if(!out)return;
