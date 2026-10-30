@@ -107,7 +107,7 @@
     const loadDailyVip=async()=>{
       const out=$("surgeRecommendations"),label=$("signalSourceLabel");
       if(!out)return;
-      if(!["spot","futures","alpha"].includes(m.api)){
+      if(!["spot","futures","alpha","forex"].includes(m.api)){
         out.innerHTML='<div class="surge-empty">لا توجد صفقات موثقة متاحة لهذا السوق حاليًا.</div>';
         if(label)label.textContent="غير مدعوم";
         return;
@@ -130,7 +130,11 @@
           const entryText=price(lv.entry_min)+" – "+price(lv.entry_max);
           const targets=targetKeys.map((key,index)=>'<div class="surge-target"><small>TP'+(index+1)+'</small><b dir="ltr">'+price(lv[key])+'</b><small>'+move(lv[key])+'</small></div>').join("");
           const risk=Number.isFinite(stop)&&entry>0?((buy?entry-stop:stop-entry)/entry*100).toFixed(2)+"%":"—";
-          return '<article class="surge-signal-card"><div class="surge-signal-head"><b dir="ltr">'+esc(x.symbol)+'</b><span class="surge-rank">#'+(i+1)+'</span><span class="surge-rec-side '+(buy?"buy":"sell")+'">'+(buy?"شراء LONG":"بيع SHORT")+'</span></div><div class="surge-entry"><small>منطقة الدخول</small><b dir="ltr">'+entryText+'</b></div><div class="surge-level-grid">'+targets+'<div class="surge-target stop"><small>وقف الخسارة</small><b dir="ltr">'+price(stop)+'</b><small>مخاطرة '+risk+'</small></div></div><div class="surge-signal-foot"><span>'+esc(x.status||"نشطة")+' · '+esc(x.age_hours)+" ساعة"+'</span></div></article>';
+          const sourceLink=x.source_url?'<a class="surge-link" href="'+esc(x.source_url)+'" target="_blank" rel="noopener noreferrer">فتح المنشور</a>':"";
+          const sourceName=esc(x.source||"مصدر عام");
+          const timeframe=esc(x.timeframe||"غير مذكور من المصدر");
+          const qualityNote=x.source_performance_verified===false?'<small>أداء المصدر غير مدقق مستقلًا</small>':"";
+          return '<article class="surge-signal-card"><div class="surge-signal-head"><b dir="ltr">'+esc(x.symbol)+'</b><span class="surge-rank">#'+(i+1)+'</span><span class="surge-rec-side '+(buy?"buy":"sell")+'">'+(buy?"شراء LONG":"بيع SHORT")+'</span></div><div class="surge-entry"><small>منطقة الدخول</small><b dir="ltr">'+entryText+'</b></div><div class="surge-level-grid">'+targets+'<div class="surge-target stop"><small>وقف الخسارة</small><b dir="ltr">'+price(stop)+'</b><small>مخاطرة '+risk+'</small></div></div><div class="surge-signal-foot"><span>الفريم: '+timeframe+' · '+esc(x.status||"حالة المصدر غير مذكورة")+' · '+esc(x.age_hours)+" ساعة"+'</span><span>'+sourceName+' · '+sourceLink+' '+qualityNote+'</span></div></article>';
         }).join("")+'</div>';
       }catch(err){out.innerHTML='<div class="surge-empty">تعذر تحديث الصفقات حالياً. حاول لاحقاً.</div>'}
     };
