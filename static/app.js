@@ -20,7 +20,6 @@
     "/markets/forex-gold":"forex"
   };
   const marketKey = pathToMarket[path];
-  let selectedInterval = "1d";
   let marketSignalRefreshTimer = null;
   let marketLiveTrackTimer = null;
   let marketSignalRefreshBusy = false;
@@ -216,30 +215,6 @@
     try {const d=await getJSON("/api/trade-chart-data?market="+encodeURIComponent(m.api)+"&symbol="+encodeURIComponent(symbol)+"&interval=1d");out.innerHTML=drawCandles(d.items||[]);meta.textContent=m.source+" · "+(d.items||[]).length+" شمعة"}
     catch(err){out.innerHTML=empty("الشارت غير متاح",err.message);meta.textContent="لا توجد بيانات شموع مؤكدة"}
   }
-  function signalCard(x, rank=0, marketKey="") {
-    const l=x.levels||{};
-    const side=x.direction||x.side||"غير محدد";
-    const strength=x.signal_strength||side;
-    const buy=["شراء","BUY","LONG"].includes(side);
-    const entry=Number(l.entry??x.entry);
-    const pctTo=(target, favorable)=> {
-      const n=Number(target);
-      if(!Number.isFinite(entry)||entry<=0||!Number.isFinite(n)||n<=0)return "—";
-      const value=(buy?n-entry:entry-n)/entry*100;
-      return (value>0?"+":"")+value.toFixed(2)+"%";
-    };
-    const medal=rank===0?"🥇 ذهبي":rank===1?"🥈 فضي":rank===2?"🥉 برونزي":"🏅 #"+(rank+1);
-    const stop=l.stop_loss??x.stop_loss,tp1=l.tp1??x.tp1,tp2=l.tp2??x.tp2,tp3=l.tp3??x.tp3;
-    return '<article class="signal-card"><div class="signal-top"><span class="tag" style="font-weight:800;border:1px solid #c79b35;background:linear-gradient(135deg,#35270a,#9b7622);color:#fff0b3">'+medal+'</span><b class="signal-symbol">'+esc(x.symbol||"—")+'</b><span class="tag '+(buy?"buy":"sell")+'">'+esc(strength)+'</span></div>'+
-      '<div class="entry-line"><span>الدخول</span><strong>'+price(entry)+'</strong></div><div class="levels-grid">'+
-      '<div class="level stop"><small>وقف الخسارة</small><strong>'+price(stop)+'</strong><small class="negative">خسارة محتملة '+pctTo(stop,false)+'</small></div>'+
-      '<div class="level target"><small>الهدف الأول</small><strong>'+price(tp1)+'</strong><small class="positive">ربح محتمل '+pctTo(tp1,true)+'</small></div>'+
-      '<div class="level target"><small>الهدف الثاني</small><strong>'+price(tp2)+'</strong><small class="positive">ربح محتمل '+pctTo(tp2,true)+'</small></div>'+
-      '<div class="level target"><small>الهدف الثالث</small><strong>'+price(tp3)+'</strong><small class="positive">ربح محتمل '+pctTo(tp3,true)+'</small></div></div>'+
-      '<div class="trade-live-tracker" data-live-symbol="'+esc(x.symbol||"")+'" data-live-market="'+esc(marketKey||x.market||"")+'" data-live-direction="'+esc(side)+'"><span>متابعة الصفقة الحية</span><strong data-live-status>جارٍ ربط سجل الصفقة…</strong><small data-live-price>آخر سعر: —</small></div>'+
-      (x.url&&/^https?:\/\//i.test(x.url)?'<p class="muted" style="margin-top:10px"><a href="'+esc(x.url)+'" target="_blank" rel="noopener noreferrer">فتح المنشور الأصلي للمصدر ↗</a> · الاتجاه الأصلي: '+esc(x.original_direction||"—")+'</p>':"")+
-      '<div class="toolbar" style="margin-top:12px"><button type="button" class="button small" data-inline-chart="1" data-symbol="'+esc(x.symbol||"")+'" data-frame="'+esc(x.interval||selectedInterval)+'" data-entry="'+esc(entry)+'" data-stop="'+esc(stop)+'" data-tp1="'+esc(tp1)+'" data-tp2="'+esc(tp2)+'" data-tp3="'+esc(tp3)+'">عرض الشارت داخل الصفقة</button></div><div data-chart-box data-open="0" style="margin-top:10px"></div><div class="muted" style="margin-top:10px">'+esc(x.status||"النسب تقديرية من سعر الدخول إلى الهدف/الوقف، قبل الرسوم والانزلاق")+'</div></article>';
-  }
   async function refreshLiveTradeTracking(m) {
     const cards=Array.from(document.querySelectorAll(".trade-live-tracker"));
     if(!cards.length)return;
@@ -387,11 +362,6 @@
     $("newsMarket").addEventListener("change",()=>load(false));
     $("newsRefresh").addEventListener("click",()=>load(true));
     await load(false);
-  }
-  function renderAnalysis() {
-    const items=[["حركة السعر","قراءة القمم والقيعان، الاتجاه، ومناطق الدعم والمقاومة."],["الاتجاه متعدد الفريمات","مقارنة الإطار الأكبر بفريم الدخول لتجنب التعارض."],["السيولة وبنية السوق","شرح مفاهيم BOS وCHOCH ومناطق السيولة بصورة تعليمية."],["إدارة المخاطر","تحديد نقطة إبطال الفكرة وحساب المخاطرة قبل التفكير في الهدف."],["الحجم والزخم","استخدام الحجم والزخم كسياق مساعد، لا كضمان مستقل."],["النماذج السعرية","فهم النماذج مع انتظار تأكيد سعري بدل توقع النتيجة مسبقًا."]];
-    view.innerHTML=pageHeader("مكتبة التحليل","محتوى تعليمي مختصر. محرك التحليل يعمل تلقائيًا داخل صفحات الأسواق.","التعلّم")+
-      '<div class="feature-grid">'+items.map(x=>'<article class="feature-card"><span>⌁</span><strong>'+esc(x[0])+'</strong><small>'+esc(x[1])+'</small></article>').join("")+'</div><div class="notice" style="margin-top:16px">المحتوى للتثقيف فقط. لا توجد استراتيجية مضمونة الربح، ويجب اختبار أي قواعد تاريخيًا بعد الرسوم والانزلاق.</div>';
   }
   function renderCandleChart(items,label) {
     return '<div id="tasiChart">'+drawCandles(items)+'</div><div class="muted" style="margin-top:8px">'+esc(label||"شموع المؤشر الفعلية")+'</div>';
