@@ -193,7 +193,6 @@ def test_signal_endpoint_scans_each_supported_market(monkeypatch):
         assert data["count"] == 0
         assert data["live"] is True
         assert data["items"] == []
-        assert data["items"][0]["market"] == market
     assert calls == list(supported)
 
 
