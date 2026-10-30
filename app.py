@@ -2007,7 +2007,7 @@ def _telegram_public_channels():
     discovered = []
     try:
         terms = TELEGRAM_DISCOVERY_TERMS[:6]
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=2) as pool:
             futures = [pool.submit(_telegram_directory_search, term) for term in terms]
             for future in as_completed(futures):
                 try:
@@ -2316,7 +2316,19 @@ def _daily_vip_parse_signal(page_html, page_url, market):
     if not title_match:
         return None
     symbol, raw_side = title_match.group(1).upper(), title_match.group(2).upper()
-    if not re.search(r"\bActive\b", plain, re.I):
+    # Some live setups switch their detail-page badge from "Active" to
+    # "TP3 hit" / "3 of 5 targets hit — trade is in profit". Accept those
+    # still-open states, but never import explicitly closed WIN/LOSS setups.
+    closed_marker = re.search(
+        r"\b(?:WIN|LOSS|CLOSED)\b|\b(?:SL|stop[- ]loss)\s+hit\b",
+        plain, re.I,
+    )
+    active_marker = re.search(r"\bActive\b", plain, re.I) or (
+        re.search(r"\bTP[1-4]\s+hit\b", plain, re.I)
+        and re.search(r"\b[1-4]\s+of\s+5\s+targets?\s+hit\b", plain, re.I)
+        and re.search(r"trade\s+is\s+in\s+profit", plain, re.I)
+    )
+    if closed_marker or not active_marker:
         return None
     if market in {"spot", "alpha"} and raw_side != "LONG":
         return None
