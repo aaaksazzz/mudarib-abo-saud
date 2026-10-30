@@ -284,6 +284,8 @@ def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     assert 'data-market-interval="1w"' in js
     assert 'data-market-interval="1M"' in js
     assert 'اتجاه 4 ساعات + يومي · تنفيذ ' in js
+    assert js.index('id="marketBiasPanel"') < js.index('id="marketTimeframes"') < js.index('id="surgeRecommendations"')
+    assert '/static/app.js?v=20261030.marketframes1' in html
     assert 'marketSignalRefreshTimer=setInterval' in js
     assert 'async function loadChart(m,symbol)' in js
 
