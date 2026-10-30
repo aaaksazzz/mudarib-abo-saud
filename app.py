@@ -2513,12 +2513,15 @@ def _daily_vip_parse_signal(page_html, page_url, market):
         if stop <= entry or any(target >= entry for target in targets.values()):
             return None
         direction = "بيع"
-    age_hours = 0.0
     age_match = re.search(r"published\s+(\d+)\s*(m|h|d)\s+ago", plain, re.I)
-    if age_match:
-        amount, unit = int(age_match.group(1)), age_match.group(2).lower()
-        age_hours = amount / 60 if unit == "m" else amount if unit == "h" else amount * 24
-    # Keep setups explicitly marked Active even if older than 24 hours; closed/SL-hit setups are rejected above.
+    # Unknown publication age is not proof that a signal is fresh. Reject it
+    # instead of silently assigning age zero and reviving an old provider trade.
+    if not age_match:
+        return None
+    amount, unit = int(age_match.group(1)), age_match.group(2).lower()
+    age_hours = amount / 60 if unit == "m" else amount if unit == "h" else amount * 24
+    if age_hours > 24:
+        return None
 
     now = int(time.time())
     published_at = now - int(age_hours * 3600)
@@ -3136,7 +3139,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     # Generate recommendations locally from fresh OHLCV candles for every supported market.
     now = int(time.time())
     # Recommendations expire according to the selected timeframe.
-    timeframe_lifetime = 15 * 60
+    timeframe_lifetime = INTERVAL_SECONDS.get(interval, 15 * 60)
     # Bump cache namespace so older timeframe-length recommendations cannot reappear.
     cache_key = ("pro_confluence_v1", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
@@ -3437,7 +3440,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
 
 # Persistent background scanner: runs even when no visitor has a market page open.
 AUTO_SCAN_MARKETS = ("spot", "futures", "alpha", "contracts", "us", "saudi", "forex")
-AUTO_SCAN_INTERVALS = ("15m",)
+AUTO_SCAN_INTERVALS = ("15m", "1h", "4h", "1d")
 AUTO_SCAN_START_LOCK = threading.Lock()
 AUTO_SCAN_STARTED = False
 
