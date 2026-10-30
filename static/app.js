@@ -113,17 +113,17 @@
         if(label)label.textContent="غير مدعوم";
         return;
       }
-      if(!force)out.innerHTML='<div class="surge-empty">جاري جلب التوصيات المنشورة…</div>';
-      if(label)label.textContent="فحص المصادر";
+      if(!force)out.innerHTML='<div class="surge-empty">جاري تحليل بيانات السوق داخل الموقع…</div>';
+      if(label)label.textContent="تحليل داخلي";
       try{
         const suffix=force?"&refresh=true":"";
         const result=await getJSON("/api/signals/"+encodeURIComponent(m.api)+"?interval=15m&limit=20"+(force?"&refresh=true":""));
         const base=result&&Array.isArray(result.items)?result:{items:[],message:"لا توجد بيانات تحليل مكتملة."};
-        const external={items:[],message:""};
+        
         const merged=base.items;
         const seen=new Set();
         const rows=merged.filter(x=>{const key=String(x.symbol||"")+"|"+String(x.direction||"");if(seen.has(key))return false;seen.add(key);return true});
-        if(label)label.textContent="الاستراتيجية تعمل";
+        if(label)label.textContent="تحليل الموقع الداخلي";
         if(!rows.length){out.innerHTML='<div class="surge-no-trades"><span>⌁</span><b>لا توجد فرصة مطابقة حالياً</b><p>ننتظر توافق اتجاه 4 ساعات واليومي، ثم نرتب الأصول حسب تغير 15 دقيقة.</p><small>عدم ظهور صفقة أفضل من عرض توصية غير مكتملة.</small></div>';return}
         const targetKeys=["tp1","tp2","tp3","tp4","tp5"];
         out.innerHTML='<div class="surge-signal-grid">'+rows.map((x,i)=>{
