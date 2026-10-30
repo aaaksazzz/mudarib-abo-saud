@@ -11,6 +11,10 @@ def test_health_and_home():
     response = client.get("/")
     assert response.status_code == 200
     assert 'lang="ar" dir="rtl"' in response.text
+    health = client.get("/api/health")
+    assert health.status_code == 200
+    assert health.json["database"] == "ok"
+    assert set(health.json["live_markets"]) == {"spot", "futures"}
 
 def test_timeframe_validation():
     response = client.get("/api/market/spot?timeframe=5m")
@@ -59,3 +63,15 @@ def test_invalid_trade_levels_are_not_saved(tmp_path, monkeypatch):
     module.save_new_trades("spot", [invalid])
     with module.db() as connection:
         assert connection.execute("SELECT COUNT(*) FROM trades").fetchone()[0] == 0
+
+
+def test_cache_reuses_successful_value():
+    key = "test-cache-reuse"
+    module.CACHE.pop(key, None)
+    calls = []
+    def loader():
+        calls.append(1)
+        return {"value": 7}
+    assert module.cached(key, 60, loader) == {"value": 7}
+    assert module.cached(key, 60, loader) == {"value": 7}
+    assert len(calls) == 1
