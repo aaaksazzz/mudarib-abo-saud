@@ -563,8 +563,8 @@ def test_daily_vip_endpoint_finds_signal_routes_embedded_in_page_state(monkeypat
     app_module.DAILY_VIP_CACHE.clear()
     response = client.get("/api/daily-vip/signals?market=futures&refresh=true")
     assert response.status_code == 200
-    assert response.json()["count"] == 1
-    assert response.json()["items"][0]["symbol"] == "APTUSDT"
+    assert response.json()["count"] == 2
+    assert {item["symbol"] for item in response.json()["items"]} == {"APTUSDT", "HBARUSDT"}
     app_module.DAILY_VIP_CACHE.clear()
 
 
