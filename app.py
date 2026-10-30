@@ -2368,8 +2368,9 @@ def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=
     try:
         index_html = _daily_vip_fetch(DAILY_VIP_SIGNALS_URL)
         paths = list(dict.fromkeys(re.findall(
-            r"href=['\"](/signals/[a-z0-9-]+)['\"]", index_html, re.I
-        )))[:12]
+            r"href=['\"](?:https?://(?:www\\.)?dailyvipsignals\\.com)?(/signals/[a-z0-9-]+)(?:[?#][^'\"]*)?['\"]",
+            index_html, re.I
+        )))[:30]
         urls = ["https://dailyvipsignals.com" + path for path in paths]
         items = []
         failures = 0
