@@ -2276,17 +2276,17 @@ def _daily_vip_fetch(url):
 
 def _daily_vip_parse_signal(page_html, page_url, market):
     plain = html_lib.unescape(re.sub(r"<[^>]+>", " ", page_html or ""))
-    plain = re.sub(r"\\s+", " ", plain)
-    title_match = re.search(r"([A-Z0-9]{2,20})/USDT\\s+(LONG|SHORT)\\s+Signal", plain, re.I)
+    plain = re.sub(r"\s+", " ", plain)
+    title_match = re.search(r"([A-Z0-9]{2,20})/USDT\s+(LONG|SHORT)\s+Signal", plain, re.I)
     if not title_match:
         return None
     symbol, raw_side = title_match.group(1).upper(), title_match.group(2).upper()
-    if not re.search(r"\\bActive\\b", plain, re.I):
+    if not re.search(r"\bActive\b", plain, re.I):
         return None
     if market in {"spot", "alpha"} and raw_side != "LONG":
         return None
-    entry_match = re.search(r"Entry zone\\s*\\$?([\\d,]+(?:\\.\\d+)?)\\s*[–-]\\s*\\$?([\\d,]+(?:\\.\\d+)?)", plain, re.I)
-    stop_match = re.search(r"Stop[- ]loss\\s*\\$?([\\d,]+(?:\\.\\d+)?)", plain, re.I)
+    entry_match = re.search(r"Entry zone\s*\$?([\d,]+(?:\.\d+)?)\s*[–-]\s*\$?([\d,]+(?:\.\d+)?)", plain, re.I)
+    stop_match = re.search(r"Stop[- ]loss\s*\$?([\d,]+(?:\.\d+)?)", plain, re.I)
     if not entry_match or not stop_match:
         return None
     try:
@@ -2300,7 +2300,7 @@ def _daily_vip_parse_signal(page_html, page_url, market):
     targets = {}
     for number in range(1, 6):
         match = re.search(
-            r"Target\\s*" + str(number) + r"\\s*(?:\\+[\\d.]+\\s*%)?\\s*\\$?\\s*([\\d,]+(?:\\.\\d+)?)",
+            r"Target\s*" + str(number) + r"\s*(?:\+[\d.]+\s*%)?\s*\$?\s*([\d,]+(?:\.\d+)?)",
             plain, re.I,
         )
         if not match:
@@ -2321,7 +2321,7 @@ def _daily_vip_parse_signal(page_html, page_url, market):
             return None
         direction = "بيع"
     age_hours = 0.0
-    age_match = re.search(r"published\\s+(\\d+)\\s*(m|h|d)\\s+ago", plain, re.I)
+    age_match = re.search(r"published\s+(\d+)\s*(m|h|d)\s+ago", plain, re.I)
     if age_match:
         amount, unit = int(age_match.group(1)), age_match.group(2).lower()
         age_hours = amount / 60 if unit == "m" else amount if unit == "h" else amount * 24
@@ -2329,7 +2329,7 @@ def _daily_vip_parse_signal(page_html, page_url, market):
         return None
     now = int(time.time())
     published_at = now - int(age_hours * 3600)
-    leverage_match = re.search(r"\\b" + re.escape(raw_side) + r"\\s+(\\d+)\\s*[×x]", plain, re.I)
+    leverage_match = re.search(r"\b" + re.escape(raw_side) + r"\s+(\d+)\s*[×x]", plain, re.I)
     return {
         "symbol": symbol + "USDT",
         "direction": direction,
