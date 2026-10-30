@@ -25,6 +25,9 @@
   let marketDirectionRefreshTimer = null;
   let marketLiveTrackTimer = null;
   let marketSignalRefreshBusy = false;
+  // Prevent overlapping signal scans on one market page; queue the latest user refresh.
+  let marketPageSignalBusy = false;
+  let marketPageSignalQueued = false;
   let lastMarketItems = [];
   let currentChartSymbol = "";
   let adminAuth = "";
@@ -155,6 +158,8 @@
     let selectedMarketInterval="15m";
     const marketIntervalLabels={"15m":"15 دقيقة","1h":"ساعة","4h":"4 ساعات","1d":"يومي","1w":"أسبوعي","1M":"شهري"};
     const loadMarketSignals=async()=>{
+      if(marketPageSignalBusy){marketPageSignalQueued=true;return;}
+      marketPageSignalBusy=true;
       const force=forceNextMarketRefresh;forceNextMarketRefresh=false;
       const out=$("surgeRecommendations"),label=$("signalSourceLabel");
       if(!out)return;
@@ -188,7 +193,10 @@
           const qualityNote='<small>تغير '+esc(marketIntervalLabels[selectedMarketInterval])+': '+Number(x.change_interval_pct??x.change_15m_pct??0).toFixed(2)+'% · الدرجة ليست نسبة نجاح</small>';
           return '<article class="surge-signal-card"><div class="surge-signal-head"><span class="surge-rank">#'+(i+1)+'</span><b dir="ltr">'+esc(x.symbol)+'</b><span class="surge-rec-side '+(buy?"buy":"sell")+'">'+esc(x.signal_label||x.direction)+'</span></div><div class="surge-signal-meta"><span>4 ساعات <b>'+esc(x.timeframe_trends?.["4h"]||"—")+'</b></span><span>اليومي <b>'+esc(x.timeframe_trends?.["1d"]||"—")+'</b></span><span>تغير 15د <b>'+Number(x.change_15m_pct||0).toFixed(2)+'%</b></span></div><div class="surge-entry"><small>سعر الدخول</small><b dir="ltr">'+entryText+'</b></div><div class="surge-level-grid">'+targets+'<div class="surge-target stop"><small>وقف الخسارة</small><b dir="ltr">'+price(stop)+'</b><small>مخاطرة '+risk+'</small></div></div><div class="surge-signal-foot"><span>'+timeframe+'</span><span>'+qualityNote+'</span></div></article>';
         }).join("")+'</div>';
-      }catch(err){out.innerHTML='<div class="surge-empty"><b>تعذر إكمال فحص الصفقات</b><p>'+esc(err.message||"خطأ اتصال غير معروف")+'</p><small>تم إيقاف الانتظار بعد 90 ثانية دون عرض بيانات قديمة.</small></div>'}
+      }catch(err){out.innerHTML='<div class="surge-empty"><b>تعذر إكمال فحص الصفقات</b><p>'+esc(err.message||"خطأ اتصال غير معروف")+'</p><small>تم إيقاف الانتظار بعد 90 ثانية دون عرض بيانات قديمة.</small></div>'}finally{
+        marketPageSignalBusy=false;
+        if(marketPageSignalQueued){marketPageSignalQueued=false;loadMarketSignals();}
+      }
     };
 
     $("marketTimeframes")?.addEventListener("click",event=>{
