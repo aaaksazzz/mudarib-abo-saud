@@ -4,6 +4,7 @@
   const view = $("pageView");
   // مهلة متوازنة للجوال والمتصفحات البطيئة، دون تعليق الواجهة لمدة طويلة.
   const API_TIMEOUT = 20000;
+  const SIGNAL_TIMEOUT = 90000;
   const markets = {
     spot:{slug:"spot",api:"spot",name:"سبوت Binance",sub:"العملات الفورية",icon:"◉",source:"Binance"},
     futures:{slug:"futures",api:"futures",name:"فيوتشر",sub:"عقود Binance الدائمة وفرص قصيرة الأجل",icon:"⇅",source:"Binance"},
@@ -34,10 +35,10 @@
   };
   const pct = (v) => {const n=Number(v);return Number.isFinite(n)?(n>0?"+":"")+n.toFixed(2)+"%":"—"};
   const timeText = (v) => {const n=Number(v);if(!n)return "—";try{return new Date(n<1e12?n*1000:n).toLocaleString("ar-SA",{dateStyle:"medium",timeStyle:"short"})}catch(_){return "—"}};
-  async function getJSON(url, opts={}) {
+  async function getJSON(url, opts={}, timeoutMs=API_TIMEOUT) {
     // توافق مع WebViews والمتصفحات التي لا توفر AbortController.
     const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-    const timer = controller ? setTimeout(()=>controller.abort(), API_TIMEOUT) : null;
+    const timer = controller ? setTimeout(()=>controller.abort(), timeoutMs) : null;
     try {
       const requestOptions = {...opts, cache:"no-store"};
       if(controller) requestOptions.signal = controller.signal;
@@ -165,14 +166,14 @@
       if(!force)out.innerHTML='<div class="surge-empty">جاري تحليل بيانات السوق داخل الموقع…</div>';
       if(label)label.textContent="تحليل داخلي";
       try{
-        const result=await getJSON("/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedMarketInterval)+"&limit=20"+(force?"&refresh=true":""));
+        const result=await getJSON("/api/signals/"+encodeURIComponent(m.api)+"?interval="+encodeURIComponent(selectedMarketInterval)+"&limit=20"+(force?"&refresh=true":""),{},SIGNAL_TIMEOUT);
         const base=result&&Array.isArray(result.items)?result:{items:[],message:"لا توجد بيانات تحليل مكتملة."};
         
         const merged=base.items;
         const seen=new Set();
         const rows=merged.filter(x=>{const key=String(x.symbol||"")+"|"+String(x.direction||"");if(seen.has(key))return false;seen.add(key);return true});
         if(label)label.textContent="تحليل الموقع الداخلي";
-        if(!rows.length){out.innerHTML='<div class="surge-no-trades"><span>⌁</span><b>لا توجد فرصة مطابقة حالياً</b><p>ننتظر توافق اتجاه 4 ساعات واليومي، ثم نرتب الأصول حسب تغير '+marketIntervalLabels[selectedMarketInterval]+'.</p><small>عدم ظهور صفقة أفضل من عرض توصية غير مكتملة.</small></div>';return}
+        if(!rows.length){const detail=String(base.message||"لم يجتز أي أصل شروط الدخول المكتملة.");const scanned=Number(base.scanned||0),universe=Number(base.universe_size||0);out.innerHTML='<div class="surge-no-trades"><span>⌁</span><b>لا توجد فرصة مطابقة حالياً</b><p>'+esc(detail)+'</p><small>فُحص '+scanned+' أصلًا من أصل '+(universe||"غير معروف")+' · فريم التنفيذ '+esc(marketIntervalLabels[selectedMarketInterval])+' · لن نعرض صفقة ناقصة.</small></div>';return}
         const targetKeys=["tp1","tp2","tp3","tp4","tp5"];
         out.innerHTML='<div class="surge-signal-grid">'+rows.map((x,i)=>{
           const lv=x.levels||{},buy=x.direction==="شراء";
@@ -187,7 +188,7 @@
           const qualityNote='<small>تغير '+esc(marketIntervalLabels[selectedMarketInterval])+': '+Number(x.change_interval_pct??x.change_15m_pct??0).toFixed(2)+'% · الدرجة ليست نسبة نجاح</small>';
           return '<article class="surge-signal-card"><div class="surge-signal-head"><span class="surge-rank">#'+(i+1)+'</span><b dir="ltr">'+esc(x.symbol)+'</b><span class="surge-rec-side '+(buy?"buy":"sell")+'">'+esc(x.signal_label||x.direction)+'</span></div><div class="surge-signal-meta"><span>4 ساعات <b>'+esc(x.timeframe_trends?.["4h"]||"—")+'</b></span><span>اليومي <b>'+esc(x.timeframe_trends?.["1d"]||"—")+'</b></span><span>تغير 15د <b>'+Number(x.change_15m_pct||0).toFixed(2)+'%</b></span></div><div class="surge-entry"><small>سعر الدخول</small><b dir="ltr">'+entryText+'</b></div><div class="surge-level-grid">'+targets+'<div class="surge-target stop"><small>وقف الخسارة</small><b dir="ltr">'+price(stop)+'</b><small>مخاطرة '+risk+'</small></div></div><div class="surge-signal-foot"><span>'+timeframe+'</span><span>'+qualityNote+'</span></div></article>';
         }).join("")+'</div>';
-      }catch(err){out.innerHTML='<div class="surge-empty">تعذر تحديث الصفقات حالياً. حاول لاحقاً.</div>'}
+      }catch(err){out.innerHTML='<div class="surge-empty"><b>تعذر إكمال فحص الصفقات</b><p>'+esc(err.message||"خطأ اتصال غير معروف")+'</p><small>تم إيقاف الانتظار بعد 90 ثانية دون عرض بيانات قديمة.</small></div>'}
     };
 
     $("marketTimeframes")?.addEventListener("click",event=>{
