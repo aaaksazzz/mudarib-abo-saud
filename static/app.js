@@ -98,10 +98,10 @@
       '@media(max-width:650px){.surge-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}'+
       '</style>'+
       '<div class="surge-page">'+
-      '<div class="surge-top"><span class="eyebrow">SMART TRADING PRO</span><h1 class="page-title surge-market-title" style="margin:8px 0 0">'+esc(m.name)+'</h1><div class="surge-market-sub">'+(['spot','futures','alpha'].includes(m.api)?'DAILY VIP SIGNALS · EXTERNAL SOURCE':esc(m.source.toUpperCase())+' · MARKET')+'</div><p class="muted">'+esc(m.sub)+'</p></div>'+
+      '<div class="surge-top"><span class="eyebrow">SMART TRADING PRO</span><h1 class="page-title surge-market-title" style="margin:8px 0 0">'+esc(m.name)+'</h1><div class="surge-market-sub">'+(['spot','futures','alpha'].includes(m.api)?'فرص مختارة':'فرص مختارة')+'</div><p class="muted">'+esc(m.sub)+'</p></div>'+
       ''+
       ''+
-      '<section class="surge-panel"><div class="surge-item-head"><h2 style="margin:0">📡 توصيات من Daily VIP Signals</h2><span class="surge-chip" id="signalSourceLabel">Daily VIP Signals</span></div><div id="surgeRecommendations" class="surge-empty">تظهر هنا التوصيات المنشورة من Daily VIP Signals بعد التحقق من اكتمال مستوياتها وحالتها.</div><p class="surge-muted" style="margin-top:10px">الصفقات مرتبة حسب العائد المحتمل مقارنة بالمخاطرة، وعند التعادل تظهر الأحدث أولاً.</p></section>'+
+      '<section class="surge-panel"><div class="surge-item-head"><h2 style="margin:0">📡 توصيات من فرص التداول</h2><span class="surge-chip" id="signalSourceLabel">محدثة</span></div><div id="surgeRecommendations" class="surge-empty">تظهر هنا الصفقات المكتملة بعد التحقق من الأسعار والمستويات وحالة الصفقة.</div><p class="surge-muted" style="margin-top:10px">الصفقات مرتبة حسب العائد المحتمل مقارنة بالمخاطرة، وعند التعادل تظهر الأحدث أولاً.</p></section>'+
       ''+
       '</div>';
     const loadDailyVip=async()=>{
@@ -113,7 +113,7 @@
         return;
       }
       out.innerHTML='<div class="surge-empty">جاري جلب التوصيات المنشورة…</div>';
-      if(label)label.textContent="Daily VIP Signals";
+      if(label)label.textContent="محدثة";
       try{
         const data=await getJSON("/api/daily-vip/signals?market="+encodeURIComponent(m.api)+"&limit=20");
         const rows=(Array.isArray(data.items)?data.items:[]).slice().sort((a,b)=>{
@@ -130,9 +130,9 @@
           const entryText=price(lv.entry_min)+" – "+price(lv.entry_max);
           const targets=targetKeys.map((key,index)=>'<div class="surge-target"><small>TP'+(index+1)+'</small><b dir="ltr">'+price(lv[key])+'</b><small>'+move(lv[key])+'</small></div>').join("");
           const risk=Number.isFinite(stop)&&entry>0?((buy?entry-stop:stop-entry)/entry*100).toFixed(2)+"%":"—";
-          return '<article class="surge-signal-card"><div class="surge-signal-head"><b dir="ltr">'+esc(x.symbol)+'</b><span class="surge-rank">#'+(i+1)+'</span><span class="surge-rec-side '+(buy?"buy":"sell")+'">'+(buy?"شراء LONG":"بيع SHORT")+'</span></div><div class="surge-entry"><small>منطقة الدخول المنشورة</small><b dir="ltr">'+entryText+'</b></div><div class="surge-level-grid">'+targets+'<div class="surge-target stop"><small>وقف الخسارة</small><b dir="ltr">'+price(stop)+'</b><small>مخاطرة '+risk+'</small></div></div><div class="surge-signal-foot"><span>'+esc(x.status||"نشطة")+' · '+esc(x.age_hours)+" ساعة"+'</span><a href="'+esc(x.source_url)+'" target="_blank" rel="noopener noreferrer">تفاصيل التوصية والمصدر ↗</a></div></article>';
+          return '<article class="surge-signal-card"><div class="surge-signal-head"><b dir="ltr">'+esc(x.symbol)+'</b><span class="surge-rank">#'+(i+1)+'</span><span class="surge-rec-side '+(buy?"buy":"sell")+'">'+(buy?"شراء LONG":"بيع SHORT")+'</span></div><div class="surge-entry"><small>منطقة الدخول</small><b dir="ltr">'+entryText+'</b></div><div class="surge-level-grid">'+targets+'<div class="surge-target stop"><small>وقف الخسارة</small><b dir="ltr">'+price(stop)+'</b><small>مخاطرة '+risk+'</small></div></div><div class="surge-signal-foot"><span>'+esc(x.status||"نشطة")+' · '+esc(x.age_hours)+" ساعة"+'</span></div></article>';
         }).join("")+'</div>';
-      }catch(err){out.innerHTML='<div class="surge-empty">تعذر تحميل الصفقات: '+esc(err.message||"خطأ في المصدر")+'</div>'}
+      }catch(err){out.innerHTML='<div class="surge-empty">تعذر تحديث الصفقات حالياً. حاول لاحقاً.</div>'}
     };
     if(marketSignalRefreshTimer)clearInterval(marketSignalRefreshTimer);
     if(marketLiveTrackTimer)clearInterval(marketLiveTrackTimer);
