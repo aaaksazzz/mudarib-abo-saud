@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 app = Flask(__name__, static_folder="static")
 BASES = {"spot": "https://api.binance.com", "futures": "https://fapi.binance.com"}
 ALPHA_BASE = "https://www.binance.com"
-FRAMES = {"15m", "1h", "4h", "1d"}
+SCAN_INTERVAL = "15m"
 STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "EUR"}
 CACHE = {}
 CACHE_LOCK = threading.Lock()
@@ -164,22 +164,18 @@ def frame_bias(rows):
         return "SELL"
     return "NEUTRAL"
 
-def analyse_candidate(kind, item, interval, market_direction):
+def analyse_candidate(kind, item, market_direction):
     try:
-        selected = candles(kind, item["symbol"], interval)
-        four_hour = candles(kind, item["symbol"], "4h")
-        daily = candles(kind, item["symbol"], "1d")
-        if min(len(selected), len(four_hour), len(daily)) < 55:
+        selected = candles(kind, item["symbol"], SCAN_INTERVAL)
+        if len(selected) < 55:
             return None
         side = frame_bias(selected)
         if side not in ("BUY", "SELL") or side != market_direction:
             return None
-        if frame_bias(four_hour) != side or frame_bias(daily) != side:
-            return None
         closes = [x["close"] for x in selected]
         current = closes[-1]
         momentum = rsi(closes)
-        if momentum is None or (side == "BUY" and not 50 <= momentum <= 72) or (side == "SELL" and not 28 <= momentum <= 50):
+        if momentum is None or (side == "BUY" and not 50 <= momentum <= 75) or (side == "SELL" and not 25 <= momentum <= 50):
             return None
         ranges = []
         for index in range(1, len(selected)):
@@ -202,7 +198,7 @@ def analyse_candidate(kind, item, interval, market_direction):
             "symbol": item["symbol"], "side": side, "entry": current, "price": item["price"],
             "stop_loss": stop, "tp1": current + sign * distance, "tp2": current + sign * distance * 2,
             "tp3": current + sign * distance * 3, "risk_percent": round(distance / current * 100, 3),
-            "change24h": item["change24h"], "volume": item["volume"], "timeframe": interval,
+            "change24h": item["change24h"], "volume": item["volume"], "timeframe": SCAN_INTERVAL,
             "rsi": round(momentum, 1), "quality_score": score, "created_at": int(time.time()),
         }
     except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, ZeroDivisionError):
@@ -318,9 +314,6 @@ def markets():
 def market(kind):
     if kind not in BASES and kind != "alpha":
         return jsonify({"ok": False, "status": "provider_required", "message": "مزود البيانات لهذا السوق غير مربوط؛ لن نعرض بيانات غير موثوقة.", "signals": []}), 503
-    interval = request.args.get("timeframe", "15m")
-    if interval not in FRAMES:
-        return jsonify({"ok": False, "error": "إطار زمني غير مدعوم"}), 400
     try:
         assets = cached(kind + ":universe", 20, lambda: market_tickers(kind))
         up = sum(1 for row in assets if row["change24h"] > 0)
@@ -334,11 +327,11 @@ def market(kind):
         movers = gainers + losers
         prices = {row["symbol"]: row["price"] for row in assets}
         update_open_trades(kind, prices)
-        candidates = sorted(assets, key=lambda row: (abs(row["change24h"]), row["volume"]), reverse=True)[:10]
+        candidates = sorted(assets, key=lambda row: (abs(row["change24h"]), row["volume"]), reverse=True)[:20]
         signals = []
         if direction != "NEUTRAL":
             with ThreadPoolExecutor(max_workers=6) as pool:
-                jobs = [pool.submit(analyse_candidate, kind, row, interval, direction) for row in candidates]
+                jobs = [pool.submit(analyse_candidate, kind, row, direction) for row in candidates]
                 for job in as_completed(jobs):
                     signal = job.result()
                     if signal:
@@ -352,9 +345,9 @@ def market(kind):
             ).fetchall()]
         return jsonify({
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
-            "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": interval,
+            "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": SCAN_INTERVAL,
             "movers": movers, "signals": signals, "open_trades": active, "updated": int(time.time()),
-            "source": "Binance Alpha public market data" if kind == "alpha" else "Binance public market data", "strategy": "EMA20/50 + RSI14 + ATR14 + 4h/1d confirmation",
+            "source": "Binance Alpha public market data" if kind == "alpha" else "Binance public market data", "strategy": "15m EMA20/50 + RSI14 + ATR14",
             "score_note": "درجة جودة الشروط وليست نسبة نجاح أو احتمال ربح."
         })
     except requests.RequestException:
