@@ -115,7 +115,7 @@
       out.innerHTML='<div class="surge-empty">جاري جلب التوصيات المنشورة…</div>';
       if(label)label.textContent="محدثة";
       try{
-        const data=await getJSON("/api/daily-vip/signals?market="+encodeURIComponent(m.api)+"&limit=20");
+        const data=await getJSON("/api/trade-feed?market="+encodeURIComponent(m.api)+"&limit=20");
         const rows=(Array.isArray(data.items)?data.items:[]).slice().sort((a,b)=>{
           const score=(x)=>{const v=x.levels||{},entry=Number(v.entry),stop=Number(v.stop_loss),target=Number(v.tp3),long=x.original_direction==="LONG";const risk=Math.abs(entry-stop),reward=Math.abs(target-entry);return entry>0&&risk>0&&target>0?reward/risk:-1};
           const delta=score(b)-score(a);
