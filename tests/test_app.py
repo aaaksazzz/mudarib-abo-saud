@@ -193,9 +193,9 @@ def test_signal_endpoint_scans_each_supported_market(monkeypatch):
         assert response.status_code == 200
         data = response.json()
         assert data["market"] == market
-        assert data["count"] == 0
+        assert data["count"] == 1
         assert data["live"] is True
-        assert data["items"] == []
+        assert data["items"][0]["direction"] == "شراء"
     assert calls == list(supported)
 
 
