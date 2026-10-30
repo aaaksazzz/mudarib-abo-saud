@@ -119,5 +119,14 @@
   if(languageSelect)languageSelect.addEventListener('change',function(){var lang=languageSelect.value;if(!supported.includes(lang))return;var value='/ar/'+lang;document.cookie='googtrans='+value+';path=/;max-age=31536000;SameSite=Lax';document.cookie='googtrans='+value+';path=/;domain='+location.hostname+';max-age=31536000;SameSite=Lax';if(lang==='ar'){document.cookie='googtrans=;path=/;max-age=0';document.cookie='googtrans=;path=/;domain='+location.hostname+';max-age=0';}location.reload();});
 })();
 </script>
+
+<nav class="mobile-bottom-nav" aria-label="التنقل الرئيسي">
+  <a href="/" data-bottom-nav="home"><span class="bottom-nav-icon" aria-hidden="true">⌂</span><span>الرئيسية</span></a>
+  <a href="/market-direction" data-bottom-nav="markets"><span class="bottom-nav-icon" aria-hidden="true">▥</span><span>الأسواق</span></a>
+  <a href="/markets/futures" class="bottom-nav-primary" data-bottom-nav="trades" aria-label="الصفقات"><span class="bottom-nav-center-icon" aria-hidden="true">↗</span><span>الصفقات</span></a>
+  <a href="/account" data-bottom-nav="account"><span class="bottom-nav-icon" aria-hidden="true">◷</span><span>حسابي</span></a>
+  <button type="button" id="bottomMore" aria-label="فتح المزيد"><span class="bottom-nav-icon" aria-hidden="true">☰</span><span>المزيد</span></button>
+</nav>
+
 </body>
 </html>
