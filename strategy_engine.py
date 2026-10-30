@@ -150,9 +150,20 @@ def _analyze_symbol(market, interval, row, candle_loader):
     if any(analyses.get(frame) is None for frame in frames):
         return None
     fast, four_hour, daily = analyses["15m"], analyses["4h"], analyses["1d"]
-    if four_hour["direction"] == "صاعد" and daily["direction"] == "صاعد":
+    def frame_signal(frame):
+        if frame["direction"] == "صاعد":
+            return "شراء قوي" if frame["adx"] >= 25 else "شراء"
+        if frame["direction"] == "هابط":
+            return "بيع قوي" if frame["adx"] >= 25 else "بيع"
+        return "محايد"
+
+    four_hour_signal = frame_signal(four_hour)
+    daily_signal = frame_signal(daily)
+    bullish = {"شراء", "شراء قوي"}
+    bearish = {"بيع", "بيع قوي"}
+    if four_hour_signal in bullish and daily_signal in bullish:
         side = "شراء"
-    elif four_hour["direction"] == "هابط" and daily["direction"] == "هابط":
+    elif four_hour_signal in bearish and daily_signal in bearish:
         side = "بيع"
     else:
         return None
@@ -173,7 +184,7 @@ def _analyze_symbol(market, interval, row, candle_loader):
         tp1, tp2, tp3 = entry-risk, entry-2*risk, entry-3*risk
     if risk <= 0 or risk / entry > RISK_CAP.get("15m", .018) or tp3 <= 0:
         return None
-    strong = four_hour["adx"] >= 25 and daily["adx"] >= 25
+    strong = four_hour_signal in {"شراء قوي", "بيع قوي"} and daily_signal in {"شراء قوي", "بيع قوي"}
     label = ("شراء قوي" if strong else "شراء") if side == "شراء" else ("بيع قوي" if strong else "بيع")
     now = int(time.time())
     digits = 10 if entry < .001 else 8 if entry < 1 else 5 if entry < 100 else 3 if entry < 10000 else 2
@@ -197,6 +208,7 @@ def _analyze_symbol(market, interval, row, candle_loader):
         "ai_reviewed": False, "generated_by_ai": False,
         "timeframes_aligned": 2,
         "timeframe_trends": {frame: analyses[frame]["direction"] for frame in frames},
+        "timeframe_signals": {"4h": four_hour_signal, "1d": daily_signal},
         "timeframe_change_pct": changes, "change_15m_pct": changes["15m"],
         "timeframe_alignment_label": "4h + يومي متفقان",
         "trend_strength": evidence_score, "potential_profit_pct": round(profit_pct,2),
@@ -208,7 +220,7 @@ def _analyze_symbol(market, interval, row, candle_loader):
         "external_source_weight": 0, "site_analysis_weight": 100,
         "has_complete_levels": True,
         "level_source_note": "المستويات مبنية على ATR لشموع 15 دقيقة.",
-        "method": "trend_4h_1d_rank_15m"
+        "method": "trend_4h_1d_rank_15m_v2"
     }
 
 def generate_signals(market, interval, market_rows, limit, candle_loader):
