@@ -134,10 +134,11 @@ def _frame_analysis(candles):
 
 
 def _analyze_symbol(market, interval, row, candle_loader):
+    """4h and daily decide direction; 15m momentum ranks candidates."""
     symbol = str(row.get("symbol") or "").strip().upper()
     if not symbol:
         return None
-    frames = FRAME_SETS.get(interval, (interval, "1h", "4h", "1d"))
+    frames = ("15m", "4h", "1d")
     analyses, raw_by_frame = {}, {}
     for frame in frames:
         try:
@@ -145,120 +146,72 @@ def _analyze_symbol(market, interval, row, candle_loader):
         except Exception:
             raw_by_frame[frame] = []
         analyses[frame] = _frame_analysis(raw_by_frame[frame]) if raw_by_frame[frame] else None
-    main = analyses.get(interval)
-    if not main:
+    if any(analyses.get(frame) is None for frame in frames):
         return None
-    valid = [a for a in analyses.values() if a]
-    if len(valid) < min(2, len(frames)):
-        return None
-
-    long_score = short_score = 0.0
-    evidence = []
-    for frame, analysis in analyses.items():
-        if not analysis:
-            continue
-        weight = 1.0 if frame == interval else 0.7
-        direction = analysis["direction"]
-        if direction == "صاعد":
-            long_score += 16 * weight
-            evidence.append(frame + ":صاعد")
-        elif direction == "هابط":
-            short_score += 16 * weight
-            evidence.append(frame + ":هابط")
-        if analysis["macd_hist"] > 0 and analysis["macd_hist"] > analysis["previous_macd_hist"]:
-            long_score += 7 * weight
-        elif analysis["macd_hist"] < 0 and analysis["macd_hist"] < analysis["previous_macd_hist"]:
-            short_score += 7 * weight
-    if main["rsi"] >= 52 and main["rsi"] <= 70:
-        long_score += 10
-    elif main["rsi"] <= 48 and main["rsi"] >= 30:
-        short_score += 10
-    if main["adx"] >= 20:
-        if main["direction"] == "صاعد":
-            long_score += min(10, (main["adx"]-20)*0.5)
-        elif main["direction"] == "هابط":
-            short_score += min(10, (main["adx"]-20)*0.5)
-    if main["relative_volume"] >= 1.15:
-        if main["last"]["close"] >= main["last"]["open"]:
-            long_score += min(8, main["relative_volume"]*2)
-        else:
-            short_score += min(8, main["relative_volume"]*2)
-
-    # Breakout confirmation is rewarded, but never used alone to create a trade.
-    last = main["last"]
-    if last["close"] > main["resistance"]:
-        long_score += 8
-    elif last["close"] < main["support"]:
-        short_score += 8
-    side = "شراء" if long_score >= short_score else "بيع"
-    score = int(min(98, max(long_score, short_score)))
-    if score < 72 or abs(long_score-short_score) < 18 or main["adx"] < 16:
-        return None
-    if side == "شراء" and (main["direction"] != "صاعد" or main["rsi"] > 72):
-        return None
-    if side == "بيع" and (main["direction"] != "هابط" or main["rsi"] < 28):
-        return None
-
-    close, atr = last["close"], main["atr"]
-    swing = raw_by_frame[interval][-12:]
-    raw_risk = max(atr*1.5, close*0.002)
-    if side == "شراء":
-        stop = min(close-raw_risk, min(c["low"] for c in swing)-atr*0.15)
-        risk = close-stop
+    fast, four_hour, daily = analyses["15m"], analyses["4h"], analyses["1d"]
+    if four_hour["direction"] == "صاعد" and daily["direction"] == "صاعد":
+        side = "شراء"
+    elif four_hour["direction"] == "هابط" and daily["direction"] == "هابط":
+        side = "بيع"
     else:
-        stop = max(close+raw_risk, max(c["high"] for c in swing)+atr*0.15)
-        risk = stop-close
-    if risk <= 0 or risk/close > RISK_CAP.get(interval, .05):
         return None
-    entry = close
-    tp1, tp2, tp3 = ((entry+risk, entry+2*risk, entry+3*risk) if side == "شراء"
-                    else (entry-risk, entry-2*risk, entry-3*risk))
-    if tp3 <= 0:
+    entry, atr = float(fast["last"]["close"]), float(fast["atr"])
+    if not math.isfinite(entry) or entry <= 0 or not math.isfinite(atr) or atr <= 0:
         return None
+    risk = max(atr * 1.5, entry * 0.002)
+    if risk <= 0 or risk / entry > RISK_CAP.get("15m", .018):
+        return None
+    swing = raw_by_frame["15m"][-12:]
+    if side == "شراء":
+        stop = min(entry-risk, min(c["low"] for c in swing)-atr*.15)
+        risk = entry-stop
+        tp1, tp2, tp3 = entry+risk, entry+2*risk, entry+3*risk
+    else:
+        stop = max(entry+risk, max(c["high"] for c in swing)+atr*.15)
+        risk = stop-entry
+        tp1, tp2, tp3 = entry-risk, entry-2*risk, entry-3*risk
+    if risk <= 0 or risk / entry > RISK_CAP.get("15m", .018) or tp3 <= 0:
+        return None
+    strong = four_hour["adx"] >= 25 and daily["adx"] >= 25
+    label = ("شراء قوي" if strong else "شراء") if side == "شراء" else ("بيع قوي" if strong else "بيع")
     now = int(time.time())
-    lifetime = FRAME_SECONDS.get(interval, 900)
     digits = 10 if entry < .001 else 8 if entry < 1 else 5 if entry < 100 else 3 if entry < 10000 else 2
-    aligned = sum(1 for a in valid if a["direction"] == ("صاعد" if side == "شراء" else "هابط"))
-    trend_map = {frame: (analysis["direction"] if analysis else "غير متاح")
-                 for frame, analysis in analyses.items()}
-    changes = {frame: round(analysis["change_pct"], 3) for frame, analysis in analyses.items() if analysis}
-    profit_pct = abs(tp3-entry)/entry*100
-    loss_pct = abs(stop-entry)/entry*100
-    rationale = (f"توافق اتجاه EMA20/50 مع MACD وRSI وADX والحجم وبنية السعر؛ "
-                 f"توافق {aligned}/{len(valid)} فريمات. درجة الأدلة {score}/100 وليست احتمال نجاح.")
+    changes = {frame: round(analyses[frame]["change_pct"], 3) for frame in frames}
+    profit_pct, loss_pct = abs(tp3-entry)/entry*100, abs(stop-entry)/entry*100
+    evidence_score = min(98, int(50 + min(25, (four_hour["adx"]+daily["adx"])/4)))
+    rationale = "اتجاه 4 ساعات واليومي متفقان؛ تغير 15 دقيقة للترتيب فقط. الدرجة ليست نسبة نجاح."
     return {
-        "id": f"pro-{market}-{symbol}-{interval}-{now}", "symbol": symbol,
-        "direction": side, "title": f"{side} {symbol} — تحليل متعدد العوامل PRO",
-        "description": rationale, "source": "محرك التحليل متعدد العوامل PRO",
+        "id": f"trend-4h-1d-{market}-{symbol}-{now}", "symbol": symbol,
+        "direction": side, "signal_label": label, "title": f"{label} {symbol}",
+        "description": rationale, "source": "تحليل اتجاه 4 ساعات + يومي",
         "url": "", "published_at": now, "created_at": now, "age_hours": 0,
-        "market": market, "interval": interval, "expires_at": now+lifetime,
-        "valid_for_seconds": lifetime, "price_updated_at": now, "price_fresh": True,
-        "freshness_label": "آخر إغلاق شمعة متاح",
-        "live_price": round(float(row.get("price") or close), digits),
+        "market": market, "interval": "15m", "expires_at": now+900,
+        "valid_for_seconds": 900, "price_updated_at": now, "price_fresh": True,
+        "freshness_label": "آخر إغلاق شمعة 15 دقيقة",
+        "live_price": round(float(row.get("price") or entry), digits),
         "levels": {"entry": round(entry,digits), "stop_loss": round(stop,digits),
                    "tp1": round(tp1,digits), "tp2": round(tp2,digits), "tp3": round(tp3,digits)},
-        "ai_score": score, "combined_score": score, "method_score": score,
-        "score_type": "درجة توافق فني وليست نسبة نجاح",
+        "ai_score": evidence_score, "combined_score": evidence_score,
+        "method_score": evidence_score, "score_type": "درجة قوة الاتجاه وليست احتمال نجاح",
         "ai_reviewed": False, "generated_by_ai": False,
-        "ai_review": {"summary_ar": rationale,
-                      "risk_ar": "قد تتغير ظروف السوق بسرعة؛ احسب الرسوم والانزلاق قبل التنفيذ.",
-                      "verdict": "توافق فني متعدد العوامل", "score_type": "درجة أدلة وليست نسبة ربح"},
-        "timeframes_aligned": aligned, "timeframe_trends": trend_map,
-        "timeframe_change_pct": changes,
-        "timeframe_alignment_label": f"{aligned}/{len(valid)} فريمات متوافقة",
-        "trend_strength": score, "potential_profit_pct": round(profit_pct,2),
+        "timeframes_aligned": 2,
+        "timeframe_trends": {frame: analyses[frame]["direction"] for frame in frames},
+        "timeframe_change_pct": changes, "change_15m_pct": changes["15m"],
+        "timeframe_alignment_label": "4h + يومي متفقان",
+        "trend_strength": evidence_score, "potential_profit_pct": round(profit_pct,2),
         "potential_loss_pct": round(loss_pct,2),
         "tp1_profit_pct": round(abs(tp1-entry)/entry*100,2),
         "tp2_profit_pct": round(abs(tp2-entry)/entry*100,2),
         "tp3_profit_pct": round(profit_pct,2),
         "risk_reward_tp3": round(profit_pct/loss_pct,2) if loss_pct else None,
         "external_source_weight": 0, "site_analysis_weight": 100,
-        "has_complete_levels": True, "level_source_note": "المستويات مبنية على ATR وبنية القمم والقيعان.",
-        "method": "pro_confluence_v1"
+        "has_complete_levels": True,
+        "level_source_note": "المستويات مبنية على ATR لشموع 15 دقيقة.",
+        "method": "trend_4h_1d_rank_15m"
     }
 
-
 def generate_signals(market, interval, market_rows, limit, candle_loader):
+    """4h/daily agreement determines side; 15m percentage move ranks the list."""
     unique = {}
     for row in market_rows if isinstance(market_rows, list) else []:
         if isinstance(row, dict) and row.get("symbol"):
@@ -273,7 +226,7 @@ def generate_signals(market, interval, market_rows, limit, candle_loader):
     candidates = sorted(unique.values(), key=priority, reverse=True)[:min(30,max(12,limit*2))]
     results = []
     with ThreadPoolExecutor(max_workers=4) as pool:
-        jobs = [pool.submit(_analyze_symbol, market, interval, row, candle_loader) for row in candidates]
+        jobs = [pool.submit(_analyze_symbol, market, "15m", row, candle_loader) for row in candidates]
         for job in as_completed(jobs):
             try:
                 item = job.result()
@@ -281,8 +234,10 @@ def generate_signals(market, interval, market_rows, limit, candle_loader):
                     results.append(item)
             except Exception:
                 continue
-    results.sort(key=lambda item: (item["combined_score"], item["timeframes_aligned"],
-                                   item["risk_reward_tp3"],
-                                   abs(item["timeframe_change_pct"].get(interval,0))), reverse=True)
-    return results[:limit], True, ("تم التحليل متعدد العوامل وترتيب الفرص حسب قوة الأدلة والتوافق والمخاطرة."
-                                   if results else "لم تظهر فرصة اجتازت شروط الجودة والتوافق حاليًا.")
+    results.sort(key=lambda item: (
+        0 if item["direction"] == "شراء" else 1,
+        -item.get("change_15m_pct", 0) if item["direction"] == "شراء"
+        else item.get("change_15m_pct", 0)
+    ))
+    return results[:limit], True, ("تم اعتماد توافق 4 ساعات واليومي، والترتيب حسب تغير 15 دقيقة."
+                                   if results else "لا توجد أصول تحقق توافق 4 ساعات واليومي حاليًا.")
