@@ -125,15 +125,18 @@ def test_results_endpoint_handles_empty_and_malformed_pnl(tmp_path, monkeypatch)
         {"symbol": "AAA", "result": "TP1", "pnl_pct": "2.5", "source": "multi_factor_4h_1d_rank_15m_v3"},
         {"symbol": "BBB", "result": "SL", "pnl_pct": "bad", "source": "multi_factor_4h_1d_rank_15m_v3"},
         {"symbol": "CCC", "result": "مفتوحة", "pnl_pct": None, "source": "multi_factor_4h_1d_rank_15m_v3"},
+        {"symbol": "OLD", "result": "OPEN", "pnl_pct": 0, "source": "legacy_strategy_v2"},
     ])
     response = client.get("/api/results?limit=20")
     assert response.status_code == 200
     data = response.json()
-    assert data["total"] == 3
+    assert data["total"] == 4
     assert data["closed"] == 2
+    assert data["open"] == 2
     assert data["wins"] == 1
     assert data["losses"] == 1
     assert data["profitable"] == 1
+    assert any(row["symbol"] == "OLD" for row in data["items"])
 
 
 def _fake_ai_signal(market, interval, symbol="TESTUSDT"):
