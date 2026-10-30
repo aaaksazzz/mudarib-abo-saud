@@ -2329,7 +2329,7 @@ def _daily_vip_parse_signal(page_html, page_url, market):
         return None
     now = int(time.time())
     published_at = now - int(age_hours * 3600)
-    leverage_match = re.search(r"\b" + re.escape(raw_side) + r"\s+(\d+)\s*[×x]", plain, re.I)
+    leverage_match = re.search(r"\b" + re.escape(raw_side) + r"\s*[·:]?\s*(\d+)\s*[×x]", plain, re.I)
     return {
         "symbol": symbol + "USDT",
         "direction": direction,
