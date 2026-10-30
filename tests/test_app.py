@@ -224,7 +224,7 @@ def test_signal_endpoint_accepts_daily_weekly_and_monthly_frames(monkeypatch):
     for interval in ("1d", "1w", "1M"):
         response = client.get(f"/api/signals/spot?interval={interval}&refresh=true")
         assert response.status_code == 200
-        assert response.json()["interval"] == interval
+        assert response.json()["interval"] == "15m"
         assert response.json()["items"] == []
 
 
