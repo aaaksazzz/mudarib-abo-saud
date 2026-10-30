@@ -209,7 +209,8 @@ def _analyze_symbol(market, interval, row, candle_loader):
     symbol = str(row.get("symbol") or "").strip().upper()
     if not symbol:
         return None
-    frames = ("15m", "4h", "1d")
+    execution_interval = interval if interval in FRAME_SECONDS else "15m"
+    frames = tuple(dict.fromkeys((execution_interval, "4h", "1d")))
     analyses, candles_by_frame = {}, {}
     for frame in frames:
         try:
@@ -220,7 +221,8 @@ def _analyze_symbol(market, interval, row, candle_loader):
     if any(analyses.get(frame) is None for frame in frames):
         return None
 
-    fast, four_hour, daily = analyses["15m"], analyses["4h"], analyses["1d"]
+    fast = analyses[execution_interval]
+    four_hour, daily = analyses["4h"], analyses["1d"]
     if four_hour["direction"] == daily["direction"] == "صاعد":
         side = "شراء"
     elif four_hour["direction"] == daily["direction"] == "هابط":
@@ -235,7 +237,7 @@ def _analyze_symbol(market, interval, row, candle_loader):
     if not math.isfinite(entry) or entry <= 0 or not math.isfinite(atr) or atr <= 0:
         return None
     initial_risk = max(atr * 1.5, entry * 0.002)
-    recent_swing = candles_by_frame["15m"][-12:]
+    recent_swing = candles_by_frame[execution_interval][-12:]
     if side == "شراء":
         stop = min(entry - initial_risk, min(candle["low"] for candle in recent_swing) - atr * 0.15)
         risk = entry - stop
@@ -244,7 +246,7 @@ def _analyze_symbol(market, interval, row, candle_loader):
         stop = max(entry + initial_risk, max(candle["high"] for candle in recent_swing) + atr * 0.15)
         risk = stop - entry
         tp1, tp2, tp3 = entry - risk, entry - 2 * risk, entry - 3 * risk
-    if risk <= 0 or risk / entry > RISK_CAP["15m"] or tp3 <= 0:
+    if risk <= 0 or risk / entry > RISK_CAP[execution_interval] or tp3 <= 0:
         return None
 
     score = _evidence_score(fast, four_hour, daily, side)
@@ -262,12 +264,14 @@ def _analyze_symbol(market, interval, row, candle_loader):
     return {
         "id": f"mft-v3-{market}-{symbol}-{now}", "symbol": symbol,
         "direction": side, "signal_label": label, "title": f"{label} {symbol}",
-        "description": "توافق اتجاه 4 ساعات واليومي مع تأكيد RSI وMACD وADX؛ تغير 15 دقيقة للترتيب فقط.",
+        "description": f"اتجاه 4 ساعات واليومي يحدد القرار؛ فريم التنفيذ والترتيب {execution_interval} مع تأكيد RSI وMACD وADX.",
         "source": "محرك فني متعدد العوامل v3",
         "url": "", "published_at": now, "created_at": now, "age_hours": 0,
-        "market": market, "interval": "15m", "expires_at": now + 900,
-        "valid_for_seconds": 900, "price_updated_at": now, "price_fresh": True,
-        "freshness_label": "آخر إغلاق شمعة 15 دقيقة",
+        "market": market, "interval": execution_interval,
+        "expires_at": now + FRAME_SECONDS[execution_interval],
+        "valid_for_seconds": FRAME_SECONDS[execution_interval],
+        "price_updated_at": now, "price_fresh": True,
+        "freshness_label": f"آخر إغلاق شمعة {execution_interval}",
         "live_price": round(float(row.get("price") or entry), digits),
         "levels": {"entry": round(entry, digits), "stop_loss": round(stop, digits),
                    "tp1": round(tp1, digits), "tp2": round(tp2, digits), "tp3": round(tp3, digits)},
@@ -284,7 +288,9 @@ def _analyze_symbol(market, interval, row, candle_loader):
                   "شراء" if side == "شراء" else
                   "بيع قوي" if daily["adx"] >= 25 else "بيع"
         },
-        "timeframe_change_pct": changes, "change_15m_pct": changes["15m"],
+        "timeframe_change_pct": changes,
+        "change_interval_pct": changes[execution_interval],
+        "change_15m_pct": changes.get("15m", 0.0),
         "timeframe_alignment_label": "4 ساعات + يومي متفقان",
         "trend_strength": score,
         "potential_profit_pct": round(profit_pct, 2),
@@ -295,13 +301,13 @@ def _analyze_symbol(market, interval, row, candle_loader):
         "risk_reward_tp3": round(profit_pct / loss_pct, 2) if loss_pct else None,
         "external_source_weight": 0, "site_analysis_weight": 100,
         "has_complete_levels": True,
-        "level_source_note": "الدخول من إغلاق شمعة 15 دقيقة؛ الوقف حسب ATR وبنية آخر 12 شمعة؛ الأهداف 1:1 و1:2 و1:3.",
+        "level_source_note": f"الدخول من إغلاق شمعة {execution_interval}؛ الوقف حسب ATR وبنية آخر 12 شمعة؛ الأهداف 1:1 و1:2 و1:3.",
         "method": "multi_factor_4h_1d_rank_15m_v3"
     }
 
 
 def generate_signals(market, interval, market_rows, limit, candle_loader):
-    """Scan a bounded rotating batch to protect the service and rank by 15m move."""
+    """Scan a bounded rotating batch and rank by the selected execution timeframe."""
     unique = {}
     for row in market_rows if isinstance(market_rows, list) else []:
         if isinstance(row, dict) and row.get("symbol"):
@@ -321,15 +327,16 @@ def generate_signals(market, interval, market_rows, limit, candle_loader):
         candidates = ranked
     else:
         with _SCAN_CURSOR_LOCK:
-            offset = _SCAN_CURSORS.get(market, 0) % len(ranked)
+            cursor_key = (market, interval)
+            offset = _SCAN_CURSORS.get(cursor_key, 0) % len(ranked)
             candidates = ranked[offset:offset + batch_size]
             if len(candidates) < batch_size:
                 candidates.extend(ranked[:batch_size - len(candidates)])
-            _SCAN_CURSORS[market] = (offset + batch_size) % len(ranked)
+            _SCAN_CURSORS[cursor_key] = (offset + batch_size) % len(ranked)
 
     results = []
     with ThreadPoolExecutor(max_workers=2) as pool:
-        jobs = [pool.submit(_analyze_symbol, market, "15m", row, candle_loader) for row in candidates]
+        jobs = [pool.submit(_analyze_symbol, market, interval, row, candle_loader) for row in candidates]
         for job in as_completed(jobs):
             try:
                 item = job.result()
@@ -340,10 +347,10 @@ def generate_signals(market, interval, market_rows, limit, candle_loader):
 
     results.sort(key=lambda item: (
         0 if item["direction"] == "شراء" else 1,
-        -float(item.get("change_15m_pct", 0.0)) if item["direction"] == "شراء"
-        else float(item.get("change_15m_pct", 0.0))
+        -float(item.get("change_interval_pct", 0.0)) if item["direction"] == "شراء"
+        else float(item.get("change_interval_pct", 0.0))
     ))
     return results[:limit], True, (
-        "تم فحص توافق 4 ساعات واليومي بعوامل الاتجاه والزخم؛ ترتيب الفرص حسب تغير 15 دقيقة."
-        if results else "لا توجد فرصة اجتازت شروط توافق 4 ساعات واليومي والزخم وإدارة المخاطر حاليًا."
+        f"تم فحص توافق 4 ساعات واليومي؛ التنفيذ والترتيب حسب تغير {interval}."
+        if results else f"لا توجد فرصة اجتازت شروط توافق 4 ساعات واليومي والزخم وإدارة المخاطر على فريم {interval} حاليًا."
     )
