@@ -3153,20 +3153,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 return {**cached[1], "cached": True}
             PUBLIC_IDEAS_CACHE.pop(cache_key, None)
 
-    # Local-only mode: calculate technical confluence from fresh OHLCV candles without external signal feeds.
-    # Bypass quote caches for a fresh market snapshot; candle cache remains short-lived to control load.
-    try:
-        CACHE.pop(market, None)
-    except Exception:
-        pass
-    try:
-        MARKET_TICKERS_CACHE.pop(market, None)
-    except Exception:
-        pass
-    try:
-        YAHOO_CACHE.pop(market, None)
-    except Exception:
-        pass
+    # Reuse the short-lived market/provider caches. Clearing them on every scan
+    # caused duplicate full-universe downloads and saturated the small CPU instance.
     snapshot = {}
     try:
         snapshot = market_data(market, limit=2000)
@@ -3430,7 +3418,7 @@ def _auto_scan_worker():
         market, interval = jobs[position % len(jobs)]
         position += 1
         try:
-            outcome = signal_cards(market, interval=interval, limit=20, refresh=True)
+            outcome = signal_cards(market, interval=interval, limit=20, refresh=False)
             if isinstance(outcome, JSONResponse):
                 print(f"auto scan returned HTTP {outcome.status_code}: {market}/{interval}")
             elif isinstance(outcome, dict):
@@ -3444,8 +3432,9 @@ def _auto_scan_worker():
                 print(f"auto scan returned unexpected result: {market}/{interval} type={type(outcome).__name__}")
         except Exception as exc:
             print(f"auto scan failed {market}/{interval}: {type(exc).__name__}: {str(exc)[:160]}")
-        # Keep pressure low on the small hosting instance; rotate to a different pair next.
-        time.sleep(25)
+        # One market per cycle; a full seven-market rotation takes about 14 minutes.
+        # This keeps background work below the small instance's CPU/network budget.
+        time.sleep(120)
 
 @app.on_event("startup")
 def start_auto_scan_worker():
