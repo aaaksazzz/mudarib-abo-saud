@@ -127,7 +127,7 @@
         const merged=[...(Array.isArray(base.items)?base.items:[]),...(Array.isArray(external.items)?external.items:[])];
         const seen=new Set();
         const rows=merged.filter(x=>{const key=String(x.source_url||"")+"|"+String(x.symbol||"")+"|"+String(x.direction||"")+"|"+String(x.published_at||"");if(seen.has(key))return false;seen.add(key);return true}).slice().sort((a,b)=>{
-          const score=(x)=>{const v=x.levels||{},entry=Number(v.entry),stop=Number(v.stop_loss),target=Number(v.tp3),long=x.original_direction==="LONG";const risk=Math.abs(entry-stop),reward=Math.abs(target-entry);return entry>0&&risk>0&&target>0?reward/risk:-1};
+          const score=(x)=>{const v=x.levels||{},entry=Number(v.entry),stop=Number(v.stop_loss),target=Number(v.tp3||v.tp2||v.tp1),risk=Math.abs(entry-stop),reward=Math.abs(target-entry);return entry>0&&risk>0&&target>0?reward/risk:-1};
           const delta=score(b)-score(a);
           return Math.abs(delta)>1e-9?delta:Number(b.published_at||0)-Number(a.published_at||0);
         });
