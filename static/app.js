@@ -116,7 +116,11 @@
       if(label)label.textContent="SMART TRADING PRO";
       try{
         const data=await getJSON("/api/daily-vip/signals?market="+encodeURIComponent(m.api)+"&limit=20");
-        const rows=(Array.isArray(data.items)?data.items:[]).slice().sort((a,b)=>Number(b.published_at||0)-Number(a.published_at||0));
+        const rows=(Array.isArray(data.items)?data.items:[]).slice().sort((a,b)=>{
+          const score=(x)=>{const v=x.levels||{},entry=Number(v.entry),stop=Number(v.stop_loss),target=Number(v.tp3),long=x.original_direction==="LONG";const risk=Math.abs(entry-stop),reward=Math.abs(target-entry);return entry>0&&risk>0&&target>0?reward/risk:-1};
+          const delta=score(b)-score(a);
+          return Math.abs(delta)>1e-9?delta:Number(b.published_at||0)-Number(a.published_at||0);
+        });
         if(!rows.length){out.innerHTML='<div class="surge-empty">'+esc(data.message||"لا توجد توصيات نشطة مكتملة الآن.")+'</div>';return}
         const targetKeys=["tp1","tp2","tp3","tp4","tp5"];
         out.innerHTML='<div class="surge-signal-grid">'+rows.map((x,i)=>{
@@ -126,7 +130,7 @@
           const entryText=price(lv.entry_min)+" – "+price(lv.entry_max);
           const targets=targetKeys.map((key,index)=>'<div class="surge-target"><small>TP'+(index+1)+'</small><b dir="ltr">'+price(lv[key])+'</b><small>'+move(lv[key])+'</small></div>').join("");
           const risk=Number.isFinite(stop)&&entry>0?((buy?entry-stop:stop-entry)/entry*100).toFixed(2)+"%":"—";
-          return '<article class="surge-signal-card"><div class="surge-signal-head"><b dir="ltr">'+esc(x.symbol)+'</b><span class="surge-rec-side '+(buy?"buy":"sell")+'">'+(buy?"شراء LONG":"بيع SHORT")+'</span></div><div class="surge-entry"><small>منطقة الدخول المنشورة</small><b dir="ltr">'+entryText+'</b></div><div class="surge-level-grid">'+targets+'<div class="surge-target stop"><small>وقف الخسارة</small><b dir="ltr">'+price(stop)+'</b><small>مخاطرة '+risk+'</small></div></div><div class="surge-signal-foot"><span>'+esc(x.status||"نشطة")+' · '+esc(x.age_hours)+" ساعة"+'</span><a href="'+esc(x.source_url)+'" target="_blank" rel="noopener noreferrer">تفاصيل التوصية والمصدر ↗</a></div></article>';
+          return '<article class="surge-signal-card"><div class="surge-signal-head"><b dir="ltr">'+esc(x.symbol)+'</b><span class="surge-rank">#'+(i+1)+'</span><span class="surge-rec-side '+(buy?"buy":"sell")+'">'+(buy?"شراء LONG":"بيع SHORT")+'</span></div><div class="surge-entry"><small>منطقة الدخول المنشورة</small><b dir="ltr">'+entryText+'</b></div><div class="surge-level-grid">'+targets+'<div class="surge-target stop"><small>وقف الخسارة</small><b dir="ltr">'+price(stop)+'</b><small>مخاطرة '+risk+'</small></div></div><div class="surge-signal-foot"><span>'+esc(x.status||"نشطة")+' · '+esc(x.age_hours)+" ساعة"+'</span><a href="'+esc(x.source_url)+'" target="_blank" rel="noopener noreferrer">تفاصيل التوصية والمصدر ↗</a></div></article>';
         }).join("")+'</div>';
       }catch(err){out.innerHTML='<div class="surge-empty">تعذر تحميل الصفقات: '+esc(err.message||"خطأ في المصدر")+'</div>'}
     };
