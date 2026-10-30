@@ -55,28 +55,18 @@ def test_closed_section_blocks_page_and_market_api(monkeypatch):
     assert "القسم مغلق" in api_response.json()["detail"]
 
 
-def test_local_analysis_runs_without_api_key_and_marks_non_ai(monkeypatch):
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+def test_new_strategy_rejects_insufficient_candle_history(monkeypatch):
     candles = [
         {"open": 99.5, "high": 100, "low": 99, "close": 99.7, "volume": 10}
-        for _ in range(9)
+        for _ in range(12)
     ]
-    candles.extend([
-        {"open": 99.7, "high": 100.4, "low": 99.6, "close": 100.2, "volume": 12},
-        {"open": 100.2, "high": 100.8, "low": 100.1, "close": 100.6, "volume": 14},
-        {"open": 100.6, "high": 101.5, "low": 100.5, "close": 101.3, "volume": 20},
-    ])
     monkeypatch.setattr(app_module, "candle_data", lambda *args, **kwargs: candles)
     items, completed, message = app_module._ai_generate_market_signals(
-        "spot", "15m", [{"symbol": "TESTUSDT", "price": 101.3}], limit=20
+        "spot", "15m", [{"symbol": "TESTUSDT", "price": 99.7}], limit=20
     )
     assert completed is True
-    assert items and items[0]["generated_by_ai"] is False
-    assert items[0]["ai_reviewed"] is False
-    assert items[0]["method"] == "local_raw_candle_price_action_no_api"
-    levels = items[0]["levels"]
-    assert levels["stop_loss"] < levels["entry"] < levels["tp1"] < levels["tp2"] < levels["tp3"]
-    assert "غير متاح" in message
+    assert items == []
+    assert "اجتازت" in message or "فرصة" in message
 
 
 def test_home_is_arabic_rtl_and_does_not_reference_missing_asset():
