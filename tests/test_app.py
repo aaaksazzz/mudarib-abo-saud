@@ -508,3 +508,63 @@ def test_public_ideas_cached_results_expire_at_24_hours():
     assert response.json()["items"] == []
     assert response.json()["count"] == 0
     app_module.PUBLIC_IDEAS_CACHE.clear()
+
+
+
+def test_daily_vip_signal_parser_preserves_all_published_levels():
+    page = """
+    APT/USDT SHORT Signal
+    SHORT · 3×
+    Active Live — waiting for the first target
+    published 11h ago
+    Entry zone $0.58388 – $0.59374
+    Stop-loss $0.63592
+    Target 1 +2.0% $0.57704
+    Target 2 +4.0% $0.56526
+    Target 3 +7.0% $0.54760
+    Target 4 +11.0% $0.52404
+    Target 5 +16.0% $0.49460
+    """
+    row = app_module._daily_vip_parse_signal(
+        page, "https://dailyvipsignals.com/signals/apt-short-signal-2026-10-30", "futures"
+    )
+    assert row is not None
+    assert row["symbol"] == "APTUSDT"
+    assert row["direction"] == "بيع"
+    assert row["leverage"] == 3
+    assert row["levels"]["entry_min"] == 0.58388
+    assert row["levels"]["entry_max"] == 0.59374
+    assert row["levels"]["stop_loss"] == 0.63592
+    assert [row["levels"][f"tp{i}"] for i in range(1, 6)] == [
+        0.57704, 0.56526, 0.54760, 0.52404, 0.49460
+    ]
+
+
+def test_daily_vip_endpoint_filters_shorts_from_spot_and_returns_futures(monkeypatch):
+    index_page = '<a href="/signals/apt-short-signal-2026-10-30">View setup</a>'
+    detail_page = """
+    APT/USDT SHORT Signal
+    SHORT · 3×
+    Active Live — waiting for the first target
+    published 11h ago
+    Entry zone $0.58388 – $0.59374
+    Stop-loss $0.63592
+    Target 1 +2.0% $0.57704
+    Target 2 +4.0% $0.56526
+    Target 3 +7.0% $0.54760
+    Target 4 +11.0% $0.52404
+    Target 5 +16.0% $0.49460
+    """
+    monkeypatch.setattr(
+        app_module, "_daily_vip_fetch",
+        lambda url: index_page if url == app_module.DAILY_VIP_SIGNALS_URL else detail_page,
+    )
+    app_module.DAILY_VIP_CACHE.clear()
+    futures = client.get("/api/daily-vip/signals?market=futures&refresh=true")
+    assert futures.status_code == 200
+    assert futures.json()["count"] == 1
+    assert futures.json()["items"][0]["source"] == "Daily VIP Signals"
+    spot = client.get("/api/daily-vip/signals?market=spot&refresh=true")
+    assert spot.status_code == 200
+    assert spot.json()["items"] == []
+    app_module.DAILY_VIP_CACHE.clear()
