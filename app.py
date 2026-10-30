@@ -2714,7 +2714,7 @@ def public_results(limit: int = Query(100, ge=1, le=500)):
     if not isinstance(rows, list):
         rows = []
     # Hide and purge historical journal rows from the retired strategy.
-    current_rows = [row for row in rows if isinstance(row, dict) and row.get("source") == "pro_confluence_v1"]
+    current_rows = [row for row in rows if isinstance(row, dict) and row.get("source") == "trend_4h_1d_rank_15m"]
     if current_rows != rows:
         try:
             with RESULTS_LOCK:
@@ -3135,10 +3135,9 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
 
     # Generate recommendations locally from fresh OHLCV candles for every supported market.
     now = int(time.time())
-    # Recommendations expire according to the selected timeframe.
+    # New strategy: fixed 15m ranking with 4h/daily trend agreement.
     timeframe_lifetime = 15 * 60
-    # Bump cache namespace so older timeframe-length recommendations cannot reappear.
-    cache_key = ("pro_confluence_v1", market, interval, limit)
+    cache_key = ("trend_4h_1d_rank_15m_v1", market, "15m", limit)
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if not refresh and cached and now - cached[0] < 90:
@@ -3295,7 +3294,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "ai_enabled": False,
         "ai_review_completed": False,
         "analysis_completed": bool(ai_review_completed),
-        "analysis_engine": "pro_confluence_v1",
+        "analysis_engine": "trend_4h_1d_rank_15m",
         "method_weight_percent": 100,
         "ai_review_weight_percent": 0,
         "ai_provider_configured": False,
@@ -3312,7 +3311,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             saved_cache = read_json_file(SIGNALS_CACHE_PATH, {})
             if not isinstance(saved_cache, dict):
                 saved_cache = {}
-            saved_cache = {k: v for k, v in saved_cache.items() if isinstance(v, dict) and all(isinstance(x, dict) and x.get("method") == "pro_confluence_v1" for x in v.get("items", []))}
+            saved_cache = {k: v for k, v in saved_cache.items() if isinstance(v, dict) and all(isinstance(x, dict) and x.get("method") == "trend_4h_1d_rank_15m" for x in v.get("items", []))}
             saved_cache[f"{market}:{interval}"] = {
                 "updated_at": now,
                 "items": result.get("items", []),
