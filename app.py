@@ -3232,42 +3232,21 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
 
     # Market-wide direction is context; the engine requires candle-level multi-factor confluence.
 
-    def _tp3_profit_rank(item):
-        """Prefer risk/reward and signal quality; use TP3 return to break ties."""
-        levels = item.get("levels") if isinstance(item.get("levels"), dict) else {}
+    # Final ranking is based ONLY on the latest 15-minute percentage change.
+    # The 4h and daily signals decide eligibility and direction; 15m never changes the side.
+    def _change_15m(item):
         try:
-            entry = float(levels["entry"])
-            stop = float(levels["stop_loss"])
-            tp3 = float(levels["tp3"])
-            side = str(item.get("direction") or "")
-            if not all(math.isfinite(v) and v > 0 for v in (entry, stop, tp3)):
-                return (-1.0, -1.0, -1.0, 0)
-            if side == "شراء" and tp3 > entry and stop < entry:
-                reward_pct = (tp3 - entry) / entry * 100.0
-                risk_pct = (entry - stop) / entry * 100.0
-            elif side == "بيع" and tp3 < entry and stop > entry:
-                reward_pct = (entry - tp3) / entry * 100.0
-                risk_pct = (stop - entry) / entry * 100.0
-            else:
-                return (-1.0, -1.0, -1.0, 0)
-            rr = reward_pct / risk_pct if risk_pct > 0 else 0.0
-            score = float(item.get("ai_score", 50) or 0)
-            published = int(item.get("published_at", 0) or 0)
-            # Rank by the 50/50 blended evidence score first; use risk/reward and TP3 return as tie-breakers.
-            blended = float(item.get("combined_score", item.get("method_score", score)) or 0)
-            return (blended, rr, reward_pct, published)
-        except (KeyError, TypeError, ValueError, OverflowError, ZeroDivisionError):
-            return (-1.0, -1.0, -1.0, 0)
+            value = float(item.get("change_15m_pct"))
+            return value if math.isfinite(value) else 0.0
+        except (TypeError, ValueError, OverflowError):
+            return 0.0
 
-    # Rank by multi-factor evidence, timeframe agreement, risk/reward, then timeframe momentum.
+    # BUY: strongest positive 15m change first. SELL: strongest negative first.
     items.sort(
         key=lambda item: (
-            float(item.get("combined_score", item.get("method_score", 0)) or 0),
-            item.get("timeframes_aligned", 0) or 0,
-            *_tp3_profit_rank(item),
-            abs(float((item.get("timeframe_change_pct") or {}).get(interval) or 0))
-        ),
-        reverse=True
+            0 if item.get("direction") == "شراء" else 1,
+            -_change_15m(item) if item.get("direction") == "شراء" else _change_15m(item)
+        )
     )
     print(
         "signal scan summary: "
