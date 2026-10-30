@@ -2296,182 +2296,6 @@ def _generate_pro_market_signals(market, interval, market_rows, limit=20):
     return generate_signals(market, interval, market_rows, limit, candle_data)
 
 
-@app.get("/api/order-flow/{market}")
-def order_flow_scan(market: str, interval: str = Query("15m"), limit: int = Query(60, ge=1, le=60), refresh: bool = Query(False)):
-    """Experimental order-flow scan; true aggressor volume where available, otherwise a labelled candle proxy."""
-    market = (market or "").strip().lower()
-    allowed_markets = {"spot", "futures", "alpha", "contracts", "us", "saudi", "forex"}
-    if market not in allowed_markets:
-        return JSONResponse({"ok": False, "items": [], "message": "السوق غير مدعوم."}, status_code=404)
-    if interval not in INTERVALS:
-        return JSONResponse({"ok": False, "items": [], "message": "الفريم غير مدعوم."}, status_code=422)
-    now = int(time.time())
-    cache_key = ("order-flow-v1", market, interval, limit)
-    with PUBLIC_IDEAS_LOCK:
-        cached = PUBLIC_IDEAS_CACHE.get(cache_key)
-        if not refresh and cached and now - cached[0] < 45:
-            return {**cached[1], "cached": True}
-    snapshot = market_data(market, limit=2000)
-    if not isinstance(snapshot, dict) or not snapshot.get("live") or snapshot.get("stale"):
-        return {"ok": True, "live": False, "market": market, "interval": interval, "items": [],
-                "message": "بيانات السوق غير محدثة؛ لم ننشئ فرصًا."}
-    # Scan the most active movers first across every supported market.
-    # Rank by absolute 24h move, then traded value; this prioritizes volatility
-    # without adding candle requests or increasing the bounded scan workload.
-    def _rapid_mover_rank(row):
-        try:
-            move = abs(float(row.get("change_pct") or 0))
-            if not math.isfinite(move):
-                move = 0.0
-        except (TypeError, ValueError, OverflowError):
-            move = 0.0
-        try:
-            traded = float(row.get("quote_volume") or row.get("dollar_volume") or row.get("volume") or 0)
-            if not math.isfinite(traded) or traded < 0:
-                traded = 0.0
-        except (TypeError, ValueError, OverflowError):
-            traded = 0.0
-        return (move, traded)
-
-    active_rows = sorted(snapshot.get("items", []), key=_rapid_mover_rank, reverse=True)
-    symbols = []
-    for row in active_rows:
-        symbol = str(row.get("symbol") or row.get("ticker") or "").strip()
-        if symbol and symbol not in symbols:
-            symbols.append(symbol)
-        if len(symbols) >= limit:
-            break
-    items = []
-    real_flow = market in {"spot", "futures"}
-    failed_symbols = 0
-
-    def analyze_symbol(symbol):
-        candles = candle_data(market, symbol, interval, force_refresh=refresh)
-        if len(candles) < 20:
-            return None
-
-        recent = candles[-12:]
-        ratios = []
-        for c in recent:
-            total = float(c.get("volume") or 0)
-            buy = c.get("taker_buy_volume")
-            if total > 0 and buy is not None:
-                ratios.append(max(0.0, min(1.0, float(buy) / total)))
-        if real_flow and len(ratios) >= 8:
-            buy_ratio = sum(ratios[-8:]) / len(ratios[-8:])
-            quality = "real_taker_volume"
-            delta = (buy_ratio - 0.5) * 2
-        else:
-            pressures = []
-            for c in recent[-8:]:
-                span = max(float(c["high"]) - float(c["low"]), 1e-12)
-                body = (float(c["close"]) - float(c["open"])) / span
-                location = ((float(c["close"]) - float(c["low"])) / span) * 2 - 1
-                pressures.append(max(-1.0, min(1.0, 0.65 * body + 0.35 * location)))
-            delta = sum(pressures) / len(pressures)
-            buy_ratio = (delta + 1) / 2
-            quality = "candle_proxy"
-        last, prev = recent[-1], recent[-2]
-        price = float(last["close"])
-        if price <= 0:
-            return None
-
-        closes = [float(c.get("close") or 0) for c in recent[-9:]]
-        valid_closes = [v for v in closes if v > 0]
-        if len(valid_closes) < 6:
-            return None
-
-        momentum_pct = (valid_closes[-1] / valid_closes[-4] - 1) * 100 if valid_closes[-4] > 0 else 0.0
-        previous_momentum_pct = (valid_closes[-4] / valid_closes[-7] - 1) * 100 if len(valid_closes) >= 7 and valid_closes[-7] > 0 else 0.0
-        acceleration_pct = momentum_pct - previous_momentum_pct
-        direction_votes = sum(1 if valid_closes[i] > valid_closes[i-1] else -1 if valid_closes[i] < valid_closes[i-1] else 0 for i in range(max(1, len(valid_closes)-4), len(valid_closes)))
-        consistency = abs(direction_votes) / max(1, min(4, len(valid_closes)-1))
-        pressure_direction = 1 if delta > 0 else -1 if delta < 0 else 0
-        momentum_direction = 1 if momentum_pct > 0 else -1 if momentum_pct < 0 else 0
-        if momentum_direction and pressure_direction and momentum_direction == pressure_direction:
-            direction = "شراء" if momentum_direction > 0 else "بيع"
-        elif abs(momentum_pct) >= 0.15 and abs(acceleration_pct) >= 0.05:
-            direction = "شراء" if momentum_pct > 0 else "بيع"
-        else:
-            direction = "محايد"
-        volumes = [float(c.get("volume") or 0) for c in recent[-8:]]
-        baseline = sum(volumes[:-1]) / max(1, len(volumes) - 1)
-        # Build transparent candle-range trade levels, only for directional readings.
-        ranges = []
-        for candle in recent[-14:]:
-            try:
-                high = float(candle.get("high") or 0)
-                low = float(candle.get("low") or 0)
-                close_prev = float(candle.get("close") or 0)
-                if high > low > 0:
-                    ranges.append(max(high - low, abs(high - close_prev), abs(low - close_prev)))
-            except (TypeError, ValueError):
-                continue
-        atr_proxy = sum(ranges) / len(ranges) if ranges else price * 0.01
-        risk_distance = max(atr_proxy * 1.2, price * 0.002)
-        levels = None
-        if direction == "شراء":
-            stop = price - risk_distance
-            levels = {"entry": price, "stop_loss": stop,
-                      "tp1": price + risk_distance, "tp2": price + risk_distance * 1.8,
-                      "tp3": price + risk_distance * 2.5}
-        elif direction == "بيع":
-            stop = price + risk_distance
-            levels = {"entry": price, "stop_loss": stop,
-                      "tp1": price - risk_distance, "tp2": price - risk_distance * 1.8,
-                      "tp3": price - risk_distance * 2.5}
-        risk_pct = risk_distance / price * 100 if price > 0 else 0
-        return {
-            "symbol": symbol, "direction": direction, "entry": price,
-            "levels": levels,
-            "risk_pct": round(risk_pct, 2),
-            "tp1_pct": round(risk_pct, 2), "tp2_pct": round(risk_pct * 1.8, 2),
-            "tp3_pct": round(risk_pct * 2.5, 2),
-            "levels_method": "مستويات تقديرية من متوسط مدى الشموع؛ ليست ضمانًا",
-            "buy_pressure_pct": round(buy_ratio * 100, 1),
-            "sell_pressure_pct": round((1 - buy_ratio) * 100, 1),
-            "delta_pct": round(delta * 100, 1),
-            "momentum_pct": round(momentum_pct, 3),
-            "previous_momentum_pct": round(previous_momentum_pct, 3),
-            "acceleration_pct": round(acceleration_pct, 3),
-            "direction_consistency": round(consistency, 2),
-            "last_volume_vs_avg": round(volumes[-1] / baseline, 2) if baseline > 0 else 0,
-            "data_quality": quality, "interval": interval, "time": int(last.get("time") or now),
-            "note": "ضغط حجم taker المنفذ" if quality == "real_taker_volume" else "تقدير من الشموع، وليس تدفق أوامر حقيقيًا"
-        }
-
-    # Keep network pressure bounded while avoiding 20 sequential candle requests.
-    with ThreadPoolExecutor(max_workers=5) as pool:
-        futures = {pool.submit(analyze_symbol, symbol): symbol for symbol in symbols}
-        for future in as_completed(futures):
-            try:
-                item = future.result()
-                if item:
-                    items.append(item)
-            except (KeyError, TypeError, ValueError, OverflowError, TimeoutError, OSError, urllib.error.URLError):
-                failed_symbols += 1
-    for item in items:
-        move = abs(float(item.get("momentum_pct") or 0))
-        accel = abs(float(item.get("acceleration_pct") or 0))
-        volume_ratio = max(0.0, float(item.get("last_volume_vs_avg") or 0))
-        consistency = max(0.0, min(1.0, float(item.get("direction_consistency") or 0)))
-        pressure = max(float(item.get("buy_pressure_pct") or 0), float(item.get("sell_pressure_pct") or 0))
-        item["scan_score"] = int(round(min(100, min(35, move * 20) + min(20, accel * 20) +
-                                               min(20, max(0, volume_ratio - 0.5) * 15) +
-                                               consistency * 15 + max(0, pressure - 50) * 0.2)))
-        item["phase"] = ("تأكيد" if consistency >= 0.75 and move >= 0.15 else
-                         "بداية حركة" if move >= 0.10 and accel * (1 if item.get("direction") == "شراء" else -1) > 0 else
-                         "زخم ضعيف")
-    items.sort(key=lambda x: (x.get("direction") != "محايد", x.get("scan_score", 0)), reverse=True)
-    result = {"ok": True, "live": True, "market": market, "interval": interval, "items": items,
-              "scanned": len(symbols), "returned": len(items), "failed": failed_symbols, "cached": False,
-              "message": ("لم تصل شموع صالحة للأصول المفحوصة؛ جرّب تحديثًا بعد قليل." if not items else
-                          "تجريبي: حجم taker متاح لسبوت/فيوتشر فقط عند توفره؛ بقية الأسواق تستخدم تقدير ضغط الشموع.")}
-    with PUBLIC_IDEAS_LOCK:
-        PUBLIC_IDEAS_CACHE[cache_key] = (now, result)
-    return result
-
-
 @app.get("/api/signals/{market}")
 def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(20, ge=1, le=20), refresh: bool = Query(False)):
     """Generate locally verified multi-factor setups from fresh OHLCV data."""
@@ -2518,7 +2342,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     skipped = 0
     # Report the actual breadth of the scan, matching the wider universe
     # analyzed by _generate_pro_market_signals (up to 60 symbols for a 20-signal request).
-    scanned_count = min(len(market_rows), min(30, max(12, limit * 2)))
+    scanned_count = min(len(market_rows), min(12, max(8, limit)))
     source_buy_count = sum(1 for item in items if item.get("direction") == "شراء")
     source_sell_count = sum(1 for item in items if item.get("direction") == "بيع")
 
@@ -2588,7 +2412,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     print(
         "signal scan summary: "
         f"market={market} interval={interval} quote_rows={len(market_rows) if isinstance(market_rows, list) else 0} "
-        f"candidates_requested={min(20, max(10, limit))} signals={len(items)} "
+        f"candidates_requested={min(12, max(8, limit))} signals={len(items)} "
         f"external_ai_key_configured={bool(os.getenv('OPENAI_API_KEY', '').strip())} "
         f"analysis_completed={bool(ai_review_completed)} reason={str(ai_message)[:180]!r}"
     )
