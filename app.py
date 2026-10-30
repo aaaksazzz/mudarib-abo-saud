@@ -2315,7 +2315,7 @@ def public_ideas(market: str = Query("futures"),
                                 limit: int = Query(20, ge=1, le=50),
                                 refresh: bool = Query(False)):
     """Return only complete, fresh third-party trade ideas from market-relevant public feeds."""
-    return {"ok": True, "market": market, "items": [], "count": 0, "sources_checked": 0, "sources_failed": 0, "generated_by_site": True, "message": "المصادر الخارجية متوقفة؛ الصفقات تُعرض من تحليل الموقع الداخلي فقط."}
+    return {"ok": True, "market": market, "items": [], "count": 0, "sources_configured": 0, "sources_checked": 0, "sources_failed": 0, "generated_by_site": True, "message": "المصادر الخارجية متوقفة؛ الصفقات تُعرض من تحليل الموقع الداخلي فقط."}
     market = str(market or "").strip().lower()
     if market not in PUBLIC_TRADE_IDEA_MARKET_FEEDS:
         return JSONResponse({"ok": False, "market": market, "items": [],
@@ -2568,7 +2568,7 @@ def _daily_vip_customer_payload(data):
 @app.get("/api/trade-feed")
 def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=1, le=20), refresh: bool = Query(False)):
     """Fetch, validate and diagnose public provider trade setups without fabricating levels."""
-    return {"ok": True, "market": market, "items": [], "count": 0, "sources_checked": 0, "sources_failed": 0, "generated_by_site": True, "message": "تم إيقاف مزودي الصفقات الخارجيين. استخدم تحليل الموقع الداخلي."}
+    return {"ok": True, "market": market, "items": [], "count": 0, "sources_configured": 0, "sources_checked": 0, "sources_failed": 0, "generated_by_site": True, "message": "تم إيقاف مزودي الصفقات الخارجيين. استخدم تحليل الموقع الداخلي."}
     market = (market or "").strip().lower()
     if market == "forex":
         return fetch_forex_signals(limit=limit, refresh=refresh)
