@@ -1,5 +1,4 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-requests==2.32.3
-python-multipart==0.0.20
-itsdangerous==2.2.0
+Flask==3.1.1
+requests==2.32.4
+gunicorn==23.0.0
+pytest==8.4.2

@@ -1,132 +1,27 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#080d18">
-<title>التداول الذكي PRO | تحليل العملات والأسهم والأسواق</title>
-<meta name="description" content="تابع أسواق العملات الرقمية سبوت وفيوتشر، الأسهم السعودية والأمريكية، الفوركس والذهب والعقود. تحليل السوق، بيانات الأسعار، أدوات إدارة المخاطر ومقالات تداول تعليمية بالعربية.">
-<meta name="robots" content="index,follow,max-image-preview:large">
-<script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/#organization","name":"التداول الذكي PRO","url":"https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/"},{"@type":"WebSite","@id":"https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/#website","url":"https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/","name":"التداول الذكي PRO","inLanguage":"ar","publisher":{"@id":"https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/#organization"}},{"@type":"WebApplication","name":"التداول الذكي PRO","url":"https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/","applicationCategory":"FinanceApplication","operatingSystem":"Web","inLanguage":"ar","description":"منصة لمتابعة الأسواق وأدوات التحليل ومحتوى تعليمي لإدارة المخاطر."}]}</script>
-<link rel="canonical" href="https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/">
-<meta property="og:type" content="website"><meta property="og:locale" content="ar_SA"><meta property="og:title" content="التداول الذكي PRO | تحليل الأسواق"><meta property="og:description" content="تابع العملات الرقمية والأسهم السعودية والأمريكية والفوركس والذهب، مع أدوات التحليل ومقالات تعليمية لإدارة المخاطر."><meta property="og:url" content="https://web--mudarib-abo-saud--bn5qcyddt9b4.code.run/"><meta property="og:site_name" content="التداول الذكي PRO"><meta name="twitter:card" content="summary"><meta name="twitter:title" content="التداول الذكي PRO | تحليل الأسواق"><meta name="twitter:description" content="متابعة الأسواق وأدوات التحليل ومقالات تداول تعليمية بالعربية.">
-<link rel="stylesheet" href="/static/app.css?v=20261030.compat1">
-<script>
-(function(){
-  // لا تحمل مكتبة الترجمة الخارجية في الزيارة العربية؛ هذا يقلل الانتظار خصوصًا في Opera.
-  var lang="ar";
-  try{
-    var match=document.cookie.match(/(?:^|; )googtrans=([^;]+)/);
-    if(match){
-      var parts=decodeURIComponent(match[1]).split("/");
-      if(parts.length>2) lang=parts[2]||"ar";
-    }
-  }catch(e){}
-  if(!lang||lang==="ar") return;
-  window.googleTranslateElementInit=function(){
-    if(window.google&&google.translate){
-      new google.translate.TranslateElement({
-        pageLanguage:"ar",
-        includedLanguages:"ar,en,es,fr,de,pt,tr,hi,id,zh",
-        autoDisplay:false
-      },"google_translate_element");
-    }
-  };
-  var s=document.createElement("script");
-  s.src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit";
-  s.async=true;
-  s.onerror=function(){console.warn("تعذر تحميل خدمة الترجمة؛ استمر الموقع دونها.");};
-  document.head.appendChild(s);
-})();
-</script>
-<div id="google_translate_element" aria-hidden="true" style="position:fixed;left:-10000px;top:-10000px"></div>
-<script src="/static/app.js?v=20261031.signalfix3" defer></script>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#080d18"><title>التداول الذكي PRO</title>
+<meta name="description" content="متابعة وتحليل الأسواق ببيانات عامة ومصادر واضحة.">
+<link rel="stylesheet" href="/static/app.css?v=20261031.clean2">
+<script src="/static/app.js?v=20261031.clean2" defer></script>
 </head>
 <body>
-<header class="topbar">
-  <button class="icon-button" id="menuToggle" aria-label="فتح القائمة" aria-expanded="false">☰</button>
-  <a class="brand" href="/" aria-label="التداول الذكي PRO - الرئيسية"><span class="brand-mark">ST</span><span><strong>التداول الذكي <b>PRO</b></strong><small>تحليل الأسواق · بيانات مستقلة لكل سوق</small></span></a>
-  <button class="theme-toggle" id="themeToggle" type="button" aria-label="تبديل الوضع الليلي" title="الوضع الليلي">🌙 <span>الوضع الليلي</span></button>
-  <span class="status-pill" id="serviceStatus"><i></i> جاهز</span>
-</header>
-<div class="backdrop" id="backdrop" hidden></div>
-<aside class="drawer" id="drawer" aria-label="القائمة الرئيسية" aria-hidden="true">
-  <div class="drawer-head"><strong>القائمة الرئيسية</strong><button class="icon-button" id="menuClose" aria-label="إغلاق القائمة">✕</button></div>
-  <a href="/" data-nav><span>⌂</span> الرئيسية</a>
-  <a href="/market-direction" data-nav><span>↗</span> توجهات الأسواق</a>
-  <div class="nav-label">الأسواق</div>
-  <a href="/markets/spot" data-nav><span>◉</span> سبوت Binance</a>
-  <a href="/markets/futures" data-nav><span>⇅</span> فيوتشر</a>
-  <a href="/markets/alpha" data-nav><span>✦</span> Binance Alpha</a>
-  <a href="/markets/contracts" data-nav><span>◈</span> العقود الأمريكية</a>
-  <a href="/markets/us-stocks" data-nav><span>▥</span> الأسهم الأمريكية</a>
-  <a href="/markets/saudi" data-nav><span>🇸🇦</span> السوق السعودي</a>
-  <a href="/markets/forex-gold" data-nav><span>◆</span> الفوركس والذهب</a>
-  <div class="nav-label">المتابعة والمحتوى</div>
-  <a href="/news" data-nav><span>◉</span> أخبار الأسواق</a>
-  <a href="/blog" data-nav><span>▤</span> المدونة</a>
-  <div class="nav-label">الحساب والإدارة</div>
-  <a href="/account" data-nav><span>♙</span> الحساب</a>
-  <a href="/admin" data-nav><span>⚙</span> إدارة المنصة</a>
-  <p class="drawer-note">البيانات حسب المصدر المتاح. لا توجد أوامر تداول آلية.</p>
-</aside>
-<main class="container">
-  <div id="pageView" aria-live="polite">
-    <section class="hero pro-hero">
-      <div class="pro-hero-copy"><div class="eyebrow"><span class="pro-eyebrow-dot"></span> SMART TRADING PRO <span class="pro-version">MARKET INTELLIGENCE</span></div>
-      <h1>اقرأ حركة السوق.<br><span>واتخذ قرارك بوضوح.</span></h1>
-      <p>منصة متابعة متعددة الأسواق تجمع حركة الأسعار، اتساع الصعود والهبوط، وترتيب الأصول في مساحة عمل عربية مصممة للسرعة والوضوح.</p>
-      <div class="hero-actions"><a class="button primary" href="/markets/spot">استكشف الأسواق <span>←</span></a><a class="button secondary" href="/market-direction">شاهد توجهات الأسواق</a></div>
-      <div class="hero-foot"><span class="live-dot"></span><span id="homeStatus">التحقق من حالة الخدمة…</span><span class="divider-dot">•</span><span>رصد وتحليل — دون تنفيذ تداول آلي</span></div></div>
-      <div class="pro-hero-art" aria-hidden="true"><div class="pro-orbit orbit-one"></div><div class="pro-orbit orbit-two"></div><div class="pro-market-core"><span>ST</span><small>MARKET RADAR</small><div class="pro-mini-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div><span class="pro-float-tag tag-up">↗ MOMENTUM</span><span class="pro-float-tag tag-down">↘ MARKET FLOW</span></div>
-    </section>
-    <section class="pro-principles" aria-label="مميزات المنصة"><div><span class="principle-icon">◈</span><strong>أسواق مستقلة</strong><small>مصدر منفصل لكل سوق</small></div><div><span class="principle-icon">↗</span><strong>رصد الحركة</strong><small>ترتيب حسب تغير السعر والسيولة</small></div><div><span class="principle-icon">◎</span><strong>وضوح البيانات</strong><small>لا نستبدل البيانات المفقودة بأرقام وهمية</small></div></section>
-    <section class="section-block">
-      <div class="section-heading"><div><span class="eyebrow">MARKETS</span><h2>اختر السوق</h2><p>كل سوق يفتح صفحة مستقلة.</p></div></div>
-      <div class="market-grid">
-        <a class="market-card" href="/markets/spot"><span class="market-icon">◉</span><span><strong>سبوت Binance</strong><small>العملات الفورية</small></span><b>←</b></a>
-        <a class="market-card" href="/markets/futures"><span class="market-icon">⇅</span><span><strong>فيوتشر</strong><small>العقود الدائمة — فرص سريعة</small></span><b>←</b></a>
-        <a class="market-card" href="/markets/alpha"><span class="market-icon">✦</span><span><strong>Binance Alpha</strong><small>توفر حسب المصدر</small></span><b>←</b></a>
-        <a class="market-card" href="/markets/contracts"><span class="market-icon">◈</span><span><strong>العقود الأمريكية</strong><small>مؤشرات وسلع</small></span><b>←</b></a>
-        <a class="market-card" href="/markets/us-stocks"><span class="market-icon">▥</span><span><strong>الأسهم الأمريكية</strong><small>أسهم وصناديق</small></span><b>←</b></a>
-        <a class="market-card" href="/markets/saudi"><span class="market-icon">🇸🇦</span><span><strong>السوق السعودي</strong><small>أسهم تداول</small></span><b>←</b></a>
-        <a class="market-card" href="/markets/forex-gold"><span class="market-icon">◆</span><span><strong>الفوركس والذهب</strong><small>عملات ومعادن</small></span><b>←</b></a>
-      </div>
-    </section>
-    <section class="section-block">
-      <div class="section-heading"><div><span class="eyebrow">WORKSPACE</span><h2>المتابعة والمحتوى</h2><p>تنقّل مباشر بدون تحميل كل أقسام الموقع دفعة واحدة.</p></div></div>
-      <div class="feature-grid">
-        <a class="feature-card" href="/news"><span>◉</span><strong>أخبار الأسواق</strong><small>أخبار عامة بحسب السوق</small></a>
-        <a class="feature-card" href="/blog"><span>▤</span><strong>المدونة</strong><small>مقالات تعليمية</small></a>
-        <a class="feature-card" href="/account"><span>♙</span><strong>الحساب</strong><small>حالة الخدمات المتاحة</small></a>
-      </div>
-    </section>
-  </div>
-  <section class="home-language-panel" aria-label="إعدادات الموقع"><div><strong>🌐 لغة الموقع</strong><small>اختر اللغة المناسبة لك</small></div><select id="siteLanguage" aria-label="تغيير لغة الموقع"><option value="ar">العربية</option><option value="en">English</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="pt">Português</option><option value="tr">Türkçe</option><option value="hi">हिन्दी</option><option value="id">Bahasa Indonesia</option><option value="zh">简体中文</option></select></section>
-  <footer class="site-footer"><span>التداول الذكي PRO</span><span>الأسعار العامة قد تكون متأخرة. الإشارات ليست ضمانًا للربح.</span><a href="/admin">الإدارة</a></footer>
-</main>
-
-<script>
-(function(){
-  var themeButton=document.getElementById('themeToggle');
-  var languageSelect=document.getElementById('siteLanguage');
-  function setTheme(theme){document.body.classList.toggle('light-mode',theme==='light');if(themeButton){themeButton.innerHTML=theme==='light'?'☀️ <span>الوضع النهاري</span>':'🌙 <span>الوضع الليلي</span>';themeButton.setAttribute('aria-pressed',theme!=='light');}try{localStorage.setItem('stp-theme',theme);}catch(e){}}
-  var savedTheme='dark';try{savedTheme=localStorage.getItem('stp-theme')||'dark';}catch(e){}setTheme(savedTheme);
-  if(themeButton)themeButton.addEventListener('click',function(){setTheme(document.body.classList.contains('light-mode')?'dark':'light');});
-  var supported=['ar','en','es','fr','de','pt','tr','hi','id','zh'];var current='ar';
-  try{var match=document.cookie.match(/(?:^|; )googtrans=([^;]+)/);if(match){var parts=decodeURIComponent(match[1]).split('/');if(parts.length>2&&supported.includes(parts[2]))current=parts[2];}}catch(e){}
-  if(languageSelect)languageSelect.value=current;
-  if(languageSelect)languageSelect.addEventListener('change',function(){var lang=languageSelect.value;if(!supported.includes(lang))return;var value='/ar/'+lang;document.cookie='googtrans='+value+';path=/;max-age=31536000;SameSite=Lax';document.cookie='googtrans='+value+';path=/;domain='+location.hostname+';max-age=31536000;SameSite=Lax';if(lang==='ar'){document.cookie='googtrans=;path=/;max-age=0';document.cookie='googtrans=;path=/;domain='+location.hostname+';max-age=0';}location.reload();});
-})();
-</script>
-
-<nav class="mobile-bottom-nav" aria-label="التنقل الرئيسي">
-  <a href="/" data-bottom-nav="home"><span class="bottom-nav-icon" aria-hidden="true">⌂</span><span>الرئيسية</span></a>
-  <a href="/market-direction" data-bottom-nav="markets"><span class="bottom-nav-icon" aria-hidden="true">▥</span><span>الأسواق</span></a>
-  <a href="/markets/futures" class="bottom-nav-primary" data-bottom-nav="trades" aria-label="الصفقات"><span class="bottom-nav-center-icon" aria-hidden="true">↗</span><span>الصفقات</span></a>
-  <a href="/account" data-bottom-nav="account"><span class="bottom-nav-icon" aria-hidden="true">◷</span><span>حسابي</span></a>
-  <button type="button" id="bottomMore" aria-label="فتح المزيد"><span class="bottom-nav-icon" aria-hidden="true">☰</span><span>المزيد</span></button>
+<header class="topbar"><a class="brand" href="/"><span class="logo">ST</span><span><b>التداول الذكي <i>PRO</i></b><small>منصة متابعة الأسواق والتحليل الفني</small></span></a><span id="health" class="health">● فحص الاتصال</span></header>
+<main class="wrap">
+<section class="hero"><div><span class="eyebrow">SMART TRADING PRO</span><h1>قراءة واضحة لحركة الأسواق</h1><p>بيانات مباشرة من المصدر المتاح، اتجاه السوق، وفرص فنية مكتملة المستويات. لا نعرض بيانات أو صفقات مختلقة.</p></div><button id="refresh" class="primary">تحديث البيانات ↻</button></section>
+<nav id="markets" class="markets" aria-label="الأسواق">
+<button data-market="spot" class="active">Binance Spot</button><button data-market="futures">Binance Futures</button>
+<button data-market="alpha" disabled>Alpha · غير مربوط</button><button data-market="saudi" disabled>السعودي · غير مربوط</button>
+<button data-market="us" disabled>الأسهم الأمريكية · غير مربوط</button><button data-market="contracts" disabled>العقود الأمريكية · غير مربوط</button><button data-market="forex" disabled>الفوركس والذهب · غير مربوط</button>
 </nav>
-
-</body>
-</html>
+<section class="direction panel"><div><small>اتجاه السوق العام</small><h2 id="direction">—</h2><p id="directionNote">يُحسب من عدد الأصول الصاعدة والهابطة في السوق.</p></div><div class="stats"><div><small>أصول صاعدة</small><b id="up">—</b></div><div><small>أصول هابطة</small><b id="down">—</b></div><div><small>إجمالي الأصول</small><b id="total">—</b></div></div></section>
+<section class="panel"><div class="section-head"><div><small>TIMEFRAME</small><h2>الإطار الزمني</h2></div><div id="timeframes" class="frames"><button data-tf="15m" class="active">15 دقيقة</button><button data-tf="1h">ساعة</button><button data-tf="4h">4 ساعات</button><button data-tf="1d">يومي</button></div></div></section>
+<section class="section-head title-row"><div><small>LIVE SCANNER</small><h2>أفضل الفرص الفنية</h2></div><span id="updated">—</span></section>
+<section id="cards" class="cards"><div class="empty">جارٍ تحميل بيانات السوق...</div></section>
+<section class="panel"><div class="section-head"><div><small>TRADE TRACKER</small><h2>الصفقات المفتوحة</h2></div><span class="muted">تتحدث عند تحديث بيانات السوق</span></div><div id="openTrades" class="trade-list"><div class="empty">لا توجد صفقات محفوظة.</div></div></section>
+<p class="disclaimer">المستويات تحليلية وليست توصية مضمونة. درجة الجودة ليست نسبة نجاح. لا يتم تنفيذ أوامر تداول آلية.</p>
+<footer>التداول الذكي PRO · <span id="source">المصدر: —</span></footer>
+</main>
+</body></html>
