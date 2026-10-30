@@ -99,12 +99,11 @@
       '</style>'+
       '<div class="surge-page">'+
       '<div class="surge-top"><span class="eyebrow">SMART TRADING PRO</span><h1 class="page-title surge-market-title" style="margin:8px 0 0">'+esc(m.name)+'</h1><div class="surge-market-sub">'+esc(m.source.toUpperCase())+' · MARKET</div><p class="muted">'+esc(m.sub)+'</p></div>'+
-      '<section class="surge-hero"><div><h2>🧭 اتجاه السوق</h2><p>قراءة عامة من تغيّر أسعار الأصول خلال 24 ساعة، مستقلة عن التوصيات. لا توجد استراتيجية تولّد صفقات في هذه الصفحة.</p></div><span class="surge-chip" id="surgeConnection">● جاري الاتصال</span></section>'+
-      '<section class="surge-stats"><div class="surge-stat"><small>الأصول المفحوصة</small><strong id="surgeCount">—</strong></div><div class="surge-stat"><small>صاعد</small><strong id="surgeUp" class="surge-pos">—</strong></div><div class="surge-stat"><small>هابط</small><strong id="surgeDown" class="surge-neg">—</strong></div><div class="surge-stat"><small>اتجاه السوق</small><strong id="surgeDirectionValue">—</strong></div></section>'+
-      '<section class="surge-panel"><div class="surge-item-head"><h2 style="margin:0">📡 صفقات SMART TRADING PRO</h2><span class="surge-chip" id="signalSourceLabel">SMART TRADING PRO</span></div><div id="surgeRecommendations" class="surge-empty">تظهر هنا الصفقات المعتمدة للنشر عبر SMART TRADING PRO. لا نعرض مستويات دخول أو أهدافًا غير موثقة.</div><p class="surge-muted" style="margin-top:10px">قد تتضمن الصفقات المنشورة توصيات أو بيانات من مزودين خارجيين؛ تُحفظ تفاصيل الإسناد في رابط تفاصيل كل توصية، وتُعرض التوصيات المتاحة فقط للأسواق التي يدعمها مصدرها.</p></section>'+
-      '<section class="surge-panel"><div class="surge-item-head"><h2 style="margin:0">الأصول وترتيب الحركة</h2><span class="surge-chip" id="surgeUpdated">آخر تحديث —</span></div><div id="surgeStatus" class="surge-muted" style="margin:10px 0">جاري تحميل البيانات…</div><div class="surge-table-wrap"><table class="surge-table"><thead><tr><th>#</th><th>الأصل</th><th>الاتجاه</th><th>التغير</th><th>قيمة التداول</th></tr></thead><tbody id="surgeRows"><tr><td colspan="5" class="surge-empty">جاري الاتصال…</td></tr></tbody></table></div></section>'+
-      '<p class="surge-muted">الأسعار قد تتأخر حسب مزود البيانات. لا توجد أوامر تداول آلية، ولا تُعرض توصية غير موثقة.</p></div>';
-    let busy=false;
+      ''+
+      ''+
+      '<section class="surge-panel"><div class="surge-item-head"><h2 style="margin:0">📡 صفقات SMART TRADING PRO</h2><span class="surge-chip" id="signalSourceLabel">SMART TRADING PRO</span></div><div id="surgeRecommendations" class="surge-empty">تظهر هنا الصفقات المعتمدة للنشر عبر SMART TRADING PRO. لا نعرض مستويات دخول أو أهدافًا غير موثقة.</div><p class="surge-muted" style="margin-top:10px">الصفقات مرتبة من الأحدث إلى الأقدم، مع عرض مستوياتها المنشورة كما هي.</p></section>'+
+      ''+
+      '</div>';
     const loadDailyVip=async()=>{
       const out=$("surgeRecommendations"),label=$("signalSourceLabel");
       if(!out)return;
@@ -117,7 +116,7 @@
       if(label)label.textContent="SMART TRADING PRO";
       try{
         const data=await getJSON("/api/daily-vip/signals?market="+encodeURIComponent(m.api)+"&limit=20");
-        const rows=Array.isArray(data.items)?data.items:[];
+        const rows=(Array.isArray(data.items)?data.items:[]).slice().sort((a,b)=>Number(b.published_at||0)-Number(a.published_at||0));
         if(!rows.length){out.innerHTML='<div class="surge-empty">'+esc(data.message||"لا توجد توصيات نشطة مكتملة الآن.")+'</div>';return}
         const targetKeys=["tp1","tp2","tp3","tp4","tp5"];
         out.innerHTML='<div class="surge-signal-grid">'+rows.map((x,i)=>{
@@ -131,36 +130,9 @@
         }).join("")+'</div>';
       }catch(err){out.innerHTML='<div class="surge-empty">تعذر تحميل الصفقات: '+esc(err.message||"خطأ في المصدر")+'</div>'}
     };
-    const refresh=async()=>{
-      if(busy)return;busy=true;
-      $("surgeStatus").textContent="جاري تحميل قائمة الأصول…";$("surgeConnection").textContent="● جاري التحديث";
-      try{
-        const d=await getJSON("/api/market/"+encodeURIComponent(m.api)+"?limit=2000");
-        if(!d||!Array.isArray(d.items))throw new Error(d.message||"المصدر لم يرجع قائمة صالحة");
-        if(d.live===false||d.stale===true)throw new Error(d.message||"البيانات قديمة؛ أوقفنا عرض قراءة جديدة");
-        const items=d.items.filter(x=>x&&String(x.symbol||"").trim()&&Number.isFinite(Number(x.price))&&Number(x.price)>0&&Number.isFinite(Number(x.change_pct)));
-        if(!items.length)throw new Error("لا توجد أسعار وتغيرات صالحة من المصدر");
-        const up=items.filter(x=>Number(x.change_pct)>0),down=items.filter(x=>Number(x.change_pct)<0);
-        const direction=up.length>down.length?"صاعد":down.length>up.length?"هابط":"محايد";
-        $("surgeCount").textContent=items.length.toLocaleString("en-US");$("surgeUp").textContent=up.length.toLocaleString("en-US");$("surgeDown").textContent=down.length.toLocaleString("en-US");
-        $("surgeDirectionValue").textContent=direction;$("surgeDirectionValue").className=direction==="صاعد"?"surge-pos":direction==="هابط"?"surge-neg":"";
-        const fmtVol=n=>{n=Number(n);if(!Number.isFinite(n)||n<=0)return "—";return n>=1e9?(n/1e9).toFixed(2)+"B":n>=1e6?(n/1e6).toFixed(2)+"M":n.toLocaleString("en-US",{maximumFractionDigits:0})};
-        const sorted=[...items].sort((a,b)=>Math.abs(Number(b.change_pct))-Math.abs(Number(a.change_pct)));
-        $("surgeRows").innerHTML=sorted.slice(0,40).map((x,i)=>{const change=Number(x.change_pct)||0;return '<tr><td>'+(i+1)+'</td><td><strong dir="ltr">'+esc(x.symbol)+'</strong></td><td class="'+(change>0?"surge-pos":change<0?"surge-neg":"")+'">'+(change>0?"صاعد":change<0?"هابط":"محايد")+'</td><td class="'+(change>=0?"surge-pos":"surge-neg")+'">'+pct(change)+'</td><td>'+fmtVol(x.quote_volume||x.dollar_volume)+'</td></tr>'}).join("");
-        $("surgeUpdated").textContent="آخر تحديث "+new Date().toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
-        $("surgeConnection").textContent="● بيانات متاحة · "+(d.provider||m.source);
-        $("surgeStatus").textContent="تم فحص "+items.length+" أصلًا · الاتجاه محسوب من تغيّر 24 ساعة، وليس توصية تداول.";
-      }catch(e){
-        $("surgeConnection").textContent="● تعذر الاتصال";$("surgeStatus").textContent=e.message||"تعذر تحميل البيانات";
-        $("surgeRows").innerHTML='<tr><td colspan="5" class="surge-empty">لم نعرض بيانات غير مؤكدة.</td></tr>';
-        $("surgeCount").textContent=$("surgeUp").textContent=$("surgeDown").textContent=$("surgeDirectionValue").textContent="—";
-      }finally{busy=false}
-    };
-    refresh();
-    loadDailyVip();
     if(marketSignalRefreshTimer)clearInterval(marketSignalRefreshTimer);
     if(marketLiveTrackTimer)clearInterval(marketLiveTrackTimer);
-    marketSignalRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible"&&$("surgeRows")){refresh();loadDailyVip()}},180000);
+    loadDailyVip();
   }
   async function loadQuotes(m) {
     const out=$("quoteContent"), meta=$("quoteMeta"); if(!out)return;
