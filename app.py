@@ -2539,7 +2539,7 @@ def _ai_review_signal_batch(items, market, interval):
         return items, False
 
 
-def _ai_generate_market_signals(market, interval, market_rows, limit=20):
+def _generate_pro_market_signals(market, interval, market_rows, limit=20):
     """Delegate to the new deterministic multi-factor strategy engine."""
     from strategy_engine import generate_signals
     return generate_signals(market, interval, market_rows, limit, candle_data)
@@ -2748,8 +2748,8 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                 return {**cached[1], "cached": True}
             PUBLIC_IDEAS_CACHE.pop(cache_key, None)
 
-    # Local-only mode: raw price candles; no public signal ingestion, external API, or indicators.
-    # Bypass in-process quote and candle caches on every scan for fresh analysis inputs.
+    # Local-only mode: calculate technical confluence from fresh OHLCV candles without external signal feeds.
+    # Bypass quote caches for a fresh market snapshot; candle cache remains short-lived to control load.
     try:
         CACHE.pop(market, None)
     except Exception:
@@ -2772,10 +2772,10 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     if not snapshot_ok or not snapshot.get("live", False) or snapshot.get("stale", False):
         items, ai_review_completed, ai_message = [], False, "الأسعار ليست محدثة من المصدر الآن؛ أوقفنا إنشاء صفقات جديدة حتى لا تظهر فرصة قديمة."
     else:
-        items, ai_review_completed, ai_message = _ai_generate_market_signals(market, interval, market_rows, limit)
+        items, ai_review_completed, ai_message = _generate_pro_market_signals(market, interval, market_rows, limit)
     skipped = 0
     # Report the actual breadth of the scan, matching the wider universe
-    # analyzed by _ai_generate_market_signals (up to 60 symbols for a 20-signal request).
+    # analyzed by _generate_pro_market_signals (up to 60 symbols for a 20-signal request).
     scanned_count = min(len(market_rows), min(30, max(12, limit * 2)))
     source_buy_count = sum(1 for item in items if item.get("direction") == "شراء")
     source_sell_count = sum(1 for item in items if item.get("direction") == "بيع")
