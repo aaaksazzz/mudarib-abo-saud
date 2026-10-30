@@ -313,7 +313,7 @@
           const closed=["TP1","TP2","TP3","SL"].includes(status);
           const side=x.side==="BUY"||x.side==="شراء"?"شراء":x.side==="SELL"||x.side==="بيع"?"بيع":x.side||"—";
           const pnl=x.pnl_pct==null?"—":pct(x.pnl_pct);
-          return '<tr><td dir="ltr"><strong>'+esc(x.symbol||"—")+'</strong></td><td>'+esc(x.market||"—")+' / '+esc(x.interval||"—")+'</td><td>'+esc(side)+'</td><td class="ltr">'+price(x.entry)+'</td><td class="ltr">'+price(x.stop_loss)+'</td><td><span class="result-status '+(closed?"is-closed":"is-open")+'">'+esc(statusLabel)+'</span></td><td class="'+(Number(x.pnl_pct)>0?"positive":Number(x.pnl_pct)<0?"negative":"muted")+'">'+esc(pnl)+'</td></tr>';
+          return '<tr><td dir="ltr"><strong>'+esc(x.symbol||"—")+'</strong></td><td>'+esc(x.market||"—")+'</td><td>'+esc(side)+'</td><td class="ltr">'+price(x.entry)+'</td><td class="ltr">'+price(x.stop_loss)+'</td><td><span class="result-status '+(closed?"is-closed":"is-open")+'">'+esc(statusLabel)+'</span></td><td class="'+(Number(x.pnl_pct)>0?"positive":Number(x.pnl_pct)<0?"negative":"muted")+'">'+esc(pnl)+'</td></tr>';
         }).join("")+'</tbody></table></div>':empty("السجل جاهز وينتظر أول فرصة","ستظهر هنا التوصيات المرتبطة بمصدرها عند توفرها، ولن تُحتسب نتيجة مالية قبل تأكيدها.");
       } catch(err) {
         out.innerHTML=empty("تعذر تحميل سجل النتائج",err.message||"تحقق من اتصال الخادم ثم حاول مرة أخرى.")+'<div style="margin-top:12px"><button class="button secondary" id="retryResults">إعادة المحاولة</button></div>';
