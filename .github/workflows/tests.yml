@@ -1,8 +1,9 @@
-name: Fresh app checks
+name: Clean rebuild checks
 on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
 jobs:
   test:
     runs-on: ubuntu-latest
