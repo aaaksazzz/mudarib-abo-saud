@@ -269,7 +269,7 @@ def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     html = (root / "index.html").read_text(encoding="utf-8")
     js = (root / "app.js").read_text(encoding="utf-8")
     assert 'href="/markets/spot"' in html and 'href="/markets/futures"' in html
-    assert 'const loadDailyVip=async()=>{' in js
+    assert 'const loadMarketSignals=async()=>{' in js
     assert '"/api/signals/"+encodeURIComponent(m.api)+"?interval=15m&limit=20"' in js
     assert '"&interval=1d"' in js
     assert 'id="surgeIntervals"' not in js and 'data-interval="' not in js
