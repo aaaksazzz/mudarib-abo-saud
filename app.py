@@ -15,6 +15,7 @@ FRAMES = {"15m", "1h", "4h", "1d"}
 STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "EUR"}
 CACHE = {}
 CACHE_LOCK = threading.Lock()
+CACHE_KEY_LOCKS = {}
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 try:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -33,15 +34,22 @@ MARKETS = [
 ]
 
 def cached(key, ttl, loader):
-    now = time.time()
+    # Serialize refreshes per key so concurrent page requests do not stampede
+    # Binance with identical ticker/candle requests.
     with CACHE_LOCK:
         item = CACHE.get(key)
-        if item and now - item[0] < ttl:
+        if item and time.time() - item[0] < ttl:
             return item[1]
-    value = loader()
-    with CACHE_LOCK:
-        CACHE[key] = (time.time(), value)
-    return value
+        key_lock = CACHE_KEY_LOCKS.setdefault(key, threading.Lock())
+    with key_lock:
+        with CACHE_LOCK:
+            item = CACHE.get(key)
+            if item and time.time() - item[0] < ttl:
+                return item[1]
+        value = loader()
+        with CACHE_LOCK:
+            CACHE[key] = (time.time(), value)
+        return value
 
 def fetch_json(url, params=None):
     response = requests.get(url, params=params, timeout=(3.5, 7), headers={"User-Agent": "SmartTradingPro/2.0"})
@@ -245,7 +253,19 @@ def market_page(market_id):
 @app.get("/health")
 @app.get("/api/health")
 def health():
-    return jsonify({"ok": True, "service": "smart-trading-pro", "status": "healthy"})
+    database = "ok"
+    try:
+        with db() as connection:
+            connection.execute("SELECT 1").fetchone()
+    except sqlite3.Error:
+        database = "error"
+    return jsonify({
+        "ok": database == "ok",
+        "service": "smart-trading-pro",
+        "status": "healthy" if database == "ok" else "degraded",
+        "database": database,
+        "live_markets": [item["id"] for item in MARKETS if item["status"] == "live"],
+    }), (200 if database == "ok" else 503)
 
 @app.get("/api/markets")
 def markets():
@@ -289,7 +309,11 @@ def market(kind):
             "score_note": "درجة جودة الشروط وليست نسبة نجاح أو احتمال ربح."
         })
     except requests.RequestException:
-        return jsonify({"ok": False, "error": "تعذر الاتصال بمصدر السوق الآن؛ لم نستخدم بيانات قديمة أو وهمية."}), 502
+        app.logger.exception("Market provider request failed: %s", kind)
+        return jsonify({"ok": False, "error": "تعذر الاتصال بمصدر السوق الآن؛ لم نستخدم بيانات قديمة أو وهمية.", "market": kind}), 502
+    except sqlite3.Error:
+        app.logger.exception("Trade database failure: %s", kind)
+        return jsonify({"ok": False, "error": "تعذر الوصول إلى سجل الصفقات. تحقق من وحدة التخزين الدائمة.", "market": kind}), 503
 
 @app.get("/api/trades")
 def trades():
