@@ -293,7 +293,7 @@ def test_market_page_uses_selected_market_and_visible_timeframe_buttons():
     js = (root / "app.js").read_text(encoding="utf-8")
     assert 'href="/markets/spot"' in html and 'href="/markets/futures"' in html
     assert 'const loadDailyVip=async()=>{' in js
-    assert '"/api/daily-vip/signals?market="+encodeURIComponent(m.api)+"&limit=20"' in js
+    assert '"/api/trade-feed?market="+encodeURIComponent(m.api)+"&limit=20"' in js
     assert '"&interval=1d"' in js
     assert 'id="surgeIntervals"' not in js and 'data-interval="' not in js
     assert 'x.interval' not in js and 'فريم' not in js
@@ -561,7 +561,7 @@ def test_daily_vip_endpoint_finds_signal_routes_embedded_in_page_state(monkeypat
         lambda url: index_page if url == app_module.DAILY_VIP_SIGNALS_URL else detail_page,
     )
     app_module.DAILY_VIP_CACHE.clear()
-    response = client.get("/api/daily-vip/signals?market=futures&refresh=true")
+    response = client.get("/api/trade-feed?market=futures&refresh=true")
     assert response.status_code == 200
     assert response.json()["sources_checked"] == 2
     assert response.json()["count"] == 2
@@ -589,7 +589,7 @@ def test_daily_vip_endpoint_filters_shorts_from_spot_and_returns_futures(monkeyp
         lambda url: index_page if url == app_module.DAILY_VIP_SIGNALS_URL else detail_page,
     )
     app_module.DAILY_VIP_CACHE.clear()
-    futures = client.get("/api/daily-vip/signals?market=futures&refresh=true")
+    futures = client.get("/api/trade-feed?market=futures&refresh=true")
     assert futures.status_code == 200
     assert futures.json()["count"] == 1
     assert "source" not in futures.json()
@@ -597,7 +597,7 @@ def test_daily_vip_endpoint_filters_shorts_from_spot_and_returns_futures(monkeyp
     assert "source" not in futures.json()["items"][0]
     assert "source_url" not in futures.json()["items"][0]
     assert "Daily VIP" not in str(futures.json())
-    spot = client.get("/api/daily-vip/signals?market=spot&refresh=true")
+    spot = client.get("/api/trade-feed?market=spot&refresh=true")
     assert spot.status_code == 200
     assert spot.json()["items"] == []
     app_module.DAILY_VIP_CACHE.clear()
