@@ -622,3 +622,42 @@ def test_customer_trade_payload_hides_provider_identity_and_external_urls():
     assert "source" not in payload["items"][0]
     assert "source_url" not in payload["items"][0]
     assert "TESTUSDT" in str(payload)
+
+
+
+def test_daily_vip_parser_accepts_active_trade_after_tp3_hit_without_active_badge():
+    page = """
+    HBAR/USDT SHORT Signal
+    SHORT · 10×
+    Current price $0.072122 · published 18h ago · rating Strong Sell
+    TP3 hit · 3/5 3 of 5 targets hit — trade is in profit
+    SL $0.0793 3/5 TP TP $0.06168
+    Entry zone $0.07281 – $0.07404
+    Stop-loss $0.0793
+    Hit Target 1 +2.0% $0.07195
+    Hit Target 2 +4.0% $0.07049
+    Hit Target 3 +7.0% $0.06828
+    Target 4 +11.0% $0.06535
+    Target 5 +16.0% $0.06168
+    """
+    row = app_module._daily_vip_parse_signal(page, "https://provider.invalid/hbar", "futures")
+    assert row is not None
+    assert row["symbol"] == "HBARUSDT"
+    assert row["age_hours"] == 18
+
+
+def test_daily_vip_parser_rejects_explicitly_closed_win_or_loss():
+    page = """
+    PUMP/USDT LONG Signal
+    LONG · 3×
+    Current price $0.0049 · published 20h ago
+    WIN +16.0% · 5/5 targets hit
+    Entry zone $0.00459 – $0.00466
+    Stop-loss $0.00425
+    Target 1 $0.00472
+    Target 2 $0.00481
+    Target 3 $0.00495
+    Target 4 $0.00512
+    Target 5 $0.00536
+    """
+    assert app_module._daily_vip_parse_signal(page, "https://provider.invalid/pump", "futures") is None
