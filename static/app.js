@@ -367,7 +367,7 @@
     return '<div id="tasiChart">'+drawCandles(items)+'</div><div class="muted" style="margin-top:8px">'+esc(label||"شموع المؤشر الفعلية")+'</div>';
   }
   async function renderTasi() {
-    view.innerHTML=pageHeader("تحليل تاسي العام","قراءة يومية للمؤشر العام دون قوائم فريمات أو أزرار تغيير.","السوق السعودي")+
+    view.innerHTML=pageHeader("تحليل تاسي العام","قراءة يومية ثابتة للمؤشر العام.","السوق السعودي")+
       '<section class="panel"><div class="panel-head"><h2>قراءة المؤشر</h2><button class="button small" id="tasiRefresh">تحديث التحليل</button></div><div id="tasiContent" class="loading">جاري طلب التحليل…</div></section>';
     const load=async()=>{
       const out=$("tasiContent");out.innerHTML='<div class="loading">تحميل بيانات المؤشر…</div>';
