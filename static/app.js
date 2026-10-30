@@ -123,12 +123,8 @@
         const external={items:[],message:""};
         const merged=base.items;
         const seen=new Set();
-        const rows=merged.filter(x=>{const key=String(x.source_url||"")+"|"+String(x.symbol||"")+"|"+String(x.direction||"")+"|"+String(x.published_at||"");if(seen.has(key))return false;seen.add(key);return true}).slice().sort((a,b)=>{
-          const score=(x)=>{const v=x.levels||{},entry=Number(v.entry),stop=Number(v.stop_loss),target=Number(v.tp3||v.tp2||v.tp1),risk=Math.abs(entry-stop),reward=Math.abs(target-entry);return entry>0&&risk>0&&target>0?reward/risk:-1};
-          const delta=score(b)-score(a);
-          return Math.abs(delta)>1e-9?delta:Number(b.published_at||0)-Number(a.published_at||0);
-        });
-        if(label)label.textContent="مصادر مفحوصة: "+Number(base.sources_checked||0)+Number(external.sources_checked||0);
+        const rows=merged.filter(x=>{const key=String(x.symbol||"")+"|"+String(x.direction||"");if(seen.has(key))return false;seen.add(key);return true});
+        if(label)label.textContent="ترتيب حسب تغير 15 دقيقة بعد توافق 4 ساعات واليومي";
         if(!rows.length){out.innerHTML='<div class="surge-empty">'+esc(external.message||base.message||"لا توجد توصيات نشطة مكتملة الآن.")+'</div>';return}
         const targetKeys=["tp1","tp2","tp3","tp4","tp5"];
         out.innerHTML='<div class="surge-signal-grid">'+rows.map((x,i)=>{
@@ -141,7 +137,7 @@
           const sourceLink=x.source_url?'<a class="surge-link" href="'+esc(x.source_url)+'" target="_blank" rel="noopener noreferrer">فتح المنشور</a>':"";
           const sourceName=esc(x.source||"تحليل الموقع");
           const timeframe=esc("4 ساعات + يومي · ترتيب 15 دقيقة");
-          const qualityNote='<small>درجة اتجاه وليست نسبة نجاح</small>';
+          const qualityNote='<small>تغير 15د: '+Number(x.change_15m_pct||0).toFixed(2)+'% · الدرجة ليست نسبة نجاح</small>';
           return '<article class="surge-signal-card"><div class="surge-signal-head"><b dir="ltr">'+esc(x.symbol)+'</b><span class="surge-rank">#'+(i+1)+'</span><span class="surge-rec-side '+(buy?"buy":"sell")+'">'+esc(x.signal_label||x.direction)+'</span></div><div class="surge-entry"><small>منطقة الدخول</small><b dir="ltr">'+entryText+'</b></div><div class="surge-level-grid">'+targets+'<div class="surge-target stop"><small>وقف الخسارة</small><b dir="ltr">'+price(stop)+'</b><small>مخاطرة '+risk+'</small></div></div><div class="surge-signal-foot"><span>الفريم: '+timeframe+' · '+esc(x.status||"حالة المصدر غير مذكورة")+' · '+esc(x.age_hours)+" ساعة"+'</span><span>'+sourceName+' · '+sourceLink+' '+qualityNote+'</span></div></article>';
         }).join("")+'</div>';
       }catch(err){out.innerHTML='<div class="surge-empty">تعذر تحديث الصفقات حالياً. حاول لاحقاً.</div>'}
