@@ -662,3 +662,26 @@ def test_daily_vip_parser_rejects_explicitly_closed_win_or_loss():
     Target 5 $0.00536
     """
     assert app_module._daily_vip_parse_signal(page, "https://provider.invalid/pump", "futures") is None
+
+
+def test_public_ideas_accept_explicit_entry_stop_and_tp1_without_inventing_more_targets(monkeypatch):
+    now = int(time.time())
+    fake = [{
+        "source": "Test public feed",
+        "title": "BTCUSDT BUY setup",
+        "description": "Entry: 100 Stop Loss: 95 TP1: 110",
+        "url": "https://example.com/btc-setup",
+        "published_at": now,
+    }]
+    monkeypatch.setattr(app_module, "_fetch_public_idea_feed", lambda source, url: fake)
+    app_module.PUBLIC_TRADE_IDEA_CACHE.clear()
+    response = client.get("/api/public-ideas?market=spot&limit=10&refresh=true")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["count"] == 1
+    levels = data["items"][0]["levels"]
+    assert levels["entry"] == 100
+    assert levels["stop_loss"] == 95
+    assert levels["tp1"] == 110
+    assert levels["tp2"] is None
+    assert levels["tp3"] is None
