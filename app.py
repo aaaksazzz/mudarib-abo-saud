@@ -2314,7 +2314,7 @@ def public_results(limit: int = Query(100, ge=1, le=500)):
     if not isinstance(rows, list):
         rows = []
     # Hide and purge historical journal rows from the retired strategy.
-    current_rows = [row for row in rows if isinstance(row, dict) and row.get("source") == "multi_timeframe_direction_v2"]
+    current_rows = [row for row in rows if isinstance(row, dict) and row.get("source") == "pro_confluence_v1"]
     if current_rows != rows:
         try:
             with RESULTS_LOCK:
@@ -2540,181 +2540,9 @@ def _ai_review_signal_batch(items, market, interval):
 
 
 def _ai_generate_market_signals(market, interval, market_rows, limit=20):
-    """Generate trades on fresh MACD-line zero crossings and rank by price momentum."""
-    frame_seconds = {"15m": 900, "30m": 1800, "1h": 3600, "2h": 7200,
-                     "4h": 14400, "1d": 86400, "1w": 604800, "1M": 2592000}
-    # Apply MACD zero-line crossover and multi-timeframe confirmation across every supported timeframe.
-    frame_names = tuple(frame_seconds)
-
-    def _valid_candles(symbol, tf):
-        try:
-            candles = candle_data(market, symbol, tf, force_refresh=(tf == interval))
-        except Exception:
-            return []
-        valid = []
-        for c in candles[-100:] if isinstance(candles, list) else []:
-            try:
-                row = {k: float(c[k]) for k in ("open", "high", "low", "close")}
-                if (all(math.isfinite(row[k]) and row[k] > 0 for k in row)
-                    and row["high"] >= max(row["open"], row["close"])
-                    and row["low"] <= min(row["open"], row["close"])
-                    and row["high"] >= row["low"]):
-                    valid.append(row)
-            except (KeyError, TypeError, ValueError, OverflowError):
-                continue
-        return valid
-
-    def _candidate(row):
-        if not isinstance(row, dict):
-            return None
-        symbol = str(row.get("symbol") or "").strip().upper()
-        if not symbol:
-            return None
-        trends, changes, candles_by_tf, macd_values = {}, {}, {}, {}
-        for tf in frame_names:
-            candles = _valid_candles(symbol, tf)
-            candles_by_tf[tf] = candles
-            if len(candles) < 35:
-                trends[tf], changes[tf], macd_values[tf] = "غير متاح", None, None
-                continue
-            sample = candles[-12:]
-            start_price = sample[0]["open"]
-            end_price = sample[-1]["close"]
-            move = (end_price - start_price) / start_price * 100.0 if start_price > 0 else 0
-            changes[tf] = round(move, 3)
-            trends[tf] = "صاعد" if move > 0.05 else "هابط" if move < -0.05 else "محايد"
-            closes = [c["close"] for c in candles]
-            def _ema_series(values, period):
-                alpha = 2.0 / (period + 1.0)
-                out = []
-                ema = values[0]
-                for value in values:
-                    ema = value * alpha + ema * (1.0 - alpha)
-                    out.append(ema)
-                return out
-            ema12, ema26 = _ema_series(closes, 12), _ema_series(closes, 26)
-            macd_line = [a - b for a, b in zip(ema12, ema26)]
-            macd_values[tf] = {
-                "previous": macd_line[-2],
-                "current": macd_line[-1],
-                "cross_up": macd_line[-2] <= 0 < macd_line[-1],
-                "cross_down": macd_line[-2] >= 0 > macd_line[-1]
-            }
-
-        selected = candles_by_tf.get(interval) or []
-        macd = macd_values.get(interval)
-        if not macd or len(selected) < 35:
-            return None
-        # Trade only a fresh MACD-line crossing of the zero line; never invert its direction.
-        if macd["cross_up"]:
-            side = "شراء"
-        elif macd["cross_down"]:
-            side = "بيع"
-        else:
-            return None
-        aligned = sum(1 for tf in frame_names if macd_values.get(tf) and
-                      ((macd_values[tf]["current"] > 0) if side == "شراء" else
-                       (macd_values[tf]["current"] < 0)))
-        score = min(98, 60 + aligned * 8)
-        last = selected[-1]
-        close = last["close"]
-        try:
-            price = float(row.get("price") or close)
-        except (TypeError, ValueError, OverflowError):
-            price = close
-        if not math.isfinite(price) or price <= 0 or close <= 0 or abs(price-close)/close > 0.08:
-            return None
-
-        swing = selected[-8:]
-        min_risk = max(close * 0.001, (last["high"] - last["low"]) * 0.35)
-        if side == "شراء":
-            risk = max(close - min(c["low"] for c in swing), min_risk)
-            if risk / close > {"15m":.012,"30m":.018,"1h":.025,"2h":.035,"4h":.05,"1d":.07,"1w":.10,"1M":.15}.get(interval,.02):
-                return None
-            stop, entry = close-risk, close
-            tp1, tp2, tp3 = close+risk, close+risk*1.5, close+risk*2
-            if not stop < entry < tp1 < tp2 < tp3:
-                return None
-        else:
-            risk = max(max(c["high"] for c in swing)-close, min_risk)
-            if risk / close > {"15m":.012,"30m":.018,"1h":.025,"2h":.035,"4h":.05,"1d":.07,"1w":.10,"1M":.15}.get(interval,.02):
-                return None
-            stop, entry = close+risk, close
-            tp1, tp2, tp3 = close-risk, close-risk*1.5, close-risk*2
-            if not stop > entry > tp1 > tp2 > tp3 or tp3 <= 0:
-                return None
-
-        digits = 8 if entry < 1 else 6 if entry < 100 else 3 if entry < 10000 else 2
-        now = int(time.time())
-        lifetime = frame_seconds.get(str(interval), 900)
-        profit_pct = abs(tp3-entry)/entry*100
-        loss_pct = abs(stop-entry)/entry*100
-        rationale = f"تقاطع MACD مع خط الصفر: {side}؛ قيمة MACD الحالية {macd['current']:.8g} والسابق {macd['previous']:.8g}. تأكيد اتجاه MACD عبر الفريمات: {aligned}/4. درجة التوافق ليست احتمال ربح."
-        return {
-            "symbol": symbol, "direction": side,
-            "title": f"{side} {symbol} — تقاطع MACD صفر",
-            "description": rationale + " هذه درجة توافق الاتجاه وليست احتمال ربح.",
-            "source": "MACD 12/26 — تقاطع خط الصفر", "url": "",
-            "published_at": now, "created_at": now, "age_hours": 0,
-            "market": market, "interval": interval, "expires_at": now+lifetime,
-            "valid_for_seconds": lifetime, "price_updated_at": now, "price_fresh": True,
-            "freshness_label": "السعر مطابق تقريبًا لآخر شمعة", "live_price": round(price,digits),
-            "levels": {"entry":round(entry,digits),"stop_loss":round(stop,digits),
-                       "tp1":round(tp1,digits),"tp2":round(tp2,digits),"tp3":round(tp3,digits)},
-            "ai_score": score, "combined_score": score, "method_score": score,
-            "score_type": "درجة توافق ٤ فريمات وليست نسبة نجاح",
-            "ai_reviewed": False, "generated_by_ai": False,
-            "ai_review": {"summary_ar":rationale,"risk_ar":"توافق الاتجاه لا يضمن النتيجة؛ قد ينعكس السوق.",
-                          "verdict":"توافق فريمات","score_type":"درجة توافق وليست احتمال ربح"},
-            "timeframe_trends":trends, "timeframe_change_pct":changes,
-            "macd_zero_line": {"previous": macd["previous"], "current": macd["current"],
-                               "cross": "صعود" if side == "شراء" else "هبوط"},
-            "timeframes_aligned":aligned, "timeframe_alignment_label":f"{aligned}/4 فريمات تؤيد اتجاه MACD",
-            "trend_strength":round(aligned/4*100),
-            "potential_profit_pct":round(profit_pct,2),"potential_loss_pct":round(loss_pct,2),
-            "tp1_profit_pct":round(abs(tp1-entry)/entry*100,2),
-            "tp2_profit_pct":round(abs(tp2-entry)/entry*100,2),
-            "tp3_profit_pct":round(profit_pct,2),
-            "risk_reward_tp3":round(profit_pct/loss_pct,2) if loss_pct else None,
-            "external_source_weight":0,"site_analysis_weight":100,
-            "has_complete_levels":True,"level_source_note":"مستويات مبنية على بنية الشموع الحالية.",
-            "method":"macd_zero_cross_v1"
-        }
-
-    unique_rows, seen = [], set()
-    for row in market_rows if isinstance(market_rows, list) else []:
-        symbol = str(row.get("symbol") or "").strip().upper() if isinstance(row, dict) else ""
-        if symbol and symbol not in seen:
-            seen.add(symbol)
-            unique_rows.append(row)
-
-    def _priority(row):
-        try:
-            volume = float(row.get("quote_volume") or row.get("quoteVolume") or row.get("volume") or 0)
-            change = abs(float(row.get("price_change_percent") or row.get("change_pct") or 0))
-            return math.log10(1 + max(0, volume)) * (1 + min(change, 25)/25)
-        except (TypeError, ValueError, OverflowError):
-            return 0
-    unique_rows.sort(key=_priority, reverse=True)
-    candidates = []
-    scan_cap = min(60, max(40, limit*3))
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        jobs = [pool.submit(_candidate, row) for row in unique_rows[:scan_cap]]
-        for job in as_completed(jobs):
-            try:
-                item = job.result()
-                if item:
-                    candidates.append(item)
-            except Exception as exc:
-                print(f"multi-timeframe candidate failed {market}: {type(exc).__name__}")
-    candidates.sort(key=lambda item: (
-        abs(float((item.get("timeframe_change_pct") or {}).get(interval) or 0)),
-        item.get("timeframes_aligned", 0),
-        item.get("risk_reward_tp3", 0),
-        item.get("trend_strength", 0)
-    ), reverse=True)
-    return candidates[:limit], True, ("تم الفحص بتقاطع MACD مع خط الصفر، وترتيب الفرص حسب أقوى تغير سعري على الفريم المحدد."
-                                      if candidates else "لا يوجد تقاطع MACD جديد لخط الصفر على الفريم المحدد حاليًا.")
+    """Delegate to the new deterministic multi-factor strategy engine."""
+    from strategy_engine import generate_signals
+    return generate_signals(market, interval, market_rows, limit, candle_data)
 
 
 @app.get("/api/order-flow/{market}")
@@ -2902,66 +2730,12 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         return JSONResponse({"ok": False, "live": False, "items": [],
                              "message": "الفريم غير مدعوم."}, status_code=422)
 
-    # Provider-only mode: never silently fall back to the retired in-house strategy.
-    if market == "futures":
-        provider_feed = futures_pro_live_signals(refresh=refresh)
-        provider_items = []
-        for raw in provider_feed.get("items", []):
-            targets = raw.get("targets") if isinstance(raw.get("targets"), list) else []
-            entries = raw.get("entry") if isinstance(raw.get("entry"), list) else []
-            try:
-                entry = float(entries[0])
-                stop = float(raw.get("stop_loss"))
-                targets = [float(v) for v in targets if math.isfinite(float(v)) and float(v) > 0]
-            except (TypeError, ValueError, IndexError, OverflowError):
-                continue
-            side = raw.get("side")
-            if len(targets) < 3 or not all(math.isfinite(v) and v > 0 for v in [entry, stop] + targets[:3]):
-                continue
-            if side == "شراء" and not (stop < entry < targets[0] <= targets[1] <= targets[2]):
-                continue
-            if side == "بيع" and not (stop > entry > targets[0] >= targets[1] >= targets[2]):
-                continue
-            published = int(raw.get("published_at") or 0)
-            if not published or int(time.time()) - published > 24 * 60 * 60:
-                continue
-            provider_items.append({
-                "id": "provider-" + str(raw.get("id", "")),
-                "symbol": str(raw.get("symbol", "")).replace("USDT", "/USDT"),
-                "direction": side,
-                "levels": {"entry": entry, "stop_loss": stop, "tp1": targets[0], "tp2": targets[1], "tp3": targets[2]},
-                "created_at": published,
-                "expires_at": published + 24 * 60 * 60,
-                "ai_score": 0,
-                "provider": raw.get("source", "مزود خارجي"),
-                "provider_url": raw.get("url"),
-                "published_at": published,
-                "raw_text": raw.get("raw_text", ""),
-                "status": raw.get("status", "توصية مزود خارجي — النتيجة غير متحققة"),
-            })
-        provider_items.sort(key=lambda x: x.get("published_at", 0), reverse=True)
-        return {
-            "ok": True, "live": bool(provider_items), "items": provider_items[:limit],
-            "count": min(len(provider_items), limit), "market": market, "interval": interval,
-            "source_mode": "public_signal_providers",
-            "message": provider_feed.get("note") if provider_items else
-                "ما لقينا توصية خارجية عامة مكتملة وحديثة فيها دخول و3 أهداف ووقف. ما راح نولّد صفقات من الاستراتيجية القديمة.",
-            "sources": provider_feed.get("sources", []), "updated_at": int(time.time())
-        }
-
-    # No verified free provider feed is wired for these markets yet. Keep the old strategy disabled.
-    return {
-        "ok": True, "live": False, "items": [], "count": 0,
-        "market": market, "interval": interval, "source_mode": "public_signal_providers",
-        "message": "مزودو التوصيات العامة المربوطون حاليًا لا يغطون هذا السوق؛ تم إيقاف الاستراتيجية القديمة ولن نعرض صفقات مصطنعة.",
-        "sources": [], "updated_at": int(time.time())
-    }
-
+    # Generate recommendations locally from fresh OHLCV candles for every supported market.
     now = int(time.time())
     # All recommendations expire after 15 minutes, independent of selected timeframe.
     timeframe_lifetime = 15 * 60
     # Bump cache namespace so older timeframe-length recommendations cannot reappear.
-    cache_key = ("multi_timeframe_direction_v2", market, interval, limit)
+    cache_key = ("pro_confluence_v1", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if not refresh and cached and now - cached[0] < 90:
@@ -3081,7 +2855,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         except (KeyError, TypeError, ValueError, OverflowError, ZeroDivisionError):
             return (-1.0, -1.0, -1.0, 0)
 
-    # Rank the strongest price moves on the requested timeframe first, then MACD alignment and risk/reward.
+    # Rank by multi-factor evidence, timeframe agreement, risk/reward, then timeframe momentum.
     items.sort(
         key=lambda item: (
             abs(float((item.get("timeframe_change_pct") or {}).get(interval) or 0)),
