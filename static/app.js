@@ -522,5 +522,5 @@
     setInterval(()=>{if(panel.classList.contains("open"))refreshSupport()},4000);
     $("supportInboxRefresh")?.addEventListener("click",loadSupportInbox);
   }
-  document.addEventListener("DOMContentLoaded",()=>{setupSupportWidget();render().catch(err=>{if(view)view.innerHTML='<section class="panel">'+empty("تعذر عرض الصفحة",err.message)+'</section>';setStatus("خطأ في الواجهة",false)});});
+  document.addEventListener("DOMContentLoaded",()=>{const bottomMore=$("bottomMore");if(bottomMore)bottomMore.addEventListener("click",()=>{$("menuToggle")?.click()});document.querySelectorAll(".mobile-bottom-nav a").forEach(a=>{if(a.getAttribute("href")===path)a.classList.add("active")});setupSupportWidget();render().catch(err=>{if(view)view.innerHTML='<section class="panel">'+empty("تعذر عرض الصفحة",err.message)+'</section>';setStatus("خطأ في الواجهة",false)});});
 })();
