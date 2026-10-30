@@ -2,6 +2,7 @@ import os
 import sqlite3
 import threading
 import time
+from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -156,18 +157,26 @@ def analyse_candidate(kind, item, interval, market_direction):
     except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, ZeroDivisionError):
         return None
 
+@contextmanager
 def db():
     connection = sqlite3.connect(DB_PATH, timeout=8)
     connection.row_factory = sqlite3.Row
-    connection.execute("""CREATE TABLE IF NOT EXISTS trades (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, market TEXT NOT NULL, symbol TEXT NOT NULL,
-        timeframe TEXT NOT NULL, side TEXT NOT NULL, entry REAL NOT NULL, stop_loss REAL NOT NULL,
-        tp1 REAL NOT NULL, tp2 REAL NOT NULL, tp3 REAL NOT NULL, status TEXT NOT NULL DEFAULT 'OPEN',
-        tp1_hit INTEGER NOT NULL DEFAULT 0, tp2_hit INTEGER NOT NULL DEFAULT 0,
-        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, closed_at INTEGER
-    )""")
-    connection.commit()
-    return connection
+    try:
+        connection.execute("""CREATE TABLE IF NOT EXISTS trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, market TEXT NOT NULL, symbol TEXT NOT NULL,
+            timeframe TEXT NOT NULL, side TEXT NOT NULL, entry REAL NOT NULL, stop_loss REAL NOT NULL,
+            tp1 REAL NOT NULL, tp2 REAL NOT NULL, tp3 REAL NOT NULL, status TEXT NOT NULL DEFAULT 'OPEN',
+            tp1_hit INTEGER NOT NULL DEFAULT 0, tp2_hit INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, closed_at INTEGER
+        )""")
+        connection.commit()
+        yield connection
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
 
 def save_new_trades(kind, signals):
     now = int(time.time())
