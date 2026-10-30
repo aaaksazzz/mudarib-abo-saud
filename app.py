@@ -2312,7 +2312,8 @@ def _daily_vip_parse_signal(page_html, page_url, market):
     plain = re.sub(r"\s*/\s*", "/", plain)
     plain = re.sub(r"\s*\$\s*", "$", plain)
     plain = re.sub(r"(?<=\d)\s*[–—−]\s*(?=\$?\d)", " – ", plain)
-    # Current provider titles are compact, e.g. NNEAR/USDTSHORT5×; accept that format and the older spaced format.\n    title_match = re.search(r"([A-Z0-9]{2,20})\s*/\s*USDT\s*(LONG|SHORT)(?=\s|[0-9×x]|$)(?:\s*\d+\s*[×x])?(?:\s+Signal)?", plain, re.I)
+    # Current provider titles are compact, e.g. NNEAR/USDTSHORT5×; accept that format and the older spaced format.
+    title_match = re.search(r"([A-Z0-9]{2,20})\s*/\s*USDT\s*(LONG|SHORT)(?=\s|[0-9×x]|$)(?:\s*\d+\s*[×x])?(?:\s+Signal)?", plain, re.I)
     if not title_match:
         return None
     symbol, raw_side = title_match.group(1).upper(), title_match.group(2).upper()
