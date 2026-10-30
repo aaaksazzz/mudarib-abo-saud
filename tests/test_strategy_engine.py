@@ -26,7 +26,7 @@ def test_professional_engine_builds_valid_long_trade(monkeypatch):
     assert completed is True
     assert items
     trade = items[0]
-    assert trade["method"] == "trend_4h_1d_rank_15m"
+    assert trade["method"] == "trend_4h_1d_rank_15m_v2"
     assert trade["direction"] == "شراء"
     assert trade["timeframe_trends"]["4h"] == "صاعد"
     assert trade["timeframe_trends"]["1d"] == "صاعد"
