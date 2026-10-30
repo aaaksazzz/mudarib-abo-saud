@@ -2441,19 +2441,29 @@ def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=
         return _daily_vip_customer_payload(data)
     try:
         index_html = _daily_vip_fetch(DAILY_VIP_SIGNALS_URL)
-        # The public listing may expose signal routes in hrefs, data attributes,
-        # or its embedded page-state JSON. Normalize escaped URLs before scanning.
+        # Extract actual anchor destinations only. A broad scan of the full HTML
+        # also matched internal routes such as /signals/page-<hash>, which are
+        # listing/router pages and return 404 rather than signal details.
         listing_text = html_lib.unescape(index_html or "")
         listing_text = listing_text.replace(r"\/", "/").replace(r"\u002F", "/")
-        route_candidates = re.findall(
-            r"""(?:https?://(?:www\.)?dailyvipsignals\.com)?(/signals/[a-z0-9-]+)""",
+        href_values = re.findall(
+            r"""(?:href|data-href)\s*=\s*["']([^"'<>]+)["']""",
             listing_text, re.I,
         )
         paths = []
-        for candidate in route_candidates:
-            path = re.sub(r"[?#].*$", "", candidate.strip())
-            if re.fullmatch(r"/signals/[a-z0-9-]+", path, re.I) and path not in paths:
-                paths.append(path)
+        for candidate in href_values:
+            candidate = candidate.strip().replace(r"\/", "/")
+            parsed_path = re.match(
+                r"""^(?:https?://(?:www\.)?dailyvipsignals\.com)?(/signals/[a-z0-9-]+)(?:[?#].*)?$""",
+                candidate, re.I,
+            )
+            if not parsed_path:
+                continue
+            path = parsed_path.group(1)
+            # Ignore synthetic page/router identifiers; only request signal slugs.
+            if path.lower().startswith("/signals/page-") or path in paths:
+                continue
+            paths.append(path)
         # The listing is ordered with current setups first; cap detail requests to protect the small host and provider.\n        paths = paths[:12]
         urls = ["https://dailyvipsignals.com" + path for path in paths]
         items = []
