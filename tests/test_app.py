@@ -542,7 +542,7 @@ def test_daily_vip_signal_parser_preserves_all_published_levels():
 
 
 def test_daily_vip_endpoint_filters_shorts_from_spot_and_returns_futures(monkeypatch):
-    index_page = '<a href="/signals/apt-short-signal-2026-10-30">View setup</a>'
+    index_page = '<a href="https://dailyvipsignals.com/signals/apt-short-signal-2026-10-30?ref=active">View setup</a>'
     detail_page = """
     APT/USDT SHORT Signal
     SHORT · 3×
