@@ -2322,11 +2322,14 @@ def _daily_vip_parse_signal(page_html, page_url, market):
     # WIN/LOSS: page templates and embedded data may contain unrelated closed trades.
     # The provider keeps a trade open after TP1-TP4; only an explicit SL/WIN/LOSS/
     # CLOSED status in this signal's own header can close it.
-    status_end = re.search(r"\bTrade Setup\b", plain, re.I)
-    status_text = plain[:status_end.start()] if status_end else plain[:1200]
-    closed_marker = re.search(
-        r"\b(?:WIN|LOSS|CLOSED)\b|\b(?:SL|stop[- ]loss)\s+hit\b",
-        status_text, re.I,
+    status_end = re.search(r"\b(?:Trade Setup|Entry(?:\s+zone)?|Target\s*1)\b", plain, re.I)
+    status_text = plain[:status_end.start()] if status_end else plain[:500]
+    # "LOSS" is part of the ordinary label "Stop-loss"; remove that label
+    # before checking standalone result words, while still detecting "SL hit".
+    status_without_stop_label = re.sub(r"\bstop[- ]loss\b", " ", status_text, flags=re.I)
+    closed_marker = (
+        re.search(r"\b(?:WIN|LOSS|CLOSED)\b", status_without_stop_label, re.I)
+        or re.search(r"\b(?:SL|stop[- ]loss)\s+hit\b", status_text, re.I)
     )
     # Accept both the original Active badge and the provider's progress badges.
     active_marker = bool(
@@ -2457,6 +2460,11 @@ def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=
             r"""(?:href|data-href)\s*=\s*["']([^"'<>]+)["']""",
             listing_text, re.I,
         )
+        # Also accept concrete signal slugs embedded in the page-state JSON.
+        # Synthetic /signals/page-* router paths are still rejected below.
+        href_values.extend(re.findall(
+            r"""["'](/signals/[a-z0-9-]+)["']""", listing_text, re.I
+        ))
         paths = []
         for candidate in href_values:
             candidate = candidate.strip().replace(r"\/", "/")
