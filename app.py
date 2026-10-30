@@ -2310,7 +2310,7 @@ def _public_idea_extract_symbol(market, value):
     return ""
 
 @app.get("/api/public-ideas")
-def public_external_trade_ideas(market: str = Query("futures"),
+def public_ideas(market: str = Query("futures"),
                                 limit: int = Query(20, ge=1, le=50),
                                 refresh: bool = Query(False)):
     """Return only complete, fresh third-party trade ideas from market-relevant public feeds."""
