@@ -2367,18 +2367,19 @@ def daily_vip_signals(market: str = Query("futures"), limit: int = Query(20, ge=
         return data
     try:
         index_html = _daily_vip_fetch(DAILY_VIP_SIGNALS_URL)
-        href_values = re.findall(r"""href\s*=\s*(['"])(.*?)\1""", index_html, re.I)
+        # The public listing may expose signal routes in hrefs, data attributes,
+        # or its embedded page-state JSON. Normalize escaped URLs before scanning.
+        listing_text = html_lib.unescape(index_html or "")
+        listing_text = listing_text.replace(r"\\/", "/").replace(r"\\u002F", "/")
+        route_candidates = re.findall(
+            r"""(?:https?://(?:www\\.)?dailyvipsignals\\.com)?(/signals/[a-z0-9-]+)""",
+            listing_text, re.I,
+        )
         paths = []
-        for _, href in href_values:
-            href = html_lib.unescape(href.strip())
-            if href.startswith("https://dailyvipsignals.com"):
-                href = href[len("https://dailyvipsignals.com"):]
-            elif href.startswith("https://www.dailyvipsignals.com"):
-                href = href[len("https://www.dailyvipsignals.com"):]
-            if href.startswith("/signals/"):
-                path = re.sub(r"[?#].*$", "", href)
-                if re.fullmatch(r"/signals/[a-z0-9-]+", path, re.I) and path not in paths:
-                    paths.append(path)
+        for candidate in route_candidates:
+            path = re.sub(r"[?#].*$", "", candidate.strip())
+            if re.fullmatch(r"/signals/[a-z0-9-]+", path, re.I) and path not in paths:
+                paths.append(path)
         paths = paths[:30]
         urls = ["https://dailyvipsignals.com" + path for path in paths]
         items = []
