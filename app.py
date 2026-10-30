@@ -2316,19 +2316,22 @@ def _daily_vip_parse_signal(page_html, page_url, market):
     if not title_match:
         return None
     symbol, raw_side = title_match.group(1).upper(), title_match.group(2).upper()
-    # Some live setups switch their detail-page badge from "Active" to
-    # "TP3 hit" / "3 of 5 targets hit — trade is in profit". Accept those
-    # still-open states, but never import explicitly closed WIN/LOSS setups.
+    # Status belongs to the signal header. Do not scan the entire HTML text for
+    # WIN/LOSS: page templates and embedded data may contain unrelated closed trades.
+    # The provider keeps a trade open after TP1-TP4; only an explicit SL/WIN/LOSS/
+    # CLOSED status in this signal's own header can close it.
+    status_end = re.search(r"\bTrade Setup\b", plain, re.I)
+    status_text = plain[:status_end.start()] if status_end else plain[:1200]
     closed_marker = re.search(
         r"\b(?:WIN|LOSS|CLOSED)\b|\b(?:SL|stop[- ]loss)\s+hit\b",
-        plain, re.I,
+        status_text, re.I,
     )
-    # Keep setups that are explicitly active, including those where one or more
-    # targets have already been reached. A TP hit does not close the trade.
+    # Accept both the original Active badge and the provider's progress badges.
     active_marker = bool(
-        re.search(r"\bActive\b", plain, re.I)
-        or re.search(r"\bTP\s*[1-5]\s*(?:hit|reached|filled)\b", plain, re.I)
-        or re.search(r"\b[1-5]\s+of\s+5\s+targets?\s+(?:hit|reached)\b", plain, re.I)
+        re.search(r"\bActive\b", status_text, re.I)
+        or re.search(r"\bTP\s*[1-5]\s*(?:hit|reached|filled)\b", status_text, re.I)
+        or re.search(r"\b[1-5]\s+of\s+5\s+targets?\s+(?:hit|reached)\b", status_text, re.I)
+        or re.search(r"\btrade is in profit\b", status_text, re.I)
     )
     if closed_marker or not active_marker:
         return None
