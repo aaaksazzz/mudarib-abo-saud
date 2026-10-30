@@ -122,9 +122,9 @@ def test_results_endpoint_handles_empty_and_malformed_pnl(tmp_path, monkeypatch)
     path = tmp_path / "results.json"
     monkeypatch.setattr(app_module, "RESULTS_PATH", path)
     write_json_file(path, [
-        {"symbol": "AAA", "result": "TP1", "pnl_pct": "2.5", "source": "multi_factor_4h_1d_rank_15m_v3"},
-        {"symbol": "BBB", "result": "SL", "pnl_pct": "bad", "source": "multi_factor_4h_1d_rank_15m_v3"},
-        {"symbol": "CCC", "result": "مفتوحة", "pnl_pct": None, "source": "multi_factor_4h_1d_rank_15m_v3"},
+        {"symbol": "AAA", "result": "TP1", "pnl_pct": "2.5", "source": "multi_factor_4h_1d_selected_interval_v3"},
+        {"symbol": "BBB", "result": "SL", "pnl_pct": "bad", "source": "multi_factor_4h_1d_selected_interval_v3"},
+        {"symbol": "CCC", "result": "مفتوحة", "pnl_pct": None, "source": "multi_factor_4h_1d_selected_interval_v3"},
         {"symbol": "OLD", "result": "OPEN", "pnl_pct": 0, "source": "legacy_strategy_v2"},
     ])
     response = client.get("/api/results?limit=20")
