@@ -97,12 +97,11 @@
       '.surge-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px}.surge-stat{background:#0c1d2e;border:1px solid #18334a;border-radius:14px;padding:13px}.surge-stat small{color:#91a8c0;font-size:12px}.surge-stat strong{display:block;font-size:clamp(18px,2.2vw,25px);margin-top:8px}.surge-pos{color:#16d99a}.surge-neg{color:#ff647c}.surge-list{display:grid;gap:9px}.surge-item{border:1px solid rgba(91,155,205,.28);border-radius:14px;padding:13px;background:#0a1726}.surge-item-head{display:flex;justify-content:space-between;gap:10px;align-items:center}.surge-table-wrap{overflow:auto}.surge-table{border-collapse:collapse;width:100%;min-width:430px}.surge-table th,.surge-table td{text-align:right;padding:10px 8px;border-bottom:1px solid #142b3e;font-size:12px}.surge-table th{color:#91a8c0}.surge-empty{padding:20px;text-align:center;color:#91a8c0;font-size:12px}.surge-link{color:#6effcb;text-decoration:underline;font-weight:800}'+
       '@media(max-width:650px){.surge-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}'+
       '</style>'+
-      '<div class="surge-page">'+
-      '<div class="surge-top"><span class="eyebrow">SMART TRADING PRO</span><h1 class="page-title surge-market-title" style="margin:8px 0 0">'+esc(m.name)+'</h1><div class="surge-market-sub">'+(['spot','futures','alpha'].includes(m.api)?'فرص مختارة':'فرص مختارة')+'</div><p class="muted">'+esc(m.sub)+'</p></div>'+
-      ''+
-      ''+
-      '<section class="surge-panel"><div class="surge-item-head"><h2 style="margin:0">📡 توصيات من فرص التداول</h2><span class="surge-chip" id="signalSourceLabel">محدثة</span></div><div id="surgeRecommendations" class="surge-empty">تظهر هنا الصفقات المكتملة بعد التحقق من الأسعار والمستويات وحالة الصفقة.</div><p class="surge-muted" style="margin-top:10px">الصفقات مرتبة حسب العائد المحتمل مقارنة بالمخاطرة، وعند التعادل تظهر الأحدث أولاً.</p></section>'+
-      ''+
+      '<div class="surge-page surge-pro-layout">'+
+      '<header class="surge-pro-header"><div><span class="surge-kicker">SMART TRADING PRO <i></i> FUTURES DESK</span><h1>'+esc(m.name)+'</h1><p>'+esc(m.sub)+'</p></div><span class="surge-live-pill"><i></i> متابعة مباشرة</span></header>'+
+      '<section class="surge-method-strip"><div><small>اتجاه رئيسي</small><b>4 ساعات + يومي</b><em>لا توصية عند اختلاف الاتجاه</em></div><div><small>ترتيب الفرص</small><b>تغير 15 دقيقة</b><em>الأقوى حركة في الأعلى</em></div><div><small>إدارة المخاطر</small><b>دخول · أهداف · وقف</b><em>المستويات حسب التحليل</em></div></section>'+
+      '<section class="surge-results-panel"><div class="surge-results-heading"><div><span class="surge-kicker">TRADE OPPORTUNITIES</span><h2>الفرص المتاحة</h2><p>شراء عند توافق الاتجاه الصاعد، وبيع عند توافق الاتجاه الهابط</p></div><span class="surge-chip" id="signalSourceLabel">جاري الفحص</span></div><div id="surgeRecommendations" class="surge-empty">جاري تحليل الأصول على الفريمات المطلوبة…</div></section>'+
+      '<p class="surge-disclaimer">التحليل آلي للمساعدة في اتخاذ القرار، وليس ضماناً للربح. تحقق من الأسعار قبل تنفيذ أي صفقة.</p>'+
       '</div>';
     let forceNextDailyVip=false;
     const loadDailyVip=async()=>{
@@ -124,8 +123,8 @@
         const merged=base.items;
         const seen=new Set();
         const rows=merged.filter(x=>{const key=String(x.symbol||"")+"|"+String(x.direction||"");if(seen.has(key))return false;seen.add(key);return true});
-        if(label)label.textContent="ترتيب حسب تغير 15 دقيقة بعد توافق 4 ساعات واليومي";
-        if(!rows.length){out.innerHTML='<div class="surge-empty">'+esc(external.message||base.message||"لا توجد توصيات نشطة مكتملة الآن.")+'</div>';return}
+        if(label)label.textContent="الاستراتيجية تعمل";
+        if(!rows.length){out.innerHTML='<div class="surge-no-trades"><span>⌁</span><b>لا توجد فرصة مطابقة حالياً</b><p>ننتظر توافق اتجاه 4 ساعات واليومي، ثم نرتب الأصول حسب تغير 15 دقيقة.</p><small>عدم ظهور صفقة أفضل من عرض توصية غير مكتملة.</small></div>';return}
         const targetKeys=["tp1","tp2","tp3","tp4","tp5"];
         out.innerHTML='<div class="surge-signal-grid">'+rows.map((x,i)=>{
           const lv=x.levels||{},buy=x.direction==="شراء";
@@ -138,7 +137,7 @@
           const sourceName=esc(x.source||"تحليل الموقع");
           const timeframe=esc("4 ساعات + يومي · ترتيب 15 دقيقة");
           const qualityNote='<small>تغير 15د: '+Number(x.change_15m_pct||0).toFixed(2)+'% · الدرجة ليست نسبة نجاح</small>';
-          return '<article class="surge-signal-card"><div class="surge-signal-head"><b dir="ltr">'+esc(x.symbol)+'</b><span class="surge-rank">#'+(i+1)+'</span><span class="surge-rec-side '+(buy?"buy":"sell")+'">'+esc(x.signal_label||x.direction)+'</span></div><div class="surge-entry"><small>منطقة الدخول</small><b dir="ltr">'+entryText+'</b></div><div class="surge-level-grid">'+targets+'<div class="surge-target stop"><small>وقف الخسارة</small><b dir="ltr">'+price(stop)+'</b><small>مخاطرة '+risk+'</small></div></div><div class="surge-signal-foot"><span>الفريم: '+timeframe+' · '+esc(x.status||"حالة المصدر غير مذكورة")+' · '+esc(x.age_hours)+" ساعة"+'</span><span>'+sourceName+' · '+sourceLink+' '+qualityNote+'</span></div></article>';
+          return '<article class="surge-signal-card"><div class="surge-signal-head"><span class="surge-rank">#'+(i+1)+'</span><b dir="ltr">'+esc(x.symbol)+'</b><span class="surge-rec-side '+(buy?"buy":"sell")+'">'+esc(x.signal_label||x.direction)+'</span></div><div class="surge-signal-meta"><span>4 ساعات <b>'+esc(x.timeframe_trends?.["4h"]||"—")+'</b></span><span>اليومي <b>'+esc(x.timeframe_trends?.["1d"]||"—")+'</b></span><span>تغير 15د <b>'+Number(x.change_15m_pct||0).toFixed(2)+'%</b></span></div><div class="surge-entry"><small>سعر الدخول</small><b dir="ltr">'+entryText+'</b></div><div class="surge-level-grid">'+targets+'<div class="surge-target stop"><small>وقف الخسارة</small><b dir="ltr">'+price(stop)+'</b><small>مخاطرة '+risk+'</small></div></div><div class="surge-signal-foot"><span>'+timeframe+'</span><span>'+qualityNote+'</span></div></article>';
         }).join("")+'</div>';
       }catch(err){out.innerHTML='<div class="surge-empty">تعذر تحديث الصفقات حالياً. حاول لاحقاً.</div>'}
     };
