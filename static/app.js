@@ -64,7 +64,7 @@ async function load(){
   const requestedMarket=market,requestedFrame=timeframe;
   const [d,t]=await Promise.all([
    get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(requestedFrame)),
-   get("/api/trades?market="+encodeURIComponent(requestedMarket),10000)
+   get("/api/trades?market="+encodeURIComponent(requestedMarket),10000).catch(()=>({items:[]})) 
   ]);
   if(requestedMarket!==market||requestedFrame!==timeframe){pending=true;return}
   $("#direction").textContent=d.direction_ar;$("#direction").className="direction-value "+(d.direction==="BUY"?"up":d.direction==="SELL"?"down":"neutral");
