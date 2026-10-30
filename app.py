@@ -2312,7 +2312,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
     # 4h + daily remain the higher-timeframe direction gate in the strategy engine.
     now = int(time.time())
     timeframe_lifetime = INTERVAL_SECONDS.get(interval, 15 * 60)
-    cache_key = ("multi_factor_4h_1d_rank_15m_v3", market, interval, limit)
+    cache_key = ("multi_factor_4h_1d_selected_interval_v3", market, interval, limit)
     with PUBLIC_IDEAS_LOCK:
         cached = PUBLIC_IDEAS_CACHE.get(cache_key)
         if not refresh and cached and now - cached[0] < 90:
@@ -2444,7 +2444,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
         "ai_enabled": False,
         "ai_review_completed": False,
         "analysis_completed": bool(ai_review_completed),
-        "analysis_engine": "multi_factor_4h_1d_rank_15m_v3",
+        "analysis_engine": "multi_factor_4h_1d_selected_interval_v3",
         "method_weight_percent": 100,
         "ai_review_weight_percent": 0,
         "ai_provider_configured": False,
@@ -2461,7 +2461,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
             saved_cache = read_json_file(SIGNALS_CACHE_PATH, {})
             if not isinstance(saved_cache, dict):
                 saved_cache = {}
-            saved_cache = {k: v for k, v in saved_cache.items() if isinstance(v, dict) and all(isinstance(x, dict) and x.get("method") == "multi_factor_4h_1d_rank_15m_v3" for x in v.get("items", []))}
+            saved_cache = {k: v for k, v in saved_cache.items() if isinstance(v, dict) and all(isinstance(x, dict) and x.get("method") == "multi_factor_4h_1d_selected_interval_v3" for x in v.get("items", []))}
             saved_cache[f"{market}:{interval}"] = {
                 "updated_at": now,
                 "items": result.get("items", []),
@@ -2570,7 +2570,7 @@ def signal_cards(market: str, interval: str = Query("15m"), limit: int = Query(2
                     "result": "OPEN", "status": "صفقة مفتوحة — متابعة السعر",
                     "progress": 0, "pnl_pct": 0, "last_price": current_prices.get(symbol, entry),
                     "last_checked_at": now, "created_at": now,
-                    "source": item.get("method") or "multi_factor_4h_1d_rank_15m_v3"
+                    "source": item.get("method") or "multi_factor_4h_1d_selected_interval_v3"
                 })
                 active_keys.add(active_key)
             # Preserve every open trade even if the journal grows; cap only closed
