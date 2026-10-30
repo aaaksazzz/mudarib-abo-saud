@@ -205,7 +205,7 @@ def _evidence_score(fast, four_hour, daily, side):
 
 
 def _analyze_symbol(market, interval, row, candle_loader):
-    """4h and daily decide side; 15m percentage move only ranks eligible trades."""
+    """4h and daily decide side; the selected timeframe ranks eligible trades and defines execution."""
     symbol = str(row.get("symbol") or "").strip().upper()
     if not symbol:
         return None
@@ -302,7 +302,7 @@ def _analyze_symbol(market, interval, row, candle_loader):
         "external_source_weight": 0, "site_analysis_weight": 100,
         "has_complete_levels": True,
         "level_source_note": f"الدخول من إغلاق شمعة {execution_interval}؛ الوقف حسب ATR وبنية آخر 12 شمعة؛ الأهداف 1:1 و1:2 و1:3.",
-        "method": "multi_factor_4h_1d_rank_15m_v3"
+        "method": "multi_factor_4h_1d_selected_interval_v3"
     }
 
 
