@@ -136,3 +136,29 @@ def test_alpha_market_endpoint_accepts_public_provider(tmp_path, monkeypatch):
     assert response.json['market'] == 'alpha'
     assert response.json['source'] == 'Binance Alpha public market data'
     assert response.json['total'] == 1
+
+def test_cache_is_bounded(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "MAX_CACHE_ENTRIES", 3)
+    for index in range(5):
+        module.cached(f"bounded-cache-{index}", 60, lambda i=index: i)
+    assert len([key for key in module.CACHE if key.startswith("bounded-cache-")]) <= 3
+    for key in list(module.CACHE):
+        if key.startswith("bounded-cache-"):
+            module.CACHE.pop(key, None)
+            module.CACHE_KEY_LOCKS.pop(key, None)
+
+
+def test_only_one_open_trade_per_market_symbol_across_timeframes(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "dedupe.sqlite3")
+    first = {"symbol":"DUPUSDT","timeframe":"15m","side":"BUY","entry":100,
+             "stop_loss":95,"tp1":105,"tp2":110,"tp3":115}
+    second = {"symbol":"DUPUSDT","timeframe":"1h","side":"BUY","entry":101,
+              "stop_loss":96,"tp1":106,"tp2":111,"tp3":116}
+    module.save_new_trades("spot", [first])
+    module.save_new_trades("spot", [second])
+    with module.db() as connection:
+        rows = connection.execute(
+            "SELECT symbol,timeframe FROM trades WHERE market='spot' AND status='OPEN'"
+        ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["timeframe"] == "15m"
