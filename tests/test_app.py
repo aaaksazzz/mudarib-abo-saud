@@ -450,7 +450,7 @@ def test_home_refresh_does_not_rebuild_dashboard_twice():
     html = (root / "index.html").read_text(encoding="utf-8")
     js = (root / "app.js").read_text(encoding="utf-8")
     assert '/static/app.css?v=20261025.premium-trade-cards1' in html
-    assert '/static/app.js?v=20261030.dailyvip1' in html
+    assert '/static/app.js?v=20261030.dailyvip2' in html
     assert 'getJSON("/api/status")' in js
     home_start = js.index("function renderHome()")
     home_end = js.index("function renderMarketPage(", home_start)
