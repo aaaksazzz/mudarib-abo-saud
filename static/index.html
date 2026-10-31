@@ -5,8 +5,8 @@
 <meta name="theme-color" content="#070b12"><title>AS Trading PRO | التداول الذكي</title>
 <meta name="description" content="منصة احترافية لمراقبة الأسواق والاتجاهات والفرص الفنية ببيانات عامة ومصادر واضحة.">
 <link rel="preconnect" href="https://api.binance.com"><link rel="preconnect" href="https://fapi.binance.com">
-<link rel="stylesheet" href="/static/app.css?v=20261031.isolated2">
-<script src="/static/app.js?v=20261031.isolated2" defer></script>
+<link rel="stylesheet" href="/static/app.css?v=20261031.gamma1">
+<script src="/static/app.js?v=20261031.gamma1" defer></script>
 </head>
 <body>
 <div class="app-shell">
@@ -81,6 +81,11 @@
    <div class="scan-row"><span>مصدر البيانات</span><b id="sourceShort">Binance Public</b></div>
    <div class="scan-row"><span>حالة الفحص</span><b id="scanState" class="state-good">جاهز</b></div>
   </article>
+ </section>
+ <section class="panel gamma-panel" id="cryptoGammaSection" hidden>
+  <div class="section-heading tracker-heading"><div><span class="kicker">OPTIONS MARKET STRUCTURE · REAL GEX</span><h2>Gamma Exposure للعملات الرقمية</h2><p>بيانات خيارات فعلية من Deribit وBybit وOKX وDerive وBinance. التحديث يدوي لحماية حصة API.</p></div><button id="gammaRefresh" class="refresh-btn" type="button">تحديث Gamma</button></div>
+  <div id="gammaCards" class="gamma-grid"><div class="empty">اضغط تحديث Gamma لجلب مستويات الخيارات المدعومة.</div></div>
+  <p id="gammaNote" class="panel-note">يغطي BTC وETH وSOL وXRP وHYPE فقط. بقية العملات تستمر بتحليل السيولة دون ادعاء توفر GEX.</p>
  </section>
  <section class="section-heading" id="moversSection"><div><span class="kicker">MARKET MOVERS</span><h2>الأصول الأكثر حركة</h2></div><span class="section-caption">تغير 24 ساعة · أعلى السيولة المتاحة</span></section>
  <section id="movers" class="movers-grid"><div class="empty">جارٍ تحميل حركة الأصول...</div></section>
