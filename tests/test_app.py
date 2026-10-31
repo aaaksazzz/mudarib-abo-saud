@@ -283,7 +283,7 @@ def test_yahoo_candles_drop_forming_bar(monkeypatch):
     assert rows[0]["close"] == 11.0
 
 
-def test_member_needs_subscription_and_admin_can_grant(tmp_path, monkeypatch):
+def test_public_market_access_and_admin_subscription_management(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "auth.sqlite3")
     module.app.config["SESSION_COOKIE_SECURE"] = False
     monkeypatch.setattr(module, "AUTH_CONFIGURED", True)
@@ -295,8 +295,14 @@ def test_member_needs_subscription_and_admin_can_grant(tmp_path, monkeypatch):
     })
     assert registered.status_code == 201
     assert registered.json["user"]["subscribed"] is False
-    denied = auth_client.get("/api/market/spot")
-    assert denied.status_code == 403
+    module.CACHE.pop("spot:universe", None)
+    monkeypatch.setattr(module, "market_tickers", lambda kind: [
+        {"symbol": "AAAUSDT", "price": 1.0, "volume": 2_000_000, "change24h": 1.0}
+    ])
+    monkeypatch.setattr(module, "analyse_candidate", lambda *args: None)
+    public_market = auth_client.get("/api/market/spot")
+    assert public_market.status_code == 200
+    assert public_market.json["market"] == "spot"
     with module.db() as connection:
         admin = connection.execute("SELECT id FROM users WHERE email=?", ("owner@example.test",)).fetchone()
         member = connection.execute("SELECT id FROM users WHERE email=?", ("member@example.test",)).fetchone()
