@@ -351,6 +351,8 @@ def analyse_candidate(kind, item, market_direction, diagnostics=None):
         selected = candles(kind, item["symbol"], SCAN_INTERVAL)
         if len(selected) < 25:
             return reject("insufficient_candles")
+        if diagnostics is not None:
+            diagnostics["candles_ready"] = True
         if market_direction not in ("BUY", "SELL"):
             return reject("neutral_market")
         signal = analyse_liquidity_candidate(
@@ -870,7 +872,7 @@ def market(kind):
             "movers": movers, "signals": signals, "open_trades": active,
             "scan_diagnostics": {
                 "universe_size": len(assets), "candidates_scanned": len(candidates),
-                "candles_ready": sum(1 for item in diagnostic_rows if item.get("reason") not in ("insufficient_candles", "provider_error", "analysis_error")),
+                "candles_ready": sum(1 for item in diagnostic_rows if item.get("candles_ready") is True),
                 "accepted_before_top3": rejection_counts.get("accepted", 0),
                 "rejected_by_reason": {key: value for key, value in rejection_counts.items() if key != "accepted"},
             },
