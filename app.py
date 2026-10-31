@@ -231,10 +231,11 @@ def yahoo_market_tickers(kind):
 def yahoo_candles(symbol, interval):
     if not YAHOO_ENABLED or yf is None:
         raise requests.RequestException("Yahoo Finance integration is disabled")
-    # Yahoo's hourly endpoint does not offer native 4h bars. Build them
-    # from hourly OHLCV; request enough history for stable 4h and daily structure.
-    fetch_interval = "60m" if interval == "4h" else interval
-    period = "1y" if interval == "1d" else "3mo" if interval in ("1h", "4h") else "5d"
+    # Yahoo uses provider-specific interval names for weekly/monthly candles.
+    # Build 4h bars from hourly OHLCV; request enough history for each horizon.
+    fetch_interval = {"4h": "60m", "1w": "1wk", "1M": "1mo"}.get(interval, interval)
+    period = ("10y" if interval == "1M" else "5y" if interval == "1w"
+              else "2y" if interval == "1d" else "3mo" if interval in ("1h", "4h") else "5d")
     frame = yf.Ticker(symbol).history(period=period, interval=fetch_interval, auto_adjust=True, timeout=12)
     if frame is None or frame.empty:
         raise requests.RequestException("Yahoo returned no candle history")
