@@ -415,3 +415,35 @@ def test_gammapro_reports_specific_rejection_reason():
     diagnostics = {}
     assert analyse_liquidity_candidate([], 100.0, "BUY", diagnostics=diagnostics) is None
     assert diagnostics["reason"] == "insufficient_candles"
+
+
+def test_no_key_analysis_method_has_clear_non_options_description():
+    response = client.get("/api/analysis/method")
+    assert response.status_code == 200
+    payload = response.json
+    assert payload["mode"] == "ohlcv_liquidity_proxy"
+    assert "بدون أي مفاتيح API" in payload["message"]
+    assert "Gamma Exposure" in payload["message"]
+    legacy = client.get("/api/gamma/crypto")
+    assert legacy.status_code == 200
+    assert legacy.json["mode"] == payload["mode"]
+
+
+def test_candidate_worker_failure_does_not_abort_market_scan(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "worker-failure.sqlite3")
+    admin_session(monkeypatch)
+    module.CACHE.pop("spot:universe", None)
+    monkeypatch.setattr(module, "market_tickers", lambda kind: [
+        {"symbol": "AAAUSDT", "price": 2.0, "volume": 2_000_000, "change24h": 2.0},
+        {"symbol": "BBBUSDT", "price": 1.0, "volume": 2_000_000, "change24h": -1.0},
+    ])
+    def flaky(kind, row, direction, diagnostics=None):
+        if row["symbol"] == "AAAUSDT":
+            raise RuntimeError("simulated adapter failure")
+        if diagnostics is not None:
+            diagnostics["reason"] = "no_sweep_or_absorption"
+        return None
+    monkeypatch.setattr(module, "analyse_candidate", flaky)
+    response = client.get("/api/market/spot")
+    assert response.status_code == 200
+    assert response.json["scan_diagnostics"]["rejected_by_reason"]["analysis_error"] == 1
