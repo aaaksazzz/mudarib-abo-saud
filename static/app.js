@@ -6,6 +6,8 @@ let market=marketMatch?marketMatch[1]:"spot",busy=false,pending=false,timer=null
 let analysisTimeframe=new URLSearchParams(location.search).get("timeframe")||"15m";
 const VALID_TFS=["15m","1h","4h","1d","1w"];
 if(!VALID_TFS.includes(analysisTimeframe))analysisTimeframe="15m";
+const timeframeSelect=$("#analysisTimeframe");
+if(timeframeSelect)timeframeSelect.value=analysisTimeframe;
 const fmt=n=>Number(n).toLocaleString("en-US",{maximumFractionDigits:8});
 const compact=n=>{n=Number(n)||0;if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return fmt(n)};
 const pct=n=>(Number(n)>=0?"+":"")+Number(n).toFixed(2)+"%";
@@ -33,7 +35,7 @@ function renderSignals(rows,diagnostics={}){
  const root=$("#cards");
  if(!rows||!rows.length){
   const reasons=diagnostics.rejected_by_reason||{};
-  const names={insufficient_candles:"شموع غير كافية",provider_error:"تعذر جلب بيانات المصدر",analysis_error:"خطأ في التحليل",no_sweep_or_absorption:"لم يظهر سحب سيولة أو امتصاص ضمن نطاق الحركة القريب",volume_below_threshold:"حجم التداول دون الشرط",candle_not_confirmed:"شمعة الدخول غير مؤكدة",risk_above_4_5pct:"مخاطرة أعلى من الحد",entry_beyond_stop:"السعر تجاوز الوقف",missing_volume:"بيانات الحجم ناقصة",neutral_market:"اتجاه السوق محايد",invalid_atr:"مدى الحركة غير صالح",malformed_candles:"بيانات شموع غير سليمة",invalid_ohlc:"بيانات سعر غير سليمة",timeframe_conflict:"تعارض الأطر الزمنية أو عدم تأكيد الساعة"};
+  const names={insufficient_candles:"شموع غير كافية",provider_error:"تعذر جلب بيانات المصدر",analysis_error:"خطأ في التحليل",no_sweep_or_absorption:"لم يظهر سحب سيولة أو امتصاص ضمن نطاق الحركة القريب",volume_below_threshold:"حجم التداول دون الشرط",candle_not_confirmed:"شمعة الدخول غير مؤكدة",risk_above_4_5pct:"مخاطرة أعلى من الحد",entry_beyond_stop:"السعر تجاوز الوقف",missing_volume:"بيانات الحجم ناقصة",reference_timeframes_not_aligned:"الفريمات المرجعية غير متوافقة",invalid_atr:"مدى الحركة غير صالح",malformed_candles:"بيانات شموع غير سليمة",invalid_ohlc:"بيانات سعر غير سليمة",timeframe_conflict:"تعارض الأطر الزمنية أو عدم تأكيد الساعة"};
   const top=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,3);
   root.innerHTML='<article class="scan-diagnostic"><div class="scan-diagnostic-head"><div><span class="kicker">LIVE MARKET SCAN</span><h3>لا توجد صفقة مؤكدة الآن</h3><p>لا نعرض صفقة إلا بعد تحقق شروط الدخول والوقف والأهداف.</p></div><span class="scan-wait">بانتظار فرصة</span></div><div class="scan-metrics"><div><small>الأصول المتاحة</small><b>'+Number(diagnostics.universe_size||0)+'</b></div><div><small>تم فحصها</small><b>'+Number(diagnostics.candidates_scanned||0)+'</b></div><div><small>شموع جاهزة</small><b>'+Number(diagnostics.candles_ready||0)+'</b></div><div><small>فرص مقبولة</small><b>'+Number(diagnostics.accepted_before_top3||0)+'</b></div></div><div class="scan-reasons"><b>أكثر أسباب الاستبعاد</b>'+(top.length?top.map(([k,v])=>'<div><span>'+safe(names[k]||k)+'</span><strong>'+v+'</strong></div>').join(""):'<div><span>لا توجد تفاصيل رفض متاحة بعد</span><strong>—</strong></div>')+'</div></article>';
   return;
