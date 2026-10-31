@@ -11,6 +11,7 @@
 <body>
 <div class="app-shell">
 <header class="topbar">
+  <button id="menuOpen" class="menu-open" type="button" aria-label="فتح القائمة" aria-expanded="false">☰ <span>القائمة</span></button>
  <a class="brand" href="/" aria-label="AS Trading PRO"><span class="logo">AS</span><span class="brand-copy"><b>AS <i>TRADING PRO</i></b><small>منصة الأسواق والتحليل الذكي</small></span></a>
  <div class="top-status"><button id="topLogout" class="top-logout" type="button" hidden>خروج</button><span class="live-dot"></span><span id="health">فحص الاتصال</span><span class="top-divider"></span><span id="clock">--:--:--</span></div>
 </header>
@@ -33,15 +34,27 @@
  </div>
 </section>
 <main class="main" id="mainContent" hidden>
+  <nav id="siteDrawer" class="site-drawer" aria-label="أقسام الموقع" aria-hidden="true">
+   <div class="drawer-head"><b>أقسام المنصة</b><button id="menuClose" type="button" aria-label="إغلاق القائمة">✕</button></div>
+   <a href="#homeSection">الرئيسية</a>
+   <a href="#marketSection">الأسواق</a>
+   <a href="#directionSection">توجه السوق</a>
+   <a href="#moversSection">الأصول الأكثر حركة</a>
+   <a href="#opportunitiesSection">أفضل الفرص الفنية</a>
+   <a href="#openSection">متابعة الصفقات</a>
+   <a href="#historySection">سجل النتائج</a>
+   <a href="#adminPanel" id="drawerAdmin" hidden>إدارة المشتركين</a>
+  </nav>
+  <button id="drawerBackdrop" class="drawer-backdrop" type="button" aria-label="إغلاق القائمة" hidden></button>
  <section id="adminPanel" class="panel admin-panel" hidden>
   <div class="section-heading tracker-heading"><div><span class="kicker">ADMIN CONTROL</span><h2>إدارة المشتركين</h2><p>إدارة الحسابات وتفعيل أو إلغاء الاشتراكات.</p></div><button id="adminRefresh" class="refresh-btn" type="button">تحديث الحسابات</button></div>
   <div id="adminUsers" class="admin-users"><div class="empty">جارٍ تحميل الحسابات...</div></div>
  </section>
- <section class="welcome">
+ <section class="welcome" id="homeSection">
   <div><div class="eyebrow"><span class="eyebrow-line"></span> MARKET INTELLIGENCE TERMINAL</div><h1>مركز <span>الأسواق</span></h1><p>راقب اتجاه السوق، تابع حركة الأصول، واكتشف الفرص الفنية من بيانات المصدر مباشرة.</p></div>
   <button id="refresh" class="refresh-btn"><span>↻</span> تحديث البيانات</button>
  </section>
- <section class="market-switcher">
+ <section class="market-switcher" id="marketSection">
   <div class="switcher-heading"><span>اختر السوق</span><small>مصادر مستقلة لكل سوق</small></div>
   <div id="markets" class="market-list">
    <button data-market="spot" class="market-tab active"><span class="market-icon crypto">₿</span><span><b>Spot</b><small>Binance</small></span><i class="tab-state"></i></button>
@@ -53,7 +66,7 @@
    <button data-market="forex" class="market-tab" disabled><span class="market-icon forex">FX</span><span><b>الفوركس والذهب</b><small>غير متاح</small></span></button>
   </div>
  </section>
- <section class="overview-grid">
+ <section class="overview-grid" id="directionSection">
   <article class="panel direction-panel">
    <div class="panel-top"><div><span class="kicker">MARKET BREADTH · 24H</span><h2>توجه السوق</h2></div><span class="live-pill"><i></i> مباشر</span></div>
    <div class="direction-main"><div><small>الاتجاه العام</small><strong id="direction" class="direction-value">—</strong></div><div class="breadth-total"><b id="total">—</b><small>أصل مفحوص</small></div></div>
@@ -69,15 +82,15 @@
    <div class="scan-row"><span>حالة الفحص</span><b id="scanState" class="state-good">جاهز</b></div>
   </article>
  </section>
- <section class="section-heading"><div><span class="kicker">MARKET MOVERS</span><h2>الأصول الأكثر حركة</h2></div><span class="section-caption">تغير 24 ساعة · أعلى السيولة المتاحة</span></section>
+ <section class="section-heading" id="moversSection"><div><span class="kicker">MARKET MOVERS</span><h2>الأصول الأكثر حركة</h2></div><span class="section-caption">تغير 24 ساعة · أعلى السيولة المتاحة</span></section>
  <section id="movers" class="movers-grid"><div class="empty">جارٍ تحميل حركة الأصول...</div></section>
- <section class="section-heading opportunity-heading"><div><span class="kicker">AI TECHNICAL SCANNER</span><h2>أفضل الفرص الفنية</h2><p>أعلى ثلاث فرص استوفت شروط الفحص الفني الثابت على 15 دقيقة.</p></div><span class="ranking-note">TOP 3 · حسب جودة الشروط</span></section>
+ <section class="section-heading opportunity-heading" id="opportunitiesSection"><div><span class="kicker">AI TECHNICAL SCANNER</span><h2>أفضل الفرص الفنية</h2><p>أعلى ثلاث فرص استوفت شروط الفحص الفني الثابت على 15 دقيقة.</p></div><span class="ranking-note">TOP 3 · حسب جودة الشروط</span></section>
  <section id="cards" class="cards"><div class="empty">جارٍ تحليل السوق...</div></section>
- <section class="panel tracker-panel">
+ <section class="panel tracker-panel" id="openSection">
   <div class="section-heading tracker-heading"><div><span class="kicker">POSITION MONITOR</span><h2>متابعة الصفقات</h2><p>تتبع تلقائي لمستويات الأهداف ووقف الخسارة عند تحديث السوق.</p></div><span id="openCount" class="count-pill">0 مفتوحة</span></div>
   <div id="openTrades" class="trade-list"><div class="empty">لا توجد صفقات مفتوحة محفوظة لهذا السوق.</div></div>
  </section>
- <section class="panel history-panel">
+ <section class="panel history-panel" id="historySection">
   <div class="section-heading tracker-heading"><div><span class="kicker">TRADE HISTORY</span><h2>سجل النتائج</h2><p>الصفقات التي وصلت إلى الهدف الثالث أو وقف الخسارة.</p></div><span id="historyCount" class="count-pill">0 مغلقة</span></div>
   <div id="closedTrades" class="trade-list"><div class="empty">لا توجد نتائج مغلقة مسجلة بعد.</div></div>
  </section>
