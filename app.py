@@ -645,7 +645,7 @@ def market_page(market_id):
 
 @app.get("/sections/<section_id>")
 def section_page(section_id):
-    allowed = {"direction", "movers", "opportunities", "open-trades", "history"}
+    allowed = {"direction", "movers", "opportunities", "open-trades", "history", "system"}
     if section_id not in allowed:
         return send_from_directory("static", "index.html"), 404
     return send_from_directory("static", "index.html")
