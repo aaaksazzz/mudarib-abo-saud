@@ -251,8 +251,16 @@ def yahoo_candles(symbol, interval):
             if getattr(stamp, "tzinfo", None) is None:
                 stamp = stamp.tz_localize("UTC")
             timestamp = int(stamp.timestamp() * 1000)
-            if timestamp + 15 * 60 * 1000 > now_ms:
-                continue
+            if interval == "1M":
+                current = datetime.utcfromtimestamp(now_ms / 1000)
+                if stamp.year == current.year and stamp.month == current.month:
+                    continue
+            else:
+                candle_ms = {"15m": 15 * 60 * 1000, "1h": 60 * 60 * 1000,
+                             "4h": 4 * 60 * 60 * 1000, "1d": 24 * 60 * 60 * 1000,
+                             "1w": 7 * 24 * 60 * 60 * 1000}.get(interval, 15 * 60 * 1000)
+                if timestamp + candle_ms > now_ms:
+                    continue
             row = {"open": float(bar["Open"]), "high": float(bar["High"]),
                    "low": float(bar["Low"]), "close": float(bar["Close"]),
                    "volume": float(bar.get("Volume", 0) or 0), "time": timestamp}
