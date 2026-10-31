@@ -3,6 +3,9 @@ const MARKET_NAMES={spot:"Binance Spot",futures:"Binance USD-M Futures",coinm:"B
 const PATH=location.pathname.replace(/\/+$/,"")||"/";
 const marketMatch=PATH.match(/^\/markets\/([a-z]+)$/);
 let market=marketMatch?marketMatch[1]:"spot",busy=false,pending=false,timer=null;
+let analysisTimeframe=new URLSearchParams(location.search).get("timeframe")||"15m";
+const VALID_TFS=["15m","1h","4h","1d","1w"];
+if(!VALID_TFS.includes(analysisTimeframe))analysisTimeframe="15m";
 const fmt=n=>Number(n).toLocaleString("en-US",{maximumFractionDigits:8});
 const compact=n=>{n=Number(n)||0;if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return fmt(n)};
 const pct=n=>(Number(n)>=0?"+":"")+Number(n).toFixed(2)+"%";
@@ -158,7 +161,7 @@ async function load(){
  $("#health").textContent="جارٍ التحديث";$("#scanState").textContent="يفحص السوق";$("#scanState").className="";
  try{
   const requestedMarket=market;
-  const d=await get("/api/market/"+requestedMarket,30000);
+  const d=await get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(analysisTimeframe),30000);
   if(requestedMarket!==market){pending=true;return}
   $("#direction").textContent=d.direction_ar;$("#direction").className="direction-value "+(d.direction==="BUY"?"up":d.direction==="SELL"?"down":"neutral");
   $("#up").textContent=d.up;$("#down").textContent=d.down;$("#flat").textContent=d.flat??0;$("#total").textContent=d.total;
@@ -169,6 +172,8 @@ async function load(){
   $("#sourceShort").textContent=d.source||"بيانات عامة";
   $("#scanState").textContent="اكتمل";$("#scanState").className="state-good";
   renderMovers(d.movers);renderSignals(d.signals,d.scan_diagnostics||{});renderOpen(d.open_trades);
+  const strategyLabel={"15m":"15 دقيقة · تأكيد 4س + يومي","1h":"ساعة · تأكيد 4س + يومي","4h":"4 ساعات · تأكيد أسبوعي + شهري","1d":"يومي · تأكيد أسبوعي + شهري","1w":"أسبوعي · تأكيد أسبوعي + شهري"};
+  const label=$("#activeStrategy");if(label)label.textContent=strategyLabel[analysisTimeframe]||analysisTimeframe;
   $("#health").textContent="متصل";$("#health").className="ok";
  }catch(e){
   $("#cards").innerHTML='<div class="empty">'+safe(e.message)+'</div>';
@@ -182,6 +187,12 @@ async function load(){
 
 
 $("#refresh").addEventListener("click",()=>{if(PATH==="/sections/history")loadHistoryPage();else load()});
+$("#analysisTimeframe")?.addEventListener("change",e=>{
+ const next=e.target.value;if(!VALID_TFS.includes(next))return;
+ analysisTimeframe=next;
+ const url=new URL(location.href);url.searchParams.set("timeframe",next);history.replaceState({}, "", url);
+ load();
+});
 async function loadNews(){
  const root=$("#newsFeed");if(!root)return;
  root.innerHTML='<div class="empty">جارٍ جلب آخر العناوين...</div>';
