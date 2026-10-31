@@ -362,17 +362,20 @@ $("#siteDrawer").addEventListener("click",e=>{
 
 tick();setInterval(tick,1000);
 initializeAccess();
+let lastGammaAuto=Date.now(),lastStatusAuto=Date.now(),lastNewsAuto=Date.now(),lastSystemAuto=Date.now(),lastAdminAuto=Date.now();
 timer=setInterval(()=>{
-  if(document.hidden||$("#mainContent").hidden)return;
-  const now=Date.now();
-  if(marketMatch){
-   load();
-   if(now-lastStatusAuto>=60000){lastStatusAuto=now;loadMarketStatuses()}
-   if(now-lastGammaAuto>=300000){lastGammaAuto=now;loadGamma()}
-  }else if(["direction","movers","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")){
-   load();if(now-lastStatusAuto>=60000){lastStatusAuto=now;loadMarketStatuses()}
-  }else if(PATH==="/sections/history")loadHistoryPage();
-  else if(PATH==="/sections/system")loadSystemStatus();
-  else if(PATH==="/news"&&now-lastNewsAuto>=300000){lastNewsAuto=now;loadNews()}
-  else if(PATH==="/"&&now-lastStatusAuto>=60000){lastStatusAuto=now;loadMarketStatuses()}
- },30000);
+ if(document.hidden||$("#mainContent").hidden)return;
+ const now=Date.now();
+ if(marketMatch){
+  load();
+  if(now-lastStatusAuto>=60000){lastStatusAuto=now;loadMarketStatuses()}
+  if(now-lastGammaAuto>=300000){lastGammaAuto=now;loadGamma()}
+ }else if(["direction","movers","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")){
+  load();
+  if(now-lastStatusAuto>=60000){lastStatusAuto=now;loadMarketStatuses()}
+ }else if(PATH==="/sections/history")loadHistoryPage();
+ else if(PATH==="/sections/system"&&now-lastSystemAuto>=60000){lastSystemAuto=now;loadSystemStatus()}
+ else if(PATH==="/news"&&now-lastNewsAuto>=300000){lastNewsAuto=now;loadNews()}
+ else if(PATH==="/admin"&&now-lastAdminAuto>=60000){lastAdminAuto=now;loadAdminUsers()}
+ else if(PATH==="/"&&now-lastStatusAuto>=60000){lastStatusAuto=now;loadMarketStatuses()}
+},30000);
