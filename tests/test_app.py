@@ -435,7 +435,7 @@ def test_candidate_worker_failure_does_not_abort_market_scan(tmp_path, monkeypat
     module.CACHE.pop("spot:universe", None)
     monkeypatch.setattr(module, "market_tickers", lambda kind: [
         {"symbol": "AAAUSDT", "price": 2.0, "volume": 2_000_000, "change24h": 2.0},
-        {"symbol": "BBBUSDT", "price": 1.0, "volume": 2_000_000, "change24h": -1.0},
+        {"symbol": "BBBUSDT", "price": 1.0, "volume": 2_000_000, "change24h": 1.0},
     ])
     def flaky(kind, row, direction, diagnostics=None):
         if row["symbol"] == "AAAUSDT":
