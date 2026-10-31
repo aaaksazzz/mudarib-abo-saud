@@ -88,8 +88,91 @@ async function load(){
 }
 $("#markets").addEventListener("click",e=>{const b=e.target.closest("[data-market]");if(!b||b.disabled)return;market=b.dataset.market;document.querySelectorAll("[data-market]").forEach(x=>x.classList.toggle("active",x===b));load()});
 $("#refresh").addEventListener("click",load);
-document.addEventListener("visibilitychange",()=>{if(!document.hidden)load()});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden && !$("#mainContent").hidden)load()});
 function tick(){ $("#clock").textContent=new Date().toLocaleTimeString("en-GB",{hour12:false}); }
 tick();setInterval(tick,1000);
-loadMarketStatuses().finally(load);
-timer=setInterval(()=>{if(!document.hidden)load()},30000);
+async function showAccess(message, user=null){
+ $("#mainContent").hidden=true;
+ $("#accessGate").hidden=false;
+ $("#authNotice").textContent=message||"";
+ $("#authLogout").hidden=!user;
+ $("#authToggle").hidden=!!user;
+ $("#authForm").hidden=!!user;
+ $("#accessTitle").textContent=user?"الاشتراك غير مفعل":"تسجيل الدخول";
+ $("#accessMessage").textContent=user?"حسابك مسجل، لكن لا يوجد اشتراك نشط. تواصل مع الإدارة لتفعيل الوصول إلى الأسواق.":"أنشئ حسابًا أو سجل دخولك. الوصول إلى الأسواق للمشتركين فقط.";
+}
+async function startAuthorized(user){
+ $("#accessGate").hidden=true;
+ $("#mainContent").hidden=false;
+ $("#adminPanel").hidden=!user.is_admin;
+ if(user.is_admin) await loadAdminUsers();
+ await loadMarketStatuses();
+ await load();
+}
+async function initializeAccess(){
+ try{
+  const d=await get("/api/auth/me",8000);
+  if(!d.configured){await showAccess(d.message);return}
+  if(!d.user){await showAccess();return}
+  if(!d.user.subscribed && !d.user.is_admin){await showAccess("حسابك جاهز، بانتظار تفعيل الاشتراك من الأدمن.",d.user);return}
+  await startAuthorized(d.user);
+ }catch(e){await showAccess(e.message)}
+}
+let creatingAccount=false;
+$("#authToggle").addEventListener("click",()=>{
+ creatingAccount=!creatingAccount;
+ $("#accessTitle").textContent=creatingAccount?"إنشاء حساب جديد":"تسجيل الدخول";
+ $("#authSubmit").textContent=creatingAccount?"إنشاء الحساب":"دخول";
+ $("#authPassword").autocomplete=creatingAccount?"new-password":"current-password";
+ $("#authToggle").textContent=creatingAccount?"لديك حساب؟ تسجيل الدخول":"ليس لديك حساب؟ إنشاء حساب";
+ $("#authNotice").textContent="";
+});
+$("#authForm").addEventListener("submit",async e=>{
+ e.preventDefault();
+ const button=$("#authSubmit");button.disabled=true;
+ $("#authNotice").textContent="جارٍ التحقق...";
+ try{
+  const response=await fetch(creatingAccount?"/api/auth/register":"/api/auth/login",{
+   method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({email:$("#authEmail").value,password:$("#authPassword").value})
+  });
+  const d=await response.json();
+  if(!response.ok)throw Error(d.message||"تعذر إكمال الطلب.");
+  if(d.user?.is_admin || d.user?.subscribed) await startAuthorized(d.user);
+  else await showAccess("تم إنشاء الحساب بنجاح. الاشتراك يحتاج موافقة الأدمن.",d.user);
+ }catch(err){$("#authNotice").textContent=err.message}
+ finally{button.disabled=false}
+});
+$("#authLogout").addEventListener("click",async()=>{
+ await fetch("/api/auth/logout",{method:"POST"});
+ location.reload();
+});
+async function loadAdminUsers(){
+ try{
+  const d=await get("/api/admin/users",10000);
+  const root=$("#adminUsers");
+  if(!d.users.length){root.innerHTML='<div class="empty">لا توجد حسابات بعد.</div>';return}
+  root.innerHTML=d.users.map(u=>{
+   const expiry=u.subscription_expires_at?new Date(u.subscription_expires_at*1000).toLocaleDateString("ar-SA"):"—";
+   const status=u.role==="admin"?"أدمن":u.subscribed?"مشترك حتى "+expiry:"غير مشترك";
+   const actions=u.role==="admin"?"":'<div class="admin-actions"><button data-admin-action="grant" data-days="30" data-user="'+u.id+'">30 يوم</button><button data-admin-action="grant" data-days="90" data-user="'+u.id+'">90 يوم</button><button data-admin-action="grant" data-days="365" data-user="'+u.id+'">سنة</button><button class="revoke" data-admin-action="revoke" data-user="'+u.id+'">إلغاء</button></div>';
+   return '<article class="admin-user"><div><b>'+safe(u.email)+'</b><small>رقم الحساب: '+u.id+' · '+status+'</small></div>'+actions+'</article>';
+  }).join("");
+ }catch(e){$("#adminUsers").innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
+}
+$("#adminRefresh").addEventListener("click",loadAdminUsers);
+$("#adminUsers").addEventListener("click",async e=>{
+ const b=e.target.closest("[data-admin-action]");if(!b)return;
+ b.disabled=true;
+ try{
+  const response=await fetch("/api/admin/subscription",{
+   method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({user_id:Number(b.dataset.user),action:b.dataset.adminAction,days:Number(b.dataset.days||0)})
+  });
+  const d=await response.json();if(!response.ok)throw Error(d.message||"تعذر تعديل الاشتراك.");
+  await loadAdminUsers();
+ }catch(err){alert(err.message);b.disabled=false}
+});
+tick();setInterval(tick,1000);
+initializeAccess();
+timer=setInterval(()=>{if(!document.hidden && !$("#mainContent").hidden)load()},30000);
