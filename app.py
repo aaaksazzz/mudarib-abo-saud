@@ -933,7 +933,15 @@ def market(kind):
                     for index, row in enumerate(candidates)
                 }
                 for job in as_completed(jobs):
-                    signal = job.result()
+                    try:
+                        signal = job.result()
+                    except Exception:
+                        # One malformed provider response or adapter failure must not
+                        # cancel the scan for every other candidate in this market.
+                        index = jobs[job]
+                        diagnostic_rows[index]["reason"] = "analysis_error"
+                        app.logger.exception("Candidate analysis failed: %s %s", kind, candidates[index].get("symbol"))
+                        continue
                     if signal:
                         signals.append(signal)
         else:
@@ -983,9 +991,10 @@ def market(kind):
         app.logger.exception("Trade database failure: %s", kind)
         return jsonify({"ok": False, "error": "تعذر الوصول إلى سجل الصفقات. تحقق من وحدة التخزين الدائمة.", "market": kind}), 503
 
+@app.get("/api/analysis/method")
 @app.get("/api/gamma/crypto")
 def crypto_gamma():
-    """Backward-compatible no-key local liquidity analysis status; not options GEX."""
+    """No-key local OHLCV analysis method; the legacy route remains compatible."""
     return jsonify({
         "status": "local_analysis",
         "mode": "ohlcv_liquidity_proxy",
