@@ -99,18 +99,9 @@ async function loadMarketStatuses(){
 }
 function renderGamma(payload){
  const root=$("#gammaCards"),note=$("#gammaNote");
- if(!payload){root.innerHTML='<div class="empty">لا توجد بيانات Gamma.</div>';return}
- if(payload.status==="unavailable_no_key"){root.innerHTML='<div class="empty">بيانات Gamma Options/GEX غير متاحة حاليًا بدون مفتاح. بقية التحليل تعمل بشكل مستقل.</div>';note.textContent="نعتمد على السعر والحجم والشموع والسيولة المتاحة، ولا نعرض قيم Gamma تقديرية.";return}
- const rows=payload.items||[];
- if(!rows.length){root.innerHTML='<div class="empty">'+safe(payload.message||"لا توجد بيانات Gamma متاحة الآن.")+'</div>';return}
- const labels={provider_rate_limit:"تجاوز حد المزود",provider_auth_error:"تحقق من المفتاح أو الاشتراك",provider_unavailable:"المصدر غير متاح",stale_gamma_data:"البيانات قديمة",unsupported_coin:"عملة غير مدعومة",missing_data_timestamp:"وقت البيانات غير متوفر",invalid_provider_payload:"استجابة غير صالحة",provider_http_error:"خطأ من المزود"};
- root.innerHTML=rows.map(x=>{
-  if(x.status!=="live")return '<article class="gamma-card"><b>'+safe(x.symbol)+'</b><span class="gamma-status down">'+safe(labels[x.status]||x.status)+'</span></article>';
-  const regime=x.regime==="positive"?"موجب · تذبذب أهدأ غالبًا":x.regime==="negative"?"سالب · قابلية حركة أعنف غالبًا":"غير محدد";
-  const money=n=>n==null?"—":Number(n).toLocaleString("en-US",{maximumFractionDigits:0});
-  return '<article class="gamma-card"><div class="gamma-card-head"><b>'+safe(x.symbol)+'</b><span class="gamma-status '+(x.regime==="positive"?"up":"down")+'">'+regime+'</span></div><div class="gamma-levels"><div><small>السعر المرجعي</small><b>'+money(x.spot)+'</b></div><div><small>Gamma Flip</small><b>'+money(x.flip)+'</b></div><div><small>Net GEX</small><b>'+money(x.net_gex)+'</b></div><div><small>Call Wall · P1</small><b>'+money(x.p1_strike)+'</b></div><div><small>Put Wall · N1</small><b>'+money(x.n1_strike)+'</b></div><div><small>أكبر |Gamma|</small><b>'+money(x.a1_strike)+'</b></div></div><small class="gamma-time">مصدر: '+safe(x.exchange||"all")+' · '+safe(x.as_of||"")+'</small></article>';
- }).join("");
- note.textContent=(payload.quota_note||"")+(payload.updated?" · آخر طلب "+new Date(payload.updated).toLocaleTimeString("ar-SA"):"");
+ if(!payload){root.innerHTML='<div class="empty">تحليل السيولة المحلي غير متاح الآن.</div>';return}
+ root.innerHTML='<article class="gamma-card"><div class="gamma-card-head"><b>محرك السيولة المحلي</b><span class="gamma-status up">يعمل دون مفاتيح</span></div><div class="gamma-levels"><div><small>نوع التحليل</small><b>OHLCV</b></div><div><small>نسبة الحجم</small><b>Volume Ratio</b></div><div><small>ضغط السعر</small><b>Price Pressure</b></div><div><small>سحب السيولة</small><b>Liquidity Sweep</b></div><div><small>الامتصاص</small><b>Absorption</b></div></div><small class="gamma-time">'+safe(payload.message||"تحليل محلي من بيانات الشموع والحجم العامة؛ ليس Options GEX.")+'</small></article>';
+ if(note)note.textContent="لا نحتاج GAMMAFLIP_API_KEY أو أي مفتاح خارجي. لا نعرض Gamma Flip أو Net GEX أو جدران الخيارات دون بيانات خيارات موثوقة.";
 }
 async function loadGamma(){
  const button=$("#gammaRefresh"),root=$("#gammaCards");
