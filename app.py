@@ -525,10 +525,12 @@ def providers():
          "status": "single_source", "note": "No verified equivalent Alpha public backup."},
         {"id": "forex", "primary": "BiQuote public REST", "fallbacks": [],
          "status": "configured_unverified_runtime", "note": "No-key FX/metal quotes and 15m OHLC; source must pass live freshness checks."},
-        {"id": "saudi", "primary": None, "fallbacks": [],
-         "status": "provider_required", "note": "No verified no-key 15m OHLC source integrated."},
-        {"id": "us", "primary": None, "fallbacks": [],
-         "status": "provider_required", "note": "No licensed, verified no-key 15m OHLC source integrated."},
+        {"id": "saudi", "primary": "Yahoo Finance via yfinance", "fallbacks": [],
+         "status": "optional_disabled" if not YAHOO_ENABLED else ("configured_watchlist" if YAHOO_SYMBOLS["saudi"] else "symbols_required"),
+         "note": "Unofficial Yahoo client; private/internal testing only. Configure YAHOO_SAUDI_SYMBOLS; fresh 15m bars required."},
+        {"id": "us", "primary": "Yahoo Finance via yfinance", "fallbacks": [],
+         "status": "optional_disabled" if not YAHOO_ENABLED else ("configured_watchlist" if YAHOO_SYMBOLS["us"] else "symbols_required"),
+         "note": "Unofficial Yahoo client; private/internal testing only. Configure YAHOO_US_SYMBOLS; fresh 15m bars required."},
         {"id": "contracts", "primary": None, "fallbacks": [],
          "status": "provider_required", "note": "No verified no-key 15m futures/options source integrated."}
     ]})
