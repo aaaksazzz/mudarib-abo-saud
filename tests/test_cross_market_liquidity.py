@@ -18,7 +18,7 @@ class CrossMarketLiquidityEngineTests(unittest.TestCase):
         result = analyse_liquidity_candidate(bars, 99.9, "BUY", "spot")
         self.assertIsNotNone(result)
         self.assertLess(result["stop_loss"], result["entry"])
-        self.assertLess(result["entry"], result["tp1"] < result["tp2"] < result["tp3"])
+        self.assertTrue(result["entry"] < result["tp1"] < result["tp2"] < result["tp3"])
         self.assertEqual(result["volume_source"], "base_asset_volume")
         self.assertIsNone(result["gamma_exposure"])
 
