@@ -154,8 +154,8 @@ def test_provider_registry_is_honest_and_lists_real_fallbacks():
     assert markets["spot"]["status"] == "configured"
     assert "api-gcp.binance.com" in markets["spot"]["fallbacks"]
     assert markets["forex"]["primary"] == "BiQuote public REST"
-    assert markets["saudi"]["status"] == "provider_required"
-    assert markets["us"]["status"] == "provider_required"
+    assert markets["saudi"]["status"] == "optional_disabled"
+    assert markets["us"]["status"] == "optional_disabled"
     assert markets["contracts"]["status"] == "provider_required"
 
 
