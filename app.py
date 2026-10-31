@@ -301,13 +301,19 @@ def binance_active_symbols(kind):
     payload = cached(kind + ":exchange-info", 300, lambda: fetch_first_json(urls))
     symbols = set()
     for row in payload.get("symbols", []):
-        expected_quote = "USD" if kind == "coinm" else "USDT"
-        if row.get("status") != "TRADING" or row.get("quoteAsset") != expected_quote:
+        if row.get("status") != "TRADING":
+            continue
+        if kind == "spot" and row.get("quoteAsset") != "USDT":
             continue
         if kind == "spot" and row.get("isSpotTradingAllowed") is False:
             continue
-        if kind in ("futures", "coinm") and row.get("contractType") != "PERPETUAL":
+        if kind == "futures" and (row.get("quoteAsset") != "USDT" or row.get("contractType") != "PERPETUAL"):
             continue
+        if kind == "coinm":
+            # COIN-M metadata can vary in quoteAsset; identify live perpetuals
+            # by status, contract type, and the documented _PERP symbol suffix.
+            if row.get("contractType") != "PERPETUAL" or not str(row.get("symbol", "")).endswith("_PERP"):
+                continue
         symbols.add(str(row.get("symbol", "")))
     if not symbols:
         quote = "USD" if kind == "coinm" else "USDT"
