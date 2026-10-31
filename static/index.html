@@ -82,6 +82,11 @@
    <div class="scan-row"><span>حالة الفحص</span><b id="scanState" class="state-good">جاهز</b></div>
   </article>
  </section>
+ <section class="panel gamma-panel" id="cryptoGammaSection" hidden>
+  <div class="section-heading tracker-heading"><div><span class="kicker">OPTIONS MARKET STRUCTURE · REAL GEX</span><h2>Gamma Exposure للعملات الرقمية</h2><p>بيانات خيارات فعلية من Deribit وBybit وOKX وDerive وBinance. التحديث يدوي لحماية حصة API.</p></div><button id="gammaRefresh" class="refresh-btn" type="button">تحديث Gamma</button></div>
+  <div id="gammaCards" class="gamma-grid"><div class="empty">اضغط تحديث Gamma لجلب مستويات الخيارات المدعومة.</div></div>
+  <p id="gammaNote" class="panel-note">يغطي BTC وETH وSOL وXRP وHYPE فقط. بقية العملات تستمر بتحليل السيولة دون ادعاء توفر GEX.</p>
+ </section>
  <section class="section-heading" id="moversSection"><div><span class="kicker">MARKET MOVERS</span><h2>الأصول الأكثر حركة</h2></div><span class="section-caption">تغير 24 ساعة · أعلى السيولة المتاحة</span></section>
  <section id="movers" class="movers-grid"><div class="empty">جارٍ تحميل حركة الأصول...</div></section>
  <section class="section-heading opportunity-heading" id="opportunitiesSection"><div><span class="kicker">GAMMA PRO · LIQUIDITY ENGINE</span><h2>أفضل الفرص الفنية</h2><p>أفضل ثلاث فرص اجتازت شروط سحب السيولة والامتصاص على 15 دقيقة.</p></div><span class="ranking-note">TOP 3 · حسب جودة الشروط</span></section>
