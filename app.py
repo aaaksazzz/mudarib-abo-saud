@@ -302,7 +302,11 @@ def binance_active_symbols(kind):
     symbols = set()
     for row in payload.get("symbols", []):
         expected_quote = "USD" if kind == "coinm" else "USDT"
-        if row.get("status") != "TRADING" or row.get("quoteAsset") != expected_quote:
+        # Binance COIN-M exchangeInfo uses "contractStatus" (not "status").
+        # USD-M and Spot use "status"; using the wrong field empties the
+        # entire COIN-M universe and makes every scan fail.
+        status_field = "contractStatus" if kind == "coinm" else "status"
+        if row.get(status_field) != "TRADING" or row.get("quoteAsset") != expected_quote:
             continue
         if kind == "spot" and row.get("isSpotTradingAllowed") is False:
             continue
