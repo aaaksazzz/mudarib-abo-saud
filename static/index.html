@@ -5,8 +5,8 @@
 <meta name="theme-color" content="#070b12"><title>AS Trading PRO | التداول الذكي</title>
 <meta name="description" content="منصة احترافية لمراقبة الأسواق والاتجاهات والفرص الفنية ببيانات عامة ومصادر واضحة.">
 <link rel="preconnect" href="https://api.binance.com"><link rel="preconnect" href="https://fapi.binance.com">
-<link rel="stylesheet" href="/static/app.css?v=20261031.pro2">
-<script src="/static/app.js?v=20261031.flow1" defer></script>
+<link rel="stylesheet" href="/static/app.css?v=20261031.sections1">
+<script src="/static/app.js?v=20261031.sections1" defer></script>
 </head>
 <body>
 <div class="app-shell">
@@ -38,8 +38,8 @@
    <div class="drawer-head"><b>أقسام المنصة</b><button id="menuClose" type="button" aria-label="إغلاق القائمة">✕</button></div>
    <a href="/">الرئيسية</a>
    <div class="drawer-group">الأسواق المستقلة</div>
-   <a href="/markets/spot">Binance Spot</a><a href="/markets/futures">Binance USD-M</a><a href="/markets/coinm">Binance COIN-M</a><a href="/markets/alpha">Binance Alpha</a>
-   <a href="/markets/saudi">السوق السعودي</a><a href="/markets/us">الأسهم الأمريكية</a><a href="/markets/contracts">العقود الأمريكية</a><a href="/markets/forex">الفوركس والذهب</a>
+   <a href="/markets/spot">توصيات Binance Spot</a><a href="/markets/futures">توصيات Binance USD-M</a><a href="/markets/coinm">توصيات Binance COIN-M</a><a href="/markets/alpha">توصيات Binance Alpha</a>
+   <a href="/markets/saudi">توصيات السوق السعودي</a><a href="/markets/us">توصيات الأسهم الأمريكية</a><a href="/markets/contracts">توصيات العقود الأمريكية</a><a href="/markets/forex">توصيات الفوركس والذهب</a>
    <div class="drawer-group">أقسام التحليل</div>
    <a href="/sections/direction">توجه السوق</a><a href="/sections/movers">الأصول الأكثر حركة</a><a href="/sections/opportunities">توصيات GAMMA PRO</a><a href="/sections/open-trades">متابعة الصفقات</a><a href="/sections/history">سجل النتائج</a>
    <a href="/sections/system">حالة المنصة ومصادر البيانات</a>
@@ -67,6 +67,11 @@
    <a data-market="contracts" href="/markets/contracts" class="market-tab"><span class="market-icon contracts">⌁</span><span><b>العقود الأمريكية</b><small>صفحة مستقلة</small></span></a>
    <a data-market="forex" href="/markets/forex" class="market-tab"><span class="market-icon forex">FX</span><span><b>الفوركس والذهب</b><small>صفحة مستقلة</small></span></a>
   </div>
+ </section>
+ <section class="home-overview" id="homeOverview">
+  <a class="home-feature" href="/sections/direction"><span class="home-feature-icon">↗</span><div><small>MARKET DIRECTION</small><b>توجهات الأسواق</b><p>تابع الصعود والهبوط واتساع حركة السوق.</p></div><span class="home-arrow">←</span></a>
+  <a class="home-feature" href="/sections/history"><span class="home-feature-icon">▤</span><div><small>PERFORMANCE CENTER</small><b>مركز النتائج</b><p>راجع الصفقات المغلقة ونتائج كل سوق.</p></div><span class="home-arrow">←</span></a>
+  <a class="home-feature" href="/sections/system"><span class="home-feature-icon">⌁</span><div><small>DATA & SYSTEM</small><b>مصادر البيانات</b><p>تحقق من حالة الأسواق ومصادرها.</p></div><span class="home-arrow">←</span></a>
  </section>
  <section class="overview-grid" id="directionSection">
   <article class="panel direction-panel">
@@ -99,6 +104,7 @@
  </section>
  <section class="panel history-panel" id="historySection">
   <div class="section-heading tracker-heading"><div><span class="kicker">TRADE HISTORY</span><h2>سجل النتائج</h2><p>الصفقات التي وصلت إلى الهدف الثالث أو وقف الخسارة.</p></div><span id="historyCount" class="count-pill">0 مغلقة</span></div>
+  <div id="historySummary" class="result-summary"><article class="result-metric"><small>إجمالي الصفقات المغلقة</small><b>—</b></article></div>
   <div id="closedTrades" class="trade-list"><div class="empty">لا توجد نتائج مغلقة مسجلة بعد.</div></div>
  </section>
   <section id="systemSection" class="panel system-panel" hidden>
