@@ -503,7 +503,12 @@ def health():
 
 @app.get("/api/markets")
 def markets():
-    return jsonify({"markets": MARKETS})
+    rows = [dict(item) for item in MARKETS]
+    for item in rows:
+        if item["id"] in ("saudi", "us"):
+            configured = YAHOO_ENABLED and yf is not None and bool(YAHOO_SYMBOLS.get(item["id"]))
+            item["status"] = "configured_watchlist" if configured else "provider_required"
+    return jsonify({"markets": rows})
 
 
 @app.get("/api/providers")
