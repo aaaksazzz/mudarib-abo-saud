@@ -192,3 +192,9 @@ body{background:radial-gradient(ellipse at 78% -18%,rgba(37,112,176,.24),transpa
 .tracked-level.hit{border-color:rgba(49,214,154,.55);background:rgba(24,82,62,.22)}
 .tracked-level.hit b{color:#62e1ae}
 @media(max-width:600px){.pro-trade-card{padding:13px}.pro-target-grid,.tracked-levels{grid-template-columns:repeat(2,minmax(0,1fr))}.pro-live-price>div:first-child b{font-size:19px}.live-pnl b{font-size:17px}.tracked-live-grid{gap:5px}.tracked-live-grid>div{padding:8px}.tracked-live-grid b{font-size:12px}}
+
+.timeframe-switcher{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0 18px;padding:12px 14px;border:1px solid #263b51;border-radius:12px;background:rgba(10,20,33,.88)}
+.timeframe-switcher label{font-size:13px;color:#a9bfd2;font-weight:700}
+.timeframe-switcher select{min-width:230px;max-width:100%;padding:10px 12px;border:1px solid #38536d;border-radius:9px;background:#101d2b;color:#f3f7fb;font:inherit}
+.timeframe-switcher span{font-size:12px;color:#83b9d9}
+@media(max-width:600px){.timeframe-switcher{align-items:stretch}.timeframe-switcher select{width:100%;min-width:0}.timeframe-switcher span{line-height:1.6}}
