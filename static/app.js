@@ -1,7 +1,7 @@
 const $=s=>document.querySelector(s);
 const MARKET_NAMES={spot:"Binance Spot",futures:"Binance Futures",alpha:"Binance Alpha",saudi:"السوق السعودي",us:"الأسهم الأمريكية",contracts:"العقود الأمريكية",forex:"الفوركس والذهب"};
-const PATH=location.pathname.replace(/\\/+$/,"")||"/";
-const marketMatch=PATH.match(/^\\/markets\\/([a-z]+)$/);
+const PATH=location.pathname.replace(/\/+$/,"")||"/";
+const marketMatch=PATH.match(/^\/markets\/([a-z]+)$/);
 let market=marketMatch?marketMatch[1]:"spot",busy=false,pending=false,timer=null;
 const fmt=n=>Number(n).toLocaleString("en-US",{maximumFractionDigits:8});
 const compact=n=>{n=Number(n)||0;if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return fmt(n)};
