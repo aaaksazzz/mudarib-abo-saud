@@ -233,8 +233,9 @@ def yahoo_candles(symbol, interval):
         raise requests.RequestException("Yahoo Finance integration is disabled")
     # Yahoo's hourly endpoint does not offer native 4h bars. Build them
     # from hourly OHLCV; request enough history for stable 4h and daily structure.
-    fetch_interval = "60m" if interval == "4h" else interval
-    period = "1y" if interval == "1d" else "3mo" if interval in ("1h", "4h") else "5d"
+    fetch_interval = {"4h": "60m", "1w": "1wk", "1M": "1mo"}.get(interval, interval)
+    period = ("10y" if interval == "1M" else "5y" if interval == "1w"
+              else "1y" if interval == "1d" else "3mo" if interval in ("1h", "4h") else "5d")
     frame = yf.Ticker(symbol).history(period=period, interval=fetch_interval, auto_adjust=True, timeout=12)
     if frame is None or frame.empty:
         raise requests.RequestException("Yahoo returned no candle history")
@@ -391,12 +392,13 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
         if diagnostics is not None: diagnostics["reason"]=reason
         return None
     try:
-        from timeframe_strategy import assess_strategy, make_trade
+        from timeframe_strategy import TIMEFRAME_RULES, assess_strategy, make_trade
         entry_rows=candles(kind,item["symbol"],timeframe)
-        if len(entry_rows)<20: return reject("insufficient_candles")
+        if len(entry_rows)<60: return reject("insufficient_candles")
         if diagnostics is not None: diagnostics["candles_ready"]=True
-        refs={"15m":("4h","1d"),"1h":("4h","1d"),"4h":("1w","1M"),"1d":("1w","1M"),"1w":("1w","1M")}[timeframe]
-        histories={tf:candles(kind,item["symbol"],tf) for tf in refs}
+        refs=TIMEFRAME_RULES[timeframe]
+        histories={timeframe:entry_rows}
+        histories.update({tf:candles(kind,item["symbol"],tf) for tf in refs})
         buy=assess_strategy(histories,timeframe,"BUY")
         sell=assess_strategy(histories,timeframe,"SELL")
         alignment=buy if buy["confirmed"] else sell if sell["confirmed"] else None
@@ -414,13 +416,15 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             "fast_mover_rank":item.get("fast_mover_rank"),
             "timeframe":timeframe,"strategy":"HAWK QUANT PRO · Multi-timeframe Alignment",
             "timeframe_alignment":alignment["states"],
-            "reference_timeframes":refs,"quality_score":90.0,
-            "analysis_note":"توافق الفريمات المرجعية مع تحليل الدخول على الفريم المحدد"}
+            "reference_timeframes":refs,"quality_score":alignment["quality_score"],
+            "entry_analysis":alignment["entry"],
+            "quality_label":"قوة فنية من 100 وليست احتمال نجاح",
+            "analysis_note":"درجة فنية محسوبة من الاتجاه والزخم والبنية والسيولة الحجمية"}
         flow=analyse_orderbook_flow(kind,item["symbol"],side,lambda url,params:cached(
             f"orderbook:{kind}:{item['symbol']}",5,lambda:fetch_json(url,params)))
         signal["institutional_flow"]=flow
-        if flow.get("status")=="supportive": signal["quality_score"]=93.0
-        elif flow.get("status")=="opposing": signal["quality_score"]=87.0
+        signal["orderbook_context"]=flow.get("status","unavailable")
+        # Order-book context is disclosed separately; it never fabricates a success probability.
         if diagnostics is not None: diagnostics["reason"]="accepted"
         return signal
     except requests.RequestException:
@@ -883,7 +887,7 @@ def market(kind):
     if kind in ("saudi", "us") and (not YAHOO_ENABLED or yf is None or not YAHOO_SYMBOLS.get(kind)):
         return jsonify({"ok": False, "status": "provider_required", "message": "Yahoo غير مفعّل أو قائمة الرموز غير مضبوطة؛ لم نعرض بيانات غير مكتملة.", "signals": []}), 503
     timeframe=request.args.get("timeframe","15m").strip()
-    if timeframe not in ("15m","1h","4h","1d","1w"):
+    if timeframe not in ("15m","1h","4h","1d","1w","1M"):
         return jsonify({"ok":False,"error":"فريم التحليل غير مدعوم"}),400
     try:
         assets = cached(kind + ":universe", 20, lambda: market_tickers(kind))
@@ -925,7 +929,13 @@ def market(kind):
         for item in diagnostic_rows:
             reason = item.get("reason", "unknown")
             rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
-        signals.sort(key=lambda row: (abs(row.get("change_timeframe",0)), row["quality_score"]), reverse=True)
+        for row in signals:
+            row["ranking_score"] = round(
+                row["quality_score"] * 0.65 + float(row.get("fast_mover_score", 0) or 0) * 0.35, 1
+            )
+        signals.sort(key=lambda row: (
+            row["ranking_score"], row["quality_score"], abs(row.get("change_timeframe", 0))
+        ), reverse=True)
         signals = signals[:3]
         save_new_trades(kind, signals)
         with db() as connection:
