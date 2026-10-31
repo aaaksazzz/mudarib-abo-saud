@@ -2,17 +2,17 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#070b12"><title>AS Trading PRO | التداول الذكي</title>
+<meta name="theme-color" content="#070b12"><title>SMART TRADING PRO | التداول الذكي</title>
 <meta name="description" content="منصة احترافية لمراقبة الأسواق والاتجاهات والفرص الفنية ببيانات عامة ومصادر واضحة.">
 <link rel="preconnect" href="https://api.binance.com"><link rel="preconnect" href="https://fapi.binance.com">
-<link rel="stylesheet" href="/static/app.css?v=20261031.mtf1">
-<script src="/static/app.js?v=20261031.mtf1" defer></script>
+<link rel="stylesheet" href="/static/app.css?v=20261101.terminal3">
+<script src="/static/app.js?v=20261101.terminal3" defer></script>
 </head>
 <body>
 <div class="app-shell">
 <header class="topbar">
   <button id="menuOpen" class="menu-open" type="button" aria-label="فتح القائمة" aria-expanded="false">☰ <span>القائمة</span></button>
- <a class="brand" href="/" aria-label="AS Trading PRO"><span class="logo">AS</span><span class="brand-copy"><b>AS <i>TRADING PRO</i></b><small>منصة الأسواق والتحليل الذكي</small></span></a>
+ <a class="brand" href="/" aria-label="SMART TRADING PRO"><span class="logo">ST</span><span class="brand-copy"><b>SMART <i>TRADING PRO</i></b><small>منصة الأسواق والتحليل الذكي</small></span></a>
  <div class="top-status"><button id="topLogout" class="top-logout" type="button" hidden>خروج</button><span class="live-dot"></span><span id="health">فحص الاتصال</span><span class="top-divider"></span><span id="clock">--:--:--</span></div>
 </header>
 <section id="accessGate" class="access-gate" hidden>
@@ -52,7 +52,7 @@
   <div id="adminUsers" class="admin-users"><div class="empty">جارٍ تحميل الحسابات...</div></div>
  </section>
  <section class="welcome" id="homeSection">
-  <div><div class="eyebrow"><span class="eyebrow-line"></span> MARKET INTELLIGENCE TERMINAL</div><h1>مركز <span>الأسواق</span></h1><p>حلّل اتجاه الأسواق عبر توافق الفريمات، وتابع فرص الدخول والأهداف ووقف الخسارة.</p></div>
+  <div><div class="eyebrow"><span class="eyebrow-line"></span> MARKET INTELLIGENCE TERMINAL</div><h1>مركز <span>الأسواق</span></h1><p>لوحة موحّدة لمراقبة الأسواق العالمية، قراءة الاتجاه، وفرص فنية بمستويات واضحة ومصادر بيانات مستقلة.</p></div>
   <button id="refresh" class="refresh-btn"><span>↻</span> تحديث البيانات</button>
  </section>
  <section class="market-switcher" id="marketSection">
@@ -96,7 +96,7 @@
  </section>
  <section class="section-heading" id="moversSection"><div><span class="kicker">MARKET MOVERS</span><h2>الأصول الأسرع حركة أولًا</h2></div><span class="section-caption">زخم 24س · نطاق الحركة · السيولة النسبية</span></section>
  <section id="movers" class="movers-grid"><div class="empty">جارٍ تحميل حركة الأصول...</div></section>
- <section class="section-heading opportunity-heading" id="opportunitiesSection"><div><span class="kicker">HAWK QUANT PRO · MULTI-TIMEFRAME</span><h2>أفضل الفرص الفنية</h2><p>تحليل فريم الدخول، تأكيد الاتجاه من الفريمات الأعلى عند توفرها، وترتيب الفرص حسب القوة الفنية وسرعة الحركة.</p></div><span class="ranking-note">TOP 3 · أعلى تغير أولًا</span></section>
+ <section class="section-heading opportunity-heading" id="opportunitiesSection"><div><span class="kicker">HAWK QUANT PRO · MULTI-TIMEFRAME</span><h2>أفضل الفرص الفنية</h2><p>توافق فريمين مرجعيين، وترتيب حسب نسبة التغير على فريم التحليل المختار.</p></div><span class="ranking-note">TOP 3 · أعلى تغير أولًا</span></section>
  <section class="timeframe-switcher" aria-label="اختيار فريم التحليل">
   <label for="analysisTimeframe">فريم التحليل</label>
   <select id="analysisTimeframe">
@@ -104,8 +104,8 @@
    <option value="1h">ساعة · تأكيد 4 ساعات + يومي</option>
    <option value="4h">4 ساعات · تأكيد أسبوعي + شهري</option>
    <option value="1d">يومي · تأكيد أسبوعي + شهري</option>
-   <option value="1w">أسبوعي · تأكيد شهري</option>
-   <option value="1M">شهري · تحليل مستقل</option>
+   <option value="1w">أسبوعي · تأكيد أسبوعي + شهري</option>
+  <option value="1M">شهري</option>
   </select>
   <span id="activeStrategy">15 دقيقة · تأكيد 4 ساعات + يومي</span>
  </section>
