@@ -104,6 +104,7 @@ async function loadNews(){
 }
 $("#newsRefresh")?.addEventListener("click",loadNews);
 function configurePage(){
+ const adminAllowed=!$("#adminPanel").hidden;$("#adminPanel").hidden=true;
  const ids=["homeSection","marketSection","directionSection","moversSection","movers","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection"];
  const hideAll=()=>ids.forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
  const show=(...names)=>names.forEach(id=>{const el=$("#"+id);if(el)el.hidden=false});
@@ -136,8 +137,8 @@ function configurePage(){
  $("#marketSection").hidden=PATH!=="/";
  $("#refresh").hidden=PATH==="/"||PATH==="/blog"||PATH==="/news";
  if(PATH==="/admin"){
-  if($("#adminPanel").hidden){location.replace("/");return}
-  hideAll();show("homeSection","adminPanel");
+  if(!adminAllowed){location.replace("/");return}
+  hideAll();show("homeSection","adminPanel");$("#adminPanel").hidden=false;
   $("#homeSection h1").innerHTML="إدارة <span>المشتركين</span>";
   $("#homeSection p").textContent="إدارة الحسابات والصلاحيات بشكل مستقل.";
  }
