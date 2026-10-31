@@ -3,7 +3,6 @@ const MARKET_NAMES={spot:"Binance Spot",futures:"Binance USD-M Futures",coinm:"B
 const PATH=location.pathname.replace(/\/+$/,"")||"/";
 const marketMatch=PATH.match(/^\/markets\/([a-z]+)$/);
 let market=marketMatch?marketMatch[1]:"spot",busy=false,pending=false,timer=null;
-let lastGammaAuto=0,lastStatusAuto=0,lastNewsAuto=0;
 let analysisTimeframe=new URLSearchParams(location.search).get("timeframe")||"15m";
 const VALID_TFS=["15m","1h","4h","1d","1w"];
 if(!VALID_TFS.includes(analysisTimeframe))analysisTimeframe="15m";
@@ -120,6 +119,7 @@ async function loadGamma(){
 }
 
 
+const PROVIDER_LABELS={
  configured:"مهيأ",single_source:"مصدر واحد",configured_unverified_runtime:"مهيأ · يحتاج تحقق وقت التشغيل",
  configured_watchlist:"قائمة رموز مهيأة",optional_disabled:"غير مفعّل",symbols_required:"قائمة الرموز مطلوبة",
  provider_required:"مصدر غير مربوط",secret_required:"إعداد مطلوب",unavailable_no_key:"غير متاح"
@@ -156,6 +156,7 @@ async function loadSystemStatus(){
 }
 
 
+async function load(){
  if(busy){pending=true;return}
  busy=true;pending=false;
  $("#health").textContent="جارٍ التحديث";$("#scanState").textContent="يفحص السوق";$("#scanState").className="";
