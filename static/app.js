@@ -3,6 +3,7 @@ const MARKET_NAMES={spot:"Binance Spot",futures:"Binance USD-M Futures",coinm:"B
 const PATH=location.pathname.replace(/\/+$/,"")||"/";
 const marketMatch=PATH.match(/^\/markets\/([a-z]+)$/);
 let market=marketMatch?marketMatch[1]:"spot",busy=false,pending=false,timer=null;
+let lastGammaAuto=0,lastStatusAuto=0,lastNewsAuto=0;
 let analysisTimeframe=new URLSearchParams(location.search).get("timeframe")||"15m";
 const VALID_TFS=["15m","1h","4h","1d","1w"];
 if(!VALID_TFS.includes(analysisTimeframe))analysisTimeframe="15m";
@@ -115,7 +116,7 @@ async function loadGamma(){
  root.innerHTML='<div class="empty">جارٍ تحميل بيانات الشموع العامة وتحليل السيولة...</div>';
  try{const d=await get("/api/analysis/method",12000);renderGamma(d)}
  catch(e){root.innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
- finally{button.disabled=false;button.textContent="تحديث تحليل السيولة"}
+ finally{if(button){button.disabled=false;button.textContent="تحديث تحليل السيولة"}}
 }
 $("#gammaRefresh")?.addEventListener("click",loadGamma);
 
@@ -275,7 +276,7 @@ async function startAuthorized(user=null){
  $("#drawerAdmin").hidden=!(user&&user.is_admin);
  if(user&&user.is_admin) await loadAdminUsers();
  configurePage();
- if(marketMatch){await loadMarketStatuses();await load();}
+ if(marketMatch){await loadMarketStatuses();await load();lastGammaAuto=Date.now();await loadGamma()}
  else if(PATH==="/"){await loadMarketStatuses();}
  else if(PATH.startsWith("/sections/") && ["direction","movers","opportunities","open-trades"].includes(PATH.split("/").pop())){await loadMarketStatuses();await load();}
  else if(PATH==="/sections/history"){await loadHistoryPage();}
@@ -369,4 +370,17 @@ $("#siteDrawer").addEventListener("click",e=>{
 
 tick();setInterval(tick,1000);
 initializeAccess();
-timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden)return;if(marketMatch||(["direction","movers","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();else if(PATH==="/sections/history")loadHistoryPage();else if(PATH==="/sections/system")loadSystemStatus()},30000);
+timer=setInterval(()=>{
+  if(document.hidden||$("#mainContent").hidden)return;
+  const now=Date.now();
+  if(marketMatch){
+   load();
+   if(now-lastStatusAuto>=60000){lastStatusAuto=now;loadMarketStatuses()}
+   if(now-lastGammaAuto>=300000){lastGammaAuto=now;loadGamma()}
+  }else if(["direction","movers","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")){
+   load();if(now-lastStatusAuto>=60000){lastStatusAuto=now;loadMarketStatuses()}
+  }else if(PATH==="/sections/history")loadHistoryPage();
+  else if(PATH==="/sections/system")loadSystemStatus();
+  else if(PATH==="/news"&&now-lastNewsAuto>=300000){lastNewsAuto=now;loadNews()}
+  else if(PATH==="/"&&now-lastStatusAuto>=60000){lastStatusAuto=now;loadMarketStatuses()}
+ },30000);
