@@ -22,7 +22,7 @@ app = Flask(__name__, static_folder="static")
 SECRET_KEY = os.environ.get("SECRET_KEY", "")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
-AUTH_CONFIGURED = bool(SECRET_KEY and ADMIN_EMAIL and len(ADMIN_PASSWORD) >= 12)
+AUTH_CONFIGURED = bool(len(SECRET_KEY) >= 32 and ADMIN_EMAIL and len(ADMIN_PASSWORD) >= 12)
 app.secret_key = SECRET_KEY or os.urandom(32)
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
                   SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "1") == "1",
