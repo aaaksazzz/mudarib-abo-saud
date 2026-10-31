@@ -12,6 +12,7 @@ import xml.etree.ElementTree as ET
 
 import requests
 from gamma_engine import analyse_liquidity_candidate
+from gammaflip_client import fetch_supported_crypto
 
 try:
     import yfinance as yf
@@ -39,6 +40,9 @@ YAHOO_SYMBOLS = {
     "saudi": [x.strip().upper() for x in os.environ.get("YAHOO_SAUDI_SYMBOLS", "").split(",") if x.strip()],
 }
 SCAN_INTERVAL = "15m"
+GAMMAFLIP_API_KEY = os.environ.get("GAMMAFLIP_API_KEY", "").strip()
+GAMMAFLIP_DAILY_BUDGET = max(5, int(os.environ.get("GAMMAFLIP_DAILY_BUDGET", "40")))
+GAMMAFLIP_CACHE_SECONDS = 900
 STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "EUR"}
 CACHE = {}
 CACHE_LOCK = threading.Lock()
@@ -723,7 +727,10 @@ def providers():
          "status": "optional_disabled" if not YAHOO_ENABLED else ("configured_watchlist" if YAHOO_SYMBOLS["us"] else "symbols_required"),
          "note": "Unofficial Yahoo client; private/internal testing only. Configure YAHOO_US_SYMBOLS; fresh 15m bars required."},
         {"id": "contracts", "primary": None, "fallbacks": [],
-         "status": "provider_required", "note": "No verified no-key 15m futures/options source integrated."}
+         "status": "provider_required", "note": "No verified no-key 15m futures/options source integrated."},
+        {"id": "gammaflip", "primary": "GammaFlip crypto options GEX API", "fallbacks": [],
+         "status": "configured" if GAMMAFLIP_API_KEY else "secret_required",
+         "note": "Read-only combined options GEX for BTC, ETH, SOL, XRP and HYPE; manual refresh only, 15-minute cache."}
     ]})
 
 
@@ -777,6 +784,29 @@ def market(kind):
     except sqlite3.Error:
         app.logger.exception("Trade database failure: %s", kind)
         return jsonify({"ok": False, "error": "تعذر الوصول إلى سجل الصفقات. تحقق من وحدة التخزين الدائمة.", "market": kind}), 503
+
+@app.get("/api/gamma/crypto")
+def crypto_gamma():
+    """On-demand combined options GEX for the five coins with verified options coverage."""
+    if not GAMMAFLIP_API_KEY:
+        return jsonify({
+            "status": "not_configured",
+            "message": "مصدر Gamma الحقيقي غير مربوط. أضف GAMMAFLIP_API_KEY في أسرار Northflank.",
+            "symbols": ["BTC", "ETH", "SOL", "XRP", "HYPE"],
+            "items": [],
+        })
+    try:
+        result = cached(
+            "gammaflip:crypto:all",
+            GAMMAFLIP_CACHE_SECONDS,
+            lambda: fetch_supported_crypto(GAMMAFLIP_API_KEY, budget=GAMMAFLIP_DAILY_BUDGET),
+        )
+        result["symbols"] = ["BTC", "ETH", "SOL", "XRP", "HYPE"]
+        return jsonify(result)
+    except (requests.RequestException, ValueError, TypeError):
+        app.logger.exception("GammaFlip crypto GEX request failed")
+        return jsonify({"status": "unavailable", "message": "تعذر جلب بيانات Gamma؛ استمر تحليل السيولة دون قيم مختلقة.", "items": []}), 502
+
 
 @app.get("/api/trades")
 def trades():
