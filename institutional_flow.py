@@ -72,7 +72,7 @@ def analyse_orderbook_flow(kind, symbol, side, fetcher):
             "levels": min(len(bid_values), len(ask_values)),
             "warning": "لقطة لحظية قابلة للتغير؛ لا تثبت هوية المتداول أو وجود أوامر مخفية",
         }
-    except (KeyError, TypeError, ValueError, IndexError, ZeroDivisionError, OverflowError):
+    except Exception:
         return {
             "status": "unavailable",
             "label": "تعذر التحقق من دفتر الأوامر",
