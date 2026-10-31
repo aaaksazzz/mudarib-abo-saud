@@ -134,3 +134,20 @@ body{background:radial-gradient(ellipse at 78% -18%,rgba(37,112,176,.24),transpa
 .scan-reasons strong{color:#ffbd8b;font-variant-numeric:tabular-nums}
 .scan-footnote{display:block;margin-top:12px;line-height:1.8}
 @media(max-width:650px){.main{padding:18px 12px 28px}.topbar{height:64px}.welcome{align-items:flex-start;flex-direction:column;gap:13px}.welcome h1{font-size:28px}.direction-panel,.scan-panel{padding:15px}.scan-diagnostic{padding:14px}.scan-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.scan-diagnostic-head h3{font-size:17px}.market-tab{min-height:61px}.trade{padding:14px}.levels>div,.trade-stat{padding:8px}}
+
+/* Dedicated home dashboard and all-market results center */
+.home-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:18px 0 28px}
+.home-feature{display:flex;align-items:center;gap:13px;min-height:112px;padding:18px;border:1px solid var(--line,#243247);border-radius:18px;background:linear-gradient(145deg,rgba(21,34,53,.92),rgba(10,17,29,.96));color:inherit;text-decoration:none;transition:transform .18s,border-color .18s}
+.home-feature:hover{transform:translateY(-2px);border-color:rgba(91,160,255,.55)}
+.home-feature-icon{display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;border-radius:13px;background:rgba(71,132,213,.14);color:#83b8ff;font-size:22px}
+.home-feature>div{min-width:0;flex:1}
+.home-feature small{display:block;color:#83a0c3;font-size:9px;letter-spacing:1.1px;margin-bottom:5px}
+.home-feature b{display:block;font-size:15px}
+.home-feature p{margin:5px 0 0;color:#8f9db1;font-size:11px;line-height:1.6}
+.home-arrow{color:#82a9d7;font-size:20px}
+.result-summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:16px 0 20px}
+.result-metric{padding:15px 16px;border:1px solid var(--line,#243247);border-radius:14px;background:rgba(16,26,42,.86)}
+.result-metric small{display:block;color:#91a0b5;font-size:11px;margin-bottom:9px}
+.result-metric b{font-size:22px;font-weight:750;font-variant-numeric:tabular-nums}
+.history-row{grid-template-columns:1.15fr .8fr 1fr .8fr}
+@media(max-width:760px){.home-overview{grid-template-columns:1fr;gap:10px}.home-feature{min-height:88px;padding:14px}.result-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.result-metric:last-child{grid-column:1/-1}.history-row{grid-template-columns:1fr 1fr}}
