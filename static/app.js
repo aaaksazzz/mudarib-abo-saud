@@ -48,11 +48,29 @@ function renderOpen(rows){
  root.innerHTML=rows.map(x=>'<article class="open-row"><div><b>'+safe(x.symbol)+'</b><small>'+(x.side==="BUY"?"شراء":"بيع")+'</small></div><div><small>الدخول</small><b>'+fmt(x.entry)+'</b></div>'+target("TP1",x.tp1,x.tp1_hit)+target("TP2",x.tp2,x.tp2_hit)+target("TP3",x.tp3,x.tp3_hit)+'<div class="stop"><small>وقف الخسارة</small><b>'+fmt(x.stop_loss)+'</b></div><span class="tag">مفتوحة</span></article>').join("");
 }
 function renderClosed(rows){
- const closed=(rows||[]).filter(x=>x.status!=="OPEN").slice(0,12);
+ const closed=(rows||[]).filter(x=>x.status!=="OPEN").slice(0,100);
  $("#historyCount").textContent=closed.length+" مغلقة";
  const root=$("#closedTrades");
  if(!closed.length){root.innerHTML='<div class="empty">لا توجد نتائج مغلقة مسجلة بعد.</div>';return}
- root.innerHTML=closed.map(x=>'<article class="history-row"><div><b>'+safe(x.symbol)+'</b><small>'+(x.side==="BUY"?"شراء":"بيع")+'</small></div><div><small>الدخول</small><b>'+fmt(x.entry)+'</b></div><div><small>النتيجة</small><b class="history-status '+(x.status==="TP3"?"tp":x.status==="EXPIRED"?"expired":"sl")+'">'+(x.status==="TP3"?"وصل TP3":x.status==="EXPIRED"?"انتهت صلاحية 24س":"وقف الخسارة")+'</b></div><div><small>تاريخ الإغلاق</small><b>'+new Date((x.closed_at||x.updated_at)*1000).toLocaleDateString("ar-SA")+'</b></div></article>').join("");
+ root.innerHTML=closed.map(x=>'<article class="history-row"><div><b>'+safe(x.symbol)+'</b><small>'+(x.side==="BUY"?"شراء":"بيع")+' · '+safe(MARKET_NAMES[x.market]||x.market)+'</small></div><div><small>الدخول</small><b>'+fmt(x.entry)+'</b></div><div><small>النتيجة</small><b class="history-status '+(x.status==="TP3"?"tp":x.status==="EXPIRED"?"expired":"sl")+'">'+(x.status==="TP3"?"وصل TP3":x.status==="EXPIRED"?"انتهت صلاحية 24س":"وقف الخسارة")+'</b></div><div><small>تاريخ الإغلاق</small><b>'+new Date((x.closed_at||x.updated_at)*1000).toLocaleDateString("ar-SA")+'</b></div></article>').join("");
+}
+async function loadHistoryPage(){
+ const root=$("#closedTrades");
+ if(root)root.innerHTML='<div class="empty">جارٍ تحميل نتائج جميع الأسواق...</div>';
+ try{
+  const d=await get("/api/trades",12000);
+  const rows=d.items||[];
+  const closed=rows.filter(x=>x.status!=="OPEN");
+  const wins=closed.filter(x=>x.status==="TP3").length;
+  const losses=closed.filter(x=>x.status==="SL").length;
+  const expired=closed.filter(x=>x.status==="EXPIRED").length;
+  $("#historySummary").innerHTML='<article class="result-metric"><small>إجمالي الصفقات المغلقة</small><b>'+closed.length+'</b></article><article class="result-metric"><small>وصلت للهدف الثالث</small><b class="up">'+wins+'</b></article><article class="result-metric"><small>وصلت لوقف الخسارة</small><b class="down">'+losses+'</b></article><article class="result-metric"><small>انتهت صلاحيتها</small><b>'+expired+'</b></article><article class="result-metric"><small>نسبة TP3 من TP3 وSL</small><b>'+((wins+losses)?(wins/(wins+losses)*100).toFixed(1)+'%':'—')+'</b></article>';
+  renderClosed(rows);
+  $("#health").textContent="تم تحديث النتائج";$("#health").className="ok";
+ }catch(e){
+  if(root)root.innerHTML='<div class="empty">'+safe(e.message)+'</div>';
+  $("#health").textContent="تعذر تحميل النتائج";$("#health").className="bad";
+ }
 }
 async function loadMarketStatuses(){
  try{
@@ -151,7 +169,7 @@ async function load(){
   $("#source").textContent="مصدر البيانات: "+d.source+" · "+d.strategy;
   $("#sourceShort").textContent=d.source||"بيانات عامة";
   $("#scanState").textContent="اكتمل";$("#scanState").className="state-good";
-  renderMovers(d.movers);renderSignals(d.signals,d.scan_diagnostics||{});renderOpen(d.open_trades);renderClosed(t.items);
+  renderMovers(d.movers);renderSignals(d.signals,d.scan_diagnostics||{});renderOpen(d.open_trades);
   $("#health").textContent="متصل";$("#health").className="ok";
  }catch(e){
   $("#cards").innerHTML='<div class="empty">'+safe(e.message)+'</div>';
@@ -164,7 +182,7 @@ async function load(){
 }
 
 
-$("#refresh").addEventListener("click",load);
+$("#refresh").addEventListener("click",()=>{if(PATH==="/sections/history")loadHistoryPage();else load()});
 async function loadNews(){
  const root=$("#newsFeed");if(!root)return;
  root.innerHTML='<div class="empty">جارٍ جلب آخر العناوين...</div>';
@@ -177,16 +195,16 @@ async function loadNews(){
 $("#newsRefresh")?.addEventListener("click",loadNews);
 function configurePage(){
  const adminAllowed=!$("#adminPanel").hidden;$("#adminPanel").hidden=true;
- const ids=["homeSection","marketSection","directionSection","cryptoGammaSection","systemSection","moversSection","movers","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection"];
+ const ids=["homeSection","homeOverview","marketSection","directionSection","cryptoGammaSection","systemSection","moversSection","movers","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection"];
  const hideAll=()=>ids.forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
  const show=(...names)=>names.forEach(id=>{const el=$("#"+id);if(el)el.hidden=false});
  if(PATH==="/"){
-  hideAll();show("homeSection","marketSection");
-  $("#homeSection h1").innerHTML='مركز <span>الأسواق</span>';
-  $("#homeSection p").textContent="اختر سوقًا مستقلًا أو قسمًا لعرضه في صفحة منفصلة.";
+  hideAll();show("homeSection","marketSection","homeOverview");
+  $("#homeSection h1").innerHTML='منصة <span>الأسواق الذكية</span>';
+  $("#homeSection p").textContent="لوحة متابعة مستقلة لاتجاهات الأسواق ومصادر البيانات. التوصيات والصفقات تظهر داخل صفحة كل سوق فقط.";
  }else if(marketMatch){
   if(!MARKET_NAMES[market]){location.replace("/");return}
-  hideAll();show("homeSection","directionSection","moversSection","movers","opportunitiesSection","cards","openSection","historySection");
+  hideAll();show("homeSection","directionSection","moversSection","movers","opportunitiesSection","cards","openSection");
   if(["spot","futures","alpha"].includes(market))show("cryptoGammaSection");
   $("#homeSection h1").innerHTML='<span>'+MARKET_NAMES[market]+'</span>';
   $("#homeSection p").textContent="صفحة مستقلة؛ بيانات واتجاهات وفرص وسجل هذا السوق فقط.";
@@ -221,7 +239,8 @@ function configurePage(){
 
 document.addEventListener("visibilitychange",()=>{
  if(document.hidden||$("#mainContent").hidden)return;
- if(marketMatch||(["direction","movers","opportunities","open-trades","history"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();
+ if(marketMatch||(["direction","movers","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();
+ else if(PATH==="/sections/history")loadHistoryPage();
  else if(PATH==="/sections/system")loadSystemStatus();
 });
 function tick(){ $("#clock").textContent=new Date().toLocaleTimeString("en-GB",{hour12:false}); }
@@ -246,7 +265,8 @@ async function startAuthorized(user=null){
  configurePage();
  if(marketMatch){await loadMarketStatuses();await load();}
  else if(PATH==="/"){await loadMarketStatuses();}
- else if(PATH.startsWith("/sections/") && ["direction","movers","opportunities","open-trades","history"].includes(PATH.split("/").pop())){await loadMarketStatuses();await load();}
+ else if(PATH.startsWith("/sections/") && ["direction","movers","opportunities","open-trades"].includes(PATH.split("/").pop())){await loadMarketStatuses();await load();}
+ else if(PATH==="/sections/history"){await loadHistoryPage();}
  else if(PATH==="/sections/system"){await loadSystemStatus();}
 }
 async function initializeAccess(){
@@ -337,4 +357,4 @@ $("#siteDrawer").addEventListener("click",e=>{
 
 tick();setInterval(tick,1000);
 initializeAccess();
-timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden)return;if(marketMatch||(["direction","movers","opportunities","open-trades","history"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();else if(PATH==="/sections/system")loadSystemStatus()},30000);
+timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden)return;if(marketMatch||(["direction","movers","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();else if(PATH==="/sections/history")loadHistoryPage();else if(PATH==="/sections/system")loadSystemStatus()},30000);
