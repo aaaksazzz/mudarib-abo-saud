@@ -199,7 +199,7 @@ function configurePage(){
   loadNews();
  }else{hideAll();show("homeSection","marketSection")}
  $("#marketSection").hidden=PATH!=="/";
- $("#refresh").hidden=PATH==="/"||PATH==="/blog"||PATH==="/news";
+ $("#refresh").hidden=PATH==="/"||PATH==="/blog"||PATH==="/news"||PATH==="/sections/system";
  if(PATH==="/admin"){
   if(!adminAllowed){location.replace("/");return}
   hideAll();show("homeSection","adminPanel");$("#adminPanel").hidden=false;
@@ -210,7 +210,11 @@ function configurePage(){
  if(drawer)drawer.querySelectorAll("a").forEach(a=>a.classList.toggle("active",a.getAttribute("href")===PATH));
 }
 
-document.addEventListener("visibilitychange",()=>{if(!document.hidden && !$("#mainContent").hidden && (marketMatch||PATH.startsWith("/sections/")))load()});
+document.addEventListener("visibilitychange",()=>{
+ if(document.hidden||$("#mainContent").hidden)return;
+ if(marketMatch||(["direction","movers","opportunities","open-trades","history"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();
+ else if(PATH==="/sections/system")loadSystemStatus();
+});
 function tick(){ $("#clock").textContent=new Date().toLocaleTimeString("en-GB",{hour12:false}); }
 async function showAccess(message, user=null){
  $("#mainContent").hidden=true;
