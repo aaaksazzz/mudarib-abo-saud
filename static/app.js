@@ -1,5 +1,8 @@
 const $=s=>document.querySelector(s);
-let market="spot",busy=false,pending=false,timer=null;
+const MARKET_NAMES={spot:"Binance Spot",futures:"Binance Futures",alpha:"Binance Alpha",saudi:"السوق السعودي",us:"الأسهم الأمريكية",contracts:"العقود الأمريكية",forex:"الفوركس والذهب"};
+const PATH=location.pathname.replace(/\\/+$/,"")||"/";
+const marketMatch=PATH.match(/^\\/markets\\/([a-z]+)$/);
+let market=marketMatch?marketMatch[1]:"spot",busy=false,pending=false,timer=null;
 const fmt=n=>Number(n).toLocaleString("en-US",{maximumFractionDigits:8});
 const compact=n=>{n=Number(n)||0;if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return fmt(n)};
 const pct=n=>(Number(n)>=0?"+":"")+Number(n).toFixed(2)+"%";
@@ -48,9 +51,10 @@ async function loadMarketStatuses(){
   const states=new Map((d.markets||[]).map(x=>[x.id,x]));
   document.querySelectorAll("[data-market]").forEach(b=>{
    const item=states.get(b.dataset.market);if(!item)return;
-   const live=item.status==="live";b.disabled=!live;
-   const small=b.querySelector("small");if(small)small.textContent=live?(item.provider||"متصل"):"غير متاح";
-   b.title=live?"مصدر البيانات متصل":"لا يوجد مصدر بيانات موثوق مربوط حاليًا";
+   const live=item.status==="live"||item.status==="configured_watchlist";
+   const small=b.querySelector("small");if(small)small.textContent=live?"مصدر متاح":item.status==="provider_required"?"مزود البيانات غير مربوط":"يتطلب إعداد المصدر";
+   b.title=live?"مصدر البيانات متاح":"صفحة السوق مستقلة، لكن مصدر البيانات يحتاج إعدادًا";
+   b.classList.toggle("active",b.dataset.market===market);
    const dot=b.querySelector(".tab-state");if(dot)dot.style.display=live?"block":"none";
   });
  }catch(e){$("#health").textContent="تعذر فحص الأسواق";$("#health").className="bad"}
@@ -86,9 +90,55 @@ async function load(){
   if(pending){pending=false;load()}
  }
 }
-$("#markets").addEventListener("click",e=>{const b=e.target.closest("[data-market]");if(!b||b.disabled)return;market=b.dataset.market;document.querySelectorAll("[data-market]").forEach(x=>x.classList.toggle("active",x===b));load()});
+
+
 $("#refresh").addEventListener("click",load);
-document.addEventListener("visibilitychange",()=>{if(!document.hidden && !$("#mainContent").hidden)load()});
+async function loadNews(){
+ const root=$("#newsFeed");if(!root)return;
+ root.innerHTML='<div class="empty">جارٍ جلب آخر العناوين...</div>';
+ try{
+  const d=await get("/api/news",10000);
+  if(!d.items?.length){root.innerHTML='<div class="empty">'+safe(d.error||"لا توجد عناوين متاحة الآن.")+'</div>';return}
+  root.innerHTML=d.items.map(x=>'<article class="news-item"><div><small>'+safe(x.source||"مصدر خارجي")+' · '+safe(x.published||"")+'</small><h3><a href="'+safe(x.url)+'" target="_blank" rel="noopener noreferrer">'+safe(x.title)+'</a></h3></div><span class="news-arrow">↗</span></article>').join("");
+ }catch(e){root.innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
+}
+$("#newsRefresh")?.addEventListener("click",loadNews);
+function configurePage(){
+ const ids=["homeSection","marketSection","directionSection","moversSection","movers","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection","adminPanel"];
+ const hideAll=()=>ids.forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
+ const show=(...names)=>names.forEach(id=>{const el=$("#"+id);if(el)el.hidden=false});
+ if(PATH==="/"){
+  hideAll();show("homeSection","marketSection");
+  $("#homeSection h1").innerHTML='مركز <span>الأسواق</span>';
+  $("#homeSection p").textContent="اختر سوقًا مستقلًا أو قسمًا لعرضه في صفحة منفصلة.";
+ }else if(marketMatch){
+  if(!MARKET_NAMES[market]){location.replace("/");return}
+  hideAll();show("homeSection","directionSection","moversSection","movers","opportunitiesSection","cards","openSection","historySection");
+  $("#homeSection h1").innerHTML='<span>'+MARKET_NAMES[market]+'</span>';
+  $("#homeSection p").textContent="صفحة مستقلة؛ بيانات واتجاهات وفرص وسجل هذا السوق فقط.";
+ }else if(PATH.startsWith("/sections/")){
+  const section=PATH.split("/").pop();
+  const map={direction:["directionSection"],movers:["moversSection","movers"],opportunities:["opportunitiesSection","cards"],"open-trades":["openSection"],history:["historySection"]};
+  hideAll();show("homeSection",...(map[section]||[]));
+  const titles={direction:"توجه السوق",movers:"الأصول الأكثر حركة",opportunities:"أفضل الفرص الفنية","open-trades":"متابعة الصفقات",history:"سجل النتائج"};
+  $("#homeSection h1").innerHTML='<span>'+safe(titles[section]||"القسم")+'</span>';
+  $("#homeSection p").textContent="قسم مستقل عن الصفحة الرئيسية.";
+ }else if(PATH==="/blog"){
+  hideAll();show("homeSection","blogSection");
+  $("#homeSection h1").innerHTML='المدونة <span>التعليمية</span>';
+  $("#homeSection p").textContent="محتوى تعليمي مستقل عن صفحات الأسواق.";
+ }else if(PATH==="/news"){
+  hideAll();show("homeSection","newsSection");
+  $("#homeSection h1").innerHTML='أخبار <span>الأسواق</span>';
+  $("#homeSection p").textContent="آخر العناوين من موجز أخبار خارجي.";
+  loadNews();
+ }else{hideAll();show("homeSection","marketSection")}
+ $("#marketSection").hidden=PATH!=="/";
+ const drawer=$("#siteDrawer");
+ if(drawer)drawer.querySelectorAll("a").forEach(a=>a.classList.toggle("active",a.getAttribute("href")===PATH));
+}
+
+document.addEventListener("visibilitychange",()=>{if(!document.hidden && !$("#mainContent").hidden && (marketMatch||PATH.startsWith("/sections/")))load()});
 function tick(){ $("#clock").textContent=new Date().toLocaleTimeString("en-GB",{hour12:false}); }
 async function showAccess(message, user=null){
  $("#mainContent").hidden=true;
@@ -108,8 +158,10 @@ async function startAuthorized(user=null){
  $("#adminPanel").hidden=!(user&&user.is_admin);
  $("#drawerAdmin").hidden=!(user&&user.is_admin);
  if(user&&user.is_admin) await loadAdminUsers();
- await loadMarketStatuses();
- await load();
+ configurePage();
+ if(marketMatch){await loadMarketStatuses();await load();}
+ else if(PATH==="/"){await loadMarketStatuses();}
+ else if(PATH.startsWith("/sections/") && ["direction","movers","opportunities","open-trades","history"].includes(PATH.split("/").pop())){await loadMarketStatuses();await load();}
 }
 async function initializeAccess(){
  // Public browsing is enabled. Login is optional and only used for admin tools.
@@ -199,4 +251,4 @@ $("#siteDrawer").addEventListener("click",e=>{
 
 tick();setInterval(tick,1000);
 initializeAccess();
-timer=setInterval(()=>{if(!document.hidden && !$("#mainContent").hidden)load()},30000);
+timer=setInterval(()=>{if(!document.hidden && !$("#mainContent").hidden && (marketMatch||PATH.startsWith("/sections/")))load() },30000);
