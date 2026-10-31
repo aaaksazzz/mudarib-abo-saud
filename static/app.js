@@ -90,10 +90,10 @@ $("#markets").addEventListener("click",e=>{const b=e.target.closest("[data-marke
 $("#refresh").addEventListener("click",load);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden && !$("#mainContent").hidden)load()});
 function tick(){ $("#clock").textContent=new Date().toLocaleTimeString("en-GB",{hour12:false}); }
-tick();setInterval(tick,1000);
 async function showAccess(message, user=null){
  $("#mainContent").hidden=true;
  $("#accessGate").hidden=false;
+ $("#topLogout").hidden=true;
  $("#authNotice").textContent=message||"";
  $("#authLogout").hidden=!user;
  $("#authToggle").hidden=!!user;
@@ -104,6 +104,7 @@ async function showAccess(message, user=null){
 async function startAuthorized(user){
  $("#accessGate").hidden=true;
  $("#mainContent").hidden=false;
+ $("#topLogout").hidden=false;
  $("#adminPanel").hidden=!user.is_admin;
  if(user.is_admin) await loadAdminUsers();
  await loadMarketStatuses();
@@ -143,10 +144,12 @@ $("#authForm").addEventListener("submit",async e=>{
  }catch(err){$("#authNotice").textContent=err.message}
  finally{button.disabled=false}
 });
-$("#authLogout").addEventListener("click",async()=>{
+async function logout(){
  await fetch("/api/auth/logout",{method:"POST"});
  location.reload();
-});
+}
+$("#authLogout").addEventListener("click",logout);
+$("#topLogout").addEventListener("click",logout);
 async function loadAdminUsers(){
  try{
   const d=await get("/api/admin/users",10000);
