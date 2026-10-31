@@ -351,7 +351,7 @@ def test_independent_pages_are_served():
         "/markets/saudi", "/markets/us", "/markets/contracts",
         "/markets/forex", "/sections/direction", "/sections/movers",
         "/sections/opportunities", "/sections/open-trades",
-        "/sections/history", "/blog", "/news",
+        "/sections/history", "/blog", "/news", "/admin",
     ]
     for path in paths:
         response = client.get(path)
