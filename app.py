@@ -14,6 +14,7 @@ import requests
 from gamma_engine import analyse_liquidity_candidate
 from gammaflip_client import fetch_supported_crypto
 from market_ranking import rank_market_assets
+from institutional_flow import analyse_orderbook_flow
 
 try:
     import yfinance as yf
@@ -425,6 +426,21 @@ def analyse_candidate(kind, item, market_direction, diagnostics=None):
         alignment = assess_timeframe_alignment(higher_timeframes, market_direction)
         if not alignment["confirmed"]:
             return reject("timeframe_conflict")
+        # Add a live order-book snapshot where the exchange exposes it.
+        # The snapshot is contextual evidence, not proof of hidden institutional orders.
+        flow = analyse_orderbook_flow(
+            kind, item["symbol"], market_direction,
+            lambda url, params: cached(
+                f"orderbook:{kind}:{item['symbol']}", 5,
+                lambda: fetch_json(url, params)
+            )
+        )
+        signal["institutional_flow"] = flow
+        if flow.get("status") == "supportive":
+            signal["quality_score"] = min(100, float(signal.get("quality_score", 0)) + 3)
+        elif flow.get("status") == "opposing":
+            signal["quality_score"] = max(0, float(signal.get("quality_score", 0)) - 3)
+
         signal.update({
             "symbol": item["symbol"],
             "price": item["price"],
