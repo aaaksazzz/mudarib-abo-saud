@@ -13,6 +13,7 @@ import xml.etree.ElementTree as ET
 import requests
 from gamma_engine import analyse_liquidity_candidate
 from gammaflip_client import fetch_supported_crypto
+from market_ranking import rank_market_assets
 
 try:
     import yfinance as yf
@@ -289,6 +290,25 @@ def alpha_market_tickers():
             })
     return output
 
+def binance_active_symbols(kind):
+    """Return currently tradable USDT symbols from Binance exchange metadata."""
+    path = "/api/v3/exchangeInfo" if kind == "spot" else "/fapi/v1/exchangeInfo"
+    urls = [host + path for host in SPOT_BASES] if kind == "spot" else [BASES[kind] + path]
+    payload = cached(kind + ":exchange-info", 300, lambda: fetch_first_json(urls))
+    symbols = set()
+    for row in payload.get("symbols", []):
+        if row.get("status") != "TRADING" or row.get("quoteAsset") != "USDT":
+            continue
+        if kind == "spot" and row.get("isSpotTradingAllowed") is False:
+            continue
+        if kind == "futures" and row.get("contractType") != "PERPETUAL":
+            continue
+        symbols.add(str(row.get("symbol", "")))
+    if not symbols:
+        raise requests.RequestException(f"Binance returned no active {kind} USDT symbols")
+    return symbols
+
+
 def market_tickers(kind):
     if kind == "alpha":
         return cached("alpha:universe", 60, alpha_market_tickers)
@@ -302,19 +322,23 @@ def market_tickers(kind):
         rows = cached(kind + ":tickers", 20, lambda: fetch_first_json([host + path for host in SPOT_BASES]))
     else:
         rows = cached(kind + ":tickers", 20, lambda: fetch_json(base + path))
+    active_symbols = cached(kind + ":active-symbols", 300, lambda: binance_active_symbols(kind))
     output = []
     for row in rows:
         symbol = str(row.get("symbol", ""))
-        if not symbol.endswith("USDT") or symbol[:-4] in STABLES:
+        if symbol not in active_symbols or not symbol.endswith("USDT") or symbol[:-4] in STABLES:
             continue
         try:
             price = float(row["lastPrice"])
             volume = float(row.get("quoteVolume", 0))
             change = float(row.get("priceChangePercent", 0))
+            high = float(row.get("highPrice", 0) or 0)
+            low = float(row.get("lowPrice", 0) or 0)
         except (KeyError, TypeError, ValueError):
             continue
         if price > 0 and volume >= 1_000_000:
-            output.append({"symbol": symbol, "price": price, "volume": volume, "change24h": change})
+            output.append({"symbol": symbol, "price": price, "volume": volume, "change24h": change,
+                           "range24h": ((high - low) / price * 100) if high >= low > 0 else 0.0})
     return output
 
 def candles(kind, symbol, interval):
@@ -392,6 +416,8 @@ def analyse_candidate(kind, item, market_direction, diagnostics=None):
             "price": item["price"],
             "change24h": item["change24h"],
             "volume": item["volume"],
+            "fast_mover_score": item.get("fast_mover_score", 0),
+            "fast_mover_rank": item.get("fast_mover_rank"),
             "timeframe": SCAN_INTERVAL,
             "strategy": "HAWK QUANT PRO",
             "timeframe_alignment": alignment["states"],
@@ -858,19 +884,18 @@ def market(kind):
         return jsonify({"ok": False, "status": "provider_required", "message": "Yahoo غير مفعّل أو قائمة الرموز غير مضبوطة؛ لم نعرض بيانات غير مكتملة.", "signals": []}), 503
     try:
         assets = cached(kind + ":universe", 20, lambda: market_tickers(kind))
+        assets = rank_market_assets(assets)
         up = sum(1 for row in assets if row["change24h"] > 0)
         down = sum(1 for row in assets if row["change24h"] < 0)
         flat = len(assets) - up - down
         direction = "BUY" if up > down else ("SELL" if down > up else "NEUTRAL")
-        gainers = sorted((row for row in assets if row["change24h"] > 0),
-                         key=lambda row: row["change24h"], reverse=True)[:3]
-        losers = sorted((row for row in assets if row["change24h"] < 0),
-                        key=lambda row: row["change24h"])[:3]
-        movers = gainers + losers
+        # Show highest-priority fast movers first, regardless of direction.
+        movers = assets[:6]
+        fast_movers = assets[:10]
         prices = {row["symbol"]: row["price"] for row in assets}
         update_open_trades(kind, prices)
         # Scan a wider, still bounded batch of the fastest/highest-volume assets.
-        candidates = sorted(assets, key=lambda row: (abs(row["change24h"]), row["volume"]), reverse=True)[:40]
+        candidates = assets[:40]
         signals = []
         diagnostic_rows = [{} for _ in candidates]
         if direction != "NEUTRAL":
@@ -890,7 +915,9 @@ def market(kind):
         for item in diagnostic_rows:
             reason = item.get("reason", "unknown")
             rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
-        signals.sort(key=lambda row: (row["quality_score"], abs(row["change24h"])), reverse=True)
+        signals.sort(key=lambda row: (
+            row.get("fast_mover_score", 0), row["quality_score"], abs(row["change24h"])
+        ), reverse=True)
         signals = signals[:3]
         save_new_trades(kind, signals)
         with db() as connection:
@@ -900,7 +927,9 @@ def market(kind):
         return jsonify({
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": SCAN_INTERVAL,
-            "movers": movers, "signals": signals, "open_trades": active,
+            "movers": movers, "fast_movers": fast_movers,
+            "fast_mover_method": "50% زخم 24س + 30% نطاق الحركة + 20% السيولة النسبية؛ أوزان الحقول المتاحة فقط",
+            "signals": signals, "open_trades": active,
             "scan_diagnostics": {
                 "universe_size": len(assets), "candidates_scanned": len(candidates),
                 "candles_ready": sum(1 for item in diagnostic_rows if item.get("candles_ready") is True),
