@@ -337,3 +337,28 @@ def test_admin_password_rotation_updates_existing_admin_without_losing_subscript
     assert not module.check_password_hash(admin_row["password_hash"], "old-admin-password-123")
     assert admin_row["role"] == "admin"
     assert member["subscription_expires_at"] == 2000000000
+
+
+def test_independent_pages_are_served():
+    paths = [
+        "/markets/spot", "/markets/futures", "/markets/alpha",
+        "/markets/saudi", "/markets/us", "/markets/contracts",
+        "/markets/forex", "/sections/direction", "/sections/movers",
+        "/sections/opportunities", "/sections/open-trades",
+        "/sections/history", "/blog", "/news",
+    ]
+    for path in paths:
+        response = client.get(path)
+        assert response.status_code == 200
+        assert 'id="mainContent"' in response.text
+
+def test_invalid_market_page_is_not_found():
+    assert client.get("/markets/not-a-market").status_code == 404
+
+def test_news_feed_returns_clear_fallback_when_provider_fails(monkeypatch):
+    def fail(*args, **kwargs):
+        raise module.requests.RequestException("offline")
+    monkeypatch.setattr(module.requests, "get", fail)
+    response = client.get("/api/news")
+    assert response.status_code == 502
+    assert response.json["items"] == []
