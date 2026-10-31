@@ -775,6 +775,14 @@ def system_status():
             "fallbacks": len(provider.get("fallbacks") or []),
         })
 
+    result_markets.append({
+        "id": "gammaflip", "name": "Gamma Exposure للعملات الرقمية",
+        "provider": "GammaFlip Options GEX API",
+        "status": "configured" if GAMMAFLIP_API_KEY else "secret_required",
+        "note": "بيانات خيارات حقيقية لـ BTC وETH وSOL وXRP وHYPE عند ضبط المفتاح.",
+        "fallbacks": 0,
+    })
+
     return jsonify({
         "ok": database == "ok",
         "timestamp": int(time.time()),
