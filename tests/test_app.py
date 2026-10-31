@@ -195,3 +195,36 @@ def test_biquote_market_tickers_reject_stale_and_closed_quotes(monkeypatch):
     monkeypatch.setattr(module, "fetch_json", fake_fetch)
     rows = module.biquote_market_tickers()
     assert [row["symbol"] for row in rows] == ["EURUSD"]
+
+
+def test_binance_candles_drop_unfinished_bar(monkeypatch):
+    now = 2_000_000_000
+    monkeypatch.setattr(module.time, "time", lambda: now)
+    module.CACHE.pop("spot:AAAUSDT:15m", None)
+    payload = [
+        [now * 1000 - 900000, "10", "12", "9", "11", "100", now * 1000 - 1],
+        [now * 1000, "11", "13", "10", "12", "80", now * 1000 + 899999],
+    ]
+    monkeypatch.setattr(module, "fetch_json", lambda *args, **kwargs: payload)
+    rows = module.candles("spot", "AAAUSDT", "15m")
+    assert len(rows) == 1
+    assert rows[0]["close"] == 11.0
+
+
+def test_signal_entry_uses_live_quote_not_previous_candle_close(monkeypatch):
+    bars = []
+    for i in range(60):
+        close = 100 + i * 0.1
+        bars.append({"open": close - 0.05, "high": close + 0.5,
+                     "low": close - 0.5, "close": close, "volume": 100,
+                     "time": i * 900000})
+    monkeypatch.setattr(module, "candles", lambda *args: bars)
+    monkeypatch.setattr(module, "frame_bias", lambda rows: "BUY")
+    monkeypatch.setattr(module, "rsi", lambda values: 60.0)
+    original_ema = module.ema
+    monkeypatch.setattr(module, "ema", lambda values, period: 101.0 if period == 20 else 100.0)
+    candidate = {"symbol": "AAAUSDT", "price": 110.0, "change24h": 4.0, "volume": 2_000_000}
+    signal = module.analyse_candidate("spot", candidate, "BUY")
+    assert signal is not None
+    assert signal["entry"] == 110.0
+    assert signal["price"] == 110.0
