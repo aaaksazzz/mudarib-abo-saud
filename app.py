@@ -901,27 +901,26 @@ def market(kind):
         candidates = assets[:40]
         signals = []
         diagnostic_rows = [{} for _ in candidates]
-        if direction != "NEUTRAL":
-            with ThreadPoolExecutor(max_workers=4) as pool:
-                jobs = {
-                    pool.submit(analyse_candidate, kind, row, direction, diagnostic_rows[index], timeframe): index
-                    for index, row in enumerate(candidates)
-                }
-                for job in as_completed(jobs):
-                    try:
-                        signal = job.result()
-                    except Exception:
-                        # One malformed provider response or adapter failure must not
-                        # cancel the scan for every other candidate in this market.
-                        index = jobs[job]
-                        diagnostic_rows[index]["reason"] = "analysis_error"
-                        app.logger.exception("Candidate analysis failed: %s %s", kind, candidates[index].get("symbol"))
-                        continue
-                    if signal:
-                        signals.append(signal)
-        else:
-            for item in diagnostic_rows:
-                item["reason"] = "neutral_market"
+        # Signal eligibility is determined by the selected asset's two reference
+        # timeframes, not by aggregate 24h market breadth. A neutral market-wide
+        # count must not suppress individually aligned setups.
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            jobs = {
+                pool.submit(analyse_candidate, kind, row, direction, diagnostic_rows[index], timeframe): index
+                for index, row in enumerate(candidates)
+            }
+            for job in as_completed(jobs):
+                try:
+                    signal = job.result()
+                except Exception:
+                    # One malformed provider response or adapter failure must not
+                    # cancel the scan for every other candidate in this market.
+                    index = jobs[job]
+                    diagnostic_rows[index]["reason"] = "analysis_error"
+                    app.logger.exception("Candidate analysis failed: %s %s", kind, candidates[index].get("symbol"))
+                    continue
+                if signal:
+                    signals.append(signal)
         rejection_counts = {}
         for item in diagnostic_rows:
             reason = item.get("reason", "unknown")
