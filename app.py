@@ -982,7 +982,7 @@ def market(kind):
             "source": ("Yahoo Finance (private/internal test watchlist)" if kind in ("saudi", "us") else "Binance Alpha public market data" if kind == "alpha" else "BiQuote public FX/Metals feed" if kind == "forex" else "Binance public market data"), "strategy": "HAWK QUANT PRO · Multi-timeframe Structure + Liquidity Sweep + Absorption",
             "gamma_status": "خيارات/GEX غير متاحة من مزود موثوق لكل الأسواق؛ لا يتم اختلاق قيم Gamma.",
             "analysis_mode": "سيولة سعرية وحجم شموع؛ ضغط تقديري وليس تدفق صفقات منفذة",
-            "score_note": "درجة جودة الشروط وليست نسبة نجاح أو احتمال ربح. يلزم توافق 1h و4h واليومي قبل اعتماد الفرصة."
+            "score_note": "درجة جودة الشروط وليست نسبة نجاح أو احتمال ربح. يشترط توافق 1h مع واحد على الأقل من 4h أو اليومي، دون تعارض صريح."
         })
     except requests.RequestException:
         app.logger.exception("Market provider request failed: %s", kind)
