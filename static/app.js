@@ -156,10 +156,7 @@ async function load(){
  $("#health").textContent="جارٍ التحديث";$("#scanState").textContent="يفحص السوق";$("#scanState").className="";
  try{
   const requestedMarket=market;
-  const [d,t]=await Promise.all([
-   get("/api/market/"+requestedMarket,30000),
-   get("/api/trades?market="+encodeURIComponent(requestedMarket),10000).catch(()=>({items:[]})) 
-  ]);
+  const d=await get("/api/market/"+requestedMarket,30000);
   if(requestedMarket!==market){pending=true;return}
   $("#direction").textContent=d.direction_ar;$("#direction").className="direction-value "+(d.direction==="BUY"?"up":d.direction==="SELL"?"down":"neutral");
   $("#up").textContent=d.up;$("#down").textContent=d.down;$("#flat").textContent=d.flat??0;$("#total").textContent=d.total;
