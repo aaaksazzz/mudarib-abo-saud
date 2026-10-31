@@ -26,13 +26,12 @@ def analyse_liquidity_candidate(rows, current_price, side):
             return None
         volume_base = median(prior_volumes) if prior_volumes else 0.0
         volume_ratio = volume / volume_base if volume_base > 0 else 0.0
-        previous_close = float(prior[-1]["close"])
         true_ranges = []
-        for bar in rows[-15:]:
-            prev = previous_close
+        recent_rows = rows[-15:]
+        for index, bar in enumerate(recent_rows):
+            prev = float(recent_rows[index - 1]["close"]) if index else float(rows[-16]["close"])
             bar_high, bar_low = float(bar["high"]), float(bar["low"])
             true_ranges.append(max(bar_high - bar_low, abs(bar_high - prev), abs(bar_low - prev)))
-            previous_close = float(bar["close"])
         atr = sum(true_ranges) / len(true_ranges) if true_ranges else 0.0
         if atr <= 0:
             return None
