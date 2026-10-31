@@ -67,7 +67,7 @@ class TimeframeStrategyTests(unittest.TestCase):
     def test_absorption_is_labeled_as_ohlcv_proxy(self):
         rows = rising_bars()
         prior_volume = sum(row["volume"] for row in rows[-21:-1]) / 20
-        rows[-1] = {"open": 107.0, "high": 108.0, "low": 106.0,
+        rows[-1] = {"open": 107.5, "high": 108.0, "low": 106.0,
                     "close": 107.9, "volume": prior_volume * 2}
         result = assess_timeframe(rows)
         self.assertEqual(result["absorption_proxy"], "BULLISH")
