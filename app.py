@@ -192,8 +192,8 @@ def yahoo_market_tickers(kind):
             if age < 0 or age > 45 * 60:
                 continue
             price = float(frame["Close"].iloc[-1])
-            prior = float(frame["Close"].iloc[max(0, len(frame) - 97)])
-            volume = float(frame["Volume"].tail(96).fillna(0).sum() * price)
+            prior = float(frame["Close"].iloc[max(0, len(frame) - 27)])
+            volume = float(frame["Volume"].tail(26).fillna(0).sum() * price)
             if price <= 0 or prior <= 0:
                 continue
             output.append({"symbol": symbol, "price": price, "volume": volume,
