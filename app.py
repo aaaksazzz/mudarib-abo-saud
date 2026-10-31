@@ -12,7 +12,6 @@ import xml.etree.ElementTree as ET
 
 import requests
 from gamma_engine import analyse_liquidity_candidate
-from gammaflip_client import fetch_supported_crypto
 from market_ranking import rank_market_assets
 from institutional_flow import analyse_orderbook_flow
 
@@ -42,9 +41,6 @@ YAHOO_SYMBOLS = {
     "saudi": [x.strip().upper() for x in os.environ.get("YAHOO_SAUDI_SYMBOLS", "").split(",") if x.strip()],
 }
 SCAN_INTERVAL = "15m"
-GAMMAFLIP_API_KEY = os.environ.get("GAMMAFLIP_API_KEY", "").strip()
-GAMMAFLIP_DAILY_BUDGET = max(5, int(os.environ.get("GAMMAFLIP_DAILY_BUDGET", "40")))
-GAMMAFLIP_CACHE_SECONDS = 900
 STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "EUR"}
 CACHE = {}
 CACHE_LOCK = threading.Lock()
@@ -837,8 +833,8 @@ def providers():
         {"id": "contracts", "primary": None, "fallbacks": [],
          "status": "provider_required", "note": "No verified no-key 15m futures/options source integrated."},
         {"id": "gammaflip", "primary": "GammaFlip crypto options GEX API", "fallbacks": [],
-         "status": "configured" if GAMMAFLIP_API_KEY else "secret_required",
-         "note": "Read-only combined options GEX for BTC, ETH, SOL, XRP and HYPE; manual refresh only, 15-minute cache."}
+         "status": "unavailable_no_key",
+         "note": "بيانات خيارات Gamma/GEX غير متاحة بلا مفتاح؛ تحليل السوق الأساسي يعمل بصورة مستقلة."}
     ]})
 
 
@@ -885,9 +881,9 @@ def system_status():
 
     result_markets.append({
         "id": "gammaflip", "name": "Gamma Exposure للعملات الرقمية",
-        "provider": "GammaFlip Options GEX API",
+        "provider": "غير متاح دون مفتاح",
         "status": "configured" if GAMMAFLIP_API_KEY else "secret_required",
-        "note": "بيانات خيارات حقيقية لـ BTC وETH وSOL وXRP وHYPE عند ضبط المفتاح.",
+        "note": "بيانات Gamma Options/GEX غير متاحة بلا مفتاح؛ لا تؤثر على تحليل السوق الأساسي.",
         "fallbacks": 0,
     })
 
@@ -901,8 +897,7 @@ def system_status():
             "total": total_trades, "open": open_trades, "closed": closed_trades,
             "latest_update": latest_trade_update,
         },
-        "gamma": {"configured": bool(GAMMAFLIP_API_KEY),
-                  "symbols": ["BTC", "ETH", "SOL", "XRP", "HYPE"]},
+        "gamma": {"configured": False, "status": "unavailable_no_key", "message": "بيانات Gamma غير متاحة دون مفتاح؛ تحليل السيولة والحجم والشموع يعمل بصورة مستقلة.", "symbols": ["BTC", "ETH", "SOL", "XRP", "HYPE"]},
         "markets": result_markets,
         "diagnostics_scope": "configuration_and_local_health_only",
     }), (200 if database == "ok" else 503)
@@ -989,25 +984,13 @@ def market(kind):
 
 @app.get("/api/gamma/crypto")
 def crypto_gamma():
-    """On-demand combined options GEX for the five coins with verified options coverage."""
-    if not GAMMAFLIP_API_KEY:
-        return jsonify({
-            "status": "not_configured",
-            "message": "مصدر Gamma الحقيقي غير مربوط. أضف GAMMAFLIP_API_KEY في أسرار Northflank.",
-            "symbols": ["BTC", "ETH", "SOL", "XRP", "HYPE"],
-            "items": [],
-        })
-    try:
-        result = cached(
-            "gammaflip:crypto:all",
-            GAMMAFLIP_CACHE_SECONDS,
-            lambda: fetch_supported_crypto(GAMMAFLIP_API_KEY, budget=GAMMAFLIP_DAILY_BUDGET),
-        )
-        result["symbols"] = ["BTC", "ETH", "SOL", "XRP", "HYPE"]
-        return jsonify(result)
-    except (requests.RequestException, ValueError, TypeError):
-        app.logger.exception("GammaFlip crypto GEX request failed")
-        return jsonify({"status": "unavailable", "message": "تعذر جلب بيانات Gamma؛ استمر تحليل السيولة دون قيم مختلقة.", "items": []}), 502
+    """Graceful no-key response; optional options data never blocks core analysis."""
+    return jsonify({
+        "status": "unavailable_no_key",
+        "message": "بيانات خيارات Gamma/GEX تحتاج مزودًا متخصصًا ومفتاحًا. تحليل السوق الأساسي يعمل دونها باستخدام السعر والحجم والشموع والسيولة المتاحة.",
+        "symbols": ["BTC", "ETH", "SOL", "XRP", "HYPE"],
+        "items": [],
+    })
 
 
 @app.get("/api/trades")
