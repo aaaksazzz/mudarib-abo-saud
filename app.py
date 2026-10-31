@@ -832,9 +832,9 @@ def providers():
          "note": "Unofficial Yahoo client; private/internal testing only. Configure YAHOO_US_SYMBOLS; fresh 15m bars required."},
         {"id": "contracts", "primary": None, "fallbacks": [],
          "status": "provider_required", "note": "No verified no-key 15m futures/options source integrated."},
-        {"id": "gammaflip", "primary": "GammaFlip crypto options GEX API", "fallbacks": [],
-         "status": "unavailable_no_key",
-         "note": "بيانات خيارات Gamma/GEX غير متاحة بلا مفتاح؛ تحليل السوق الأساسي يعمل بصورة مستقلة."}
+        {"id": "gamma_local", "primary": "تحليل سيولة محلي من OHLCV", "fallbacks": [],
+         "status": "local_no_key",
+         "note": "تحليل السعر والحجم وسحب السيولة والامتصاص من بيانات الشموع العامة؛ لا يدّعي قياس خيارات GEX."}
     ]})
 
 
@@ -880,10 +880,10 @@ def system_status():
         })
 
     result_markets.append({
-        "id": "gammaflip", "name": "Gamma Exposure للعملات الرقمية",
-        "provider": "غير متاح دون مفتاح",
-        "status": "unavailable_no_key",
-        "note": "بيانات Gamma Options/GEX غير متاحة بلا مفتاح؛ لا تؤثر على تحليل السوق الأساسي.",
+        "id": "gamma_local", "name": "تحليل السيولة المحلي",
+        "provider": "OHLCV العام + محرك التحليل الداخلي",
+        "status": "local_no_key",
+        "note": "يعمل دون مفاتيح API؛ ليس بيانات خيارات أو GEX.",
         "fallbacks": 0,
     })
 
@@ -897,7 +897,8 @@ def system_status():
             "total": total_trades, "open": open_trades, "closed": closed_trades,
             "latest_update": latest_trade_update,
         },
-        "gamma": {"configured": False, "status": "unavailable_no_key", "message": "بيانات Gamma غير متاحة دون مفتاح؛ تحليل السيولة والحجم والشموع يعمل بصورة مستقلة.", "symbols": ["BTC", "ETH", "SOL", "XRP", "HYPE"]},
+        "gamma": {"configured": True, "mode": "local_ohlcv_liquidity", "status": "local_no_key",
+                  "message": "تحليل محلي للسعر والحجم وسحب السيولة والامتصاص دون مفاتيح؛ لا يمثل Options GEX."},
         "markets": result_markets,
         "diagnostics_scope": "configuration_and_local_health_only",
     }), (200 if database == "ok" else 503)
@@ -984,14 +985,16 @@ def market(kind):
 
 @app.get("/api/gamma/crypto")
 def crypto_gamma():
-    """Graceful no-key response; optional options data never blocks core analysis."""
+    """Backward-compatible no-key local liquidity analysis status; not options GEX."""
     return jsonify({
-        "status": "unavailable_no_key",
-        "message": "بيانات خيارات Gamma/GEX تحتاج مزودًا متخصصًا ومفتاحًا. تحليل السوق الأساسي يعمل دونها باستخدام السعر والحجم والشموع والسيولة المتاحة.",
-        "symbols": ["BTC", "ETH", "SOL", "XRP", "HYPE"],
+        "status": "local_analysis",
+        "mode": "ohlcv_liquidity_proxy",
+        "provider": "بيانات OHLCV العامة ومحرك التحليل الداخلي",
+        "message": "يعمل بدون أي مفاتيح API عبر تحليل السعر والحجم وسحب السيولة والامتصاص. لا يدّعي توفير Gamma Exposure أو بيانات خيارات.",
+        "symbols": [],
         "items": [],
+        "metrics": ["volume_ratio", "price_pressure", "liquidity_sweeps", "absorption"],
     })
-
 
 @app.get("/api/trades")
 def trades():
