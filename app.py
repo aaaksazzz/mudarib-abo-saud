@@ -226,9 +226,18 @@ def yahoo_market_tickers(kind):
 def yahoo_candles(symbol, interval):
     if not YAHOO_ENABLED or yf is None:
         raise requests.RequestException("Yahoo Finance integration is disabled")
-    frame = yf.Ticker(symbol).history(period="5d", interval=interval, auto_adjust=True, timeout=12)
+    # Yahoo's hourly endpoint does not offer native 4h bars. Build them
+    # from hourly OHLCV; request enough history for stable 4h and daily structure.
+    fetch_interval = "60m" if interval == "4h" else interval
+    period = "1y" if interval == "1d" else "3mo" if interval in ("1h", "4h") else "5d"
+    frame = yf.Ticker(symbol).history(period=period, interval=fetch_interval, auto_adjust=True, timeout=12)
     if frame is None or frame.empty:
         raise requests.RequestException("Yahoo returned no candle history")
+    if interval == "4h":
+        frame = frame.resample("4h").agg({
+            "Open": "first", "High": "max", "Low": "min",
+            "Close": "last", "Volume": "sum",
+        }).dropna(subset=["Open", "High", "Low", "Close"])
     rows = []
     now_ms = int(time.time() * 1000)
     for stamp, bar in frame.iterrows():
@@ -366,12 +375,28 @@ def analyse_candidate(kind, item, market_direction, diagnostics=None):
                 diagnostics["reason"] = "accepted" if signal else "analysis_adapter_legacy"
         if not signal:
             return None
+
+        # HAWK QUANT PRO: confirm the 15m liquidity event against independent
+        # 1h/4h/1d price structure. Higher-timeframe data is fetched only for
+        # candidates that already passed the 15m setup, keeping provider load bounded.
+        from hawk_quant_engine import assess_timeframe_alignment
+        higher_timeframes = {}
+        for interval in ("1h", "4h", "1d"):
+            history = candles(kind, item["symbol"], interval)
+            higher_timeframes[interval] = history
+        alignment = assess_timeframe_alignment(higher_timeframes, market_direction)
+        if not alignment["confirmed"]:
+            return reject("timeframe_conflict")
         signal.update({
             "symbol": item["symbol"],
             "price": item["price"],
             "change24h": item["change24h"],
             "volume": item["volume"],
             "timeframe": SCAN_INTERVAL,
+            "strategy": "HAWK QUANT PRO",
+            "timeframe_alignment": alignment["states"],
+            "timeframe_score": alignment["score"],
+            "quality_score": round(min(100, float(signal.get("quality_score", 0)) + alignment["bonus"]), 1),
         })
         return signal
     except requests.RequestException:
@@ -883,10 +908,10 @@ def market(kind):
                 "rejected_by_reason": {key: value for key, value in rejection_counts.items() if key != "accepted"},
             },
             "updated": int(time.time()),
-            "source": ("Yahoo Finance (private/internal test watchlist)" if kind in ("saudi", "us") else "Binance Alpha public market data" if kind == "alpha" else "BiQuote public FX/Metals feed" if kind == "forex" else "Binance public market data"), "strategy": "GAMMA PRO · Liquidity Sweep + Absorption + Candle Pressure",
+            "source": ("Yahoo Finance (private/internal test watchlist)" if kind in ("saudi", "us") else "Binance Alpha public market data" if kind == "alpha" else "BiQuote public FX/Metals feed" if kind == "forex" else "Binance public market data"), "strategy": "HAWK QUANT PRO · Multi-timeframe Structure + Liquidity Sweep + Absorption",
             "gamma_status": "خيارات/GEX غير متاحة من مزود موثوق لكل الأسواق؛ لا يتم اختلاق قيم Gamma.",
             "analysis_mode": "سيولة سعرية وحجم شموع؛ ضغط تقديري وليس تدفق صفقات منفذة",
-            "score_note": "درجة جودة الشروط وليست نسبة نجاح أو احتمال ربح."
+            "score_note": "درجة جودة الشروط وليست نسبة نجاح أو احتمال ربح. يلزم توافق 1h و4h واليومي قبل اعتماد الفرصة."
         })
     except requests.RequestException:
         app.logger.exception("Market provider request failed: %s", kind)
