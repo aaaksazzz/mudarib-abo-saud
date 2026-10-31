@@ -6,4 +6,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 RUN mkdir -p /data
 EXPOSE 8080
-CMD ["sh","-c","gunicorn --bind 0.0.0.0:${PORT:-8080} --workers 2 --threads 4 --timeout 35 --access-logfile - --error-logfile - app:app"]
+CMD ["sh","-c","gunicorn --bind 0.0.0.0:${PORT:-8080} --workers 1 --threads 4 --timeout 60 --graceful-timeout 20 --access-logfile - --error-logfile - app:app"]
