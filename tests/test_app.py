@@ -384,3 +384,25 @@ def test_news_feed_returns_clear_fallback_when_provider_fails(monkeypatch):
     response = client.get("/api/news")
     assert response.status_code == 502
     assert response.json["items"] == []
+
+
+def test_market_scan_reports_candidate_rejection_reasons(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "scan-diagnostics.sqlite3")
+    module.CACHE.pop("spot:universe", None)
+    monkeypatch.setattr(module, "market_tickers", lambda kind: [
+        {"symbol": "AAAUSDT", "price": 1.0, "volume": 2_000_000, "change24h": 2.0},
+        {"symbol": "BBBUSDT", "price": 2.0, "volume": 3_000_000, "change24h": 1.0},
+    ])
+    def reject(kind, item, direction, diagnostics):
+        diagnostics["candles_ready"] = True
+        diagnostics["reason"] = "no_sweep_or_absorption"
+        return None
+    monkeypatch.setattr(module, "analyse_candidate", reject)
+    response = client.get("/api/market/spot")
+    assert response.status_code == 200
+    details = response.json["scan_diagnostics"]
+    assert details["universe_size"] == 2
+    assert details["candidates_scanned"] == 2
+    assert details["candles_ready"] == 2
+    assert details["accepted_before_top3"] == 0
+    assert details["rejected_by_reason"] == {"no_sweep_or_absorption": 2}
