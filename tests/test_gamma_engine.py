@@ -5,7 +5,7 @@ from gamma_engine import analyse_liquidity_candidate
 
 def make_bars():
     bars = []
-    for i in range(24):
+    for i in range(25):
         base = 100 + (i % 3) * 0.05
         bars.append({"open": base, "high": base + 1, "low": base - 1,
                      "close": base + 0.1, "volume": 100, "time": i})
