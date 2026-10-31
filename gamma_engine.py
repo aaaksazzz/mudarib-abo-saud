@@ -13,15 +13,22 @@ MARKET_PROFILES = {
 }
 
 
-def analyse_liquidity_candidate(rows, current_price, side, market_kind="spot"):
+def analyse_liquidity_candidate(rows, current_price, side, market_kind="spot", diagnostics=None):
     """Return a confirmed liquidity sweep/absorption setup or None.
 
-    Each instrument is compared only with its own native-volume baseline.
-    Rows must be normalized to open/high/low/close/volume/time.
+    Optional diagnostics receives a machine-readable rejection reason. It never
+    changes entry criteria and is safe to use with one dict per candidate.
     """
-    profile = MARKET_PROFILES.get(market_kind, MARKET_PROFILES["spot"])
-    if side not in ("BUY", "SELL") or not isinstance(rows, (list, tuple)) or len(rows) < 25:
+    def reject(reason):
+        if diagnostics is not None:
+            diagnostics["reason"] = reason
         return None
+
+    profile = MARKET_PROFILES.get(market_kind, MARKET_PROFILES["spot"])
+    if side not in ("BUY", "SELL") or not isinstance(rows, (list, tuple)):
+        return reject("invalid_input")
+    if len(rows) < 25:
+        return reject("insufficient_candles")
     bars, signal = rows[-21:], rows[-1]
     prior = bars[:-1]
     try:
@@ -31,10 +38,10 @@ def analyse_liquidity_candidate(rows, current_price, side, market_kind="spot"):
         volume = max(0.0, float(signal.get("volume", 0) or 0))
         prior_volumes = [max(0.0, float(x.get("volume", 0) or 0)) for x in prior]
         if min(current, high, low, open_price, close) <= 0 or high < low:
-            return None
+            return reject("invalid_ohlc")
         volume_base = median(prior_volumes) if prior_volumes else 0.0
         if volume_base <= 0 or volume <= 0:
-            return None
+            return reject("missing_volume")
         volume_ratio = volume / volume_base
 
         recent_rows, true_ranges = rows[-15:], []
@@ -44,7 +51,7 @@ def analyse_liquidity_candidate(rows, current_price, side, market_kind="spot"):
             true_ranges.append(max(bar_high - bar_low, abs(bar_high - prev), abs(bar_low - prev)))
         atr = sum(true_ranges) / len(true_ranges) if true_ranges else 0.0
         if atr <= 0:
-            return None
+            return reject("invalid_atr")
 
         pool_low = min(float(x["low"]) for x in prior)
         pool_high = max(float(x["high"]) for x in prior)
@@ -64,19 +71,27 @@ def analyse_liquidity_candidate(rows, current_price, side, market_kind="spot"):
         else:
             event = "سحب سيولة شراء ورفض" if sweep_sell else "امتصاص شراء قرب المقاومة"
             valid_event, confirmation, extreme = sweep_sell or absorb_sell, close < open_price and pressure <= 0.05, high
-        if not valid_event or not confirmation or volume_ratio < threshold:
-            return None
+        if not valid_event:
+            return reject("no_sweep_or_absorption")
+        if volume_ratio < threshold:
+            return reject("volume_below_threshold")
+        if not confirmation:
+            return reject("candle_not_confirmed")
 
         buffer = max(atr * 0.12, current * 0.0005)
         stop = extreme - buffer if side == "BUY" else extreme + buffer
         if stop <= 0:
-            return None
+            return reject("invalid_stop")
         risk = current - stop if side == "BUY" else stop - current
-        if risk <= 0 or risk / current > 0.045:
-            return None
+        if risk <= 0:
+            return reject("entry_beyond_stop")
+        if risk / current > 0.045:
+            return reject("risk_above_4_5pct")
         sign = 1 if side == "BUY" else -1
         score = 55 + (18 if (sweep_buy if side == "BUY" else sweep_sell) else 10)
         score += min(12, max(0, (volume_ratio - 1.0) * 8)) + min(10, abs(pressure) * 10) + 5
+        if diagnostics is not None:
+            diagnostics["reason"] = "accepted"
         return {
             "side": side, "entry": current, "stop_loss": stop,
             "tp1": current + sign * risk, "tp2": current + sign * risk * 2,
@@ -90,4 +105,4 @@ def analyse_liquidity_candidate(rows, current_price, side, market_kind="spot"):
             "gamma_exposure": None, "created_at": int(time.time()),
         }
     except (KeyError, TypeError, ValueError, ZeroDivisionError, OverflowError):
-        return None
+        return reject("malformed_candles")
