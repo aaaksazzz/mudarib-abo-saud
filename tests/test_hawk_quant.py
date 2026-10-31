@@ -50,3 +50,16 @@ def test_hawk_quant_rejects_missing_higher_timeframe_history():
 def test_hawk_quant_rejects_invalid_side():
     result = assess_timeframe_alignment({}, "NEUTRAL")
     assert result["confirmed"] is False
+
+ 
+def test_alignment_allows_neutral_daily_if_hourly_and_four_hour_agree():
+    from hawk_quant_engine import assess_timeframe_alignment
+    rising = []
+    for i in range(12):
+        base = 100 + i * 0.4
+        rising.append({"open": base, "high": base + 0.6,
+                       "low": base - 0.1, "close": base + 0.4})
+    neutral = [{"open": 100, "high": 101, "low": 99, "close": 100} for _ in range(12)]
+    result = assess_timeframe_alignment({"1h": rising, "4h": rising, "1d": neutral}, "BUY")
+    assert result["confirmed"] is True
+    assert result["score"] == 200 / 3
