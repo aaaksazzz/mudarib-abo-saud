@@ -316,3 +316,24 @@ def test_member_needs_subscription_and_admin_can_grant(tmp_path, monkeypatch):
         "user_id": member["id"], "action": "revoke"
     })
     assert revoked.status_code == 403
+
+
+def test_admin_password_rotation_updates_existing_admin_without_losing_subscription(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "admin-rotation.sqlite3")
+    monkeypatch.setattr(module, "AUTH_CONFIGURED", True)
+    monkeypatch.setattr(module, "ADMIN_EMAIL", "admin@example.test")
+    monkeypatch.setattr(module, "ADMIN_PASSWORD", "old-admin-password-123")
+    with module.db() as connection:
+        admin = connection.execute("SELECT id FROM users WHERE email=?", ("admin@example.test",)).fetchone()
+        connection.execute(
+            "INSERT INTO users(email,password_hash,role,subscription_expires_at,created_at) VALUES(?,?,?,?,?)",
+            ("member@example.test", module.generate_password_hash("member-password-123"), "user", 2000000000, int(time.time()))
+        )
+    monkeypatch.setattr(module, "ADMIN_PASSWORD", "new-admin-password-456")
+    with module.db() as connection:
+        admin_row = connection.execute("SELECT password_hash, role FROM users WHERE email=?", ("admin@example.test",)).fetchone()
+        member = connection.execute("SELECT subscription_expires_at FROM users WHERE email=?", ("member@example.test",)).fetchone()
+    assert module.check_password_hash(admin_row["password_hash"], "new-admin-password-456")
+    assert not module.check_password_hash(admin_row["password_hash"], "old-admin-password-123")
+    assert admin_row["role"] == "admin"
+    assert member["subscription_expires_at"] == 2000000000
