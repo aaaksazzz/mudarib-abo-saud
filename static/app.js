@@ -101,23 +101,25 @@ async function showAccess(message, user=null){
  $("#accessTitle").textContent=user?"الاشتراك غير مفعل":"تسجيل الدخول";
  $("#accessMessage").textContent=user?"حسابك مسجل، لكن لا يوجد اشتراك نشط. تواصل مع الإدارة لتفعيل الوصول إلى الأسواق.":"أنشئ حسابًا أو سجل دخولك. الوصول إلى الأسواق للمشتركين فقط.";
 }
-async function startAuthorized(user){
+async function startAuthorized(user=null){
  $("#accessGate").hidden=true;
  $("#mainContent").hidden=false;
- $("#topLogout").hidden=false;
- $("#adminPanel").hidden=!user.is_admin;
- if(user.is_admin) await loadAdminUsers();
+ $("#topLogout").hidden=true;
+ $("#adminPanel").hidden=!(user&&user.is_admin);
+ if(user&&user.is_admin) await loadAdminUsers();
  await loadMarketStatuses();
  await load();
 }
 async function initializeAccess(){
+ // Public browsing is enabled. Login is optional and only used for admin tools.
+ let user=null;
  try{
-  const d=await get("/api/auth/me",8000);
-  if(!d.configured){await showAccess(d.message);return}
-  if(!d.user){await showAccess();return}
-  if(!d.user.subscribed && !d.user.is_admin){await showAccess("حسابك جاهز، بانتظار تفعيل الاشتراك من الأدمن.",d.user);return}
-  await startAuthorized(d.user);
- }catch(e){await showAccess(e.message)}
+  const d=await get("/api/auth/me",5000);
+  if(d&&d.configured&&d.user) user=d.user;
+ }catch(e){
+  console.warn("Optional account status unavailable; continuing in public mode.",e);
+ }
+ await startAuthorized(user);
 }
 let creatingAccount=false;
 $("#authToggle").addEventListener("click",()=>{
