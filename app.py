@@ -385,75 +385,47 @@ def candles(kind, symbol, interval):
     rows.sort(key=lambda row: row["time"])
     return rows
 
-def analyse_candidate(kind, item, market_direction, diagnostics=None):
-    """GAMMA PRO: liquidity sweep/absorption analysis; no indicator-based entries."""
+def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timeframe="15m"):
+    """Entry on the selected chart timeframe; both prescribed higher frames must agree."""
     def reject(reason):
-        if diagnostics is not None:
-            diagnostics["reason"] = reason
+        if diagnostics is not None: diagnostics["reason"]=reason
         return None
     try:
-        selected = candles(kind, item["symbol"], SCAN_INTERVAL)
-        if len(selected) < 25:
-            return reject("insufficient_candles")
-        if diagnostics is not None:
-            diagnostics["candles_ready"] = True
-        if market_direction not in ("BUY", "SELL"):
-            return reject("neutral_market")
-        try:
-            signal = analyse_liquidity_candidate(
-                selected, item["price"], market_direction, market_kind=kind, diagnostics=diagnostics
-            )
-        except TypeError:
-            # Backward-compatible with test doubles/older adapters that do not accept diagnostics.
-            signal = analyse_liquidity_candidate(selected, item["price"], market_direction, market_kind=kind)
-            if diagnostics is not None:
-                diagnostics["reason"] = "accepted" if signal else "analysis_adapter_legacy"
-        if not signal:
-            return None
-
-        # HAWK QUANT PRO: confirm the 15m liquidity event against independent
-        # 1h/4h/1d price structure. Higher-timeframe data is fetched only for
-        # candidates that already passed the 15m setup, keeping provider load bounded.
-        from hawk_quant_engine import assess_timeframe_alignment
-        higher_timeframes = {}
-        for interval in ("1h", "4h", "1d"):
-            history = candles(kind, item["symbol"], interval)
-            higher_timeframes[interval] = history
-        alignment = assess_timeframe_alignment(higher_timeframes, market_direction)
-        if not alignment["confirmed"]:
-            return reject("timeframe_conflict")
-        # Add a live order-book snapshot where the exchange exposes it.
-        # The snapshot is contextual evidence, not proof of hidden institutional orders.
-        flow = analyse_orderbook_flow(
-            kind, item["symbol"], market_direction,
-            lambda url, params: cached(
-                f"orderbook:{kind}:{item['symbol']}", 5,
-                lambda: fetch_json(url, params)
-            )
-        )
-        signal["institutional_flow"] = flow
-        if flow.get("status") == "supportive":
-            signal["quality_score"] = min(100, float(signal.get("quality_score", 0)) + 3)
-        elif flow.get("status") == "opposing":
-            signal["quality_score"] = max(0, float(signal.get("quality_score", 0)) - 3)
-
-        signal.update({
-            "symbol": item["symbol"],
-            "price": item["price"],
-            "change24h": item["change24h"],
-            "volume": item["volume"],
-            "fast_mover_score": item.get("fast_mover_score", 0),
-            "fast_mover_rank": item.get("fast_mover_rank"),
-            "timeframe": SCAN_INTERVAL,
-            "strategy": "HAWK QUANT PRO",
-            "timeframe_alignment": alignment["states"],
-            "timeframe_score": alignment["score"],
-            "quality_score": round(min(100, float(signal.get("quality_score", 0)) + alignment["bonus"]), 1),
-        })
+        from timeframe_strategy import assess_strategy, make_trade
+        entry_rows=candles(kind,item["symbol"],timeframe)
+        if len(entry_rows)<20: return reject("insufficient_candles")
+        if diagnostics is not None: diagnostics["candles_ready"]=True
+        refs={"15m":("4h","1d"),"1h":("4h","1d"),"4h":("1w","1M"),"1d":("1w","1M"),"1w":("1w","1M")}[timeframe]
+        histories={tf:candles(kind,item["symbol"],tf) for tf in refs}
+        buy=assess_strategy(histories,timeframe,"BUY")
+        sell=assess_strategy(histories,timeframe,"SELL")
+        alignment=buy if buy["confirmed"] else sell if sell["confirmed"] else None
+        if not alignment: return reject("reference_timeframes_not_aligned")
+        side=alignment["side"]
+        levels=make_trade(entry_rows,side)
+        if not levels: return reject("invalid_risk_levels")
+        closes=[float(x["close"]) for x in entry_rows[-2:]]
+        change_tf=(closes[-1]/closes[-2]-1)*100 if closes[-2] else 0
+        # Entry and all levels are calculated from completed candles of the selected timeframe.
+        signal={**levels,"side":side,"price":item["price"],
+            "symbol":item["symbol"],"change24h":item["change24h"],
+            "change_timeframe":round(change_tf,4),"volume":item["volume"],
+            "fast_mover_score":item.get("fast_mover_score",0),
+            "fast_mover_rank":item.get("fast_mover_rank"),
+            "timeframe":timeframe,"strategy":"HAWK QUANT PRO · Multi-timeframe Alignment",
+            "timeframe_alignment":alignment["states"],
+            "reference_timeframes":refs,"quality_score":90.0,
+            "analysis_note":"توافق الفريمات المرجعية مع تحليل الدخول على الفريم المحدد"}
+        flow=analyse_orderbook_flow(kind,item["symbol"],side,lambda url,params:cached(
+            f"orderbook:{kind}:{item['symbol']}",5,lambda:fetch_json(url,params)))
+        signal["institutional_flow"]=flow
+        if flow.get("status")=="supportive": signal["quality_score"]=93.0
+        elif flow.get("status")=="opposing": signal["quality_score"]=87.0
+        if diagnostics is not None: diagnostics["reason"]="accepted"
         return signal
     except requests.RequestException:
         return reject("provider_error")
-    except (ValueError, TypeError, KeyError, IndexError, ZeroDivisionError):
+    except (ValueError,TypeError,KeyError,IndexError,ZeroDivisionError):
         return reject("analysis_error")
 
 @contextmanager
@@ -910,6 +882,9 @@ def market(kind):
         return jsonify({"ok": False, "status": "provider_required", "message": "مزود البيانات لهذا السوق غير مربوط؛ لن نعرض بيانات غير موثوقة.", "signals": []}), 503
     if kind in ("saudi", "us") and (not YAHOO_ENABLED or yf is None or not YAHOO_SYMBOLS.get(kind)):
         return jsonify({"ok": False, "status": "provider_required", "message": "Yahoo غير مفعّل أو قائمة الرموز غير مضبوطة؛ لم نعرض بيانات غير مكتملة.", "signals": []}), 503
+    timeframe=request.args.get("timeframe","15m").strip()
+    if timeframe not in ("15m","1h","4h","1d","1w"):
+        return jsonify({"ok":False,"error":"فريم التحليل غير مدعوم"}),400
     try:
         assets = cached(kind + ":universe", 20, lambda: market_tickers(kind))
         assets = rank_market_assets(assets)
@@ -929,7 +904,7 @@ def market(kind):
         if direction != "NEUTRAL":
             with ThreadPoolExecutor(max_workers=4) as pool:
                 jobs = {
-                    pool.submit(analyse_candidate, kind, row, direction, diagnostic_rows[index]): index
+                    pool.submit(analyse_candidate, kind, row, direction, diagnostic_rows[index], timeframe): index
                     for index, row in enumerate(candidates)
                 }
                 for job in as_completed(jobs):
@@ -951,9 +926,7 @@ def market(kind):
         for item in diagnostic_rows:
             reason = item.get("reason", "unknown")
             rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
-        signals.sort(key=lambda row: (
-            row.get("fast_mover_score", 0), row["quality_score"], abs(row["change24h"])
-        ), reverse=True)
+        signals.sort(key=lambda row: (abs(row.get("change_timeframe",0)), row["quality_score"]), reverse=True)
         signals = signals[:3]
         save_new_trades(kind, signals)
         with db() as connection:
@@ -968,7 +941,7 @@ def market(kind):
             )
         return jsonify({
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
-            "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": SCAN_INTERVAL,
+            "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": timeframe,
             "movers": movers, "fast_movers": fast_movers,
             "fast_mover_method": "50% زخم 24س + 30% نطاق الحركة + 20% السيولة النسبية؛ أوزان الحقول المتاحة فقط",
             "signals": signals, "open_trades": active,
@@ -979,10 +952,10 @@ def market(kind):
                 "rejected_by_reason": {key: value for key, value in rejection_counts.items() if key != "accepted"},
             },
             "updated": int(time.time()),
-            "source": ("Yahoo Finance (private/internal test watchlist)" if kind in ("saudi", "us") else "Binance Alpha public market data" if kind == "alpha" else "BiQuote public FX/Metals feed" if kind == "forex" else "Binance public market data"), "strategy": "HAWK QUANT PRO · Multi-timeframe Structure + Liquidity Sweep + Absorption",
+            "source": ("Yahoo Finance (private/internal test watchlist)" if kind in ("saudi", "us") else "Binance Alpha public market data" if kind == "alpha" else "BiQuote public FX/Metals feed" if kind == "forex" else "Binance public market data"), "strategy": "HAWK QUANT PRO · Multi-timeframe Alignment",
             "gamma_status": "خيارات/GEX غير متاحة من مزود موثوق لكل الأسواق؛ لا يتم اختلاق قيم Gamma.",
             "analysis_mode": "سيولة سعرية وحجم شموع؛ ضغط تقديري وليس تدفق صفقات منفذة",
-            "score_note": "درجة جودة الشروط وليست نسبة نجاح أو احتمال ربح. يشترط توافق 1h مع واحد على الأقل من 4h أو اليومي، دون تعارض صريح."
+            "score_note": "توافق كامل للفريمين المرجعيين المحددين لكل فريم دخول؛ ترتيب حسب التغير على فريم التحليل. درجة الجودة ليست نسبة نجاح."
         })
     except requests.RequestException:
         app.logger.exception("Market provider request failed: %s", kind)
