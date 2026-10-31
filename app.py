@@ -231,10 +231,11 @@ def yahoo_market_tickers(kind):
 def yahoo_candles(symbol, interval):
     if not YAHOO_ENABLED or yf is None:
         raise requests.RequestException("Yahoo Finance integration is disabled")
-    # Yahoo's hourly endpoint does not offer native 4h bars. Build them
-    # from hourly OHLCV; request enough history for stable 4h and daily structure.
-    fetch_interval = "60m" if interval == "4h" else interval
-    period = "1y" if interval == "1d" else "3mo" if interval in ("1h", "4h") else "5d"
+    # Yahoo uses provider-specific interval names for weekly/monthly candles.
+    # Build 4h bars from hourly OHLCV; request enough history for each horizon.
+    fetch_interval = {"4h": "60m", "1w": "1wk", "1M": "1mo"}.get(interval, interval)
+    period = ("10y" if interval == "1M" else "5y" if interval == "1w"
+              else "2y" if interval == "1d" else "3mo" if interval in ("1h", "4h") else "5d")
     frame = yf.Ticker(symbol).history(period=period, interval=fetch_interval, auto_adjust=True, timeout=12)
     if frame is None or frame.empty:
         raise requests.RequestException("Yahoo returned no candle history")
@@ -386,48 +387,57 @@ def candles(kind, symbol, interval):
     return rows
 
 def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timeframe="15m"):
-    """Entry on the selected chart timeframe; both prescribed higher frames must agree."""
+    """Analyse and generate a signal using only the selected market and timeframe."""
     def reject(reason):
-        if diagnostics is not None: diagnostics["reason"]=reason
+        if diagnostics is not None:
+            diagnostics["reason"] = reason
         return None
     try:
         from timeframe_strategy import assess_strategy, make_trade
-        entry_rows=candles(kind,item["symbol"],timeframe)
-        if len(entry_rows)<20: return reject("insufficient_candles")
-        if diagnostics is not None: diagnostics["candles_ready"]=True
-        refs={"15m":("4h","1d"),"1h":("4h","1d"),"4h":("1w","1M"),"1d":("1w","1M"),"1w":("1w","1M")}[timeframe]
-        histories={tf:candles(kind,item["symbol"],tf) for tf in refs}
-        buy=assess_strategy(histories,timeframe,"BUY")
-        sell=assess_strategy(histories,timeframe,"SELL")
-        alignment=buy if buy["confirmed"] else sell if sell["confirmed"] else None
-        if not alignment: return reject("reference_timeframes_not_aligned")
-        side=alignment["side"]
-        levels=make_trade(entry_rows,side)
-        if not levels: return reject("invalid_risk_levels")
-        closes=[float(x["close"]) for x in entry_rows[-2:]]
-        change_tf=(closes[-1]/closes[-2]-1)*100 if closes[-2] else 0
-        # Entry and all levels are calculated from completed candles of the selected timeframe.
-        signal={**levels,"side":side,"price":item["price"],
-            "symbol":item["symbol"],"change24h":item["change24h"],
-            "change_timeframe":round(change_tf,4),"volume":item["volume"],
-            "fast_mover_score":item.get("fast_mover_score",0),
-            "fast_mover_rank":item.get("fast_mover_rank"),
-            "timeframe":timeframe,"strategy":"HAWK QUANT PRO · Multi-timeframe Alignment",
-            "timeframe_alignment":alignment["states"],
-            "reference_timeframes":refs,"quality_score":90.0,
-            "analysis_note":"توافق الفريمات المرجعية مع تحليل الدخول على الفريم المحدد"}
-        flow=analyse_orderbook_flow(kind,item["symbol"],side,lambda url,params:cached(
-            f"orderbook:{kind}:{item['symbol']}",5,lambda:fetch_json(url,params)))
-        signal["institutional_flow"]=flow
-        if flow.get("status")=="supportive": signal["quality_score"]=93.0
-        elif flow.get("status")=="opposing": signal["quality_score"]=87.0
-        if diagnostics is not None: diagnostics["reason"]="accepted"
+        entry_rows = candles(kind, item["symbol"], timeframe)
+        if len(entry_rows) < 20:
+            return reject("insufficient_candles")
+        if diagnostics is not None:
+            diagnostics["candles_ready"] = True
+        # Each timeframe is classified from its own completed candles. No
+        # higher-timeframe signal is copied into, or required by, this analysis.
+        buy = assess_strategy({timeframe: entry_rows}, timeframe, "BUY")
+        sell = assess_strategy({timeframe: entry_rows}, timeframe, "SELL")
+        analysis = buy if buy["confirmed"] else sell if sell["confirmed"] else None
+        if not analysis:
+            return reject("timeframe_setup_not_confirmed")
+        side = analysis["side"]
+        levels = make_trade(entry_rows, side)
+        if not levels:
+            return reject("invalid_risk_levels")
+        closes = [float(x["close"]) for x in entry_rows[-2:]]
+        change_tf = (closes[-1] / closes[-2] - 1) * 100 if closes[-2] else 0
+        signal = {
+            **levels, "side": side, "price": item["price"],
+            "symbol": item["symbol"], "change24h": item["change24h"],
+            "change_timeframe": round(change_tf, 4), "volume": item["volume"],
+            "fast_mover_score": item.get("fast_mover_score", 0),
+            "fast_mover_rank": item.get("fast_mover_rank"),
+            "timeframe": timeframe, "strategy": "HAWK QUANT PRO · Independent Timeframe",
+            "timeframe_analysis": analysis["states"],
+            "reference_timeframes": [],
+            "quality_score": 90.0,
+            "analysis_note": "تحليل مستقل من شموع الفريم المحدد فقط"
+        }
+        flow = analyse_orderbook_flow(kind, item["symbol"], side, lambda url, params: cached(
+            f"orderbook:{kind}:{item['symbol']}", 5, lambda: fetch_json(url, params)))
+        signal["institutional_flow"] = flow
+        if flow.get("status") == "supportive":
+            signal["quality_score"] = 93.0
+        elif flow.get("status") == "opposing":
+            signal["quality_score"] = 87.0
+        if diagnostics is not None:
+            diagnostics["reason"] = "accepted"
         return signal
     except requests.RequestException:
         return reject("provider_error")
-    except (ValueError,TypeError,KeyError,IndexError,ZeroDivisionError):
+    except (ValueError, TypeError, KeyError, IndexError, ZeroDivisionError):
         return reject("analysis_error")
-
 @contextmanager
 def db():
     connection = sqlite3.connect(DB_PATH, timeout=8)
@@ -883,7 +893,7 @@ def market(kind):
     if kind in ("saudi", "us") and (not YAHOO_ENABLED or yf is None or not YAHOO_SYMBOLS.get(kind)):
         return jsonify({"ok": False, "status": "provider_required", "message": "Yahoo غير مفعّل أو قائمة الرموز غير مضبوطة؛ لم نعرض بيانات غير مكتملة.", "signals": []}), 503
     timeframe=request.args.get("timeframe","15m").strip()
-    if timeframe not in ("15m","1h","4h","1d","1w"):
+    if timeframe not in ("15m","1h","4h","1d","1w","1M"):
         return jsonify({"ok":False,"error":"فريم التحليل غير مدعوم"}),400
     try:
         assets = cached(kind + ":universe", 20, lambda: market_tickers(kind))

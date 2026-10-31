@@ -11,6 +11,7 @@ TIMEFRAME_RULES = {
     "4h": ("1w", "1M"),
     "1d": ("1w", "1M"),
     "1w": ("1w", "1M"),
+    "1M": ("1M",),
 }
 BUY_STATES = frozenset(("BUY", "STRONG_BUY"))
 SELL_STATES = frozenset(("SELL", "STRONG_SELL"))
@@ -44,16 +45,13 @@ def _state(rows):
 
 
 def assess_strategy(histories, entry_timeframe, side=None):
-    """Confirm BUY/STRONG_BUY or SELL/STRONG_SELL on both reference frames."""
-    refs = TIMEFRAME_RULES.get(entry_timeframe)
-    if not refs:
+    """Classify the selected timeframe on its own; never borrow another frame's state."""
+    if entry_timeframe not in ("15m", "1h", "4h", "1d", "1w", "1M"):
         return {"confirmed": False, "reason": "unsupported_timeframe", "states": {}}
-
-    histories = histories or {}
-    states = {tf: _state(histories.get(tf, [])) for tf in refs}
-    buy_aligned = all(value in BUY_STATES for value in states.values())
-    sell_aligned = all(value in SELL_STATES for value in states.values())
-
+    rows = (histories or {}).get(entry_timeframe, [])
+    state = _state(rows)
+    buy_aligned = state in BUY_STATES
+    sell_aligned = state in SELL_STATES
     if side == "BUY":
         confirmed, selected_side = buy_aligned, "BUY"
     elif side == "SELL":
@@ -64,16 +62,13 @@ def assess_strategy(histories, entry_timeframe, side=None):
         confirmed, selected_side = True, "SELL"
     else:
         confirmed, selected_side = False, None
-
     return {
         "confirmed": confirmed,
         "side": selected_side,
-        "states": states,
-        "reference_timeframes": list(refs),
-        "reason": "confirmed" if confirmed else "reference_timeframes_not_aligned",
+        "states": {entry_timeframe: state},
+        "analysis_timeframe": entry_timeframe,
+        "reason": "confirmed" if confirmed else "timeframe_setup_not_confirmed",
     }
-
-
 def make_trade(rows, side):
     """Calculate entry, SL and 1R/2R/3R targets from entry-timeframe candles."""
     if side not in ("BUY", "SELL") or not isinstance(rows, (list, tuple)) or len(rows) < 20:
