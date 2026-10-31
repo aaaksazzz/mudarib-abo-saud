@@ -230,12 +230,20 @@ def candles(kind, symbol, interval):
         raw = cached(f"{kind}:{symbol}:{interval}", 45,
                      lambda: fetch_json(BASES[kind] + path, {"symbol": symbol, "interval": interval, "limit": 100}))
     rows = []
+    now_ms = int(time.time() * 1000)
     for item in raw:
         try:
-            rows.append({"open": float(item[1]), "high": float(item[2]), "low": float(item[3]),
-                         "close": float(item[4]), "volume": float(item[5]), "time": int(item[0])})
+            # Binance/Alpha return the currently forming candle as the last row.
+            # Never calculate an entry signal from an unfinished 15m candle.
+            if len(item) > 6 and int(item[6]) >= now_ms:
+                continue
+            row = {"open": float(item[1]), "high": float(item[2]), "low": float(item[3]),
+                   "close": float(item[4]), "volume": float(item[5]), "time": int(item[0])}
+            if row["close"] > 0 and row["high"] >= row["low"]:
+                rows.append(row)
         except (TypeError, ValueError, IndexError):
             continue
+    rows.sort(key=lambda row: row["time"])
     return rows
 
 def ema(values, period):
@@ -280,7 +288,9 @@ def analyse_candidate(kind, item, market_direction):
         if side not in ("BUY", "SELL") or side != market_direction:
             return None
         closes = [x["close"] for x in selected]
-        current = closes[-1]
+        # Indicators use only completed candles; the executable entry reference
+        # is the latest validated market quote, not the previous candle close.
+        current = float(item["price"])
         momentum = rsi(closes)
         if momentum is None or (side == "BUY" and not 50 <= momentum <= 75) or (side == "SELL" and not 25 <= momentum <= 50):
             return None
