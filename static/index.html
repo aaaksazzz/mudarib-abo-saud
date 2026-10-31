@@ -5,7 +5,7 @@
 <meta name="theme-color" content="#070b12"><title>AS Trading PRO | التداول الذكي</title>
 <meta name="description" content="منصة احترافية لمراقبة الأسواق والاتجاهات والفرص الفنية ببيانات عامة ومصادر واضحة.">
 <link rel="preconnect" href="https://api.binance.com"><link rel="preconnect" href="https://fapi.binance.com">
-<link rel="stylesheet" href="/static/app.css?v=20261031.gamma1">
+<link rel="stylesheet" href="/static/app.css?v=20261031.pro1">
 <script src="/static/app.js?v=20261031.gamma1" defer></script>
 </head>
 <body>
@@ -42,6 +42,7 @@
    <a href="/markets/saudi">السوق السعودي</a><a href="/markets/us">الأسهم الأمريكية</a><a href="/markets/contracts">العقود الأمريكية</a><a href="/markets/forex">الفوركس والذهب</a>
    <div class="drawer-group">أقسام التحليل</div>
    <a href="/sections/direction">توجه السوق</a><a href="/sections/movers">الأصول الأكثر حركة</a><a href="/sections/opportunities">توصيات GAMMA PRO</a><a href="/sections/open-trades">متابعة الصفقات</a><a href="/sections/history">سجل النتائج</a>
+   <a href="/sections/system">حالة المنصة ومصادر البيانات</a>
    <div class="drawer-group">المحتوى</div><a href="/blog">المدونة التعليمية</a><a href="/news">أخبار الأسواق</a>
    <a href="/admin" id="drawerAdmin" hidden>إدارة المشتركين</a>
   </nav>
@@ -99,7 +100,19 @@
   <div class="section-heading tracker-heading"><div><span class="kicker">TRADE HISTORY</span><h2>سجل النتائج</h2><p>الصفقات التي وصلت إلى الهدف الثالث أو وقف الخسارة.</p></div><span id="historyCount" class="count-pill">0 مغلقة</span></div>
   <div id="closedTrades" class="trade-list"><div class="empty">لا توجد نتائج مغلقة مسجلة بعد.</div></div>
  </section>
-  <section id="blogSection" class="editorial-section" hidden>
+  <section id="systemSection" class="panel system-panel" hidden>
+  <div class="section-heading tracker-heading"><div><span class="kicker">PLATFORM OBSERVABILITY</span><h2>مركز مراقبة المنصة</h2><p>حالة قاعدة البيانات والذاكرة المؤقتة ومصادر الأسواق. الحالة هنا تبيّن الإعداد، ولا تعني ضمان توافر المزود الخارجي.</p></div><button id="systemRefresh" class="refresh-btn" type="button">فحص الحالة</button></div>
+  <div id="systemSummary" class="system-summary">
+   <article class="system-metric"><small>قاعدة البيانات</small><b>جارٍ الفحص</b></article>
+   <article class="system-metric"><small>الأسواق المعروفة</small><b>—</b></article>
+   <article class="system-metric"><small>الصفقات المفتوحة</small><b>—</b></article>
+   <article class="system-metric"><small>الذاكرة المؤقتة</small><b>—</b></article>
+  </div>
+  <div class="system-subhead"><b>مصادر الأسواق</b><small id="systemChecked">لم يتم الفحص بعد</small></div>
+  <div id="systemProviders" class="system-providers"><div class="empty">جارٍ تحميل حالة المصادر...</div></div>
+  <p class="panel-note">لا تُجرى اختبارات ضغط أو طلبات خارجية إضافية هنا؛ تُعرض حالة الإعداد والبيانات المحلية فقط.</p>
+ </section>
+ <section id="blogSection" class="editorial-section" hidden>
   <div class="section-heading"><div><span class="kicker">SMART TRADING ACADEMY</span><h2>المدونة التعليمية</h2><p>مقالات مبسطة لفهم السوق وإدارة المخاطر.</p></div></div>
   <div class="editorial-grid">
    <article class="editorial-card"><small>إدارة المخاطر</small><h3>كيف تحدد حجم الصفقة قبل الدخول؟</h3><p>حدد مبلغ الخسارة المقبول أولًا، ثم احسب حجم المركز بناءً على المسافة بين الدخول ووقف الخسارة.</p></article>

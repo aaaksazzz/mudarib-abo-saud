@@ -734,6 +734,72 @@ def providers():
     ]})
 
 
+@app.get("/api/system/status")
+def system_status():
+    """Lightweight diagnostics: local DB/cache state and declared provider configuration."""
+    database = "ok"
+    total_trades = open_trades = closed_trades = 0
+    latest_trade_update = None
+    try:
+        with db() as connection:
+            row = connection.execute(
+                """SELECT COUNT(*) AS total,
+                          SUM(CASE WHEN status='OPEN' THEN 1 ELSE 0 END) AS opened,
+                          SUM(CASE WHEN status!='OPEN' THEN 1 ELSE 0 END) AS closed,
+                          MAX(updated_at) AS latest_update
+                   FROM trades"""
+            ).fetchone()
+            total_trades = int(row["total"] or 0)
+            open_trades = int(row["opened"] or 0)
+            closed_trades = int(row["closed"] or 0)
+            latest_trade_update = row["latest_update"]
+    except sqlite3.Error:
+        database = "error"
+
+    with CACHE_LOCK:
+        cache_entries = len(CACHE)
+        cache_last_update = max((item[0] for item in CACHE.values()), default=None)
+
+    provider_rows = providers().get_json().get("markets", [])
+    market_rows = markets().get_json().get("markets", [])
+    provider_by_id = {item["id"]: item for item in provider_rows}
+    result_markets = []
+    for item in market_rows:
+        provider = provider_by_id.get(item["id"], {})
+        status = provider.get("status", item.get("status", "unknown"))
+        result_markets.append({
+            "id": item["id"], "name": item["name"],
+            "provider": provider.get("primary") or item.get("provider") or "غير مربوط",
+            "status": status,
+            "note": provider.get("note", ""),
+            "fallbacks": len(provider.get("fallbacks") or []),
+        })
+
+    result_markets.append({
+        "id": "gammaflip", "name": "Gamma Exposure للعملات الرقمية",
+        "provider": "GammaFlip Options GEX API",
+        "status": "configured" if GAMMAFLIP_API_KEY else "secret_required",
+        "note": "بيانات خيارات حقيقية لـ BTC وETH وSOL وXRP وHYPE عند ضبط المفتاح.",
+        "fallbacks": 0,
+    })
+
+    return jsonify({
+        "ok": database == "ok",
+        "timestamp": int(time.time()),
+        "database": database,
+        "cache_entries": cache_entries,
+        "cache_last_update": cache_last_update,
+        "trades": {
+            "total": total_trades, "open": open_trades, "closed": closed_trades,
+            "latest_update": latest_trade_update,
+        },
+        "gamma": {"configured": bool(GAMMAFLIP_API_KEY),
+                  "symbols": ["BTC", "ETH", "SOL", "XRP", "HYPE"]},
+        "markets": result_markets,
+        "diagnostics_scope": "configuration_and_local_health_only",
+    }), (200 if database == "ok" else 503)
+
+
 @app.get("/api/market/<kind>")
 def market(kind):
     if kind not in BASES and kind not in ("alpha", "forex", "saudi", "us"):
