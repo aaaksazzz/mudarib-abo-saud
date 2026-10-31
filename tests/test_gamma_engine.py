@@ -45,3 +45,19 @@ class GammaLiquidityEngineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+ 
+def test_recent_local_sweep_can_generate_confirmed_setup():
+    rows = []
+    for i in range(24):
+        rows.append({"open": 100.0, "high": 101.0, "low": 99.0,
+                     "close": 100.2, "volume": 100.0})
+    rows.append({"open": 99.4, "high": 100.1, "low": 98.7,
+                 "close": 99.9, "volume": 140.0})
+    from gamma_engine import analyse_liquidity_candidate
+    result = analyse_liquidity_candidate(rows, 99.9, "BUY", "spot")
+    assert result is not None
+    assert result["side"] == "BUY"
+    assert result["stop_loss"] < result["entry"]
+    assert result["tp1"] > result["entry"]
+    assert result["liquidity_event"] == "سحب سيولة بيع واسترداد"
