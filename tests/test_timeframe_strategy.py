@@ -43,6 +43,35 @@ class TimeframeStrategyTests(unittest.TestCase):
         self.assertGreater(trade["risk_percent"], 0)
         self.assertLessEqual(trade["risk_percent"], 4.5)
 
+
+    def test_bullish_liquidity_sweep_is_detected_on_completed_candle(self):
+        rows = rising_bars()
+        prior_low = min(row["low"] for row in rows[-21:-1])
+        prior_high = max(row["high"] for row in rows[-21:-1])
+        rows[-1] = {"open": prior_low + 0.08, "high": prior_high,
+                    "low": prior_low - 0.12, "close": prior_low + 0.24,
+                    "volume": 1500}
+        result = assess_timeframe(rows)
+        self.assertEqual(result["liquidity_sweep"], "BULLISH")
+
+    def test_bearish_liquidity_sweep_is_detected_on_completed_candle(self):
+        rows = rising_bars()
+        prior_low = min(row["low"] for row in rows[-21:-1])
+        prior_high = max(row["high"] for row in rows[-21:-1])
+        rows[-1] = {"open": prior_high - 0.08, "high": prior_high + 0.12,
+                    "low": prior_low, "close": prior_high - 0.24,
+                    "volume": 1500}
+        result = assess_timeframe(rows)
+        self.assertEqual(result["liquidity_sweep"], "BEARISH")
+
+    def test_absorption_is_labeled_as_ohlcv_proxy(self):
+        rows = rising_bars()
+        prior_volume = sum(row["volume"] for row in rows[-21:-1]) / 20
+        rows[-1] = {"open": 107.0, "high": 108.0, "low": 106.0,
+                    "close": 107.9, "volume": prior_volume * 2}
+        result = assess_timeframe(rows)
+        self.assertEqual(result["absorption_proxy"], "BULLISH")
+
     def test_invalid_side_never_creates_trade(self):
         self.assertIsNone(make_trade(rising_bars(), "HOLD"))
 
