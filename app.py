@@ -745,7 +745,6 @@ def providers():
 
 
 @app.get("/api/market/<kind>")
-@require_subscription
 def market(kind):
     if kind not in BASES and kind not in ("alpha", "forex", "saudi", "us"):
         return jsonify({"ok": False, "status": "provider_required", "message": "مزود البيانات لهذا السوق غير مربوط؛ لن نعرض بيانات غير موثوقة.", "signals": []}), 503
@@ -795,7 +794,6 @@ def market(kind):
         return jsonify({"ok": False, "error": "تعذر الوصول إلى سجل الصفقات. تحقق من وحدة التخزين الدائمة.", "market": kind}), 503
 
 @app.get("/api/trades")
-@require_subscription
 def trades():
     market_id = request.args.get("market", "")
     with db() as connection:
