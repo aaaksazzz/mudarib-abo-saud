@@ -1,10 +1,21 @@
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import app as module
 
 client = module.app.test_client()
+
+def admin_session(monkeypatch):
+    monkeypatch.setattr(module, "AUTH_CONFIGURED", True)
+    monkeypatch.setattr(module, "ADMIN_EMAIL", "admin@example.test")
+    monkeypatch.setattr(module, "ADMIN_PASSWORD", "test-admin-password-123")
+    with module.db() as connection:
+        row = connection.execute("SELECT id FROM users WHERE email=?", ("admin@example.test",)).fetchone()
+    with client.session_transaction() as session:
+        session.clear()
+        session["user_id"] = row["id"]
 
 def test_health_and_home():
     assert client.get("/health").json["ok"] is True
@@ -18,6 +29,7 @@ def test_health_and_home():
 
 def test_timeframe_is_fixed_to_15m(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "fixed-timeframe.sqlite3")
+    admin_session(monkeypatch)
     module.CACHE.pop("spot:universe", None)
     monkeypatch.setattr(module, "market_tickers", lambda kind: [
         {"symbol": "AAAUSDT", "price": 2.0, "volume": 2_000_000, "change24h": 1.0}
@@ -28,7 +40,9 @@ def test_timeframe_is_fixed_to_15m(tmp_path, monkeypatch):
     assert response.json["timeframe"] == "15m"
     assert module.SCAN_INTERVAL == "15m"
 
-def test_unconfigured_markets_are_not_fabricated():
+def test_unconfigured_markets_are_not_fabricated(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "unconfigured.sqlite3")
+    admin_session(monkeypatch)
     response = client.get("/api/market/saudi")
     assert response.status_code == 503
     assert response.json["status"] == "provider_required"
@@ -88,6 +102,7 @@ def test_cache_reuses_successful_value():
 
 def test_market_response_includes_breadth_and_real_movers(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "market-test.sqlite3")
+    admin_session(monkeypatch)
     module.CACHE.pop("spot:universe", None)
     rows = [
         {"symbol":"AAAUSDT","price":2.0,"volume":3_000_000,"change24h":8.0},
@@ -137,6 +152,7 @@ def test_alpha_candles_parse_public_kline_payload(monkeypatch):
 
 def test_alpha_market_endpoint_accepts_public_provider(tmp_path, monkeypatch):
     monkeypatch.setattr(module, 'DB_PATH', tmp_path / 'alpha.sqlite3')
+    admin_session(monkeypatch)
     rows = [{'symbol':'ALPHA_175USDT','price':0.01,'volume':250000,'change24h':12.5}]
     monkeypatch.setattr(module, 'market_tickers', lambda kind: rows)
     monkeypatch.setattr(module, 'analyse_candidate', lambda *args: None)
@@ -230,7 +246,9 @@ def test_signal_entry_uses_live_quote_not_previous_candle_close(monkeypatch):
     assert signal["price"] == 110.0
 
 
-def test_yahoo_provider_is_disabled_by_default():
+def test_yahoo_provider_is_disabled_by_default(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "yahoo-disabled.sqlite3")
+    admin_session(monkeypatch)
     original = module.YAHOO_ENABLED
     try:
         module.YAHOO_ENABLED = False
@@ -262,3 +280,37 @@ def test_yahoo_candles_drop_forming_bar(monkeypatch):
     rows = module.yahoo_candles("AAPL", "15m")
     assert len(rows) == 1
     assert rows[0]["close"] == 11.0
+
+
+def test_member_needs_subscription_and_admin_can_grant(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "auth.sqlite3")
+    monkeypatch.setattr(module, "AUTH_CONFIGURED", True)
+    monkeypatch.setattr(module, "ADMIN_EMAIL", "owner@example.test")
+    monkeypatch.setattr(module, "ADMIN_PASSWORD", "owner-password-123")
+    auth_client = module.app.test_client()
+    registered = auth_client.post("/api/auth/register", json={
+        "email": "member@example.test", "password": "member-password-123"
+    })
+    assert registered.status_code == 201
+    assert registered.json["user"]["subscribed"] is False
+    denied = auth_client.get("/api/market/spot")
+    assert denied.status_code == 403
+    with module.db() as connection:
+        admin = connection.execute("SELECT id FROM users WHERE email=?", ("owner@example.test",)).fetchone()
+        member = connection.execute("SELECT id FROM users WHERE email=?", ("member@example.test",)).fetchone()
+    with auth_client.session_transaction() as session:
+        session.clear()
+        session["user_id"] = admin["id"]
+    granted = auth_client.post("/api/admin/subscription", json={
+        "user_id": member["id"], "action": "grant", "days": 30
+    })
+    assert granted.status_code == 200
+    with auth_client.session_transaction() as session:
+        session.clear()
+        session["user_id"] = member["id"]
+    status = auth_client.get("/api/auth/me")
+    assert status.json["user"]["subscribed"] is True
+    revoked = auth_client.post("/api/admin/subscription", json={
+        "user_id": member["id"], "action": "revoke"
+    })
+    assert revoked.status_code == 403
