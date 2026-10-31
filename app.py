@@ -8,6 +8,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import requests
+
+try:
+    import yfinance as yf
+except ImportError:
+    yf = None
 from flask import Flask, jsonify, request, send_from_directory
 
 app = Flask(__name__, static_folder="static")
@@ -15,6 +20,11 @@ BASES = {"spot": "https://api.binance.com", "futures": "https://fapi.binance.com
 SPOT_BASES = ["https://api.binance.com", "https://api-gcp.binance.com", "https://api1.binance.com", "https://api2.binance.com", "https://api3.binance.com", "https://api4.binance.com", "https://data-api.binance.vision"]
 ALPHA_BASE = "https://www.binance.com"
 BIQUOTE_BASE = "https://biquote.io"
+YAHOO_ENABLED = os.environ.get("YAHOO_FINANCE_ENABLED", "0") == "1"
+YAHOO_SYMBOLS = {
+    "us": [x.strip().upper() for x in os.environ.get("YAHOO_US_SYMBOLS", "").split(",") if x.strip()],
+    "saudi": [x.strip().upper() for x in os.environ.get("YAHOO_SAUDI_SYMBOLS", "").split(",") if x.strip()],
+}
 SCAN_INTERVAL = "15m"
 STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "EUR"}
 CACHE = {}
@@ -31,8 +41,8 @@ MARKETS = [
     {"id": "spot", "name": "Binance Spot", "provider": "Binance", "status": "live"},
     {"id": "futures", "name": "Binance Futures", "provider": "Binance", "status": "live"},
     {"id": "alpha", "name": "Binance Alpha", "provider": "Binance public Alpha data", "status": "live"},
-    {"id": "saudi", "name": "السوق السعودي", "provider": None, "status": "provider_required"},
-    {"id": "us", "name": "الأسهم الأمريكية", "provider": None, "status": "provider_required"},
+    {"id": "saudi", "name": "السوق السعودي", "provider": "Yahoo Finance (opt-in)", "status": "optional_disabled"},
+    {"id": "us", "name": "الأسهم الأمريكية", "provider": "Yahoo Finance (opt-in)", "status": "optional_disabled"},
     {"id": "contracts", "name": "العقود الأمريكية", "provider": None, "status": "provider_required"},
     {"id": "forex", "name": "الفوركس والذهب", "provider": "BiQuote public FX/Metals feed (no key)", "status": "live"},
 ]
@@ -157,6 +167,70 @@ def biquote_candles(symbol, interval):
     return rows
 
 
+
+def yahoo_market_tickers(kind):
+    """Fetch a configured Yahoo watchlist; never pretend it is the whole market."""
+    if not YAHOO_ENABLED or yf is None:
+        raise requests.RequestException("Yahoo Finance integration is disabled")
+    symbols = YAHOO_SYMBOLS.get(kind, [])
+    if not symbols:
+        raise requests.RequestException(f"No Yahoo symbols configured for {kind}")
+    output = []
+    now = time.time()
+    for symbol in symbols[:100]:
+        try:
+            frame = yf.Ticker(symbol).history(period="5d", interval="15m", auto_adjust=True, timeout=12)
+            if frame is None or frame.empty or "Close" not in frame:
+                continue
+            frame = frame.dropna(subset=["Close"]).sort_index()
+            if len(frame) < 55:
+                continue
+            stamp = frame.index[-1]
+            if getattr(stamp, "tzinfo", None) is None:
+                stamp = stamp.tz_localize("UTC")
+            age = now - stamp.timestamp()
+            if age < 0 or age > 45 * 60:
+                continue
+            price = float(frame["Close"].iloc[-1])
+            prior = float(frame["Close"].iloc[max(0, len(frame) - 97)])
+            volume = float(frame["Volume"].tail(96).fillna(0).sum() * price)
+            if price <= 0 or prior <= 0:
+                continue
+            output.append({"symbol": symbol, "price": price, "volume": volume,
+                           "change24h": (price / prior - 1) * 100,
+                           "quote_age_seconds": int(age)})
+        except Exception as exc:
+            app.logger.warning("Yahoo quote failed for %s: %s", symbol, exc)
+    if not output:
+        raise requests.RequestException("Yahoo returned no fresh 15m quotes for the configured watchlist")
+    return output
+
+
+def yahoo_candles(symbol, interval):
+    if not YAHOO_ENABLED or yf is None:
+        raise requests.RequestException("Yahoo Finance integration is disabled")
+    frame = yf.Ticker(symbol).history(period="5d", interval=interval, auto_adjust=True, timeout=12)
+    if frame is None or frame.empty:
+        raise requests.RequestException("Yahoo returned no candle history")
+    rows = []
+    now_ms = int(time.time() * 1000)
+    for stamp, bar in frame.iterrows():
+        try:
+            if getattr(stamp, "tzinfo", None) is None:
+                stamp = stamp.tz_localize("UTC")
+            timestamp = int(stamp.timestamp() * 1000)
+            if timestamp + 15 * 60 * 1000 > now_ms:
+                continue
+            row = {"open": float(bar["Open"]), "high": float(bar["High"]),
+                   "low": float(bar["Low"]), "close": float(bar["Close"]),
+                   "volume": float(bar.get("Volume", 0) or 0), "time": timestamp}
+            if row["close"] > 0 and row["high"] >= row["low"]:
+                rows.append(row)
+        except (KeyError, TypeError, ValueError):
+            continue
+    rows.sort(key=lambda item: item["time"])
+    return rows
+
 def alpha_market_tickers():
     token_url = ALPHA_BASE + "/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list"
     info_url = ALPHA_BASE + "/bapi/defi/v1/public/alpha-trade/get-exchange-info"
@@ -194,6 +268,8 @@ def market_tickers(kind):
         return cached("alpha:universe", 60, alpha_market_tickers)
     if kind == "forex":
         return cached("forex:universe", 20, biquote_market_tickers)
+    if kind in ("saudi", "us"):
+        return cached(f"yahoo:{kind}:universe", 60, lambda: yahoo_market_tickers(kind))
     base = BASES[kind]
     path = "/api/v3/ticker/24hr" if kind == "spot" else "/fapi/v1/ticker/24hr"
     if kind == "spot":
@@ -218,6 +294,8 @@ def market_tickers(kind):
 def candles(kind, symbol, interval):
     if kind == "forex":
         return cached(f"{kind}:{symbol}:{interval}", 45, lambda: biquote_candles(symbol, interval))
+    if kind in ("saudi", "us"):
+        return cached(f"{kind}:{symbol}:{interval}", 45, lambda: yahoo_candles(symbol, interval))
     if kind == "alpha":
         path = "/bapi/defi/v1/public/alpha-trade/klines"
         payload = cached(f"{kind}:{symbol}:{interval}", 45, lambda: fetch_json(
@@ -453,8 +531,10 @@ def providers():
 
 @app.get("/api/market/<kind>")
 def market(kind):
-    if kind not in BASES and kind not in ("alpha", "forex"):
+    if kind not in BASES and kind not in ("alpha", "forex", "saudi", "us"):
         return jsonify({"ok": False, "status": "provider_required", "message": "مزود البيانات لهذا السوق غير مربوط؛ لن نعرض بيانات غير موثوقة.", "signals": []}), 503
+    if kind in ("saudi", "us") and (not YAHOO_ENABLED or yf is None or not YAHOO_SYMBOLS.get(kind)):
+        return jsonify({"ok": False, "status": "provider_required", "message": "Yahoo غير مفعّل أو قائمة الرموز غير مضبوطة؛ لم نعرض بيانات غير مكتملة.", "signals": []}), 503
     try:
         assets = cached(kind + ":universe", 20, lambda: market_tickers(kind))
         up = sum(1 for row in assets if row["change24h"] > 0)
@@ -488,7 +568,7 @@ def market(kind):
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": SCAN_INTERVAL,
             "movers": movers, "signals": signals, "open_trades": active, "updated": int(time.time()),
-            "source": ("Binance Alpha public market data" if kind == "alpha" else "BiQuote public FX/Metals feed" if kind == "forex" else "Binance public market data"), "strategy": "15m EMA20/50 + RSI14 + ATR14",
+            "source": ("Yahoo Finance (private/internal test watchlist)" if kind in ("saudi", "us") else "Binance Alpha public market data" if kind == "alpha" else "BiQuote public FX/Metals feed" if kind == "forex" else "Binance public market data"), "strategy": "15m EMA20/50 + RSI14 + ATR14",
             "score_note": "درجة جودة الشروط وليست نسبة نجاح أو احتمال ربح."
         })
     except requests.RequestException:
