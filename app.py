@@ -11,6 +11,7 @@ import re
 import xml.etree.ElementTree as ET
 
 import requests
+from gamma_engine import analyse_liquidity_candidate
 
 try:
     import yfinance as yf
@@ -336,78 +337,23 @@ def candles(kind, symbol, interval):
     rows.sort(key=lambda row: row["time"])
     return rows
 
-def ema(values, period):
-    if len(values) < period:
-        return None
-    alpha = 2 / (period + 1)
-    value = sum(values[:period]) / period
-    for item in values[period:]:
-        value = item * alpha + value * (1 - alpha)
-    return value
-
-def rsi(values, period=14):
-    if len(values) <= period:
-        return None
-    changes = [values[i] - values[i-1] for i in range(1, len(values))]
-    gains = sum(max(x, 0) for x in changes[-period:]) / period
-    losses = sum(max(-x, 0) for x in changes[-period:]) / period
-    if losses == 0:
-        return 100.0
-    rs = gains / losses
-    return 100 - (100 / (1 + rs))
-
-def frame_bias(rows):
-    if len(rows) < 55:
-        return None
-    closes = [x["close"] for x in rows]
-    fast, slow = ema(closes, 20), ema(closes, 50)
-    if fast is None or slow is None:
-        return None
-    if closes[-1] > fast > slow:
-        return "BUY"
-    if closes[-1] < fast < slow:
-        return "SELL"
-    return "NEUTRAL"
-
 def analyse_candidate(kind, item, market_direction):
+    """GAMMA PRO: liquidity sweep/absorption analysis; no indicator-based entries."""
     try:
         selected = candles(kind, item["symbol"], SCAN_INTERVAL)
-        if len(selected) < 55:
+        if len(selected) < 25 or market_direction not in ("BUY", "SELL"):
             return None
-        side = frame_bias(selected)
-        if side not in ("BUY", "SELL") or side != market_direction:
+        signal = analyse_liquidity_candidate(selected, item["price"], market_direction)
+        if not signal:
             return None
-        closes = [x["close"] for x in selected]
-        # Indicators use only completed candles; the executable entry reference
-        # is the latest validated market quote, not the previous candle close.
-        current = float(item["price"])
-        momentum = rsi(closes)
-        if momentum is None or (side == "BUY" and not 50 <= momentum <= 75) or (side == "SELL" and not 25 <= momentum <= 50):
-            return None
-        ranges = []
-        for index in range(1, len(selected)):
-            prev = closes[index - 1]
-            candle = selected[index]
-            ranges.append(max(candle["high"] - candle["low"], abs(candle["high"] - prev), abs(candle["low"] - prev)))
-        atr = sum(ranges[-14:]) / min(14, len(ranges[-14:]))
-        if atr <= 0 or current <= 0:
-            return None
-        risk = atr * 1.5
-        if side == "BUY":
-            stop, sign = current - risk, 1
-        else:
-            stop, sign = current + risk, -1
-        if stop <= 0:
-            return None
-        distance = abs(current - stop)
-        score = min(99, round(55 + abs(ema(closes, 20) / ema(closes, 50) - 1) * 1200 + abs(momentum - 50) * 0.35, 1))
-        return {
-            "symbol": item["symbol"], "side": side, "entry": current, "price": item["price"],
-            "stop_loss": stop, "tp1": current + sign * distance, "tp2": current + sign * distance * 2,
-            "tp3": current + sign * distance * 3, "risk_percent": round(distance / current * 100, 3),
-            "change24h": item["change24h"], "volume": item["volume"], "timeframe": SCAN_INTERVAL,
-            "rsi": round(momentum, 1), "quality_score": score, "created_at": int(time.time()),
-        }
+        signal.update({
+            "symbol": item["symbol"],
+            "price": item["price"],
+            "change24h": item["change24h"],
+            "volume": item["volume"],
+            "timeframe": SCAN_INTERVAL,
+        })
+        return signal
     except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, ZeroDivisionError):
         return None
 
@@ -820,7 +766,9 @@ def market(kind):
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": SCAN_INTERVAL,
             "movers": movers, "signals": signals, "open_trades": active, "updated": int(time.time()),
-            "source": ("Yahoo Finance (private/internal test watchlist)" if kind in ("saudi", "us") else "Binance Alpha public market data" if kind == "alpha" else "BiQuote public FX/Metals feed" if kind == "forex" else "Binance public market data"), "strategy": "15m EMA20/50 + RSI14 + ATR14",
+            "source": ("Yahoo Finance (private/internal test watchlist)" if kind in ("saudi", "us") else "Binance Alpha public market data" if kind == "alpha" else "BiQuote public FX/Metals feed" if kind == "forex" else "Binance public market data"), "strategy": "GAMMA PRO · Liquidity Sweep + Absorption + Candle Pressure",
+            "gamma_status": "خيارات/GEX غير متاحة من مزود موثوق لكل الأسواق؛ لا يتم اختلاق قيم Gamma.",
+            "analysis_mode": "سيولة سعرية وحجم شموع؛ ضغط تقديري وليس تدفق صفقات منفذة",
             "score_note": "درجة جودة الشروط وليست نسبة نجاح أو احتمال ربح."
         })
     except requests.RequestException:
