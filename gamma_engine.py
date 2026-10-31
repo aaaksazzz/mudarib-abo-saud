@@ -30,7 +30,7 @@ def analyse_liquidity_candidate(rows, current_price, side, market_kind="spot", d
         return reject("invalid_input")
     if len(rows) < 25:
         return reject("insufficient_candles")
-    bars, signal = rows[-21:], rows[-1]
+    bars, signal = rows[-13:], rows[-1]
     prior = bars[:-1]
     try:
         current = float(current_price)
@@ -68,10 +68,14 @@ def analyse_liquidity_candidate(rows, current_price, side, market_kind="spot", d
                        and volume_ratio >= threshold)
         if side == "BUY":
             event = "سحب سيولة بيع واسترداد" if sweep_buy else "امتصاص بيع قرب الدعم"
-            valid_event, confirmation, extreme = sweep_buy or absorb_buy, close > open_price and pressure >= -0.05, low
+            valid_event = sweep_buy or absorb_buy
+            confirmation = close > open_price and pressure >= -0.10
+            extreme = low
         else:
             event = "سحب سيولة شراء ورفض" if sweep_sell else "امتصاص شراء قرب المقاومة"
-            valid_event, confirmation, extreme = sweep_sell or absorb_sell, close < open_price and pressure <= 0.05, high
+            valid_event = sweep_sell or absorb_sell
+            confirmation = close < open_price and pressure <= 0.10
+            extreme = high
         if not valid_event:
             return reject("no_sweep_or_absorption")
         if volume_ratio < threshold:
@@ -100,7 +104,7 @@ def analyse_liquidity_candidate(rows, current_price, side, market_kind="spot", d
             "quality_score": round(min(95, score), 1), "liquidity_event": event,
             "volume_ratio": round(volume_ratio, 2), "flow_pressure": round(pressure, 3),
             "flow_label": "ضغط سعري تقديري من OHLCV؛ ليس Delta منفذاً",
-            "liquidity_engine": "GAMMA PRO Cross-Market", "market_profile": profile["label"],
+            "liquidity_engine": "HAWK QUANT PRO Cross-Market", "market_profile": profile["label"],
             "volume_source": profile["volume_source"],
             "gamma_status": "يتطلب مزود خيارات مستقل؛ غير متاح لهذا الأصل/السوق",
             "gamma_exposure": None, "created_at": int(time.time()),
