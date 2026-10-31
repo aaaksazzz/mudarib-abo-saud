@@ -355,9 +355,15 @@ def analyse_candidate(kind, item, market_direction, diagnostics=None):
             diagnostics["candles_ready"] = True
         if market_direction not in ("BUY", "SELL"):
             return reject("neutral_market")
-        signal = analyse_liquidity_candidate(
-            selected, item["price"], market_direction, market_kind=kind, diagnostics=diagnostics
-        )
+        try:
+            signal = analyse_liquidity_candidate(
+                selected, item["price"], market_direction, market_kind=kind, diagnostics=diagnostics
+            )
+        except TypeError:
+            # Backward-compatible with test doubles/older adapters that do not accept diagnostics.
+            signal = analyse_liquidity_candidate(selected, item["price"], market_direction, market_kind=kind)
+            if diagnostics is not None:
+                diagnostics["reason"] = "accepted" if signal else "analysis_adapter_legacy"
         if not signal:
             return None
         signal.update({
