@@ -906,7 +906,7 @@ def market(kind):
         flat = len(assets) - up - down
         direction = "BUY" if up > down else ("SELL" if down > up else "NEUTRAL")
         # Show highest-priority fast movers first, regardless of direction.
-        movers = assets[:6]
+        movers = [row for row in assets if row["change24h"] != 0][:6]
         fast_movers = assets[:10]
         prices = {row["symbol"]: row["price"] for row in assets}
         update_open_trades(kind, prices)
