@@ -28,18 +28,22 @@ def test_health_and_home():
     assert health.json["database"] == "ok"
     assert set(health.json["live_markets"]) == {"spot", "futures", "coinm", "alpha", "forex"}
 
-def test_timeframe_is_fixed_to_15m(tmp_path, monkeypatch):
-    monkeypatch.setattr(module, "DB_PATH", tmp_path / "fixed-timeframe.sqlite3")
+def test_timeframe_selection_rejects_unsupported_and_accepts_supported(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "timeframe-selection.sqlite3")
     admin_session(monkeypatch)
     module.CACHE.pop("spot:universe", None)
     monkeypatch.setattr(module, "market_tickers", lambda kind: [
         {"symbol": "AAAUSDT", "price": 2.0, "volume": 2_000_000, "change24h": 1.0}
     ])
     monkeypatch.setattr(module, "analyse_candidate", lambda *args: None)
-    response = client.get("/api/market/spot?timeframe=5m")
-    assert response.status_code == 200
-    assert response.json["timeframe"] == "15m"
-    assert module.SCAN_INTERVAL == "15m"
+
+    unsupported = client.get("/api/market/spot?timeframe=5m")
+    assert unsupported.status_code == 400
+
+    for timeframe in ("15m", "1h", "4h", "1d", "1w"):
+        response = client.get(f"/api/market/spot?timeframe={timeframe}")
+        assert response.status_code == 200
+        assert response.json["timeframe"] == timeframe
 
 def test_unconfigured_markets_are_not_fabricated(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "unconfigured.sqlite3")
@@ -242,27 +246,42 @@ def test_binance_candles_drop_unfinished_bar(monkeypatch):
     assert rows[0]["close"] == 11.0
 
 
-def test_signal_entry_uses_live_quote_not_previous_candle_close(monkeypatch):
+def test_signal_uses_selected_completed_candle_and_reference_alignment(monkeypatch):
+    import timeframe_strategy as strategy
+
     bars = []
     for i in range(30):
         close = 100 + i * 0.1
         bars.append({"open": close - 0.05, "high": close + 0.5,
                      "low": close - 0.5, "close": close, "volume": 100,
                      "time": i * 900000})
-    monkeypatch.setattr(module, "candles", lambda *args: bars)
-    observed = {}
-    def fake_liquidity(rows, current_price, side, market_kind="spot"):
-        observed.update(price=current_price, side=side, market=market_kind)
-        return {"side": side, "entry": current_price, "stop_loss": 109.0,
-                "tp1": 111.0, "tp2": 112.0, "tp3": 113.0,
-                "quality_score": 80, "liquidity_event": "test"}
-    monkeypatch.setattr(module, "analyse_liquidity_candidate", fake_liquidity)
+    requested = []
+    def fake_candles(kind, symbol, timeframe):
+        requested.append(timeframe)
+        return bars
+    monkeypatch.setattr(module, "candles", fake_candles)
+
+    def confirmed(histories, entry_timeframe, side):
+        assert entry_timeframe == "15m"
+        assert set(histories) == {"4h", "1d"}
+        return {"confirmed": True, "side": side, "states": {"4h": "BUY", "1d": "STRONG_BUY"}}
+    monkeypatch.setattr(strategy, "assess_strategy", confirmed)
+    monkeypatch.setattr(strategy, "make_trade", lambda rows, side: {
+        "entry": rows[-1]["close"], "stop_loss": 99.0, "tp1": 103.0,
+        "tp2": 104.0, "tp3": 105.0, "risk_percent": 1.0
+    })
+    monkeypatch.setattr(module, "analyse_orderbook_flow", lambda *args: {"status": "neutral"})
+
     candidate = {"symbol": "AAAUSDT", "price": 110.0, "change24h": 4.0, "volume": 2_000_000}
-    signal = module.analyse_candidate("spot", candidate, "BUY")
+    diagnostics = {}
+    signal = module.analyse_candidate("spot", candidate, "BUY", diagnostics, "15m")
+
     assert signal is not None
-    assert observed == {"price": 110.0, "side": "BUY", "market": "spot"}
-    assert signal["entry"] == 110.0
+    assert requested == ["15m", "4h", "1d"]
+    assert signal["entry"] == bars[-1]["close"]
     assert signal["price"] == 110.0
+    assert signal["timeframe_alignment"] == {"4h": "BUY", "1d": "STRONG_BUY"}
+    assert diagnostics["reason"] == "accepted"
 
 
 def test_yahoo_provider_is_disabled_by_default(tmp_path, monkeypatch):
@@ -395,7 +414,7 @@ def test_market_scan_reports_candidate_rejection_reasons(tmp_path, monkeypatch):
         {"symbol": "AAAUSDT", "price": 1.0, "volume": 2_000_000, "change24h": 2.0},
         {"symbol": "BBBUSDT", "price": 2.0, "volume": 3_000_000, "change24h": 1.0},
     ])
-    def reject(kind, item, direction, diagnostics):
+    def reject(kind, item, direction, diagnostics, timeframe="15m"):
         diagnostics["candles_ready"] = True
         diagnostics["reason"] = "no_sweep_or_absorption"
         return None
@@ -437,7 +456,7 @@ def test_candidate_worker_failure_does_not_abort_market_scan(tmp_path, monkeypat
         {"symbol": "AAAUSDT", "price": 2.0, "volume": 2_000_000, "change24h": 2.0},
         {"symbol": "BBBUSDT", "price": 1.0, "volume": 2_000_000, "change24h": 1.0},
     ])
-    def flaky(kind, row, direction, diagnostics=None):
+    def flaky(kind, row, direction, diagnostics=None, timeframe="15m"):
         if row["symbol"] == "AAAUSDT":
             raise RuntimeError("simulated adapter failure")
         if diagnostics is not None:
