@@ -702,6 +702,7 @@ def section_page(section_id):
 
 @app.get("/blog")
 @app.get("/news")
+@app.get("/admin")
 def editorial_page():
     return send_from_directory("static", "index.html")
 
