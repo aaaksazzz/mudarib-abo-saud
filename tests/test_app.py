@@ -8,6 +8,7 @@ import app as module
 client = module.app.test_client()
 
 def admin_session(monkeypatch):
+    module.app.config["SESSION_COOKIE_SECURE"] = False
     monkeypatch.setattr(module, "AUTH_CONFIGURED", True)
     monkeypatch.setattr(module, "ADMIN_EMAIL", "admin@example.test")
     monkeypatch.setattr(module, "ADMIN_PASSWORD", "test-admin-password-123")
@@ -284,6 +285,7 @@ def test_yahoo_candles_drop_forming_bar(monkeypatch):
 
 def test_member_needs_subscription_and_admin_can_grant(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "auth.sqlite3")
+    module.app.config["SESSION_COOKIE_SECURE"] = False
     monkeypatch.setattr(module, "AUTH_CONFIGURED", True)
     monkeypatch.setattr(module, "ADMIN_EMAIL", "owner@example.test")
     monkeypatch.setattr(module, "ADMIN_PASSWORD", "owner-password-123")
