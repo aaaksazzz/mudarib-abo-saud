@@ -110,6 +110,25 @@ def assess_timeframe(rows, side=None):
     baseline_volume = mean(volumes[-21:-1]) if len(volumes) >= 21 else 0.0
     volume_ratio = volumes[-1] / baseline_volume if baseline_volume > 0 else None
 
+    # A sweep is inferred only when a completed candle trades beyond the prior
+    # 20-bar extreme and closes back inside it. This is price-action evidence,
+    # not visibility into hidden resting orders.
+    prior_high = max(highs[-21:-1])
+    prior_low = min(lows[-21:-1])
+    last = bars[-1]
+    candle_range = max(last["high"] - last["low"], 1e-12)
+    body_ratio = abs(last["close"] - last["open"]) / candle_range
+    bullish_sweep = last["low"] < prior_low and last["close"] > prior_low and last["close"] > last["open"]
+    bearish_sweep = last["high"] > prior_high and last["close"] < prior_high and last["close"] < last["open"]
+    # OHLCV-only absorption proxy: unusually high volume with a small real body
+    # and a close near the directional end of the candle. It is not order-flow proof.
+    bullish_absorption = bool(volume_ratio is not None and volume_ratio >= 1.5
+                              and body_ratio <= 0.35
+                              and last["close"] >= last["low"] + candle_range * 0.65)
+    bearish_absorption = bool(volume_ratio is not None and volume_ratio >= 1.5
+                              and body_ratio <= 0.35
+                              and last["close"] <= last["low"] + candle_range * 0.35)
+
     def score_for(direction):
         score = 0.0
         if ema20 is not None and ema50 is not None:
@@ -134,6 +153,12 @@ def assess_timeframe(rows, side=None):
         score += 10 if directional_momentum >= 0.003 else 5 if directional_momentum > 0 else 0
         if volume_ratio is not None:
             score += 10 if volume_ratio >= 1.20 else 5 if volume_ratio >= 1.0 else 0
+        if direction == "BUY":
+            score += 10 if bullish_sweep else 0
+            score += 6 if bullish_absorption else 0
+        else:
+            score += 10 if bearish_sweep else 0
+            score += 6 if bearish_absorption else 0
         return round(min(100.0, score), 1)
 
     buy_score, sell_score = score_for("BUY"), score_for("SELL")
@@ -153,8 +178,10 @@ def assess_timeframe(rows, side=None):
         "sell_score": sell_score, "rsi": round(rsi, 1) if rsi is not None else None,
         "momentum_percent": round(momentum * 100, 3),
         "volume_ratio": round(volume_ratio, 2) if volume_ratio is not None else None,
+        "liquidity_sweep": "BULLISH" if bullish_sweep else "BEARISH" if bearish_sweep else None,
+        "absorption_proxy": "BULLISH" if bullish_absorption else "BEARISH" if bearish_absorption else None,
         "ema200_available": ema200 is not None,
-        "reason": "scored_from_ohlcv",
+        "reason": "scored_from_ohlcv_price_action_volume",
     }
 
 
