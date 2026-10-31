@@ -48,12 +48,12 @@
   </nav>
   <button id="drawerBackdrop" class="drawer-backdrop" type="button" aria-label="إغلاق القائمة" hidden></button>
  <section id="adminPanel" class="panel admin-panel" hidden>
-  <div class="section-heading tracker-heading"><div><span class="kicker">ADMIN CONTROL</span><h2>إدارة المشتركين</h2><p>إدارة الحسابات وتفعيل أو إلغاء الاشتراكات.</p></div><button id="adminRefresh" class="refresh-btn" type="button">تحديث الحسابات</button></div>
+  <div class="section-heading tracker-heading"><div><span class="kicker">ADMIN CONTROL</span><h2>إدارة المشتركين</h2><p>إدارة الحسابات وتفعيل أو إلغاء الاشتراكات.</p></div></div>
   <div id="adminUsers" class="admin-users"><div class="empty">جارٍ تحميل الحسابات...</div></div>
  </section>
  <section class="welcome" id="homeSection">
   <div><div class="eyebrow"><span class="eyebrow-line"></span> MARKET INTELLIGENCE TERMINAL</div><h1>مركز <span>الأسواق</span></h1><p>حلّل اتجاه الأسواق عبر توافق الفريمات، وتابع فرص الدخول والأهداف ووقف الخسارة.</p></div>
-  <button id="refresh" class="refresh-btn"><span>↻</span> تحديث البيانات</button>
+  
  </section>
  <section class="market-switcher" id="marketSection">
   <div class="switcher-heading"><span>اختر السوق</span><small>مصادر مستقلة لكل سوق</small></div>
@@ -90,7 +90,7 @@
   </article>
  </section>
  <section class="panel gamma-panel" id="cryptoGammaSection" hidden>
-  <div class="section-heading tracker-heading"><div><span class="kicker">LOCAL MARKET LIQUIDITY · NO API KEYS</span><h2>محرك السيولة المحلي</h2><p>تحليل السعر والحجم وسحب السيولة والامتصاص من بيانات الشموع العامة، دون مفاتيح خارجية.</p></div><button id="gammaRefresh" class="refresh-btn" type="button">تحديث طريقة التحليل</button></div>
+  <div class="section-heading tracker-heading"><div><span class="kicker">LOCAL MARKET LIQUIDITY · NO API KEYS</span><h2>محرك السيولة المحلي</h2><p>تحليل السعر والحجم وسحب السيولة والامتصاص من بيانات الشموع العامة، دون مفاتيح خارجية.</p></div></div>
   <div id="gammaCards" class="gamma-grid"><div class="empty">يعتمد على بيانات OHLCV العامة ولا يتطلب أي مفتاح API.</div></div>
   <p id="gammaNote" class="panel-note">لا يعرض Gamma Flip أو Net GEX أو جدران الخيارات؛ هذه تحتاج بيانات خيارات موثوقة. تحليل السوق الأساسي يعمل دونها.</p>
  </section>
@@ -119,7 +119,7 @@
   <div id="closedTrades" class="trade-list"><div class="empty">لا توجد نتائج مغلقة مسجلة بعد.</div></div>
  </section>
   <section id="systemSection" class="panel system-panel" hidden>
-  <div class="section-heading tracker-heading"><div><span class="kicker">PLATFORM OBSERVABILITY</span><h2>مركز مراقبة المنصة</h2><p>حالة قاعدة البيانات والذاكرة المؤقتة ومصادر الأسواق. الحالة هنا تبيّن الإعداد، ولا تعني ضمان توافر المزود الخارجي.</p></div><button id="systemRefresh" class="refresh-btn" type="button">فحص الحالة</button></div>
+  <div class="section-heading tracker-heading"><div><span class="kicker">PLATFORM OBSERVABILITY</span><h2>مركز مراقبة المنصة</h2><p>حالة قاعدة البيانات والذاكرة المؤقتة ومصادر الأسواق. الحالة هنا تبيّن الإعداد، ولا تعني ضمان توافر المزود الخارجي.</p></div></div>
   <div id="systemSummary" class="system-summary">
    <article class="system-metric"><small>قاعدة البيانات</small><b>جارٍ الفحص</b></article>
    <article class="system-metric"><small>الأسواق المعروفة</small><b>—</b></article>
@@ -140,7 +140,7 @@
   </div>
  </section>
  <section id="newsSection" class="editorial-section" hidden>
-  <div class="section-heading"><div><span class="kicker">MARKET NEWS</span><h2>أخبار الأسواق</h2><p>عناوين مجمعة من Google News RSS مع رابط المصدر الأصلي.</p></div><button id="newsRefresh" class="refresh-btn" type="button">تحديث الأخبار</button></div>
+  <div class="section-heading"><div><span class="kicker">MARKET NEWS</span><h2>أخبار الأسواق</h2><p>عناوين مجمعة من Google News RSS مع رابط المصدر الأصلي.</p></div></div>
   <div id="newsFeed" class="news-feed"><div class="empty">جارٍ تحميل الأخبار...</div></div>
   <p class="disclaimer">الأخبار من مصادر خارجية؛ تحقق من الخبر الأصلي قبل اتخاذ أي قرار مالي.</p>
  </section>
