@@ -882,7 +882,7 @@ def system_status():
     result_markets.append({
         "id": "gammaflip", "name": "Gamma Exposure للعملات الرقمية",
         "provider": "غير متاح دون مفتاح",
-        "status": "configured" if GAMMAFLIP_API_KEY else "secret_required",
+        "status": "unavailable_no_key",
         "note": "بيانات Gamma Options/GEX غير متاحة بلا مفتاح؛ لا تؤثر على تحليل السوق الأساسي.",
         "fallbacks": 0,
     })
