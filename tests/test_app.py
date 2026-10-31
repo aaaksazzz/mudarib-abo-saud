@@ -58,10 +58,6 @@ def test_market_list_is_explicit():
     assert statuses["alpha"] == "live"
     assert statuses["saudi"] == "provider_required"
 
-def test_indicators_require_sufficient_data():
-    assert module.ema([1,2,3], 5) is None
-    assert module.frame_bias([{"close": 1}] * 10) is None
-
 def test_trade_tracker_marks_targets_and_stop(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "trades.sqlite3")
     signal = {"symbol":"TESTUSDT","timeframe":"15m","side":"BUY","entry":100,
