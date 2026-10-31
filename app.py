@@ -435,22 +435,23 @@ def db():
             admin = connection.execute(
                 "SELECT id, password_hash, role FROM users WHERE email=?", (ADMIN_EMAIL,)
             ).fetchone()
-            configured_hash = generate_password_hash(ADMIN_PASSWORD)
             if not admin:
                 connection.execute(
                     "INSERT INTO users(email,password_hash,role,created_at) VALUES(?,?,?,?)",
-                    (ADMIN_EMAIL, configured_hash, "admin", int(time.time()))
+                    (ADMIN_EMAIL, generate_password_hash(ADMIN_PASSWORD), "admin", int(time.time()))
                 )
             else:
                 # Northflank incident response: the configured bootstrap password is
                 # authoritative. Changing ADMIN_PASSWORD rotates the stored admin
                 # credential on the next request without deleting users/subscriptions.
                 password_matches = check_password_hash(admin["password_hash"], ADMIN_PASSWORD)
-                if not password_matches or admin["role"] != "admin":
+                if not password_matches:
                     connection.execute(
                         "UPDATE users SET password_hash=?, role='admin' WHERE id=?",
-                        (configured_hash if not password_matches else admin["password_hash"], admin["id"])
+                        (generate_password_hash(ADMIN_PASSWORD), admin["id"])
                     )
+                elif admin["role"] != "admin":
+                    connection.execute("UPDATE users SET role='admin' WHERE id=?", (admin["id"],))
         connection.commit()
         yield connection
         connection.commit()
