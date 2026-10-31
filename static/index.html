@@ -6,7 +6,7 @@
 <meta name="description" content="منصة احترافية لمراقبة الأسواق والاتجاهات والفرص الفنية ببيانات عامة ومصادر واضحة.">
 <link rel="preconnect" href="https://api.binance.com"><link rel="preconnect" href="https://fapi.binance.com">
 <link rel="stylesheet" href="/static/app.css?v=20261031.procards1">
-<script src="/static/app.js?v=20261031.nogamma4" defer></script>
+<script src="/static/app.js?v=20261031.no-key-method1" defer></script>
 </head>
 <body>
 <div class="app-shell">
@@ -41,7 +41,7 @@
    <a href="/markets/spot">توصيات Binance Spot</a><a href="/markets/futures">توصيات Binance USD-M</a><a href="/markets/coinm">توصيات Binance COIN-M</a><a href="/markets/alpha">توصيات Binance Alpha</a>
    <a href="/markets/saudi">توصيات السوق السعودي</a><a href="/markets/us">توصيات الأسهم الأمريكية</a><a href="/markets/contracts">توصيات العقود الأمريكية</a><a href="/markets/forex">توصيات الفوركس والذهب</a>
    <div class="drawer-group">أقسام التحليل</div>
-   <a href="/sections/direction">توجه السوق</a><a href="/sections/movers">الأصول الأكثر حركة</a><a href="/sections/opportunities">توصيات GAMMA PRO</a><a href="/sections/open-trades">متابعة الصفقات</a><a href="/sections/history">سجل النتائج</a>
+   <a href="/sections/direction">توجه السوق</a><a href="/sections/movers">الأصول الأكثر حركة</a><a href="/sections/opportunities">توصيات HAWK QUANT PRO</a><a href="/sections/open-trades">متابعة الصفقات</a><a href="/sections/history">سجل النتائج</a>
    <a href="/sections/system">حالة المنصة ومصادر البيانات</a>
    <div class="drawer-group">المحتوى</div><a href="/blog">المدونة التعليمية</a><a href="/news">أخبار الأسواق</a>
    <a href="/admin" id="drawerAdmin" hidden>إدارة المشتركين</a>
@@ -83,20 +83,20 @@
   </article>
   <article class="panel scan-panel">
    <div class="panel-top"><div><span class="kicker">SCAN CONFIGURATION</span><h2>إعداد الفحص</h2></div><span class="scan-symbol">⌁</span></div>
-   <div class="scan-row"><span>نظام الفحص</span><b>GAMMA PRO · سيولة 15 دقيقة</b></div>
+   <div class="scan-row"><span>نظام الفحص</span><b>HAWK QUANT PRO · سيولة 15 دقيقة</b></div>
    <div class="scan-row"><span>آخر تحديث</span><b id="updated">—</b></div>
    <div class="scan-row"><span>مصدر البيانات</span><b id="sourceShort">Binance Public</b></div>
    <div class="scan-row"><span>حالة الفحص</span><b id="scanState" class="state-good">جاهز</b></div>
   </article>
  </section>
  <section class="panel gamma-panel" id="cryptoGammaSection" hidden>
-  <div class="section-heading tracker-heading"><div><span class="kicker">LOCAL MARKET LIQUIDITY · NO API KEYS</span><h2>محرك السيولة المحلي</h2><p>تحليل السعر والحجم وسحب السيولة والامتصاص من بيانات الشموع العامة، دون مفاتيح خارجية.</p></div><button id="gammaRefresh" class="refresh-btn" type="button">تحديث Gamma</button></div>
+  <div class="section-heading tracker-heading"><div><span class="kicker">LOCAL MARKET LIQUIDITY · NO API KEYS</span><h2>محرك السيولة المحلي</h2><p>تحليل السعر والحجم وسحب السيولة والامتصاص من بيانات الشموع العامة، دون مفاتيح خارجية.</p></div><button id="gammaRefresh" class="refresh-btn" type="button">تحديث طريقة التحليل</button></div>
   <div id="gammaCards" class="gamma-grid"><div class="empty">يعتمد على بيانات OHLCV العامة ولا يتطلب أي مفتاح API.</div></div>
   <p id="gammaNote" class="panel-note">لا يعرض Gamma Flip أو Net GEX أو جدران الخيارات؛ هذه تحتاج بيانات خيارات موثوقة. تحليل السوق الأساسي يعمل دونها.</p>
  </section>
  <section class="section-heading" id="moversSection"><div><span class="kicker">MARKET MOVERS</span><h2>الأصول الأسرع حركة أولًا</h2></div><span class="section-caption">زخم 24س · نطاق الحركة · السيولة النسبية</span></section>
  <section id="movers" class="movers-grid"><div class="empty">جارٍ تحميل حركة الأصول...</div></section>
- <section class="section-heading opportunity-heading" id="opportunitiesSection"><div><span class="kicker">GAMMA PRO · LIQUIDITY ENGINE</span><h2>أفضل الفرص الفنية</h2><p>أفضل ثلاث فرص اجتازت شروط سحب السيولة والامتصاص على 15 دقيقة.</p></div><span class="ranking-note">TOP 3 · الأسرع ثم جودة الشروط</span></section>
+ <section class="section-heading opportunity-heading" id="opportunitiesSection"><div><span class="kicker">HAWK QUANT PRO · LIQUIDITY ENGINE</span><h2>أفضل الفرص الفنية</h2><p>أفضل ثلاث فرص اجتازت شروط سحب السيولة والامتصاص على 15 دقيقة.</p></div><span class="ranking-note">TOP 3 · الأسرع ثم جودة الشروط</span></section>
  <section id="cards" class="cards"><div class="empty">جارٍ تحليل السوق...</div></section>
  <section class="panel tracker-panel" id="openSection">
   <div class="section-heading tracker-heading"><div><span class="kicker">POSITION MONITOR</span><h2>متابعة الصفقات</h2><p>تتبع تلقائي لمستويات الأهداف ووقف الخسارة عند تحديث السوق.</p></div><span id="openCount" class="count-pill">0 مفتوحة</span></div>
