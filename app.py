@@ -226,9 +226,18 @@ def yahoo_market_tickers(kind):
 def yahoo_candles(symbol, interval):
     if not YAHOO_ENABLED or yf is None:
         raise requests.RequestException("Yahoo Finance integration is disabled")
-    frame = yf.Ticker(symbol).history(period="5d", interval=interval, auto_adjust=True, timeout=12)
+    # Yahoo's hourly endpoint does not offer native 4h bars. Build them
+    # from hourly OHLCV; request enough history for stable 4h and daily structure.
+    fetch_interval = "60m" if interval == "4h" else interval
+    period = "1y" if interval == "1d" else "3mo" if interval in ("1h", "4h") else "5d"
+    frame = yf.Ticker(symbol).history(period=period, interval=fetch_interval, auto_adjust=True, timeout=12)
     if frame is None or frame.empty:
         raise requests.RequestException("Yahoo returned no candle history")
+    if interval == "4h":
+        frame = frame.resample("4h").agg({
+            "Open": "first", "High": "max", "Low": "min",
+            "Close": "last", "Volume": "sum",
+        }).dropna(subset=["Open", "High", "Low", "Close"])
     rows = []
     now_ms = int(time.time() * 1000)
     for stamp, bar in frame.iterrows():
