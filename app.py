@@ -956,6 +956,12 @@ def market(kind):
             active = [dict(row) for row in connection.execute(
                 "SELECT * FROM trades WHERE market=? AND status='OPEN' ORDER BY created_at DESC LIMIT 100", (kind,)
             ).fetchall()]
+        for trade in active:
+            trade["current_price"] = prices.get(trade["symbol"])
+            trade["live_pnl_percent"] = (
+                round(((trade["current_price"] / trade["entry"] - 1) * (1 if trade["side"] == "BUY" else -1)) * 100, 2)
+                if trade["current_price"] is not None and trade["entry"] else None
+            )
         return jsonify({
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": SCAN_INTERVAL,
