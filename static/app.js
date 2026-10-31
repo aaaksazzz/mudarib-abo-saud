@@ -106,6 +106,7 @@ async function startAuthorized(user=null){
  $("#mainContent").hidden=false;
  $("#topLogout").hidden=true;
  $("#adminPanel").hidden=!(user&&user.is_admin);
+ $("#drawerAdmin").hidden=!(user&&user.is_admin);
  if(user&&user.is_admin) await loadAdminUsers();
  await loadMarketStatuses();
  await load();
@@ -178,6 +179,24 @@ $("#adminUsers").addEventListener("click",async e=>{
   await loadAdminUsers();
  }catch(err){alert(err.message);b.disabled=false}
 });
+
+function closeDrawer(){
+ const drawer=$("#siteDrawer"),backdrop=$("#drawerBackdrop"),open=$("#menuOpen");
+ drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true");
+ backdrop.hidden=true;open.setAttribute("aria-expanded","false");
+}
+$("#menuOpen").addEventListener("click",()=>{
+ const drawer=$("#siteDrawer"),backdrop=$("#drawerBackdrop"),open=$("#menuOpen");
+ drawer.classList.add("open");drawer.setAttribute("aria-hidden","false");
+ backdrop.hidden=false;open.setAttribute("aria-expanded","true");
+});
+$("#menuClose").addEventListener("click",closeDrawer);
+$("#drawerBackdrop").addEventListener("click",closeDrawer);
+$("#siteDrawer").addEventListener("click",e=>{
+ const link=e.target.closest("a");if(!link)return;
+ closeDrawer();
+});
+
 tick();setInterval(tick,1000);
 initializeAccess();
 timer=setInterval(()=>{if(!document.hidden && !$("#mainContent").hidden)load()},30000);
