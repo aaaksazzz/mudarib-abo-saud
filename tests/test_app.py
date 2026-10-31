@@ -445,3 +445,16 @@ def test_candidate_worker_failure_does_not_abort_market_scan(tmp_path, monkeypat
     response = client.get("/api/market/spot")
     assert response.status_code == 200
     assert response.json["scan_diagnostics"]["rejected_by_reason"]["analysis_error"] == 1
+
+def test_coinm_uses_contract_status_field(monkeypatch):
+    module.CACHE.pop("coinm:exchange-info", None)
+    payload = {"symbols": [
+        {"symbol": "BTCUSD_PERP", "contractStatus": "TRADING",
+         "quoteAsset": "USD", "contractType": "PERPETUAL"},
+        {"symbol": "ETHUSD_PERP", "contractStatus": "DELIVERING",
+         "quoteAsset": "USD", "contractType": "PERPETUAL"},
+        {"symbol": "OLDUSD_PERP", "status": "TRADING",
+         "quoteAsset": "USD", "contractType": "PERPETUAL"},
+    ]}
+    monkeypatch.setattr(module, "fetch_first_json", lambda urls: payload)
+    assert module.binance_active_symbols("coinm") == {"BTCUSD_PERP"}
