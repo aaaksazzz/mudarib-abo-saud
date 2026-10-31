@@ -341,13 +341,21 @@ def candles(kind, symbol, interval):
     rows.sort(key=lambda row: row["time"])
     return rows
 
-def analyse_candidate(kind, item, market_direction):
+def analyse_candidate(kind, item, market_direction, diagnostics=None):
     """GAMMA PRO: liquidity sweep/absorption analysis; no indicator-based entries."""
+    def reject(reason):
+        if diagnostics is not None:
+            diagnostics["reason"] = reason
+        return None
     try:
         selected = candles(kind, item["symbol"], SCAN_INTERVAL)
-        if len(selected) < 25 or market_direction not in ("BUY", "SELL"):
-            return None
-        signal = analyse_liquidity_candidate(selected, item["price"], market_direction, market_kind=kind)
+        if len(selected) < 25:
+            return reject("insufficient_candles")
+        if market_direction not in ("BUY", "SELL"):
+            return reject("neutral_market")
+        signal = analyse_liquidity_candidate(
+            selected, item["price"], market_direction, market_kind=kind, diagnostics=diagnostics
+        )
         if not signal:
             return None
         signal.update({
@@ -358,8 +366,10 @@ def analyse_candidate(kind, item, market_direction):
             "timeframe": SCAN_INTERVAL,
         })
         return signal
-    except (requests.RequestException, ValueError, TypeError, KeyError, IndexError, ZeroDivisionError):
-        return None
+    except requests.RequestException:
+        return reject("provider_error")
+    except (ValueError, TypeError, KeyError, IndexError, ZeroDivisionError):
+        return reject("analysis_error")
 
 @contextmanager
 def db():
@@ -826,15 +836,27 @@ def market(kind):
         movers = gainers + losers
         prices = {row["symbol"]: row["price"] for row in assets}
         update_open_trades(kind, prices)
-        candidates = sorted(assets, key=lambda row: (abs(row["change24h"]), row["volume"]), reverse=True)[:20]
+        # Scan a wider, still bounded batch of the fastest/highest-volume assets.
+        candidates = sorted(assets, key=lambda row: (abs(row["change24h"]), row["volume"]), reverse=True)[:40]
         signals = []
+        diagnostic_rows = [{} for _ in candidates]
         if direction != "NEUTRAL":
             with ThreadPoolExecutor(max_workers=4) as pool:
-                jobs = [pool.submit(analyse_candidate, kind, row, direction) for row in candidates]
+                jobs = {
+                    pool.submit(analyse_candidate, kind, row, direction, diagnostic_rows[index]): index
+                    for index, row in enumerate(candidates)
+                }
                 for job in as_completed(jobs):
                     signal = job.result()
                     if signal:
                         signals.append(signal)
+        else:
+            for item in diagnostic_rows:
+                item["reason"] = "neutral_market"
+        rejection_counts = {}
+        for item in diagnostic_rows:
+            reason = item.get("reason", "unknown")
+            rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
         signals.sort(key=lambda row: (row["quality_score"], abs(row["change24h"])), reverse=True)
         signals = signals[:3]
         save_new_trades(kind, signals)
@@ -845,7 +867,14 @@ def market(kind):
         return jsonify({
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": SCAN_INTERVAL,
-            "movers": movers, "signals": signals, "open_trades": active, "updated": int(time.time()),
+            "movers": movers, "signals": signals, "open_trades": active,
+            "scan_diagnostics": {
+                "universe_size": len(assets), "candidates_scanned": len(candidates),
+                "candles_ready": sum(1 for item in diagnostic_rows if item.get("reason") not in ("insufficient_candles", "provider_error", "analysis_error")),
+                "accepted_before_top3": rejection_counts.get("accepted", 0),
+                "rejected_by_reason": {key: value for key, value in rejection_counts.items() if key != "accepted"},
+            },
+            "updated": int(time.time()),
             "source": ("Yahoo Finance (private/internal test watchlist)" if kind in ("saudi", "us") else "Binance Alpha public market data" if kind == "alpha" else "BiQuote public FX/Metals feed" if kind == "forex" else "Binance public market data"), "strategy": "GAMMA PRO · Liquidity Sweep + Absorption + Candle Pressure",
             "gamma_status": "خيارات/GEX غير متاحة من مزود موثوق لكل الأسواق؛ لا يتم اختلاق قيم Gamma.",
             "analysis_mode": "سيولة سعرية وحجم شموع؛ ضغط تقديري وليس تدفق صفقات منفذة",
