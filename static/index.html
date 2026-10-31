@@ -52,7 +52,7 @@
   <div id="adminUsers" class="admin-users"><div class="empty">جارٍ تحميل الحسابات...</div></div>
  </section>
  <section class="welcome" id="homeSection">
-  <div><div class="eyebrow"><span class="eyebrow-line"></span> MARKET INTELLIGENCE TERMINAL</div><h1>مركز <span>الأسواق</span></h1><p>راقب السيولة، واكتشف سحبها وامتصاصها، وتابع توصيات الدخول والأهداف ووقف الخسارة.</p></div>
+  <div><div class="eyebrow"><span class="eyebrow-line"></span> MARKET INTELLIGENCE TERMINAL</div><h1>مركز <span>الأسواق</span></h1><p>حلّل اتجاه الأسواق عبر توافق الفريمات، وتابع فرص الدخول والأهداف ووقف الخسارة.</p></div>
   <button id="refresh" class="refresh-btn"><span>↻</span> تحديث البيانات</button>
  </section>
  <section class="market-switcher" id="marketSection">
@@ -96,7 +96,18 @@
  </section>
  <section class="section-heading" id="moversSection"><div><span class="kicker">MARKET MOVERS</span><h2>الأصول الأسرع حركة أولًا</h2></div><span class="section-caption">زخم 24س · نطاق الحركة · السيولة النسبية</span></section>
  <section id="movers" class="movers-grid"><div class="empty">جارٍ تحميل حركة الأصول...</div></section>
- <section class="section-heading opportunity-heading" id="opportunitiesSection"><div><span class="kicker">HAWK QUANT PRO · LIQUIDITY ENGINE</span><h2>أفضل الفرص الفنية</h2><p>أفضل ثلاث فرص مؤكدة من سحب السيولة أو الامتصاص، مع تأكيد الاتجاه على الأطر الأعلى.</p></div><span class="ranking-note">TOP 3 · الأسرع ثم جودة الشروط</span></section>
+ <section class="section-heading opportunity-heading" id="opportunitiesSection"><div><span class="kicker">HAWK QUANT PRO · MULTI-TIMEFRAME</span><h2>أفضل الفرص الفنية</h2><p>توافق فريمين مرجعيين، وترتيب حسب نسبة التغير على فريم التحليل المختار.</p></div><span class="ranking-note">TOP 3 · أعلى تغير أولًا</span></section>
+ <section class="timeframe-switcher" aria-label="اختيار فريم التحليل">
+  <label for="analysisTimeframe">فريم التحليل</label>
+  <select id="analysisTimeframe">
+   <option value="15m">15 دقيقة · تأكيد 4 ساعات + يومي</option>
+   <option value="1h">ساعة · تأكيد 4 ساعات + يومي</option>
+   <option value="4h">4 ساعات · تأكيد أسبوعي + شهري</option>
+   <option value="1d">يومي · تأكيد أسبوعي + شهري</option>
+   <option value="1w">أسبوعي · تأكيد أسبوعي + شهري</option>
+  </select>
+  <span id="activeStrategy">15 دقيقة · تأكيد 4 ساعات + يومي</span>
+ </section>
  <section id="cards" class="cards"><div class="empty">جارٍ تحليل السوق...</div></section>
  <section class="panel tracker-panel" id="openSection">
   <div class="section-heading tracker-heading"><div><span class="kicker">POSITION MONITOR</span><h2>متابعة الصفقات</h2><p>تتبع تلقائي لمستويات الأهداف ووقف الخسارة عند تحديث السوق.</p></div><span id="openCount" class="count-pill">0 مفتوحة</span></div>
