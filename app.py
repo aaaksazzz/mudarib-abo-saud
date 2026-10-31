@@ -767,7 +767,7 @@ def market(kind):
         candidates = sorted(assets, key=lambda row: (abs(row["change24h"]), row["volume"]), reverse=True)[:20]
         signals = []
         if direction != "NEUTRAL":
-            with ThreadPoolExecutor(max_workers=6) as pool:
+            with ThreadPoolExecutor(max_workers=4) as pool:
                 jobs = [pool.submit(analyse_candidate, kind, row, direction) for row in candidates]
                 for job in as_completed(jobs):
                     signal = job.result()
