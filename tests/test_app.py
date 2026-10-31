@@ -76,6 +76,22 @@ def test_trade_tracker_marks_targets_and_stop(tmp_path, monkeypatch):
     assert row["status"] == "TP3"
 
 
+
+def test_open_trade_expires_after_24_hours(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "trade-expiry.sqlite3")
+    signal = {"symbol":"OLDUSDT","timeframe":"15m","side":"BUY","entry":100,
+              "stop_loss":95,"tp1":105,"tp2":110,"tp3":115}
+    module.save_new_trades("spot", [signal])
+    with module.db() as connection:
+        created = connection.execute("SELECT created_at FROM trades").fetchone()["created_at"]
+    monkeypatch.setattr(module.time, "time", lambda: created + 24 * 60 * 60 + 1)
+    module.update_open_trades("spot", {"OLDUSDT": 101})
+    with module.db() as connection:
+        row = connection.execute("SELECT status,closed_at FROM trades").fetchone()
+    assert row["status"] == "EXPIRED"
+    assert row["closed_at"] == created + 24 * 60 * 60 + 1
+
+
 def test_invalid_trade_levels_are_not_saved(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "trades.sqlite3")
     invalid = {"symbol":"BADUSDT","timeframe":"15m","side":"BUY","entry":100,
