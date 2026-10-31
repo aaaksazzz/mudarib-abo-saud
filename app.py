@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from functools import wraps
 import re
+import xml.etree.ElementTree as ET
 
 import requests
 
@@ -689,8 +690,43 @@ def home():
 @app.get("/markets/<market_id>")
 def market_page(market_id):
     if market_id not in {item["id"] for item in MARKETS}:
-        return send_from_directory("static", "index.html"), 200
+        return send_from_directory("static", "index.html"), 404
     return send_from_directory("static", "index.html")
+
+@app.get("/sections/<section_id>")
+def section_page(section_id):
+    allowed = {"direction", "movers", "opportunities", "open-trades", "history"}
+    if section_id not in allowed:
+        return send_from_directory("static", "index.html"), 404
+    return send_from_directory("static", "index.html")
+
+@app.get("/blog")
+@app.get("/news")
+def editorial_page():
+    return send_from_directory("static", "index.html")
+
+@app.get("/api/news")
+def latest_news():
+    def load_news():
+        url = "https://news.google.com/rss/search?q=markets+crypto+stocks+forex&hl=ar&gl=SA&ceid=SA:ar"
+        response = requests.get(url, timeout=(3.5, 7), headers={"User-Agent": "SmartTradingPro/2.0"})
+        response.raise_for_status()
+        root = ET.fromstring(response.content)
+        items = []
+        for node in root.findall("./channel/item")[:20]:
+            title = (node.findtext("title") or "").strip()
+            link = (node.findtext("link") or "").strip()
+            source = (node.findtext("source") or "Google News").strip()
+            published = (node.findtext("pubDate") or "").strip()
+            if title and link.startswith(("https://", "http://")):
+                items.append({"title": title, "url": link, "source": source, "published": published})
+        return items
+    try:
+        items = cached("editorial:news:ar", 300, load_news)
+        return jsonify({"items": items, "source": "Google News RSS", "updated": int(time.time())})
+    except (requests.RequestException, ET.ParseError):
+        app.logger.exception("News feed unavailable")
+        return jsonify({"items": [], "source": "Google News RSS", "error": "تعذر جلب الأخبار حاليًا؛ حاول التحديث لاحقًا."}), 502
 
 @app.get("/health")
 @app.get("/api/health")
