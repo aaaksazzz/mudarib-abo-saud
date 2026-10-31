@@ -8,7 +8,8 @@
 
 ## الأسواق ومصادر البيانات
 - Binance Spot: واجهات Binance العامة الرسمية مع تدوير تلقائي بين api.binance.com وapi-gcp وapi1 إلى api4 وdata-api.binance.vision؛ لا تحتاج مفاتيح API.
-- Binance Futures: واجهة Binance USD-M العامة؛ لا يوجد نطاق احتياطي رسمي موثق حالياً.
+- Binance USD-M Futures: واجهة Binance العامة؛ يكتشف العقود الدائمة النشطة فقط ويشترط قيمة تداول 24 ساعة لا تقل عن مليون دولار.
+- Binance COIN-M Futures: واجهة Binance DAPI العامة؛ سوق مستقل لعقود COIN-M الدائمة النشطة، مع شرط قيمة تداول 24 ساعة لا تقل عن مليون دولار.
 - Binance Alpha: واجهات Binance العامة لقائمة الرموز ومعلومات أزواج USDT والشموع؛ لا تحتاج مفاتيح API، ولا يوجد بديل مطابق موثوق.
 - الفوركس والذهب: رُبط BiQuote العام دون مفتاح API لاكتشاف رموز Forex/Commodity وجلب الأسعار والشموع المغلقة 15m؛ تُرفض الأسعار المغلقة أو الأقدم من 5 دقائق.
 - الأسهم السعودية والأسهم الأمريكية: أُضيف موصل Yahoo Finance اختياري عبر yfinance للاختبار الداخلي فقط. لا يعمل افتراضياً؛ يتطلب YAHOO_FINANCE_ENABLED=1 وقوائم YAHOO_SAUDI_SYMBOLS وYAHOO_US_SYMBOLS (رموز مفصولة بفواصل). يفحص فقط الرموز المضبوطة، ويرفض الأسعار الأقدم من 45 دقيقة والشموع غير المكتملة. لا يعتبر هذا تغطية كاملة للسوق ولا يجوز إعادة توزيع بيانات Yahoo على موقع عام دون ترخيص. لا تفعّل هذا المصدر على موقع عام قبل التأكد من شروط الاستخدام وتأمين الموقع الخاص.
@@ -18,7 +19,8 @@
 
 ## لوحة المنصة
 - اتجاه السوق محسوب من عدد الأصول الصاعدة والهابطة والمحايدة خلال 24 ساعة.
-- عرض أكثر ثلاثة أصول صعودًا وثلاثة هبوطًا من قائمة الأصول المؤهلة للسيولة.
+- ترتيب الأصول الأسرع حركة أولاً بدرجة نسبية تعتمد على زخم 24 ساعة ونطاق الحركة والسيولة، ثم فحص أول 40 أصلاً في الترتيب. الدرجة ترتيب فحص وليست احتمال ربح.
+- التحقق من أن رموز Binance Spot وUSD-M وCOIN-M نشطة وقابلة للتداول عبر exchangeInfo قبل إدراجها.
 - أفضل ثلاث فرص فنية من فحص ثابت على 15 دقيقة، دون أزرار لتغيير الأطر، مع حد أقصى لأربع عمليات تحليل متوازية لتخفيف الضغط على الخادم.
 - عرض الدخول والأهداف الثلاثة والوقف ومؤشرات المخاطرة وجودة الشروط.
 - سجل الصفقات المفتوحة والصفقات المغلقة.
@@ -30,6 +32,7 @@
 - `/api/markets`
 - `/api/market/spot`
 - `/api/market/futures`
+- `/api/market/coinm`
 - `/api/market/alpha`
 - `/api/trades?market=spot`
 
@@ -71,3 +74,9 @@ The first administrator account is created automatically in the persistent SQLit
 - لا تنفذ الصفحة اختبارات ضغط ولا تضيف اتصالات بمصادر السوق؛ تقرأ الحالة المحلية وتكوين المزود فقط.
 - حالة "مهيأ" لا تعني أن المزود الخارجي متاح لحظيًا. التحقق الفعلي يتم عند طلب بيانات السوق.
 - endpoint `/api/system/status` لا يعرض مفاتيح API أو بيانات حسابات المستخدمين.
+
+
+## Fast-mover ranking
+- ترتيب نسبي داخل كل سوق: 50% absolute 24h change, 30% 24h high-low range, 20% quote turnover/liquidity. A feature with no variation is omitted and remaining weights are normalized.
+- The scanner analyses up to the first 40 ranked assets, keeps the existing 15m liquidity event and 1h/4h/1d HAWK confirmations, and displays up to three qualifying trades.
+- No ranking score is a win probability. Markets without valid price/candle providers remain unavailable rather than being populated with guessed tickers.

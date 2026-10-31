@@ -799,6 +799,8 @@ def providers():
         ], "status": "configured", "note": "Official public endpoints; spot fallback is active."},
         {"id": "futures", "primary": "Binance USD-M Futures REST", "fallbacks": [],
          "status": "single_source", "note": "Only one documented public base endpoint; no fake mirrors configured."},
+        {"id": "coinm", "primary": "Binance COIN-M Futures REST", "fallbacks": [],
+         "status": "single_source", "note": "DAPI public exchangeInfo, 24h ticker and OHLCV; USD-quoted perpetual contracts only."},
         {"id": "alpha", "primary": "Binance Alpha public endpoints", "fallbacks": [],
          "status": "single_source", "note": "No verified equivalent Alpha public backup."},
         {"id": "forex", "primary": "BiQuote public REST", "fallbacks": [],
