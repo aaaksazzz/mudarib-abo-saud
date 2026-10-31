@@ -85,6 +85,43 @@ async function loadGamma(){
 }
 $("#gammaRefresh")?.addEventListener("click",loadGamma);
 
+const PROVIDER_LABELS={
+ configured:"مهيأ",single_source:"مصدر واحد",configured_unverified_runtime:"مهيأ · يحتاج تحقق وقت التشغيل",
+ configured_watchlist:"قائمة رموز مهيأة",optional_disabled:"غير مفعّل",symbols_required:"قائمة الرموز مطلوبة",
+ provider_required:"مصدر غير مربوط",secret_required:"مفتاح API مطلوب"
+};
+async function loadSystemStatus(){
+ const button=$("#systemRefresh"),summary=$("#systemSummary"),root=$("#systemProviders");
+ if(button&&button.disabled)return;
+ if(button){button.disabled=true;button.textContent="جارٍ الفحص..."}
+ try{
+  const d=await get("/api/system/status",10000);
+  const healthy=d.database==="ok";
+  const metrics=[
+   ["قاعدة البيانات",healthy?"سليمة":"تحتاج فحص",healthy],
+   ["الأسواق المعروفة",(d.markets||[]).length+" أسواق",true],
+   ["الصفقات المفتوحة",d.trades?.open??0,true],
+   ["عناصر الذاكرة المؤقتة",d.cache_entries??0,true]
+  ];
+  summary.innerHTML=metrics.map(x=>'<article class="system-metric"><small>'+x[0]+'</small><b class="'+(x[2]?"state-good":"down")+'">'+safe(x[1])+'</b></article>').join("");
+  const items=d.markets||[];
+  root.innerHTML=items.map(x=>{
+   const status=PROVIDER_LABELS[x.status]||x.status||"غير معروف";
+   const cls=["configured","configured_watchlist","single_source"].includes(x.status)?"ready":
+    x.status==="configured_unverified_runtime"?"check":"missing";
+   return '<article class="provider-row"><div class="provider-main"><b>'+safe(x.name)+'</b><small>'+safe(x.provider||"غير محدد")+'</small></div><span class="provider-state '+cls+'">'+safe(status)+'</span><small class="provider-note">'+safe(x.note||"")+'</small><small class="provider-fallback">مسارات احتياط موثقة: '+(x.fallbacks||0)+'</small></article>';
+  }).join("")||'<div class="empty">لا توجد مصادر مسجلة.</div>';
+  const stamp=d.cache_last_update?new Date(d.cache_last_update*1000).toLocaleTimeString("ar-SA"):"لا توجد بيانات مخزنة";
+  $("#systemChecked").textContent="فحص "+new Date(d.timestamp*1000).toLocaleTimeString("ar-SA")+" · آخر تحديث مخزن "+stamp;
+  $("#health").textContent=healthy?"متصل":"قاعدة البيانات تحتاج فحص";
+  $("#health").className=healthy?"ok":"bad";
+ }catch(e){
+  summary.innerHTML='<article class="system-metric"><small>حالة الفحص</small><b class="down">تعذر جلب الحالة</b></article>';
+  root.innerHTML='<div class="empty">'+safe(e.message)+'</div>';
+ }finally{if(button){button.disabled=false;button.textContent="فحص الحالة"}}
+}
+$("#systemRefresh")?.addEventListener("click",loadSystemStatus);
+
 async function load(){
  if(busy){pending=true;return}
  busy=true;pending=false;
@@ -131,7 +168,7 @@ async function loadNews(){
 $("#newsRefresh")?.addEventListener("click",loadNews);
 function configurePage(){
  const adminAllowed=!$("#adminPanel").hidden;$("#adminPanel").hidden=true;
- const ids=["homeSection","marketSection","directionSection","cryptoGammaSection","moversSection","movers","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection"];
+ const ids=["homeSection","marketSection","directionSection","cryptoGammaSection","systemSection","moversSection","movers","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection"];
  const hideAll=()=>ids.forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
  const show=(...names)=>names.forEach(id=>{const el=$("#"+id);if(el)el.hidden=false});
  if(PATH==="/"){
@@ -146,9 +183,9 @@ function configurePage(){
   $("#homeSection p").textContent="صفحة مستقلة؛ بيانات واتجاهات وفرص وسجل هذا السوق فقط.";
  }else if(PATH.startsWith("/sections/")){
   const section=PATH.split("/").pop();
-  const map={direction:["directionSection"],movers:["moversSection","movers"],opportunities:["opportunitiesSection","cards"],"open-trades":["openSection"],history:["historySection"]};
+  const map={system:["systemSection"],direction:["directionSection"],movers:["moversSection","movers"],opportunities:["opportunitiesSection","cards"],"open-trades":["openSection"],history:["historySection"]};
   hideAll();show("homeSection",...(map[section]||[]));
-  const titles={direction:"توجه السوق",movers:"الأصول الأكثر حركة",opportunities:"أفضل الفرص الفنية","open-trades":"متابعة الصفقات",history:"سجل النتائج"};
+  const titles={system:"مركز مراقبة المنصة",direction:"توجه السوق",movers:"الأصول الأكثر حركة",opportunities:"أفضل الفرص الفنية","open-trades":"متابعة الصفقات",history:"سجل النتائج"};
   $("#homeSection h1").innerHTML='<span>'+safe(titles[section]||"القسم")+'</span>';
   $("#homeSection p").textContent="قسم مستقل عن الصفحة الرئيسية.";
  }else if(PATH==="/blog"){
@@ -197,6 +234,7 @@ async function startAuthorized(user=null){
  if(marketMatch){await loadMarketStatuses();await load();}
  else if(PATH==="/"){await loadMarketStatuses();}
  else if(PATH.startsWith("/sections/") && ["direction","movers","opportunities","open-trades","history"].includes(PATH.split("/").pop())){await loadMarketStatuses();await load();}
+ else if(PATH==="/sections/system"){await loadSystemStatus();}
 }
 async function initializeAccess(){
  // Public browsing is enabled. Login is optional and only used for admin tools.
@@ -286,4 +324,4 @@ $("#siteDrawer").addEventListener("click",e=>{
 
 tick();setInterval(tick,1000);
 initializeAccess();
-timer=setInterval(()=>{if(!document.hidden && !$("#mainContent").hidden && (marketMatch||PATH.startsWith("/sections/")))load() },30000);
+timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden)return;if(marketMatch||(["direction","movers","opportunities","open-trades","history"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();else if(PATH==="/sections/system")loadSystemStatus()},30000);
