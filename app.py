@@ -347,7 +347,7 @@ def analyse_candidate(kind, item, market_direction):
         selected = candles(kind, item["symbol"], SCAN_INTERVAL)
         if len(selected) < 25 or market_direction not in ("BUY", "SELL"):
             return None
-        signal = analyse_liquidity_candidate(selected, item["price"], market_direction)
+        signal = analyse_liquidity_candidate(selected, item["price"], market_direction, market_kind=kind)
         if not signal:
             return None
         signal.update({
