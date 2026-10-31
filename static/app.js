@@ -4,7 +4,7 @@ const PATH=location.pathname.replace(/\/+$/,"")||"/";
 const marketMatch=PATH.match(/^\/markets\/([a-z]+)$/);
 let market=marketMatch?marketMatch[1]:"spot",busy=false,pending=false,timer=null;
 let analysisTimeframe=new URLSearchParams(location.search).get("timeframe")||"15m";
-const VALID_TFS=["15m","1h","4h","1d","1w"];
+const VALID_TFS=["15m","1h","4h","1d","1w","1M"];
 if(!VALID_TFS.includes(analysisTimeframe))analysisTimeframe="15m";
 const timeframeSelect=$("#analysisTimeframe");
 if(timeframeSelect)timeframeSelect.value=analysisTimeframe;
@@ -174,7 +174,7 @@ async function load(){
   $("#sourceShort").textContent=d.source||"بيانات عامة";
   $("#scanState").textContent="اكتمل";$("#scanState").className="state-good";
   renderMovers(d.movers);renderSignals(d.signals,d.scan_diagnostics||{});renderOpen(d.open_trades);
-  const strategyLabel={"15m":"15 دقيقة · تأكيد 4س + يومي","1h":"ساعة · تأكيد 4س + يومي","4h":"4 ساعات · تأكيد أسبوعي + شهري","1d":"يومي · تأكيد أسبوعي + شهري","1w":"أسبوعي · تأكيد أسبوعي + شهري"};
+  const strategyLabel={"15m":"15 دقيقة · تأكيد 4س + يومي","1h":"ساعة · تأكيد 4س + يومي","4h":"4 ساعات · تأكيد أسبوعي + شهري","1d":"يومي · تأكيد أسبوعي + شهري","1w":"أسبوعي · تأكيد شهري","1M":"شهري · تحليل مستقل"};
   const label=$("#activeStrategy");if(label)label.textContent=strategyLabel[analysisTimeframe]||analysisTimeframe;
   $("#health").textContent="متصل";$("#health").className="ok";
  }catch(e){
