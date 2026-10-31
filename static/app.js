@@ -104,7 +104,7 @@ async function loadNews(){
 }
 $("#newsRefresh")?.addEventListener("click",loadNews);
 function configurePage(){
- const ids=["homeSection","marketSection","directionSection","moversSection","movers","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection","adminPanel"];
+ const ids=["homeSection","marketSection","directionSection","moversSection","movers","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection"];
  const hideAll=()=>ids.forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
  const show=(...names)=>names.forEach(id=>{const el=$("#"+id);if(el)el.hidden=false});
  if(PATH==="/"){
