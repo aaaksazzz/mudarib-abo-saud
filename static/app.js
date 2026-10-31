@@ -3,6 +3,7 @@ const MARKET_NAMES={spot:"Binance Spot",futures:"Binance USD-M Futures",coinm:"B
 const PATH=location.pathname.replace(/\/+$/,"")||"/";
 const marketMatch=PATH.match(/^\/markets\/([a-z]+)$/);
 let market=marketMatch?marketMatch[1]:"spot",busy=false,pending=false,timer=null;
+let marketStatuses=new Map();
 let analysisTimeframe=new URLSearchParams(location.search).get("timeframe")||"15m";
 const VALID_TFS=["15m","1h","4h","1d","1w","1M"];
 if(!VALID_TFS.includes(analysisTimeframe))analysisTimeframe="15m";
@@ -92,6 +93,7 @@ async function loadMarketStatuses(){
  try{
   const d=await get("/api/markets",8000);
   const states=new Map((d.markets||[]).map(x=>[x.id,x]));
+  marketStatuses=states;
   document.querySelectorAll("[data-market]").forEach(b=>{
    const item=states.get(b.dataset.market);if(!item)return;
    const live=item.status==="live"||item.status==="configured_watchlist";
@@ -163,6 +165,24 @@ async function load(){
  $("#health").textContent="جارٍ التحديث";$("#scanState").textContent="يفحص السوق";$("#scanState").className="";
  try{
   const requestedMarket=market;
+  const providerState=marketStatuses.get(requestedMarket);
+  if(providerState && !["live","configured_watchlist"].includes(providerState.status)){
+   $("#direction").textContent="غير متاح";
+   $("#direction").className="direction-value neutral";
+   ["#up","#down","#flat","#total"].forEach(id=>$(id).textContent="—");
+   $("#updated").textContent="—";
+   $("#source").textContent="مصدر البيانات غير مربوط";
+   $("#sourceShort").textContent="غير متاح";
+   $("#scanState").textContent="مصدر البيانات غير مربوط";
+   $("#scanState").className="down";
+   $("#cards").innerHTML='<article class="scan-diagnostic"><h3>مصدر البيانات غير مربوط</h3><p>هذا السوق لا يملك حالياً مزود بيانات مفعّلاً. لن نعرض أسعاراً أو توصيات غير موثوقة.</p></article>';
+   $("#movers").innerHTML='<div class="empty">لا تتوفر بيانات حركة لهذا السوق حالياً.</div>';
+   $("#openTrades").innerHTML='<div class="empty">لا توجد بيانات صفقات متاحة لهذا السوق.</div>';
+   $("#openCount").textContent="—";
+   $("#health").textContent="المصدر غير مربوط";
+   $("#health").className="bad";
+   return;
+  }
   const d=await get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(analysisTimeframe),30000);
   if(requestedMarket!==market){pending=true;return}
   $("#direction").textContent=d.direction_ar;$("#direction").className="direction-value "+(d.direction==="BUY"?"up":d.direction==="SELL"?"down":"neutral");
