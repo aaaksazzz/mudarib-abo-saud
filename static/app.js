@@ -22,9 +22,15 @@ function renderMovers(rows){
  if(!rows||!rows.length){root.innerHTML='<div class="empty">لا تتوفر حركة أصول كافية للعرض.</div>';return}
  root.innerHTML=rows.map(x=>'<article class="mover"><div class="mover-head"><b class="mover-symbol">'+safe(x.symbol)+'</b><span class="mover-side">'+(x.change24h>=0?"الأعلى صعودًا":"الأعلى هبوطًا")+'</span></div><b class="mover-price">'+fmt(x.price)+'</b><div class="mover-change '+(x.change24h>=0?"up":"down")+'">'+pct(x.change24h)+'</div><small class="mover-volume">حجم 24س '+compact(x.volume)+' USDT</small></article>').join("");
 }
-function renderSignals(rows){
+function renderSignals(rows,diagnostics={}){
  const root=$("#cards");
- if(!rows||!rows.length){root.innerHTML='<div class="empty">لا توجد فرصة اجتازت شروط السيولة وسحبها وامتصاصها حاليًا. سيستمر الفحص مع التحديث القادم.</div>';return}
+ if(!rows||!rows.length){
+  const reasons=diagnostics.rejected_by_reason||{};
+  const names={insufficient_candles:"شموع غير كافية",provider_error:"تعذر جلب بيانات المصدر",analysis_error:"خطأ في التحليل",no_sweep_or_absorption:"لم يظهر سحب سيولة أو امتصاص",volume_below_threshold:"حجم التداول دون الشرط",candle_not_confirmed:"شمعة الدخول غير مؤكدة",risk_above_4_5pct:"مخاطرة أعلى من الحد",entry_beyond_stop:"السعر تجاوز الوقف",missing_volume:"بيانات الحجم ناقصة",neutral_market:"اتجاه السوق محايد",invalid_atr:"مدى الحركة غير صالح",malformed_candles:"بيانات شموع غير سليمة",invalid_ohlc:"بيانات سعر غير سليمة"};
+  const top=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  root.innerHTML='<article class="scan-diagnostic"><div class="scan-diagnostic-head"><div><span class="kicker">LIVE SCAN DIAGNOSTICS</span><h3>لا توجد صفقة مؤكدة الآن</h3><p>الفحص يعمل؛ هذه أسباب استبعاد المرشحين بدل رسالة فارغة.</p></div><span class="scan-wait">انتظار فرصة</span></div><div class="scan-metrics"><div><small>الأصول المتاحة</small><b>'+Number(diagnostics.universe_size||0)+'</b></div><div><small>تم فحصها</small><b>'+Number(diagnostics.candidates_scanned||0)+'</b></div><div><small>شموع جاهزة</small><b>'+Number(diagnostics.candles_ready||0)+'</b></div><div><small>فرص مقبولة</small><b>'+Number(diagnostics.accepted_before_top3||0)+'</b></div></div><div class="scan-reasons"><b>أكثر أسباب الاستبعاد</b>'+(top.length?top.map(([k,v])=>'<div><span>'+safe(names[k]||k)+'</span><strong>'+v+'</strong></div>').join(""):'<div><span>لا توجد تفاصيل رفض متاحة بعد</span><strong>—</strong></div>')+'</div><small class="scan-footnote">لن ننشئ صفقة إلا بعد اكتمال شروط الدخول والوقف والأهداف.</small></article>';
+  return;
+ }
  root.innerHTML=rows.map((x,i)=>{
   const side=x.side==="BUY"?1:-1;
   const tp1=pct(side*(x.tp1/x.entry-1)*100),tp2=pct(side*(x.tp2/x.entry-1)*100),tp3=pct(side*(x.tp3/x.entry-1)*100);
@@ -130,7 +136,7 @@ async function load(){
  try{
   const requestedMarket=market;
   const [d,t]=await Promise.all([
-   get("/api/market/"+requestedMarket),
+   get("/api/market/"+requestedMarket,30000),
    get("/api/trades?market="+encodeURIComponent(requestedMarket),10000).catch(()=>({items:[]})) 
   ]);
   if(requestedMarket!==market){pending=true;return}
@@ -142,7 +148,7 @@ async function load(){
   $("#source").textContent="مصدر البيانات: "+d.source+" · "+d.strategy;
   $("#sourceShort").textContent=d.source||"بيانات عامة";
   $("#scanState").textContent="اكتمل";$("#scanState").className="state-good";
-  renderMovers(d.movers);renderSignals(d.signals);renderOpen(d.open_trades);renderClosed(t.items);
+  renderMovers(d.movers);renderSignals(d.signals,d.scan_diagnostics||{});renderOpen(d.open_trades);renderClosed(t.items);
   $("#health").textContent="متصل";$("#health").className="ok";
  }catch(e){
   $("#cards").innerHTML='<div class="empty">'+safe(e.message)+'</div>';
