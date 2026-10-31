@@ -134,6 +134,13 @@ function configurePage(){
   loadNews();
  }else{hideAll();show("homeSection","marketSection")}
  $("#marketSection").hidden=PATH!=="/";
+ $("#refresh").hidden=PATH==="/"||PATH==="/blog"||PATH==="/news";
+ if(PATH==="/admin"){
+  if($("#adminPanel").hidden){location.replace("/");return}
+  hideAll();show("homeSection","adminPanel");
+  $("#homeSection h1").innerHTML="إدارة <span>المشتركين</span>";
+  $("#homeSection p").textContent="إدارة الحسابات والصلاحيات بشكل مستقل.";
+ }
  const drawer=$("#siteDrawer");
  if(drawer)drawer.querySelectorAll("a").forEach(a=>a.classList.toggle("active",a.getAttribute("href")===PATH));
 }
