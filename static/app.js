@@ -158,7 +158,7 @@ async function loadAdminUsers(){
   root.innerHTML=d.users.map(u=>{
    const expiry=u.subscription_expires_at?new Date(u.subscription_expires_at*1000).toLocaleDateString("ar-SA"):"—";
    const status=u.role==="admin"?"أدمن":u.subscribed?"مشترك حتى "+expiry:"غير مشترك";
-   const actions=u.role==="admin"?"":'<div class="admin-actions"><button data-admin-action="grant" data-days="30" data-user="'+u.id+'">30 يوم</button><button data-admin-action="grant" data-days="90" data-user="'+u.id+'">90 يوم</button><button data-admin-action="grant" data-days="365" data-user="'+u.id+'">سنة</button><button class="revoke" data-admin-action="revoke" data-user="'+u.id+'">إلغاء</button></div>';
+   const actions=u.role==="admin"?"":'<div class="admin-actions"><button data-admin-action="grant" data-days="30" data-user="'+u.id+'">شهر</button><button data-admin-action="grant" data-days="60" data-user="'+u.id+'">شهرين</button><button data-admin-action="grant" data-days="90" data-user="'+u.id+'">3 أشهر</button><button data-admin-action="grant" data-days="180" data-user="'+u.id+'">6 أشهر</button><button data-admin-action="grant" data-days="365" data-user="'+u.id+'">سنة</button><button class="revoke" data-admin-action="revoke" data-user="'+u.id+'">إلغاء</button></div>';
    return '<article class="admin-user"><div><b>'+safe(u.email)+'</b><small>رقم الحساب: '+u.id+' · '+status+'</small></div>'+actions+'</article>';
   }).join("");
  }catch(e){$("#adminUsers").innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
