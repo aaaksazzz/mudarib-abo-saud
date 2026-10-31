@@ -406,3 +406,10 @@ def test_market_scan_reports_candidate_rejection_reasons(tmp_path, monkeypatch):
     assert details["candles_ready"] == 2
     assert details["accepted_before_top3"] == 0
     assert details["rejected_by_reason"] == {"no_sweep_or_absorption": 2}
+
+
+def test_gammapro_reports_specific_rejection_reason():
+    from gamma_engine import analyse_liquidity_candidate
+    diagnostics = {}
+    assert analyse_liquidity_candidate([], 100.0, "BUY", diagnostics=diagnostics) is None
+    assert diagnostics["reason"] == "insufficient_candles"
