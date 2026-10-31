@@ -100,7 +100,7 @@ async function loadMarketStatuses(){
 function renderGamma(payload){
  const root=$("#gammaCards"),note=$("#gammaNote");
  if(!payload){root.innerHTML='<div class="empty">لا توجد بيانات Gamma.</div>';return}
- if(payload.status==="not_configured"){root.innerHTML='<div class="empty">مصدر Gamma غير مربوط. أضف GAMMAFLIP_API_KEY في Northflank Secrets.</div>';note.textContent="مفتاح API لا يوضع في GitHub أو المتصفح.";return}
+ if(payload.status==="unavailable_no_key"){root.innerHTML='<div class="empty">بيانات Gamma Options/GEX غير متاحة حاليًا بدون مفتاح. بقية التحليل تعمل بشكل مستقل.</div>';note.textContent="نعتمد على السعر والحجم والشموع والسيولة المتاحة، ولا نعرض قيم Gamma تقديرية.";return}
  const rows=payload.items||[];
  if(!rows.length){root.innerHTML='<div class="empty">'+safe(payload.message||"لا توجد بيانات Gamma متاحة الآن.")+'</div>';return}
  const labels={provider_rate_limit:"تجاوز حد المزود",provider_auth_error:"تحقق من المفتاح أو الاشتراك",provider_unavailable:"المصدر غير متاح",stale_gamma_data:"البيانات قديمة",unsupported_coin:"عملة غير مدعومة",missing_data_timestamp:"وقت البيانات غير متوفر",invalid_provider_payload:"استجابة غير صالحة",provider_http_error:"خطأ من المزود"};
@@ -126,7 +126,7 @@ $("#gammaRefresh")?.addEventListener("click",loadGamma);
 const PROVIDER_LABELS={
  configured:"مهيأ",single_source:"مصدر واحد",configured_unverified_runtime:"مهيأ · يحتاج تحقق وقت التشغيل",
  configured_watchlist:"قائمة رموز مهيأة",optional_disabled:"غير مفعّل",symbols_required:"قائمة الرموز مطلوبة",
- provider_required:"مصدر غير مربوط",secret_required:"مفتاح API مطلوب"
+ provider_required:"مصدر غير مربوط",secret_required:"ميزة اختيارية غير متاحة",unavailable_no_key:"ميزة اختيارية غير متاحة"
 };
 async function loadSystemStatus(){
  const button=$("#systemRefresh"),summary=$("#systemSummary"),root=$("#systemProviders");
