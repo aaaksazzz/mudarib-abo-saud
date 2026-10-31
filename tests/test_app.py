@@ -228,3 +228,37 @@ def test_signal_entry_uses_live_quote_not_previous_candle_close(monkeypatch):
     assert signal is not None
     assert signal["entry"] == 110.0
     assert signal["price"] == 110.0
+
+
+def test_yahoo_provider_is_disabled_by_default():
+    original = module.YAHOO_ENABLED
+    try:
+        module.YAHOO_ENABLED = False
+        response = client.get("/api/market/us")
+        assert response.status_code == 503
+        assert response.json["status"] == "provider_required"
+    finally:
+        module.YAHOO_ENABLED = original
+
+
+def test_yahoo_candles_drop_forming_bar(monkeypatch):
+    import pandas as pd
+    now = int(module.time.time() * 1000)
+    index = pd.to_datetime([now - 30 * 60 * 1000, now - 5 * 60 * 1000], unit="ms", utc=True)
+    frame = pd.DataFrame({
+        "Open": [10.0, 11.0], "High": [12.0, 13.0],
+        "Low": [9.0, 10.0], "Close": [11.0, 12.0], "Volume": [100, 200],
+    }, index=index)
+    class FakeTicker:
+        def __init__(self, symbol):
+            self.symbol = symbol
+        def history(self, **kwargs):
+            assert kwargs["interval"] == "15m"
+            return frame
+    class FakeYahoo:
+        Ticker = FakeTicker
+    monkeypatch.setattr(module, "yf", FakeYahoo)
+    monkeypatch.setattr(module, "YAHOO_ENABLED", True)
+    rows = module.yahoo_candles("AAPL", "15m")
+    assert len(rows) == 1
+    assert rows[0]["close"] == 11.0
