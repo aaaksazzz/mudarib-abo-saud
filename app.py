@@ -6,6 +6,8 @@ from datetime import datetime
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from functools import wraps
+import re
 
 import requests
 
@@ -13,9 +15,18 @@ try:
     import yfinance as yf
 except ImportError:
     yf = None
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, session
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__, static_folder="static")
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+AUTH_CONFIGURED = bool(SECRET_KEY and ADMIN_EMAIL and len(ADMIN_PASSWORD) >= 12)
+app.secret_key = SECRET_KEY or os.urandom(32)
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
+                  SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "1") == "1",
+                  PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30)
 BASES = {"spot": "https://api.binance.com", "futures": "https://fapi.binance.com"}
 SPOT_BASES = ["https://api.binance.com", "https://api-gcp.binance.com", "https://api1.binance.com", "https://api2.binance.com", "https://api3.binance.com", "https://api4.binance.com", "https://data-api.binance.vision"]
 ALPHA_BASE = "https://www.binance.com"
@@ -415,6 +426,18 @@ def db():
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(trades)")}
         if "tp3_hit" not in columns:
             connection.execute("ALTER TABLE trades ADD COLUMN tp3_hit INTEGER NOT NULL DEFAULT 0")
+        connection.execute("""CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user',
+            subscription_expires_at INTEGER, created_at INTEGER NOT NULL
+        )""")
+        if AUTH_CONFIGURED:
+            admin = connection.execute("SELECT id FROM users WHERE email=?", (ADMIN_EMAIL,)).fetchone()
+            if not admin:
+                connection.execute(
+                    "INSERT INTO users(email,password_hash,role,created_at) VALUES(?,?,?,?)",
+                    (ADMIN_EMAIL, generate_password_hash(ADMIN_PASSWORD), "admin", int(time.time()))
+                )
         connection.commit()
         yield connection
         connection.commit()
@@ -423,6 +446,177 @@ def db():
         raise
     finally:
         connection.close()
+
+
+def auth_setup_ready():
+    return AUTH_CONFIGURED
+
+
+def public_user(row):
+    now = int(time.time())
+    is_admin = row["role"] == "admin"
+    expiry = row["subscription_expires_at"]
+    active = is_admin or bool(expiry and int(expiry) > now)
+    return {"id": row["id"], "email": row["email"], "role": row["role"],
+            "is_admin": is_admin, "subscribed": active,
+            "subscription_expires_at": expiry}
+
+
+def current_user():
+    user_id = session.get("user_id")
+    if not user_id:
+        return None
+    with db() as connection:
+        return connection.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+
+
+def require_login(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        if not auth_setup_ready():
+            return jsonify({"ok": False, "error": "auth_setup_required",
+                            "message": "يلزم ضبط SECRET_KEY وبيانات الأدمن في إعدادات الخادم."}), 503
+        if current_user() is None:
+            return jsonify({"ok": False, "error": "login_required", "message": "سجل الدخول أولاً."}), 401
+        return fn(*args, **kwargs)
+    return wrapped
+
+
+def require_subscription(fn):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        if not auth_setup_ready():
+            return jsonify({"ok": False, "error": "auth_setup_required",
+                            "message": "نظام الاشتراكات يحتاج إعداد الخادم أولاً."}), 503
+        user = current_user()
+        if user is None:
+            return jsonify({"ok": False, "error": "login_required", "message": "سجل الدخول أولاً."}), 401
+        if user["role"] != "admin" and (not user["subscription_expires_at"] or int(user["subscription_expires_at"]) <= int(time.time())):
+            return jsonify({"ok": False, "error": "subscription_required",
+                            "message": "حسابك غير مشترك أو انتهى اشتراكك. تواصل مع الإدارة لتفعيل الوصول."}), 403
+        return fn(*args, **kwargs)
+    return wrapped
+
+
+def require_admin(fn):
+    @wraps(fn)
+    @require_login
+    def wrapped(*args, **kwargs):
+        user = current_user()
+        if not user or user["role"] != "admin":
+            return jsonify({"ok": False, "error": "admin_required", "message": "هذه الصفحة للأدمن فقط."}), 403
+        return fn(*args, **kwargs)
+    return wrapped
+
+
+@app.get("/api/auth/me")
+def auth_me():
+    if not auth_setup_ready():
+        return jsonify({"ok": False, "configured": False, "message": "يلزم إعداد بيانات الأدمن ومفتاح الجلسة على الخادم."}), 503
+    user = current_user()
+    return jsonify({"ok": True, "configured": True, "user": public_user(user) if user else None})
+
+
+@app.post("/api/auth/register")
+def auth_register():
+    if not auth_setup_ready():
+        return jsonify({"ok": False, "error": "auth_setup_required", "message": "نظام التسجيل غير مهيأ على الخادم."}), 503
+    data = request.get_json(silent=True) or {}
+    email = str(data.get("email", "")).strip().lower()
+    password = str(data.get("password", ""))
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email) or len(email) > 190:
+        return jsonify({"ok": False, "message": "أدخل بريدًا إلكترونيًا صحيحًا."}), 400
+    if len(password) < 10 or len(password) > 200:
+        return jsonify({"ok": False, "message": "كلمة المرور يجب أن تكون 10 أحرف على الأقل."}), 400
+    try:
+        with db() as connection:
+            cursor = connection.execute(
+                "INSERT INTO users(email,password_hash,role,created_at) VALUES(?,?,?,?)",
+                (email, generate_password_hash(password), "user", int(time.time()))
+            )
+            user_id = cursor.lastrowid
+    except sqlite3.IntegrityError:
+        return jsonify({"ok": False, "message": "هذا البريد مسجل مسبقًا."}), 409
+    session.clear()
+    session["user_id"] = user_id
+    session.permanent = True
+    with db() as connection:
+        row = connection.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+    return jsonify({"ok": True, "user": public_user(row)}), 201
+
+
+@app.post("/api/auth/login")
+def auth_login():
+    if not auth_setup_ready():
+        return jsonify({"ok": False, "error": "auth_setup_required", "message": "نظام الدخول غير مهيأ على الخادم."}), 503
+    data = request.get_json(silent=True) or {}
+    email = str(data.get("email", "")).strip().lower()
+    password = str(data.get("password", ""))
+    with db() as connection:
+        row = connection.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+    if not row or not check_password_hash(row["password_hash"], password):
+        return jsonify({"ok": False, "message": "البريد أو كلمة المرور غير صحيحة."}), 401
+    session.clear()
+    session["user_id"] = row["id"]
+    session.permanent = True
+    return jsonify({"ok": True, "user": public_user(row)})
+
+
+@app.post("/api/auth/logout")
+def auth_logout():
+    session.clear()
+    return jsonify({"ok": True})
+
+
+@app.get("/api/admin/users")
+@require_admin
+def admin_users():
+    with db() as connection:
+        rows = connection.execute(
+            "SELECT id,email,role,subscription_expires_at,created_at FROM users ORDER BY created_at DESC"
+        ).fetchall()
+    now = int(time.time())
+    users = []
+    for row in rows:
+        item = dict(row)
+        item["subscribed"] = item["role"] == "admin" or bool(item["subscription_expires_at"] and item["subscription_expires_at"] > now)
+        users.append(item)
+    return jsonify({"ok": True, "users": users})
+
+
+@app.post("/api/admin/subscription")
+@require_admin
+def admin_subscription():
+    data = request.get_json(silent=True) or {}
+    try:
+        user_id = int(data.get("user_id"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "message": "معرّف الحساب غير صحيح."}), 400
+    action = str(data.get("action", "grant")).lower()
+    with db() as connection:
+        target = connection.execute("SELECT id,role,subscription_expires_at FROM users WHERE id=?", (user_id,)).fetchone()
+        if not target:
+            return jsonify({"ok": False, "message": "الحساب غير موجود."}), 404
+        if target["role"] == "admin":
+            return jsonify({"ok": False, "message": "لا يمكن تعديل اشتراك حساب الأدمن."}), 400
+        if action == "revoke":
+            connection.execute("UPDATE users SET subscription_expires_at=NULL WHERE id=?", (user_id,))
+            expiry = None
+        elif action == "grant":
+            try:
+                days = int(data.get("days", 30))
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "message": "عدد الأيام غير صحيح."}), 400
+            if days < 1 or days > 3650:
+                return jsonify({"ok": False, "message": "مدة الاشتراك من يوم إلى 3650 يوم."}), 400
+            now = int(time.time())
+            start = max(now, int(target["subscription_expires_at"] or 0))
+            expiry = start + days * 86400
+            connection.execute("UPDATE users SET subscription_expires_at=? WHERE id=?", (expiry, user_id))
+        else:
+            return jsonify({"ok": False, "message": "الإجراء غير معروف."}), 400
+    return jsonify({"ok": True, "subscription_expires_at": expiry})
+
 
 def save_new_trades(kind, signals):
     now = int(time.time())
@@ -537,6 +731,7 @@ def providers():
 
 
 @app.get("/api/market/<kind>")
+@require_subscription
 def market(kind):
     if kind not in BASES and kind not in ("alpha", "forex", "saudi", "us"):
         return jsonify({"ok": False, "status": "provider_required", "message": "مزود البيانات لهذا السوق غير مربوط؛ لن نعرض بيانات غير موثوقة.", "signals": []}), 503
@@ -586,6 +781,7 @@ def market(kind):
         return jsonify({"ok": False, "error": "تعذر الوصول إلى سجل الصفقات. تحقق من وحدة التخزين الدائمة.", "market": kind}), 503
 
 @app.get("/api/trades")
+@require_subscription
 def trades():
     market_id = request.args.get("market", "")
     with db() as connection:
