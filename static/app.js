@@ -106,18 +106,18 @@ function renderGamma(payload){
 async function loadGamma(){
  const button=$("#gammaRefresh"),root=$("#gammaCards");
  if(!button||button.disabled)return;
- button.disabled=true;button.textContent="جارٍ جلب Gamma...";
+ button.disabled=true;button.textContent="جارٍ تحديث التحليل...";
  root.innerHTML='<div class="empty">جارٍ طلب بيانات الخيارات...</div>';
  try{const d=await get("/api/gamma/crypto",25000);renderGamma(d)}
  catch(e){root.innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
- finally{button.disabled=false;button.textContent="تحديث Gamma"}
+ finally{button.disabled=false;button.textContent="تحديث تحليل السيولة"}
 }
 $("#gammaRefresh")?.addEventListener("click",loadGamma);
 
 const PROVIDER_LABELS={
  configured:"مهيأ",single_source:"مصدر واحد",configured_unverified_runtime:"مهيأ · يحتاج تحقق وقت التشغيل",
  configured_watchlist:"قائمة رموز مهيأة",optional_disabled:"غير مفعّل",symbols_required:"قائمة الرموز مطلوبة",
- provider_required:"مصدر غير مربوط",secret_required:"ميزة اختيارية غير متاحة",unavailable_no_key:"ميزة اختيارية غير متاحة"
+ provider_required:"مصدر غير مربوط",secret_required:"إعداد مطلوب",unavailable_no_key:"غير متاح"
 };
 async function loadSystemStatus(){
  const button=$("#systemRefresh"),summary=$("#systemSummary"),root=$("#systemProviders");
