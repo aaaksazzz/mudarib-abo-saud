@@ -4,7 +4,8 @@ import time
 
 MARKET_PROFILES = {
     "spot": {"label": "Crypto Spot", "volume_source": "base_asset_volume", "min_volume_ratio": 1.05},
-    "futures": {"label": "Crypto Perpetual Futures", "volume_source": "contract_base_volume", "min_volume_ratio": 1.05},
+    "futures": {"label": "Crypto USD-M Perpetual Futures", "volume_source": "contract_base_volume", "min_volume_ratio": 1.05},
+    "coinm": {"label": "Crypto COIN-M Perpetual Futures", "volume_source": "contract_quote_volume_usd", "min_volume_ratio": 1.05},
     "alpha": {"label": "Binance Alpha", "volume_source": "base_asset_volume", "min_volume_ratio": 1.10},
     "us": {"label": "US Equities", "volume_source": "shares_volume", "min_volume_ratio": 1.15},
     "saudi": {"label": "Saudi Equities", "volume_source": "shares_volume", "min_volume_ratio": 1.15},

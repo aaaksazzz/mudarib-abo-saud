@@ -31,7 +31,7 @@ app.secret_key = SECRET_KEY or os.urandom(32)
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
                   SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "1") == "1",
                   PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30)
-BASES = {"spot": "https://api.binance.com", "futures": "https://fapi.binance.com"}
+BASES = {"spot": "https://api.binance.com", "futures": "https://fapi.binance.com", "coinm": "https://dapi.binance.com"}
 SPOT_BASES = ["https://api.binance.com", "https://api-gcp.binance.com", "https://api1.binance.com", "https://api2.binance.com", "https://api3.binance.com", "https://api4.binance.com", "https://data-api.binance.vision"]
 ALPHA_BASE = "https://www.binance.com"
 BIQUOTE_BASE = "https://biquote.io"
@@ -57,7 +57,8 @@ DB_PATH = Path(os.environ.get("DB_PATH", str(DATA_DIR / "trades.sqlite3")))
 
 MARKETS = [
     {"id": "spot", "name": "Binance Spot", "provider": "Binance", "status": "live"},
-    {"id": "futures", "name": "Binance Futures", "provider": "Binance", "status": "live"},
+    {"id": "futures", "name": "Binance USD-M Futures", "provider": "Binance", "status": "live"},
+    {"id": "coinm", "name": "Binance COIN-M Futures", "provider": "Binance", "status": "live"},
     {"id": "alpha", "name": "Binance Alpha", "provider": "Binance public Alpha data", "status": "live"},
     {"id": "saudi", "name": "السوق السعودي", "provider": "Yahoo Finance (opt-in)", "status": "optional_disabled"},
     {"id": "us", "name": "الأسهم الأمريكية", "provider": "Yahoo Finance (opt-in)", "status": "optional_disabled"},
@@ -292,16 +293,17 @@ def alpha_market_tickers():
 
 def binance_active_symbols(kind):
     """Return currently tradable USDT symbols from Binance exchange metadata."""
-    path = "/api/v3/exchangeInfo" if kind == "spot" else "/fapi/v1/exchangeInfo"
+    path = "/api/v3/exchangeInfo" if kind == "spot" else ("/dapi/v1/exchangeInfo" if kind == "coinm" else "/fapi/v1/exchangeInfo")
     urls = [host + path for host in SPOT_BASES] if kind == "spot" else [BASES[kind] + path]
     payload = cached(kind + ":exchange-info", 300, lambda: fetch_first_json(urls))
     symbols = set()
     for row in payload.get("symbols", []):
-        if row.get("status") != "TRADING" or row.get("quoteAsset") != "USDT":
+        expected_quote = "USD" if kind == "coinm" else "USDT"
+        if row.get("status") != "TRADING" or row.get("quoteAsset") != expected_quote:
             continue
         if kind == "spot" and row.get("isSpotTradingAllowed") is False:
             continue
-        if kind == "futures" and row.get("contractType") != "PERPETUAL":
+        if kind in ("futures", "coinm") and row.get("contractType") != "PERPETUAL":
             continue
         symbols.add(str(row.get("symbol", "")))
     if not symbols:
@@ -317,7 +319,7 @@ def market_tickers(kind):
     if kind in ("saudi", "us"):
         return cached(f"yahoo:{kind}:universe", 60, lambda: yahoo_market_tickers(kind))
     base = BASES[kind]
-    path = "/api/v3/ticker/24hr" if kind == "spot" else "/fapi/v1/ticker/24hr"
+    path = "/api/v3/ticker/24hr" if kind == "spot" else ("/dapi/v1/ticker/24hr" if kind == "coinm" else "/fapi/v1/ticker/24hr")
     if kind == "spot":
         rows = cached(kind + ":tickers", 20, lambda: fetch_first_json([host + path for host in SPOT_BASES]))
     else:
@@ -326,7 +328,12 @@ def market_tickers(kind):
     output = []
     for row in rows:
         symbol = str(row.get("symbol", ""))
-        if symbol not in active_symbols or not symbol.endswith("USDT") or symbol[:-4] in STABLES:
+        if symbol not in active_symbols:
+            continue
+        if kind == "coinm":
+            if not symbol.endswith("_PERP"):
+                continue
+        elif not symbol.endswith("USDT") or symbol[:-4] in STABLES:
             continue
         try:
             price = float(row["lastPrice"])
@@ -354,7 +361,7 @@ def candles(kind, symbol, interval):
             raise requests.RequestException("Binance Alpha candles unavailable")
         raw = payload.get("data") or []
     else:
-        path = "/api/v3/klines" if kind == "spot" else "/fapi/v1/klines"
+        path = "/api/v3/klines" if kind == "spot" else ("/dapi/v1/klines" if kind == "coinm" else "/fapi/v1/klines")
         raw = cached(f"{kind}:{symbol}:{interval}", 45,
                      lambda: fetch_json(BASES[kind] + path, {"symbol": symbol, "interval": interval, "limit": 100}))
     rows = []
