@@ -108,26 +108,27 @@ function renderGamma(payload){
  root.innerHTML='<article class="gamma-card"><div class="gamma-card-head"><b>محرك السيولة المحلي</b><span class="gamma-status up">يعمل دون مفاتيح</span></div><div class="gamma-levels"><div><small>نوع التحليل</small><b>OHLCV</b></div><div><small>نسبة الحجم</small><b>Volume Ratio</b></div><div><small>ضغط السعر</small><b>Price Pressure</b></div><div><small>سحب السيولة</small><b>Liquidity Sweep</b></div><div><small>الامتصاص</small><b>Absorption</b></div></div><small class="gamma-time">'+safe(payload.message||"تحليل محلي من بيانات الشموع والحجم العامة؛ ليس Options GEX.")+'</small></article>';
  if(note)note.textContent="محرك التحليل لا يحتاج مفاتيح API. لا يتم احتساب Gamma Exposure أو بيانات الخيارات دون مصدر خيارات موثوق.";
 }
+let gammaBusy=false;
 async function loadGamma(){
- const button=$("#gammaRefresh"),root=$("#gammaCards");
- if(!button||button.disabled)return;
- button.disabled=true;button.textContent="جارٍ تحديث التحليل...";
- root.innerHTML='<div class="empty">جارٍ تحميل بيانات الشموع العامة وتحليل السيولة...</div>';
+ const root=$("#gammaCards");
+ if(!root||gammaBusy||document.hidden)return;
+ gammaBusy=true;
  try{const d=await get("/api/analysis/method",12000);renderGamma(d)}
  catch(e){root.innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
- finally{button.disabled=false;button.textContent="تحديث تحليل السيولة"}
+ finally{gammaBusy=false}
 }
-$("#gammaRefresh")?.addEventListener("click",loadGamma);
+
 
 const PROVIDER_LABELS={
  configured:"مهيأ",single_source:"مصدر واحد",configured_unverified_runtime:"مهيأ · يحتاج تحقق وقت التشغيل",
  configured_watchlist:"قائمة رموز مهيأة",optional_disabled:"غير مفعّل",symbols_required:"قائمة الرموز مطلوبة",
  provider_required:"مصدر غير مربوط",secret_required:"إعداد مطلوب",unavailable_no_key:"غير متاح"
 };
+let systemBusy=false;
 async function loadSystemStatus(){
- const button=$("#systemRefresh"),summary=$("#systemSummary"),root=$("#systemProviders");
- if(button&&button.disabled)return;
- if(button){button.disabled=true;button.textContent="جارٍ الفحص..."}
+ const summary=$("#systemSummary"),root=$("#systemProviders");
+ if(!summary||systemBusy||document.hidden)return;
+ systemBusy=true;
  try{
   const d=await get("/api/system/status",10000);
   const healthy=d.database==="ok";
@@ -141,8 +142,7 @@ async function loadSystemStatus(){
   const items=d.markets||[];
   root.innerHTML=items.map(x=>{
    const status=PROVIDER_LABELS[x.status]||x.status||"غير معروف";
-   const cls=["configured","configured_watchlist","single_source"].includes(x.status)?"ready":
-    x.status==="configured_unverified_runtime"?"check":"missing";
+   const cls=["configured","configured_watchlist","single_source"].includes(x.status)?"ready":x.status==="configured_unverified_runtime"?"check":"missing";
    return '<article class="provider-row"><div class="provider-main"><b>'+safe(x.name)+'</b><small>'+safe(x.provider||"غير محدد")+'</small></div><span class="provider-state '+cls+'">'+safe(status)+'</span><small class="provider-note">'+safe(x.note||"")+'</small><small class="provider-fallback">مسارات احتياط موثقة: '+(x.fallbacks||0)+'</small></article>';
   }).join("")||'<div class="empty">لا توجد مصادر مسجلة.</div>';
   const stamp=d.cache_last_update?new Date(d.cache_last_update*1000).toLocaleTimeString("ar-SA"):"لا توجد بيانات مخزنة";
@@ -152,14 +152,13 @@ async function loadSystemStatus(){
  }catch(e){
   summary.innerHTML='<article class="system-metric"><small>حالة الفحص</small><b class="down">تعذر جلب الحالة</b></article>';
   root.innerHTML='<div class="empty">'+safe(e.message)+'</div>';
- }finally{if(button){button.disabled=false;button.textContent="فحص الحالة"}}
+ }finally{systemBusy=false}
 }
-$("#systemRefresh")?.addEventListener("click",loadSystemStatus);
+
 
 async function load(){
  if(busy){pending=true;return}
  busy=true;pending=false;
- const refresh=$("#refresh");refresh.disabled=true;refresh.innerHTML="<span>↻</span> جارٍ التحديث";
  $("#health").textContent="جارٍ التحديث";$("#scanState").textContent="يفحص السوق";$("#scanState").className="";
  try{
   const requestedMarket=market;
@@ -182,13 +181,11 @@ async function load(){
   $("#scanState").textContent="تعذر الفحص";$("#scanState").className="down";
   $("#health").textContent="غير متصل";$("#health").className="bad";
  }finally{
-  busy=false;refresh.disabled=false;refresh.innerHTML="<span>↻</span> تحديث البيانات";
   if(pending){pending=false;load()}
  }
 }
 
 
-$("#refresh").addEventListener("click",()=>{if(PATH==="/sections/history")loadHistoryPage();else load()});
 $("#analysisTimeframe")?.addEventListener("change",e=>{
  const next=e.target.value;if(!VALID_TFS.includes(next))return;
  analysisTimeframe=next;
@@ -204,7 +201,6 @@ async function loadNews(){
   root.innerHTML=d.items.map(x=>'<article class="news-item"><div><small>'+safe(x.source||"مصدر خارجي")+' · '+safe(x.published||"")+'</small><h3><a href="'+safe(x.url)+'" target="_blank" rel="noopener noreferrer">'+safe(x.title)+'</a></h3></div><span class="news-arrow">↗</span></article>').join("");
  }catch(e){root.innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
 }
-$("#newsRefresh")?.addEventListener("click",loadNews);
 function configurePage(){
  const adminAllowed=!$("#adminPanel").hidden;$("#adminPanel").hidden=true;
  const ids=["homeSection","homeOverview","marketSection","directionSection","cryptoGammaSection","systemSection","moversSection","movers","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection"];
@@ -238,7 +234,6 @@ function configurePage(){
   loadNews();
  }else{hideAll();show("homeSection","marketSection")}
  $("#marketSection").hidden=PATH!=="/";
- $("#refresh").hidden=PATH==="/"||PATH==="/blog"||PATH==="/news"||PATH==="/sections/system";
  if(PATH==="/admin"){
   if(!adminAllowed){location.replace("/");return}
   hideAll();show("homeSection","adminPanel");$("#adminPanel").hidden=false;
@@ -275,7 +270,7 @@ async function startAuthorized(user=null){
  $("#drawerAdmin").hidden=!(user&&user.is_admin);
  if(user&&user.is_admin) await loadAdminUsers();
  configurePage();
- if(marketMatch){await loadMarketStatuses();await load();}
+ if(marketMatch){await loadMarketStatuses();await load();lastGammaAuto=Date.now();await loadGamma()}
  else if(PATH==="/"){await loadMarketStatuses();}
  else if(PATH.startsWith("/sections/") && ["direction","movers","opportunities","open-trades"].includes(PATH.split("/").pop())){await loadMarketStatuses();await load();}
  else if(PATH==="/sections/history"){await loadHistoryPage();}
@@ -336,7 +331,6 @@ async function loadAdminUsers(){
   }).join("");
  }catch(e){$("#adminUsers").innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
 }
-$("#adminRefresh").addEventListener("click",loadAdminUsers);
 $("#adminUsers").addEventListener("click",async e=>{
  const b=e.target.closest("[data-admin-action]");if(!b)return;
  b.disabled=true;
@@ -369,4 +363,20 @@ $("#siteDrawer").addEventListener("click",e=>{
 
 tick();setInterval(tick,1000);
 initializeAccess();
-timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden)return;if(marketMatch||(["direction","movers","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();else if(PATH==="/sections/history")loadHistoryPage();else if(PATH==="/sections/system")loadSystemStatus()},30000);
+let lastGammaAuto=Date.now(),lastStatusAuto=Date.now(),lastNewsAuto=Date.now(),lastSystemAuto=Date.now(),lastAdminAuto=Date.now();
+timer=setInterval(()=>{
+ if(document.hidden||$("#mainContent").hidden)return;
+ const now=Date.now();
+ if(marketMatch){
+  load();
+  if(now-lastStatusAuto>=60000){lastStatusAuto=now;loadMarketStatuses()}
+  if(now-lastGammaAuto>=300000){lastGammaAuto=now;loadGamma()}
+ }else if(["direction","movers","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")){
+  load();
+  if(now-lastStatusAuto>=60000){lastStatusAuto=now;loadMarketStatuses()}
+ }else if(PATH==="/sections/history")loadHistoryPage();
+ else if(PATH==="/sections/system"&&now-lastSystemAuto>=60000){lastSystemAuto=now;loadSystemStatus()}
+ else if(PATH==="/news"&&now-lastNewsAuto>=300000){lastNewsAuto=now;loadNews()}
+ else if(PATH==="/admin"&&now-lastAdminAuto>=60000){lastAdminAuto=now;loadAdminUsers()}
+ else if(PATH==="/"&&now-lastStatusAuto>=60000){lastStatusAuto=now;loadMarketStatuses()}
+},30000);
