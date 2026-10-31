@@ -38,8 +38,14 @@ def assess_timeframe_alignment(histories, side):
     expected = "BUY" if side == "BUY" else "SELL" if side == "SELL" else None
     states = {interval: _state(histories.get(interval, []))
               for interval in ("1h", "4h", "1d")}
-    confirmed = bool(expected) and all(state == expected for state in states.values())
     aligned = sum(state == expected for state in states.values()) if expected else 0
+    opposing = "SELL" if expected == "BUY" else "BUY"
+    confirmed = (
+        bool(expected)
+        and states["1h"] == expected
+        and aligned >= 2
+        and all(state != opposing for state in states.values())
+    )
     return {
         "confirmed": confirmed,
         "states": states,
