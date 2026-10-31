@@ -59,3 +59,17 @@ html{scroll-padding-top:16px}
 .news-item h3 a:hover{color:var(--blue)}
 .news-arrow{color:var(--blue);font-size:20px}
 @media(max-width:700px){.editorial-grid{grid-template-columns:1fr}.market-list{grid-template-columns:repeat(2,minmax(0,1fr))}.market-tab{min-height:58px}}
+
+.gamma-panel{padding:16px;margin:20px 0;border:1px solid #29425c;background:linear-gradient(145deg,#101f30,#0a1420)}
+.gamma-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.gamma-card{padding:13px;border:1px solid var(--line);border-radius:12px;background:#0a1522;min-width:0}
+.gamma-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+.gamma-card-head>b,.gamma-card>b{font-size:16px;letter-spacing:.04em}
+.gamma-status{font-size:10px;font-weight:800;color:#a9c4df}
+.gamma-status.up{color:#65d6a0}.gamma-status.down{color:#ff9b9b}
+.gamma-levels{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.gamma-levels>div{display:grid;gap:4px;min-width:0}
+.gamma-levels small,.gamma-time{font-size:9px;color:var(--muted)}
+.gamma-levels b{font-size:11px;direction:ltr;text-align:right;overflow-wrap:anywhere}
+.gamma-time{display:block;margin-top:12px;direction:ltr;text-align:right}
+@media(max-width:650px){.gamma-grid{grid-template-columns:1fr}.gamma-levels{grid-template-columns:repeat(3,minmax(0,1fr))}.gamma-card{padding:11px}}
