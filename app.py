@@ -13,6 +13,7 @@ import xml.etree.ElementTree as ET
 import requests
 from gamma_engine import analyse_liquidity_candidate
 from gammaflip_client import fetch_supported_crypto
+from market_ranking import rank_market_assets
 
 try:
     import yfinance as yf
@@ -30,7 +31,7 @@ app.secret_key = SECRET_KEY or os.urandom(32)
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
                   SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "1") == "1",
                   PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30)
-BASES = {"spot": "https://api.binance.com", "futures": "https://fapi.binance.com"}
+BASES = {"spot": "https://api.binance.com", "futures": "https://fapi.binance.com", "coinm": "https://dapi.binance.com"}
 SPOT_BASES = ["https://api.binance.com", "https://api-gcp.binance.com", "https://api1.binance.com", "https://api2.binance.com", "https://api3.binance.com", "https://api4.binance.com", "https://data-api.binance.vision"]
 ALPHA_BASE = "https://www.binance.com"
 BIQUOTE_BASE = "https://biquote.io"
@@ -56,7 +57,8 @@ DB_PATH = Path(os.environ.get("DB_PATH", str(DATA_DIR / "trades.sqlite3")))
 
 MARKETS = [
     {"id": "spot", "name": "Binance Spot", "provider": "Binance", "status": "live"},
-    {"id": "futures", "name": "Binance Futures", "provider": "Binance", "status": "live"},
+    {"id": "futures", "name": "Binance USD-M Futures", "provider": "Binance", "status": "live"},
+    {"id": "coinm", "name": "Binance COIN-M Futures", "provider": "Binance", "status": "live"},
     {"id": "alpha", "name": "Binance Alpha", "provider": "Binance public Alpha data", "status": "live"},
     {"id": "saudi", "name": "السوق السعودي", "provider": "Yahoo Finance (opt-in)", "status": "optional_disabled"},
     {"id": "us", "name": "الأسهم الأمريكية", "provider": "Yahoo Finance (opt-in)", "status": "optional_disabled"},
@@ -210,11 +212,17 @@ def yahoo_market_tickers(kind):
                 continue
             price = float(frame["Close"].iloc[-1])
             prior = float(frame["Close"].iloc[max(0, len(frame) - 27)])
-            volume = float(frame["Volume"].tail(26).fillna(0).sum() * price)
+            recent = frame.tail(26)
+            volume = float(recent["Volume"].fillna(0).sum() * price)
             if price <= 0 or prior <= 0:
                 continue
+            if kind == "us" and volume < 1_000_000:
+                continue
+            high = float(recent["High"].max()) if "High" in recent else price
+            low = float(recent["Low"].min()) if "Low" in recent else price
             output.append({"symbol": symbol, "price": price, "volume": volume,
                            "change24h": (price / prior - 1) * 100,
+                           "range24h": ((high - low) / price * 100) if high >= low > 0 else 0.0,
                            "quote_age_seconds": int(age)})
         except Exception as exc:
             app.logger.warning("Yahoo quote failed for %s: %s", symbol, exc)
@@ -289,6 +297,27 @@ def alpha_market_tickers():
             })
     return output
 
+def binance_active_symbols(kind):
+    """Return currently tradable USDT symbols from Binance exchange metadata."""
+    path = "/api/v3/exchangeInfo" if kind == "spot" else ("/dapi/v1/exchangeInfo" if kind == "coinm" else "/fapi/v1/exchangeInfo")
+    urls = [host + path for host in SPOT_BASES] if kind == "spot" else [BASES[kind] + path]
+    payload = cached(kind + ":exchange-info", 300, lambda: fetch_first_json(urls))
+    symbols = set()
+    for row in payload.get("symbols", []):
+        expected_quote = "USD" if kind == "coinm" else "USDT"
+        if row.get("status") != "TRADING" or row.get("quoteAsset") != expected_quote:
+            continue
+        if kind == "spot" and row.get("isSpotTradingAllowed") is False:
+            continue
+        if kind in ("futures", "coinm") and row.get("contractType") != "PERPETUAL":
+            continue
+        symbols.add(str(row.get("symbol", "")))
+    if not symbols:
+        quote = "USD" if kind == "coinm" else "USDT"
+        raise requests.RequestException(f"Binance returned no active {kind} {quote} symbols")
+    return symbols
+
+
 def market_tickers(kind):
     if kind == "alpha":
         return cached("alpha:universe", 60, alpha_market_tickers)
@@ -297,24 +326,33 @@ def market_tickers(kind):
     if kind in ("saudi", "us"):
         return cached(f"yahoo:{kind}:universe", 60, lambda: yahoo_market_tickers(kind))
     base = BASES[kind]
-    path = "/api/v3/ticker/24hr" if kind == "spot" else "/fapi/v1/ticker/24hr"
+    path = "/api/v3/ticker/24hr" if kind == "spot" else ("/dapi/v1/ticker/24hr" if kind == "coinm" else "/fapi/v1/ticker/24hr")
     if kind == "spot":
         rows = cached(kind + ":tickers", 20, lambda: fetch_first_json([host + path for host in SPOT_BASES]))
     else:
         rows = cached(kind + ":tickers", 20, lambda: fetch_json(base + path))
+    active_symbols = cached(kind + ":active-symbols", 300, lambda: binance_active_symbols(kind))
     output = []
     for row in rows:
         symbol = str(row.get("symbol", ""))
-        if not symbol.endswith("USDT") or symbol[:-4] in STABLES:
+        if symbol not in active_symbols:
+            continue
+        if kind == "coinm":
+            if not symbol.endswith("_PERP"):
+                continue
+        elif not symbol.endswith("USDT") or symbol[:-4] in STABLES:
             continue
         try:
             price = float(row["lastPrice"])
             volume = float(row.get("quoteVolume", 0))
             change = float(row.get("priceChangePercent", 0))
+            high = float(row.get("highPrice", 0) or 0)
+            low = float(row.get("lowPrice", 0) or 0)
         except (KeyError, TypeError, ValueError):
             continue
         if price > 0 and volume >= 1_000_000:
-            output.append({"symbol": symbol, "price": price, "volume": volume, "change24h": change})
+            output.append({"symbol": symbol, "price": price, "volume": volume, "change24h": change,
+                           "range24h": ((high - low) / price * 100) if high >= low > 0 else 0.0})
     return output
 
 def candles(kind, symbol, interval):
@@ -330,7 +368,7 @@ def candles(kind, symbol, interval):
             raise requests.RequestException("Binance Alpha candles unavailable")
         raw = payload.get("data") or []
     else:
-        path = "/api/v3/klines" if kind == "spot" else "/fapi/v1/klines"
+        path = "/api/v3/klines" if kind == "spot" else ("/dapi/v1/klines" if kind == "coinm" else "/fapi/v1/klines")
         raw = cached(f"{kind}:{symbol}:{interval}", 45,
                      lambda: fetch_json(BASES[kind] + path, {"symbol": symbol, "interval": interval, "limit": 100}))
     rows = []
@@ -392,6 +430,8 @@ def analyse_candidate(kind, item, market_direction, diagnostics=None):
             "price": item["price"],
             "change24h": item["change24h"],
             "volume": item["volume"],
+            "fast_mover_score": item.get("fast_mover_score", 0),
+            "fast_mover_rank": item.get("fast_mover_rank"),
             "timeframe": SCAN_INTERVAL,
             "strategy": "HAWK QUANT PRO",
             "timeframe_alignment": alignment["states"],
@@ -766,6 +806,8 @@ def providers():
         ], "status": "configured", "note": "Official public endpoints; spot fallback is active."},
         {"id": "futures", "primary": "Binance USD-M Futures REST", "fallbacks": [],
          "status": "single_source", "note": "Only one documented public base endpoint; no fake mirrors configured."},
+        {"id": "coinm", "primary": "Binance COIN-M Futures REST", "fallbacks": [],
+         "status": "single_source", "note": "DAPI public exchangeInfo, 24h ticker and OHLCV; USD-quoted perpetual contracts only."},
         {"id": "alpha", "primary": "Binance Alpha public endpoints", "fallbacks": [],
          "status": "single_source", "note": "No verified equivalent Alpha public backup."},
         {"id": "forex", "primary": "BiQuote public REST", "fallbacks": [],
@@ -858,19 +900,18 @@ def market(kind):
         return jsonify({"ok": False, "status": "provider_required", "message": "Yahoo غير مفعّل أو قائمة الرموز غير مضبوطة؛ لم نعرض بيانات غير مكتملة.", "signals": []}), 503
     try:
         assets = cached(kind + ":universe", 20, lambda: market_tickers(kind))
+        assets = rank_market_assets(assets)
         up = sum(1 for row in assets if row["change24h"] > 0)
         down = sum(1 for row in assets if row["change24h"] < 0)
         flat = len(assets) - up - down
         direction = "BUY" if up > down else ("SELL" if down > up else "NEUTRAL")
-        gainers = sorted((row for row in assets if row["change24h"] > 0),
-                         key=lambda row: row["change24h"], reverse=True)[:3]
-        losers = sorted((row for row in assets if row["change24h"] < 0),
-                        key=lambda row: row["change24h"])[:3]
-        movers = gainers + losers
+        # Show highest-priority fast movers first, regardless of direction.
+        movers = [row for row in assets if row["change24h"] != 0][:6]
+        fast_movers = assets[:10]
         prices = {row["symbol"]: row["price"] for row in assets}
         update_open_trades(kind, prices)
         # Scan a wider, still bounded batch of the fastest/highest-volume assets.
-        candidates = sorted(assets, key=lambda row: (abs(row["change24h"]), row["volume"]), reverse=True)[:40]
+        candidates = assets[:40]
         signals = []
         diagnostic_rows = [{} for _ in candidates]
         if direction != "NEUTRAL":
@@ -890,7 +931,9 @@ def market(kind):
         for item in diagnostic_rows:
             reason = item.get("reason", "unknown")
             rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
-        signals.sort(key=lambda row: (row["quality_score"], abs(row["change24h"])), reverse=True)
+        signals.sort(key=lambda row: (
+            row.get("fast_mover_score", 0), row["quality_score"], abs(row["change24h"])
+        ), reverse=True)
         signals = signals[:3]
         save_new_trades(kind, signals)
         with db() as connection:
@@ -900,7 +943,9 @@ def market(kind):
         return jsonify({
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": SCAN_INTERVAL,
-            "movers": movers, "signals": signals, "open_trades": active,
+            "movers": movers, "fast_movers": fast_movers,
+            "fast_mover_method": "50% زخم 24س + 30% نطاق الحركة + 20% السيولة النسبية؛ أوزان الحقول المتاحة فقط",
+            "signals": signals, "open_trades": active,
             "scan_diagnostics": {
                 "universe_size": len(assets), "candidates_scanned": len(candidates),
                 "candles_ready": sum(1 for item in diagnostic_rows if item.get("candles_ready") is True),

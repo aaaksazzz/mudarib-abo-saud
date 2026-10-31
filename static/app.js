@@ -1,5 +1,5 @@
 const $=s=>document.querySelector(s);
-const MARKET_NAMES={spot:"Binance Spot",futures:"Binance Futures",alpha:"Binance Alpha",saudi:"السوق السعودي",us:"الأسهم الأمريكية",contracts:"العقود الأمريكية",forex:"الفوركس والذهب"};
+const MARKET_NAMES={spot:"Binance Spot",futures:"Binance USD-M Futures",coinm:"Binance COIN-M Futures",alpha:"Binance Alpha",saudi:"السوق السعودي",us:"الأسهم الأمريكية",contracts:"العقود الأمريكية",forex:"الفوركس والذهب"};
 const PATH=location.pathname.replace(/\/+$/,"")||"/";
 const marketMatch=PATH.match(/^\/markets\/([a-z]+)$/);
 let market=marketMatch?marketMatch[1]:"spot",busy=false,pending=false,timer=null;
@@ -20,7 +20,7 @@ async function get(url,timeout=18000){
 function renderMovers(rows){
  const root=$("#movers");
  if(!rows||!rows.length){root.innerHTML='<div class="empty">لا تتوفر حركة أصول كافية للعرض.</div>';return}
- root.innerHTML=rows.map(x=>'<article class="mover"><div class="mover-head"><b class="mover-symbol">'+safe(x.symbol)+'</b><span class="mover-side">'+(x.change24h>=0?"الأعلى صعودًا":"الأعلى هبوطًا")+'</span></div><b class="mover-price">'+fmt(x.price)+'</b><div class="mover-change '+(x.change24h>=0?"up":"down")+'">'+pct(x.change24h)+'</div><small class="mover-volume">حجم 24س '+compact(x.volume)+' USDT</small></article>').join("");
+ root.innerHTML=rows.map(x=>'<article class="mover"><div class="mover-head"><b class="mover-symbol">'+safe(x.symbol)+'</b><span class="mover-side">#'+Number(x.fast_mover_rank||0)+' · '+(x.change24h>=0?"صاعد":"هابط")+'</span></div><b class="mover-price">'+fmt(x.price)+'</b><div class="mover-change '+(x.change24h>=0?"up":"down")+'">'+pct(x.change24h)+'</div><small class="mover-volume">سرعة الحركة '+Number(x.fast_mover_score||0)+'/100 · حجم 24س '+compact(x.volume)+'</small></article>').join("");
 }
 function renderSignals(rows,diagnostics={}){
  const root=$("#cards");
@@ -35,7 +35,7 @@ function renderSignals(rows,diagnostics={}){
   const side=x.side==="BUY"?1:-1;
   const tp1=pct(side*(x.tp1/x.entry-1)*100),tp2=pct(side*(x.tp2/x.entry-1)*100),tp3=pct(side*(x.tp3/x.entry-1)*100);
   const rank=i===0?"gold":i===1?"silver":"bronze";
-  return '<article class="trade"><div class="trade-head"><div class="trade-title"><span class="rank '+rank+'">'+(i+1)+'</span><b>'+safe(x.symbol)+'</b></div><span class="tag '+(x.side==="BUY"?"buy":"sell")+'">'+(x.side==="BUY"?"شراء":"بيع")+'</span></div><div class="trade-meta-top"><span>تغير 24س <b class="'+(x.change24h>=0?"up":"down")+'">'+pct(x.change24h)+'</b></span><span>حدث السيولة <b>'+safe(x.liquidity_event||"—")+'</b></span></div><div class="entry"><small>سعر الدخول</small><strong>'+fmt(x.entry)+'</strong></div><div class="levels"><div><small>TP1 · '+tp1+'</small><b>'+fmt(x.tp1)+'</b></div><div><small>TP2 · '+tp2+'</small><b>'+fmt(x.tp2)+'</b></div><div><small>TP3 · '+tp3+'</small><b>'+fmt(x.tp3)+'</b></div><div class="stop"><small>وقف الخسارة</small><b>'+fmt(x.stop_loss)+'</b></div></div><div class="trade-stats"><div class="trade-stat"><small>المخاطرة</small><b>'+x.risk_percent+'%</b></div><div class="trade-stat"><small>ضغط الشمعة</small><b>'+x.flow_pressure+'</b></div><div class="trade-stat"><small>جودة الشروط</small><b>'+x.quality_score+'/100</b></div><div class="trade-stat"><small>حجم نسبي</small><b>'+x.volume_ratio+'x · '+compact(x.volume)+'</b></div></div></article>';
+  return '<article class="trade"><div class="trade-head"><div class="trade-title"><span class="rank '+rank+'">'+(i+1)+'</span><b>'+safe(x.symbol)+'</b></div><span class="tag '+(x.side==="BUY"?"buy":"sell")+'">'+(x.side==="BUY"?"شراء":"بيع")+'</span></div><div class="trade-meta-top"><span>تغير 24س <b class="'+(x.change24h>=0?"up":"down")+'">'+pct(x.change24h)+'</b></span><span>حدث السيولة <b>'+safe(x.liquidity_event||"—")+'</b></span><span>سرعة الحركة <b>'+Number(x.fast_mover_score||0)+'/100</b></span></div><div class="entry"><small>سعر الدخول</small><strong>'+fmt(x.entry)+'</strong></div><div class="levels"><div><small>TP1 · '+tp1+'</small><b>'+fmt(x.tp1)+'</b></div><div><small>TP2 · '+tp2+'</small><b>'+fmt(x.tp2)+'</b></div><div><small>TP3 · '+tp3+'</small><b>'+fmt(x.tp3)+'</b></div><div class="stop"><small>وقف الخسارة</small><b>'+fmt(x.stop_loss)+'</b></div></div><div class="trade-stats"><div class="trade-stat"><small>المخاطرة</small><b>'+x.risk_percent+'%</b></div><div class="trade-stat"><small>ضغط الشمعة</small><b>'+x.flow_pressure+'</b></div><div class="trade-stat"><small>جودة الشروط</small><b>'+x.quality_score+'/100</b></div><div class="trade-stat"><small>حجم نسبي</small><b>'+x.volume_ratio+'x · '+compact(x.volume)+'</b></div></div></article>';
  }).join("");
 }
 function renderOpen(rows){

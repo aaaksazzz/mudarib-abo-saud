@@ -26,7 +26,7 @@ def test_health_and_home():
     health = client.get("/api/health")
     assert health.status_code == 200
     assert health.json["database"] == "ok"
-    assert set(health.json["live_markets"]) == {"spot", "futures", "alpha", "forex"}
+    assert set(health.json["live_markets"]) == {"spot", "futures", "coinm", "alpha", "forex"}
 
 def test_timeframe_is_fixed_to_15m(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "fixed-timeframe.sqlite3")
@@ -132,6 +132,8 @@ def test_market_response_includes_breadth_and_real_movers(tmp_path, monkeypatch)
     assert payload["flat"] == 1
     assert payload["total"] == 3
     assert {x["symbol"] for x in payload["movers"]} == {"AAAUSDT", "BBBUSDT"}
+    assert payload["fast_movers"][0]["fast_mover_score"] >= payload["fast_movers"][-1]["fast_mover_score"]
+    assert payload["fast_movers"][0]["fast_mover_rank"] == 1
 
 
 def test_alpha_public_universe_uses_only_trading_usdt_pairs(monkeypatch):
