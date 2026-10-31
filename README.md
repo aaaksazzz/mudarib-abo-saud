@@ -41,3 +41,16 @@
 
 ## النشر والاختبارات
 المنفذ 8080، أمر التشغيل عبر Gunicorn مضمّن في Dockerfile. فحوص CI تشمل compileall وNode syntax check وpytest.
+
+
+## Accounts and subscriptions
+
+The app now requires an account with an active subscription to access market analysis and trade history. New registrations are pending until an administrator grants access. Administrators can grant 30, 90, or 365 days from the in-app subscriber panel, or revoke access; expiry is enforced by the server.
+
+Configure these secrets in the hosting service before enabling access:
+
+- `SECRET_KEY`: a long random secret (at least 32 random bytes).
+- `ADMIN_EMAIL`: the administrator login email.
+- `ADMIN_PASSWORD`: the initial administrator password (at least 12 characters).
+
+The first administrator account is created automatically in the persistent SQLite database on first request. Keep `/data` on persistent storage so accounts and subscriptions survive restarts. Do not commit secret values to GitHub. Registration currently uses email/password without email verification or payment processing; subscriptions are granted manually by the administrator.
