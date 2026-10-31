@@ -59,6 +59,32 @@ async function loadMarketStatuses(){
   });
  }catch(e){$("#health").textContent="تعذر فحص الأسواق";$("#health").className="bad"}
 }
+function renderGamma(payload){
+ const root=$("#gammaCards"),note=$("#gammaNote");
+ if(!payload){root.innerHTML='<div class="empty">لا توجد بيانات Gamma.</div>';return}
+ if(payload.status==="not_configured"){root.innerHTML='<div class="empty">مصدر Gamma غير مربوط. أضف GAMMAFLIP_API_KEY في Northflank Secrets.</div>';note.textContent="مفتاح API لا يوضع في GitHub أو المتصفح.";return}
+ const rows=payload.items||[];
+ if(!rows.length){root.innerHTML='<div class="empty">'+safe(payload.message||"لا توجد بيانات Gamma متاحة الآن.")+'</div>';return}
+ const labels={provider_rate_limit:"تجاوز حد المزود",provider_auth_error:"تحقق من المفتاح أو الاشتراك",provider_unavailable:"المصدر غير متاح",stale_gamma_data:"البيانات قديمة",unsupported_coin:"عملة غير مدعومة",missing_data_timestamp:"وقت البيانات غير متوفر",invalid_provider_payload:"استجابة غير صالحة",provider_http_error:"خطأ من المزود"};
+ root.innerHTML=rows.map(x=>{
+  if(x.status!=="live")return '<article class="gamma-card"><b>'+safe(x.symbol)+'</b><span class="gamma-status down">'+safe(labels[x.status]||x.status)+'</span></article>';
+  const regime=x.regime==="positive"?"موجب · تذبذب أهدأ غالبًا":x.regime==="negative"?"سالب · قابلية حركة أعنف غالبًا":"غير محدد";
+  const money=n=>n==null?"—":Number(n).toLocaleString("en-US",{maximumFractionDigits:0});
+  return '<article class="gamma-card"><div class="gamma-card-head"><b>'+safe(x.symbol)+'</b><span class="gamma-status '+(x.regime==="positive"?"up":"down")+'">'+regime+'</span></div><div class="gamma-levels"><div><small>السعر المرجعي</small><b>'+money(x.spot)+'</b></div><div><small>Gamma Flip</small><b>'+money(x.flip)+'</b></div><div><small>Net GEX</small><b>'+money(x.net_gex)+'</b></div><div><small>Call Wall · P1</small><b>'+money(x.p1_strike)+'</b></div><div><small>Put Wall · N1</small><b>'+money(x.n1_strike)+'</b></div><div><small>أكبر |Gamma|</small><b>'+money(x.a1_strike)+'</b></div></div><small class="gamma-time">مصدر: '+safe(x.exchange||"all")+' · '+safe(x.as_of||"")+'</small></article>';
+ }).join("");
+ note.textContent=(payload.quota_note||"")+(payload.updated?" · آخر طلب "+new Date(payload.updated).toLocaleTimeString("ar-SA"):"");
+}
+async function loadGamma(){
+ const button=$("#gammaRefresh"),root=$("#gammaCards");
+ if(!button||button.disabled)return;
+ button.disabled=true;button.textContent="جارٍ جلب Gamma...";
+ root.innerHTML='<div class="empty">جارٍ طلب بيانات الخيارات...</div>';
+ try{const d=await get("/api/gamma/crypto",25000);renderGamma(d)}
+ catch(e){root.innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
+ finally{button.disabled=false;button.textContent="تحديث Gamma"}
+}
+$("#gammaRefresh")?.addEventListener("click",loadGamma);
+
 async function load(){
  if(busy){pending=true;return}
  busy=true;pending=false;
@@ -105,7 +131,7 @@ async function loadNews(){
 $("#newsRefresh")?.addEventListener("click",loadNews);
 function configurePage(){
  const adminAllowed=!$("#adminPanel").hidden;$("#adminPanel").hidden=true;
- const ids=["homeSection","marketSection","directionSection","moversSection","movers","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection"];
+ const ids=["homeSection","marketSection","directionSection","cryptoGammaSection","moversSection","movers","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection"];
  const hideAll=()=>ids.forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
  const show=(...names)=>names.forEach(id=>{const el=$("#"+id);if(el)el.hidden=false});
  if(PATH==="/"){
@@ -115,6 +141,7 @@ function configurePage(){
  }else if(marketMatch){
   if(!MARKET_NAMES[market]){location.replace("/");return}
   hideAll();show("homeSection","directionSection","moversSection","movers","opportunitiesSection","cards","openSection","historySection");
+  if(["spot","futures","alpha"].includes(market))show("cryptoGammaSection");
   $("#homeSection h1").innerHTML='<span>'+MARKET_NAMES[market]+'</span>';
   $("#homeSection p").textContent="صفحة مستقلة؛ بيانات واتجاهات وفرص وسجل هذا السوق فقط.";
  }else if(PATH.startsWith("/sections/")){
