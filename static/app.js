@@ -101,14 +101,14 @@ function renderGamma(payload){
  const root=$("#gammaCards"),note=$("#gammaNote");
  if(!payload){root.innerHTML='<div class="empty">تحليل السيولة المحلي غير متاح الآن.</div>';return}
  root.innerHTML='<article class="gamma-card"><div class="gamma-card-head"><b>محرك السيولة المحلي</b><span class="gamma-status up">يعمل دون مفاتيح</span></div><div class="gamma-levels"><div><small>نوع التحليل</small><b>OHLCV</b></div><div><small>نسبة الحجم</small><b>Volume Ratio</b></div><div><small>ضغط السعر</small><b>Price Pressure</b></div><div><small>سحب السيولة</small><b>Liquidity Sweep</b></div><div><small>الامتصاص</small><b>Absorption</b></div></div><small class="gamma-time">'+safe(payload.message||"تحليل محلي من بيانات الشموع والحجم العامة؛ ليس Options GEX.")+'</small></article>';
- if(note)note.textContent="لا نحتاج GAMMAFLIP_API_KEY أو أي مفتاح خارجي. لا نعرض Gamma Flip أو Net GEX أو جدران الخيارات دون بيانات خيارات موثوقة.";
+ if(note)note.textContent="محرك التحليل لا يحتاج مفاتيح API. لا يتم احتساب Gamma Exposure أو بيانات الخيارات دون مصدر خيارات موثوق.";
 }
 async function loadGamma(){
  const button=$("#gammaRefresh"),root=$("#gammaCards");
  if(!button||button.disabled)return;
  button.disabled=true;button.textContent="جارٍ تحديث التحليل...";
- root.innerHTML='<div class="empty">جارٍ طلب بيانات الخيارات...</div>';
- try{const d=await get("/api/gamma/crypto",25000);renderGamma(d)}
+ root.innerHTML='<div class="empty">جارٍ تحميل بيانات الشموع العامة وتحليل السيولة...</div>';
+ try{const d=await get("/api/analysis/method",12000);renderGamma(d)}
  catch(e){root.innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
  finally{button.disabled=false;button.textContent="تحديث تحليل السيولة"}
 }
@@ -204,7 +204,7 @@ function configurePage(){
  }else if(marketMatch){
   if(!MARKET_NAMES[market]){location.replace("/");return}
   hideAll();show("homeSection","directionSection","moversSection","movers","opportunitiesSection","cards","openSection");
-  if(["spot","futures","alpha"].includes(market))show("cryptoGammaSection");
+  show("cryptoGammaSection");
   $("#homeSection h1").innerHTML='<span>'+MARKET_NAMES[market]+'</span>';
   $("#homeSection p").textContent="صفحة مستقلة؛ بيانات واتجاهات وفرص وسجل هذا السوق فقط.";
  }else if(PATH.startsWith("/sections/")){
