@@ -56,3 +56,11 @@ Configure these secrets in the hosting service before enabling access:
 - `ADMIN_PASSWORD`: the initial administrator password (at least 12 characters).
 
 The first administrator account is created automatically in the persistent SQLite database on first request. Keep `/data` on persistent storage so accounts and subscriptions survive restarts. Do not commit secret values to GitHub. Registration currently uses email/password without email verification or payment processing; subscriptions are granted manually by the administrator.
+
+
+## GammaFlip crypto GEX
+- تكامل اختياري للقراءة فقط عبر GammaFlip REST API: `GAMMAFLIP_API_KEY` يحفظ في Northflank Secrets فقط، ولا يوضع في GitHub أو JavaScript.
+- يغطي GEX الحقيقي العملات التي لديها خيارات مدعومة: BTC وETH وSOL وXRP وHYPE، مع تجميع venues المتاحة عبر `/levels/all/{coin}`.
+- يعرض Gamma Flip وNet GEX وCall/Put walls ووقت لقطة البيانات. تُرفض اللقطات الأقدم من 30 دقيقة أو غير الموسومة كسوق Crypto.
+- زر تحديث يدوي فقط؛ النتيجة تخزن 15 دقيقة. كل دفعة تكلف حتى 5 طلبات، والحد المحلي الافتراضي 40 طلبًا يوميًا لترك هامش من حصة التجربة. يمكن ضبط `GAMMAFLIP_DAILY_BUDGET` حسب خطة المزود.
+- العملات غير المدعومة تواصل استخدام محرك السيولة السابق دون اختلاق GEX. التكامل لا ينفذ تداولًا ولا يدّعي معرفة مراكز كل صانع سوق على حدة.
