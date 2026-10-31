@@ -212,11 +212,17 @@ def yahoo_market_tickers(kind):
                 continue
             price = float(frame["Close"].iloc[-1])
             prior = float(frame["Close"].iloc[max(0, len(frame) - 27)])
-            volume = float(frame["Volume"].tail(26).fillna(0).sum() * price)
+            recent = frame.tail(26)
+            volume = float(recent["Volume"].fillna(0).sum() * price)
             if price <= 0 or prior <= 0:
                 continue
+            if kind == "us" and volume < 1_000_000:
+                continue
+            high = float(recent["High"].max()) if "High" in recent else price
+            low = float(recent["Low"].min()) if "Low" in recent else price
             output.append({"symbol": symbol, "price": price, "volume": volume,
                            "change24h": (price / prior - 1) * 100,
+                           "range24h": ((high - low) / price * 100) if high >= low > 0 else 0.0,
                            "quote_age_seconds": int(age)})
         except Exception as exc:
             app.logger.warning("Yahoo quote failed for %s: %s", symbol, exc)
@@ -307,7 +313,8 @@ def binance_active_symbols(kind):
             continue
         symbols.add(str(row.get("symbol", "")))
     if not symbols:
-        raise requests.RequestException(f"Binance returned no active {kind} USDT symbols")
+        quote = "USD" if kind == "coinm" else "USDT"
+        raise requests.RequestException(f"Binance returned no active {kind} {quote} symbols")
     return symbols
 
 
