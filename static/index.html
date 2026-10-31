@@ -14,7 +14,29 @@
  <a class="brand" href="/" aria-label="AS Trading PRO"><span class="logo">AS</span><span class="brand-copy"><b>AS <i>TRADING PRO</i></b><small>منصة الأسواق والتحليل الذكي</small></span></a>
  <div class="top-status"><span class="live-dot"></span><span id="health">فحص الاتصال</span><span class="top-divider"></span><span id="clock">--:--:--</span></div>
 </header>
-<main class="main">
+<section id="accessGate" class="access-gate">
+ <div class="access-card">
+  <div class="access-mark">AS</div>
+  <span class="kicker">MEMBERS ONLY · SMART TRADING PRO</span>
+  <h1 id="accessTitle">تسجيل الدخول</h1>
+  <p id="accessMessage">أنشئ حسابًا أو سجل دخولك. الوصول إلى الأسواق للمشتركين فقط.</p>
+  <form id="authForm" class="auth-form">
+   <label for="authEmail">البريد الإلكتروني</label>
+   <input id="authEmail" type="email" autocomplete="email" required placeholder="name@example.com">
+   <label for="authPassword">كلمة المرور</label>
+   <input id="authPassword" type="password" autocomplete="current-password" minlength="10" required placeholder="10 أحرف على الأقل">
+   <button id="authSubmit" type="submit">دخول</button>
+  </form>
+  <button id="authToggle" class="text-action" type="button">ليس لديك حساب؟ إنشاء حساب</button>
+  <button id="authLogout" class="text-action" type="button" hidden>تسجيل الخروج</button>
+  <p id="authNotice" class="auth-notice" role="status"></p>
+ </div>
+</section>
+<main class="main" id="mainContent" hidden>
+ <section id="adminPanel" class="panel admin-panel" hidden>
+  <div class="section-heading tracker-heading"><div><span class="kicker">ADMIN CONTROL</span><h2>إدارة المشتركين</h2><p>إدارة الحسابات وتفعيل أو إلغاء الاشتراكات.</p></div><button id="adminRefresh" class="refresh-btn" type="button">تحديث الحسابات</button></div>
+  <div id="adminUsers" class="admin-users"><div class="empty">جارٍ تحميل الحسابات...</div></div>
+ </section>
  <section class="welcome">
   <div><div class="eyebrow"><span class="eyebrow-line"></span> MARKET INTELLIGENCE TERMINAL</div><h1>مركز <span>الأسواق</span></h1><p>راقب اتجاه السوق، تابع حركة الأصول، واكتشف الفرص الفنية من بيانات المصدر مباشرة.</p></div>
   <button id="refresh" class="refresh-btn"><span>↻</span> تحديث البيانات</button>
