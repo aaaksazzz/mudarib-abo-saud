@@ -531,6 +531,11 @@ def db():
             connection.execute("ALTER TABLE trades ADD COLUMN tp3_hit INTEGER NOT NULL DEFAULT 0")
         if "signal_candle_time" not in columns:
             connection.execute("ALTER TABLE trades ADD COLUMN signal_candle_time INTEGER NOT NULL DEFAULT 0")
+        connection.execute("""CREATE TABLE IF NOT EXISTS market_snapshots (
+            market TEXT PRIMARY KEY, direction TEXT NOT NULL, up INTEGER NOT NULL,
+            down INTEGER NOT NULL, flat INTEGER NOT NULL, total INTEGER NOT NULL,
+            source TEXT NOT NULL, updated_at INTEGER NOT NULL
+        )""")
         connection.execute("""CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user',
@@ -566,6 +571,47 @@ def db():
     finally:
         connection.close()
 
+
+def save_market_snapshot(market, direction, up, down, flat, total, source):
+    now = int(time.time())
+    with db() as connection:
+        connection.execute(
+            """INSERT INTO market_snapshots
+               (market,direction,up,down,flat,total,source,updated_at)
+               VALUES (?,?,?,?,?,?,?,?)
+               ON CONFLICT(market) DO UPDATE SET
+                 direction=excluded.direction, up=excluded.up, down=excluded.down,
+                 flat=excluded.flat, total=excluded.total, source=excluded.source,
+                 updated_at=excluded.updated_at""",
+            (market, direction, int(up), int(down), int(flat), int(total), str(source), now),
+        )
+    return now
+
+
+def load_market_snapshot(market):
+    with db() as connection:
+        row = connection.execute("SELECT * FROM market_snapshots WHERE market=?", (market,)).fetchone()
+    return dict(row) if row else None
+
+
+def load_saved_market_trades(market, timeframe):
+    with db() as connection:
+        rows = connection.execute(
+            """SELECT * FROM trades WHERE market=? AND status='OPEN'
+               ORDER BY created_at DESC LIMIT 100""", (market,)
+        ).fetchall()
+    open_trades = []
+    for row in rows:
+        trade = dict(row)
+        trade.update({
+            "current_price": None, "live_pnl_percent": None, "price": None,
+            "quality_score": None, "signal_state_ar": "صفقة مؤكدة محفوظة ومفتوحة",
+            "fast_mover_score": 0, "change24h": 0, "change_timeframe": 0,
+            "institutional_flow": {"status": "unavailable"}, "persisted": True,
+        })
+        open_trades.append(trade)
+    signals = [dict(row) for row in open_trades if row["timeframe"] == timeframe][:3]
+    return signals, open_trades
 
 def auth_setup_ready():
     return AUTH_CONFIGURED
@@ -883,6 +929,7 @@ def health():
         "service": "smart-trading-pro",
         "status": "healthy" if database == "ok" else "degraded",
         "database": database,
+        "trade_storage": "mounted_volume" if os.path.ismount(DATA_DIR) else "container_filesystem",
         "live_markets": [item["id"] for item in MARKETS if item["status"] == "live"],
     }), (200 if database == "ok" else 503)
 
@@ -1014,6 +1061,8 @@ def market(kind):
         down = sum(1 for row in assets if row["change24h"] < 0)
         flat = len(assets) - up - down
         direction = "BUY" if up > down else ("SELL" if down > up else "NEUTRAL")
+        source_label = ("Yahoo Finance (private/internal test watchlist)" if kind in ("saudi", "us") else "Binance Alpha public market data" if kind == "alpha" else "BiQuote public FX/Metals feed" if kind == "forex" else "Binance public market data")
+        snapshot_updated = save_market_snapshot(kind, direction, up, down, flat, len(assets), source_label)
         # Show highest-priority fast movers first, regardless of direction.
         movers = [row for row in assets if row["change24h"] != 0][:6]
         fast_movers = assets[:10]
@@ -1121,14 +1170,32 @@ def market(kind):
                 "accepted_before_top3": rejection_counts.get("accepted", 0),
                 "rejected_by_reason": {key: value for key, value in rejection_counts.items() if key != "accepted"},
             },
-            "updated": int(time.time()),
-            "source": ("Yahoo Finance (private/internal test watchlist)" if kind in ("saudi", "us") else "Binance Alpha public market data" if kind == "alpha" else "BiQuote public FX/Metals feed" if kind == "forex" else "Binance public market data"), "strategy": "4H + Daily confirmation · selected-timeframe entry",
+            "updated": snapshot_updated, "snapshot_stale": False,
+            "source": source_label, "strategy": "4H + Daily confirmation · selected-timeframe entry",
             "gamma_status": "خيارات/GEX غير متاحة من مزود موثوق لكل الأسواق؛ لا يتم اختلاق قيم Gamma.",
             "analysis_mode": "سيولة سعرية وحجم شموع؛ ضغط تقديري وليس تدفق صفقات منفذة",
             "score_note": "اتجاه 4 ساعات واليومي من بنية OHLCV والزخم والحجم؛ الدخول من سحب السيولة أو الامتصاص وتأكيد الشمعة على الفريم المحدد. درجة الجودة من 100 وليست احتمال نجاح."
         })
     except requests.RequestException:
         app.logger.exception("Market provider request failed: %s", kind)
+        try:
+            snapshot = load_market_snapshot(kind)
+            if snapshot:
+                saved_signals, saved_open = load_saved_market_trades(kind, timeframe)
+                return jsonify({
+                    "ok": True, "market": kind, "direction": snapshot["direction"],
+                    "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[snapshot["direction"]],
+                    "up": snapshot["up"], "down": snapshot["down"], "flat": snapshot["flat"],
+                    "total": snapshot["total"], "timeframe": timeframe,
+                    "signals": saved_signals, "open_trades": saved_open,
+                    "movers": [], "fast_movers": [],
+                    "scan_diagnostics": {"universe_size": snapshot["total"], "candidates_scanned": 0, "rejected_by_reason": {}},
+                    "updated": snapshot["updated_at"], "snapshot_stale": True,
+                    "source": snapshot["source"], "strategy": "4H + Daily confirmation · selected-timeframe entry",
+                    "message": "تعذر تحديث المصدر؛ نعرض آخر اتجاه وصفقات محفوظة دون اختلاق بيانات جديدة."
+                })
+        except sqlite3.Error:
+            app.logger.exception("Could not load persisted market snapshot: %s", kind)
         return jsonify({"ok": False, "error": "تعذر الاتصال بمصدر السوق الآن؛ لم نستخدم بيانات قديمة أو وهمية.", "market": kind}), 502
     except sqlite3.Error:
         app.logger.exception("Trade database failure: %s", kind)

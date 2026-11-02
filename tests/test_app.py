@@ -538,3 +538,45 @@ def test_market_page_does_not_crash_when_optional_refresh_button_is_absent():
     html = (root / "static" / "index.html").read_text(encoding="utf-8")
     assert 'const refreshButton=$("#refresh");if(refreshButton)refreshButton.hidden=true;' in js
     assert 'app.js?v=20261102.market-init-hotfix1' in html
+
+def test_market_direction_and_open_trades_are_persisted(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "persistent-market-state.sqlite3")
+    module.save_market_snapshot("spot", "BUY", 8, 3, 1, 12, "test-feed")
+    snapshot = module.load_market_snapshot("spot")
+    assert snapshot["direction"] == "BUY"
+    assert snapshot["up"] == 8
+    assert snapshot["down"] == 3
+    assert snapshot["total"] == 12
+    assert snapshot["source"] == "test-feed"
+
+    now = int(time.time())
+    with module.db() as connection:
+        connection.execute(
+            """INSERT INTO trades
+               (market,symbol,timeframe,side,entry,stop_loss,tp1,tp2,tp3,status,
+                created_at,updated_at,signal_candle_time)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ("spot", "AAAUSDT", "15m", "BUY", 100.0, 98.0, 102.0, 104.0,
+             106.0, "OPEN", now, now, now),
+        )
+    signals, opened = module.load_saved_market_trades("spot", "15m")
+    assert len(signals) == 1
+    assert len(opened) == 1
+    assert signals[0]["symbol"] == "AAAUSDT"
+    assert signals[0]["persisted"] is True
+
+def test_market_api_restores_last_direction_when_provider_is_unavailable(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "stale-market-state.sqlite3")
+    module.CACHE.pop("spot:universe", None)
+    module.save_market_snapshot("spot", "SELL", 2, 9, 1, 12, "test-feed")
+
+    def unavailable(_kind):
+        raise module.requests.RequestException("simulated provider outage")
+
+    monkeypatch.setattr(module, "market_tickers", unavailable)
+    response = client.get("/api/market/spot?timeframe=15m")
+    assert response.status_code == 200
+    assert response.json["snapshot_stale"] is True
+    assert response.json["direction"] == "SELL"
+    assert response.json["up"] == 2
+    assert response.json["down"] == 9
