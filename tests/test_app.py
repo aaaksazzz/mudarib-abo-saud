@@ -580,3 +580,15 @@ def test_market_api_restores_last_direction_when_provider_is_unavailable(tmp_pat
     assert response.json["direction"] == "SELL"
     assert response.json["up"] == 2
     assert response.json["down"] == 9
+
+
+def test_home_page_shows_market_radar_and_keeps_news_inside_the_site():
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "static" / "index.html").read_text(encoding="utf-8")
+    js = (root / "static" / "app.js").read_text(encoding="utf-8")
+    assert 'id="homeOverview"' in html
+    assert 'id="homeMovers"' in html
+    assert 'id="homeCoverage"' in html
+    assert 'await loadHomeOverview();' in js
+    assert 'target="_blank"' not in js
+    assert "'+safe(x.url)+'" not in js

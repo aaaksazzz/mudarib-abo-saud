@@ -5,8 +5,8 @@
 <meta name="theme-color" content="#070b12"><title>SMART TRADING PRO | التداول الذكي</title>
 <meta name="description" content="منصة احترافية لمراقبة الأسواق والاتجاهات والفرص الفنية ببيانات عامة ومصادر واضحة.">
 <link rel="preconnect" href="https://api.binance.com"><link rel="preconnect" href="https://fapi.binance.com">
-<link rel="stylesheet" href="/static/app.css?v=20261102.market-terminal-v4">
-<script src="/static/app.js?v=20261102.market-init-hotfix1" defer></script>
+<link rel="stylesheet" href="/static/app.css?v=20261102.home-radar-v1">
+<script src="/static/app.js?v=20261102.home-radar-internal-news-v1" defer></script>
 </head>
 <body>
 <div class="app-shell">
@@ -64,6 +64,21 @@
    <a data-market="us" href="/markets/us" class="market-tab"><span class="market-icon usa">$</span><span><b>الأسهم الأمريكية</b><small>صفحة مستقلة</small></span></a>
    <a data-market="contracts" href="/markets/contracts" class="market-tab"><span class="market-icon contracts">⌁</span><span><b>العقود الأمريكية</b><small>صفحة مستقلة</small></span></a>
    <a data-market="forex" href="/markets/forex" class="market-tab"><span class="market-icon forex">FX</span><span><b>الفوركس والذهب</b><small>صفحة مستقلة</small></span></a>
+  </div>
+ </section>
+ <section id="homeOverview" class="home-overview" hidden>
+  <div class="home-dashboard-head">
+   <div><span class="kicker">GLOBAL MARKET RADAR</span><h2>نبض الأسواق</h2><p>اتجاهات الأسواق والأصول الأسرع حركة — دون توصيات تداول.</p></div>
+   <span id="homeUpdated" class="home-update"><i></i> جارٍ الفحص</span>
+  </div>
+  <div class="home-stat-grid">
+   <article class="home-stat"><small>الأصول المتاحة للفحص</small><b id="homeAssetCount">—</b><span>من مصادر البيانات المتاحة</span></article>
+   <article class="home-stat"><small>الأسواق المتاحة</small><b id="homeMarketCount">—</b><span>مع توضيح الأسواق غير المربوطة</span></article>
+   <article class="home-stat"><small>الأصول الأسرع حركة</small><b id="homeMoverCount">—</b><span>ترتيب زخم وليس توصيات</span></article>
+  </div>
+  <div class="home-radar-grid">
+   <article class="home-radar-panel"><div class="home-panel-head"><div><span class="kicker">FAST MOVERS</span><h3>الأصول الأسرع حركة</h3></div><span class="home-panel-tag">تغير 24 ساعة</span></div><div id="homeMovers" class="home-movers-list"><div class="empty">جارٍ تحميل الحركة...</div></div></article>
+   <article class="home-radar-panel"><div class="home-panel-head"><div><span class="kicker">MARKET COVERAGE</span><h3>اتجاه وتغطية الأسواق</h3></div><span class="home-panel-tag">كل سوق مستقل</span></div><div id="homeCoverage" class="home-coverage-list"><div class="empty">جارٍ فحص الأسواق...</div></div></article>
   </div>
  </section>
  <section class="overview-grid" id="directionSection">
