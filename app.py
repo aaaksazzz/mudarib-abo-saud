@@ -16,7 +16,7 @@ from gamma_engine import analyse_liquidity_candidate
 from market_ranking import rank_market_assets
 from institutional_flow import analyse_orderbook_flow
 from scan_rotation import select_priority_scan_batch
-from market_strategy_engine import evaluate_market_strategy
+from market_strategy_engine import MARKET_STRATEGIES, evaluate_market_strategy
 
 try:
     import yfinance as yf
@@ -1238,6 +1238,37 @@ def markets():
     return jsonify({"markets": rows})
 
 
+@app.get("/api/strategies")
+def strategies():
+    """Publish the distinct rule family and honest provider/validation status per market."""
+    labels = {
+        "spot": ("Binance Spot", "اختراق اتجاه صاعد بحجم نسبي؛ شراء فقط"),
+        "futures": ("Binance USD-M Futures", "استمرار الاتجاه الصاعد أو الهابط مع زخم وحجم"),
+        "coinm": ("Binance COIN-M", "انعكاس بعد سحب سيولة وعودة داخل النطاق"),
+        "alpha": ("Binance Alpha", "اختراق زخم وحجم بشروط أكثر تشددًا"),
+        "saudi": ("السوق السعودي", "انضغاط ثم توسع سعري مع حجم؛ شراء فقط"),
+        "us": ("الأسهم الأمريكية", "استعادة الاتجاه بعد تراجع مع حجم؛ شراء فقط"),
+        "forex": ("الفوركس والذهب", "اختراق نطاق مع توسع الحركة وحجم ticks"),
+        "contracts": ("العقود الأمريكية", "غير مفعّل حتى ربط مزود موثوق"),
+    }
+    rows = []
+    for market_id, strategy_id in MARKET_STRATEGIES.items():
+        name, description = labels[market_id]
+        if market_id == "contracts":
+            status = "provider_required"
+        elif market_id in ("saudi", "us"):
+            status = "configured_watchlist_only" if YAHOO_ENABLED and YAHOO_SYMBOLS.get(market_id) else "provider_required"
+        else:
+            status = "strategy_candidate_not_validated"
+        rows.append({
+            "market": market_id, "name": name, "strategy": strategy_id,
+            "description": description, "status": status,
+            "validation": "not_backtested_no_profitability_claim",
+            "entry_timeframe": "15m",
+        })
+    return jsonify({"items": rows})
+
+
 @app.get("/api/providers")
 def providers():
     """Expose provider truth: configured, verified fallback routes versus candidates not integrated."""
@@ -1517,7 +1548,7 @@ def market(kind):
                 "rejected_by_reason": {key: value for key, value in rejection_counts.items() if key != "accepted"},
             },
             "updated": snapshot_updated, "snapshot_stale": False,
-            "source": source_label, "strategy": "15m direction + liquidity + momentum · 15m entry",
+            "source": source_label, "strategy": "استراتيجية مستقلة حسب السوق · دخول 15 دقيقة",
             "gamma_status": "خيارات/GEX غير متاحة من مزود موثوق لكل الأسواق؛ لا يتم اختلاق قيم Gamma.",
             "analysis_mode": "سيولة سعرية وحجم شموع؛ ضغط تقديري وليس تدفق صفقات منفذة",
             "score_note": "الاتجاه والسيولة والزخم والدخول كلها من شموع 15 دقيقة المكتملة. درجة الجودة من 100 وليست احتمال نجاح."
