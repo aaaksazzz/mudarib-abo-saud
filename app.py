@@ -406,49 +406,93 @@ def candles(kind, symbol, interval):
     return rows
 
 def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timeframe="15m"):
-    """Analyse and trade the detected direction using completed candles from the selected timeframe."""
+    """Require aligned 4h + daily direction, rank/confirm the entry on the selected timeframe."""
     def reject(reason):
-        if diagnostics is not None: diagnostics["reason"]=reason
+        if diagnostics is not None:
+            diagnostics["reason"] = reason
         return None
+
     try:
-        from timeframe_strategy import assess_signal, make_trade
-        entry_rows=candles(kind,item["symbol"],timeframe)
-        if len(entry_rows)<50:
+        from timeframe_strategy import assess_timeframe, make_trade
+
+        reference_rows = {
+            "4h": candles(kind, item["symbol"], "4h"),
+            "1d": candles(kind, item["symbol"], "1d"),
+        }
+        if any(len(rows) < 50 for rows in reference_rows.values()):
+            if diagnostics is not None:
+                diagnostics["reference_candles"] = {key: len(rows) for key, rows in reference_rows.items()}
+            return reject("insufficient_reference_candles")
+
+        reference = {key: assess_timeframe(rows) for key, rows in reference_rows.items()}
+        buy_states = {"BUY", "STRONG_BUY"}
+        sell_states = {"SELL", "STRONG_SELL"}
+        states = [reference["4h"]["state"], reference["1d"]["state"]]
+        if all(state in buy_states for state in states):
+            side = "BUY"
+        elif all(state in sell_states for state in states):
+            side = "SELL"
+        else:
+            if diagnostics is not None:
+                diagnostics["reference_states"] = {"4h": states[0], "1d": states[1]}
+            return reject("reference_timeframes_not_aligned")
+
+        entry_rows = candles(kind, item["symbol"], timeframe)
+        if len(entry_rows) < 50:
             if diagnostics is not None:
                 diagnostics["candles_received"] = len(entry_rows)
                 diagnostics["candles_required"] = 50
             return reject("insufficient_candles")
-        if diagnostics is not None: diagnostics["candles_ready"]=True
-        assessment=assess_signal(entry_rows)
-        if not assessment["confirmed"]: return reject("no_signal")
-        side=assessment["side"]
-        levels=make_trade(entry_rows,side,timeframe)
-        if not levels: return reject("invalid_risk_levels")
-        closes=[float(x["close"]) for x in entry_rows[-2:]]
-        change_tf=(closes[-1]/closes[-2]-1)*100 if closes[-2] else 0
-        state_ar={"BUY":"شراء","STRONG_BUY":"شراء قوي","SELL":"بيع","STRONG_SELL":"بيع قوي"}
-        signal={**levels,"side":side,"price":item["price"],
-            "symbol":item["symbol"],"change24h":item["change24h"],
-            "change_timeframe":round(change_tf,4),"volume":item["volume"],
-            "fast_mover_score":item.get("fast_mover_score",0),
-            "fast_mover_rank":item.get("fast_mover_rank"),
-            "timeframe":timeframe,"signal_candle_time":int(entry_rows[-1]["time"]),"strategy":"SMART SIGNAL PRO · Same-Timeframe",
-            "signal_state":assessment["state"],
-            "signal_state_ar":state_ar.get(assessment["state"],"محايد"),
-            "quality_score":assessment["quality_score"],
-            "entry_analysis":assessment["analysis"],
-            "analysis_scope":"same_timeframe_only",
-            "quality_label":"قوة الشروط الفنية من 100 وليست احتمال نجاح",
-            "analysis_note":"تم اعتماد اتجاه الإشارة كما هو على الفريم نفسه؛ الدخول والوقف والأهداف محسوبة من شموع الفريم المحدد"}
-        flow=analyse_orderbook_flow(kind,item["symbol"],side,lambda url,params:cached(
-            f"orderbook:{kind}:{item['symbol']}",5,lambda:fetch_json(url,params)))
-        signal["institutional_flow"]=flow
-        signal["orderbook_context"]=flow.get("status","unavailable")
-        if diagnostics is not None: diagnostics["reason"]="accepted"
+        if diagnostics is not None:
+            diagnostics["candles_ready"] = True
+
+        entry_analysis = assess_timeframe(entry_rows, side=side)
+        valid_states = buy_states if side == "BUY" else sell_states
+        if entry_analysis["state"] not in valid_states:
+            if diagnostics is not None:
+                diagnostics["entry_state"] = entry_analysis["state"]
+            return reject("entry_timeframe_not_confirmed")
+
+        levels = make_trade(entry_rows, side, timeframe)
+        if not levels:
+            return reject("invalid_risk_levels")
+
+        closes = [float(row["close"]) for row in entry_rows[-2:]]
+        change_tf = (closes[-1] / closes[-2] - 1) * 100 if closes[-2] else 0.0
+        state_ar = {"BUY": "شراء", "STRONG_BUY": "شراء قوي",
+                    "SELL": "بيع", "STRONG_SELL": "بيع قوي"}
+        signal = {
+            **levels, "side": side, "price": item["price"],
+            "symbol": item["symbol"], "change24h": item["change24h"],
+            "change_timeframe": round(change_tf, 4), "volume": item["volume"],
+            "fast_mover_score": item.get("fast_mover_score", 0),
+            "fast_mover_rank": item.get("fast_mover_rank"),
+            "timeframe": timeframe, "signal_candle_time": int(entry_rows[-1]["time"]),
+            "strategy": "4H + Daily confirmation · timeframe entry",
+            "signal_state": entry_analysis["state"],
+            "signal_state_ar": state_ar.get(entry_analysis["state"], "محايد"),
+            "quality_score": entry_analysis["score"],
+            "entry_analysis": entry_analysis,
+            "reference_analysis": reference,
+            "analysis_scope": "4h_daily_confirmed",
+            "quality_label": "قوة الشروط الفنية من 100 وليست احتمال نجاح",
+            "analysis_note": "اتجاه 4 ساعات واليومي متوافق؛ تأكيد الدخول من الفريم المحدد",
+        }
+        flow = analyse_orderbook_flow(
+            kind, item["symbol"], side,
+            lambda url, params: cached(
+                f"orderbook:{kind}:{item['symbol']}", 5,
+                lambda: fetch_json(url, params)
+            ),
+        )
+        signal["institutional_flow"] = flow
+        signal["orderbook_context"] = flow.get("status", "unavailable")
+        if diagnostics is not None:
+            diagnostics["reason"] = "accepted"
         return signal
     except requests.RequestException:
         return reject("provider_error")
-    except (ValueError,TypeError,KeyError,IndexError,ZeroDivisionError):
+    except (ValueError, TypeError, KeyError, IndexError, ZeroDivisionError):
         return reject("analysis_error")
 
 @contextmanager
@@ -572,19 +616,11 @@ def require_admin(fn):
 
 
 @app.before_request
-def require_member_for_private_api():
-    path = request.path
-    public_api = path.startswith("/api/auth/") or path in ("/api/health", "/api/news")
-    if path.startswith("/api/") and not public_api:
-        if not auth_setup_ready():
-            return jsonify({"ok": False, "error": "auth_setup_required",
-                            "message": "نظام الاشتراكات غير مهيأ على الخادم."}), 503
-        user = current_user()
-        if user is None:
-            return jsonify({"ok": False, "error": "login_required", "message": "سجل الدخول أولاً."}), 401
-        if user["role"] != "admin" and (not user["subscription_expires_at"] or int(user["subscription_expires_at"]) <= int(time.time())):
-            return jsonify({"ok": False, "error": "subscription_required",
-                            "message": "الوصول للمشتركين فقط. فعّل اشتراكك من الإدارة."}), 403
+def protect_admin_api_only():
+    # Market data and analysis are read-only public endpoints. Account and
+    # subscription management remains protected by require_admin decorators.
+    # Never apply a subscription gate to every /api route.
+    return None
 
 
 @app.get("/api/auth/me")
@@ -749,11 +785,17 @@ def save_new_trades(kind, signals):
 
 def update_open_trades(kind, prices):
     now = int(time.time())
+    expiry_seconds = 24 * 60 * 60
     with db() as connection:
         rows = connection.execute("SELECT * FROM trades WHERE market=? AND status='OPEN'", (kind,)).fetchall()
         for trade in rows:
-            # A trade remains OPEN across refreshes and timeframe changes until
-            # its stop-loss or TP3 is reached. Missing prices never expire it.
+            # Expire stale opportunities even when a provider has no current quote.
+            if now - int(trade["created_at"]) >= expiry_seconds:
+                connection.execute(
+                    "UPDATE trades SET status='EXPIRED',updated_at=?,closed_at=? WHERE id=?",
+                    (now, now, trade["id"]),
+                )
+                continue
             price = prices.get(trade["symbol"])
             if price is None:
                 continue
@@ -780,7 +822,7 @@ def market_page(market_id):
 
 @app.get("/sections/<section_id>")
 def section_page(section_id):
-    allowed = {"direction", "movers", "opportunities", "open-trades", "}
+    allowed = {"direction", "movers", "opportunities", "open-trades", "history", "system"}
     if section_id not in allowed:
         return send_from_directory("static", "index.html"), 404
     return send_from_directory("static", "index.html")
@@ -1000,7 +1042,8 @@ def market(kind):
                 row["quality_score"] * 0.65 + float(row.get("fast_mover_score", 0) or 0) * 0.35, 1
             )
         signals.sort(key=lambda row: (
-            row["ranking_score"], row["quality_score"], abs(row.get("change_timeframe", 0))
+            row.get("change_timeframe", 0) if row.get("side") == "BUY" else -row.get("change_timeframe", 0),
+            row["quality_score"], row["ranking_score"],
         ), reverse=True)
         # Only show opportunities that were actually saved. Repeated scans of
         # the same symbol/timeframe stay in the position tracker, not as fresh cards.
