@@ -161,7 +161,7 @@ $("#systemRefresh")?.addEventListener("click",loadSystemStatus);
 async function load(){
  if(busy){pending=true;return}
  busy=true;pending=false;
- const refresh=$("#refresh");refresh.disabled=true;refresh.innerHTML="<span>↻</span> جارٍ التحديث";
+ const refresh=$("#refresh");if(refresh){refresh.disabled=true;refresh.innerHTML="<span>↻</span> جارٍ التحديث";}
  $("#health").textContent="جارٍ التحديث";$("#scanState").textContent="يفحص السوق";$("#scanState").className="";
  try{
   const requestedMarket=market;
@@ -202,13 +202,13 @@ async function load(){
   $("#scanState").textContent="تعذر الفحص";$("#scanState").className="down";
   $("#health").textContent="غير متصل";$("#health").className="bad";
  }finally{
-  busy=false;refresh.disabled=false;refresh.innerHTML="<span>↻</span> تحديث البيانات";
+  busy=false;if(refresh){refresh.disabled=false;refresh.innerHTML="<span>↻</span> تحديث البيانات";}
   if(pending){pending=false;load()}
  }
 }
 
 
-$("#refresh").addEventListener("click",()=>{if(PATH==="/sections/history")loadHistoryPage();else load()});
+$("#refresh")?.addEventListener("click",()=>{if(PATH==="/sections/history")loadHistoryPage();else load()});
 document.querySelectorAll("[data-timeframe]").forEach(button=>button.addEventListener("click",()=>{
  const next=button.dataset.timeframe;if(!VALID_TFS.includes(next)||next===analysisTimeframe)return;
  analysisTimeframe=next;syncTimeframeButtons();
