@@ -471,13 +471,16 @@ def db():
             tp1_hit INTEGER NOT NULL DEFAULT 0, tp2_hit INTEGER NOT NULL DEFAULT 0,
             tp3_hit INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, closed_at INTEGER,
-            signal_candle_time INTEGER NOT NULL DEFAULT 0
+            signal_candle_time INTEGER NOT NULL DEFAULT 0,
+            strategy_version TEXT NOT NULL DEFAULT 'legacy'
         )""")
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(trades)")}
         if "tp3_hit" not in columns:
             connection.execute("ALTER TABLE trades ADD COLUMN tp3_hit INTEGER NOT NULL DEFAULT 0")
         if "signal_candle_time" not in columns:
             connection.execute("ALTER TABLE trades ADD COLUMN signal_candle_time INTEGER NOT NULL DEFAULT 0")
+        if "strategy_version" not in columns:
+            connection.execute("ALTER TABLE trades ADD COLUMN strategy_version TEXT NOT NULL DEFAULT 'legacy'")
         connection.execute("""CREATE TABLE IF NOT EXISTS market_snapshots (
             market TEXT PRIMARY KEY, direction TEXT NOT NULL, up INTEGER NOT NULL,
             down INTEGER NOT NULL, flat INTEGER NOT NULL, total INTEGER NOT NULL,
@@ -622,7 +625,7 @@ def load_saved_market_trades(market, timeframe):
             "institutional_flow": {"status": "unavailable"}, "persisted": True,
         })
         open_trades.append(trade)
-    signals = [dict(row) for row in open_trades if row["timeframe"] == timeframe][:3]
+    signals = [dict(row) for row in open_trades if row["timeframe"] == timeframe and row.get("strategy_version") == "hawk-quant-v2"][:3]
     return signals, open_trades
 
 def auth_setup_ready():
@@ -1030,10 +1033,10 @@ def save_new_trades(kind, signals):
                 if recent:
                     continue
                 connection.execute("""INSERT INTO trades
-                    (market,symbol,timeframe,side,entry,stop_loss,tp1,tp2,tp3,created_at,updated_at,signal_candle_time)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (market,symbol,timeframe,side,entry,stop_loss,tp1,tp2,tp3,created_at,updated_at,signal_candle_time,strategy_version)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (kind, signal["symbol"], signal["timeframe"], signal["side"], entry,
-                     stop, tp1, tp2, tp3, now, now, candle_time))
+                     stop, tp1, tp2, tp3, now, now, candle_time, str(signal.get("strategy_version") or "legacy")))
                 inserted.append(signal)
             connection.commit()
     return inserted
@@ -1372,7 +1375,7 @@ def market(kind):
         }
         ticker_by_symbol = {row["symbol"]: row for row in assets}
         for trade in active:
-            if trade["timeframe"] != timeframe:
+            if trade["timeframe"] != timeframe or trade.get("strategy_version") != "hawk-quant-v2":
                 continue
             # Keep opposite-side legacy positions in the tracker, but do not
             # surface them as current opportunities against today's market bias.
@@ -1401,6 +1404,7 @@ def market(kind):
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": timeframe,
             "market_direction_basis": "24h_breadth_hard_gate",
+            "strategy_version": "hawk-quant-v2",
             "trade_direction_basis": "4h_and_daily_agreement_then_15m_liquidity_entry",
             "strategy_version": "hawk-quant-v2",
             "movers": movers, "fast_movers": fast_movers,
