@@ -141,7 +141,7 @@ function renderOpen(rows){
  const root=$("#openTrades");$("#openCount").textContent=(rows?.length||0)+" مفتوحة";
  if(!rows||!rows.length){root.innerHTML='<div class="empty">'+tr("noOpenTrades")+'</div>';return}
  root.innerHTML=rows.map(x=>{
-  const pnl=x.live_pnl_percent==null?livePnl(x.side,x.entry,x.current_price):Number(x.live_pnl_percent);
+  const pnl=x.current_price==null?null:(x.live_pnl_percent==null?livePnl(x.side,x.entry,x.current_price):Number(x.live_pnl_percent));
   const current=x.current_price==null?"—":fmt(x.current_price);
   const target=(name,value,lit,kind)=>'<div class="tracked-level '+(lit?'level-lit '+kind:'')+'"><small>'+name+'</small><b>'+fmt(value)+'</b></div>';
   return '<article class="tracked-trade-card"><div class="tracked-head"><div><b>'+safe(x.symbol)+'</b><small>'+safe(marketName(x.market))+' · '+(x.side==="BUY"?tr("buy"):tr("sell"))+' · '+safe(x.timeframe)+'</small></div></div><div class="tracked-live-grid"><div><small>السعر الحالي</small><b>'+current+'</b></div><div><small>العائد الحي من الدخول</small><b class="'+(pnl>=0?"up":"down")+'">'+(pnl==null?"—":(pnl>0?"+":"")+pnl.toFixed(2)+"%")+'</b></div><div><small>سعر الدخول</small><b>'+fmt(x.entry)+'</b></div></div><div class="tracked-levels">'+target("TP1",x.tp1,x.tp1_hit,"target-lit")+target("TP2",x.tp2,x.tp2_hit,"target-lit")+target("TP3",x.tp3,x.tp3_hit||x.status==="TP3","target-lit")+target(tr("stopLoss"),x.stop_loss,x.status==="SL","stop-lit")+'</div></article>';
