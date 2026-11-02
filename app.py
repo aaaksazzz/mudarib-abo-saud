@@ -745,7 +745,7 @@ def save_new_trades(kind, signals):
             for signal in signals:
                 if len(inserted) >= 3:
                     break
-                required = ("symbol", "timeframe", "signal_candle_time", "side", "entry", "stop_loss", "tp1", "tp2", "tp3")
+                required = ("symbol", "timeframe", "side", "entry", "stop_loss", "tp1", "tp2", "tp3")
                 if any(key not in signal or signal[key] is None for key in required):
                     continue
                 try:
@@ -763,7 +763,7 @@ def save_new_trades(kind, signals):
                 if signal["side"] not in ("BUY", "SELL"):
                     continue
                 try:
-                    candle_time = int(signal["signal_candle_time"])
+                    candle_time = int(signal.get("signal_candle_time") or now)
                 except (TypeError, ValueError, OverflowError):
                     continue
                 recent = connection.execute(
