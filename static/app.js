@@ -361,7 +361,7 @@ async function startAuthorized(user=null){
  $("#drawerAdmin").hidden=!(user&&user.is_admin);
  if(user&&user.is_admin) await loadAdminUsers();
  configurePage();
- if(marketMatch){await loadMarketStatuses();await load();await loadHistoryPage();}
+ if(marketMatch){await loadMarketStatuses();await load();}
  else if(PATH==="/"){await loadMarketStatuses();}
  else if(PATH.startsWith("/sections/") && ["direction","opportunities","open-trades"].includes(PATH.split("/").pop())){await loadMarketStatuses();await load();}
  else if(PATH==="/sections/history"){await loadHistoryPage();}
