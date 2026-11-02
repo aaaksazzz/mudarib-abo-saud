@@ -490,3 +490,15 @@ def test_candidate_accepts_35_completed_candles_and_rejects_34(monkeypatch):
     assert rejected is None
     assert diagnostics["reason"] == "insufficient_reference_candles"
     assert diagnostics["reference_candles"] == {"4h": 34, "1d": 34}
+
+
+def test_auth_me_reports_unconfigured_as_nonfatal_public_status(monkeypatch):
+    monkeypatch.setattr(module, "AUTH_CONFIGURED", False)
+    with client.session_transaction() as session:
+        session.clear()
+    response = client.get("/api/auth/me")
+    assert response.status_code == 200
+    assert response.json["ok"] is True
+    assert response.json["configured"] is False
+    assert response.json["auth_available"] is False
+    assert response.json["user"] is None
