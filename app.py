@@ -21,10 +21,6 @@ from external_market_data import (
     sahmk_candles, sahmk_market_tickers,
 )
 
-try:
-    import yfinance as yf
-except ImportError:
-    yf = None
 from flask import Flask, jsonify, request, send_from_directory, session
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -41,11 +37,6 @@ BASES = {"spot": "https://api.binance.com", "futures": "https://fapi.binance.com
 SPOT_BASES = ["https://api.binance.com", "https://api-gcp.binance.com", "https://api1.binance.com", "https://api2.binance.com", "https://api3.binance.com", "https://api4.binance.com", "https://data-api.binance.vision"]
 ALPHA_BASE = "https://www.binance.com"
 BIQUOTE_BASE = "https://biquote.io"
-YAHOO_ENABLED = os.environ.get("YAHOO_FINANCE_ENABLED", "0") == "1"
-YAHOO_SYMBOLS = {
-    "us": [x.strip().upper() for x in os.environ.get("YAHOO_US_SYMBOLS", "").split(",") if x.strip()],
-    "saudi": [x.strip().upper() for x in os.environ.get("YAHOO_SAUDI_SYMBOLS", "").split(",") if x.strip()],
-}
 SCAN_INTERVAL = "15m"
 SCAN_INTERVAL_SECONDS = 5 * 60
 STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "EUR"}
@@ -205,93 +196,6 @@ def biquote_candles(symbol, interval):
     return rows
 
 
-
-def yahoo_market_tickers(kind):
-    """Fetch a configured Yahoo watchlist; never pretend it is the whole market."""
-    if not YAHOO_ENABLED or yf is None:
-        raise requests.RequestException("Yahoo Finance integration is disabled")
-    symbols = YAHOO_SYMBOLS.get(kind, [])
-    if not symbols:
-        raise requests.RequestException(f"No Yahoo symbols configured for {kind}")
-    output = []
-    now = time.time()
-    for symbol in symbols[:100]:
-        try:
-            frame = yf.Ticker(symbol).history(period="5d", interval="15m", auto_adjust=True, timeout=12)
-            if frame is None or frame.empty or "Close" not in frame:
-                continue
-            frame = frame.dropna(subset=["Close"]).sort_index()
-            if len(frame) < 55:
-                continue
-            stamp = frame.index[-1]
-            if getattr(stamp, "tzinfo", None) is None:
-                stamp = stamp.tz_localize("UTC")
-            age = now - stamp.timestamp()
-            if age < 0 or age > 45 * 60:
-                continue
-            price = float(frame["Close"].iloc[-1])
-            prior = float(frame["Close"].iloc[max(0, len(frame) - 27)])
-            recent = frame.tail(26)
-            volume = float(recent["Volume"].fillna(0).sum() * price)
-            if price <= 0 or prior <= 0:
-                continue
-            if volume < 1_000_000:
-                continue
-            high = float(recent["High"].max()) if "High" in recent else price
-            low = float(recent["Low"].min()) if "Low" in recent else price
-            output.append({"symbol": symbol, "price": price, "volume": volume,
-                           "change24h": (price / prior - 1) * 100,
-                           "range24h": ((high - low) / price * 100) if high >= low > 0 else 0.0,
-                           "quote_age_seconds": int(age)})
-        except Exception as exc:
-            app.logger.warning("Yahoo quote failed for %s: %s", symbol, exc)
-    if not output:
-        raise requests.RequestException("Yahoo returned no fresh 15m quotes for the configured watchlist")
-    return output
-
-
-def yahoo_candles(symbol, interval):
-    if not YAHOO_ENABLED or yf is None:
-        raise requests.RequestException("Yahoo Finance integration is disabled")
-    # Yahoo's hourly endpoint does not offer native 4h bars. Build them
-    # from hourly OHLCV; request enough history for stable 4h and daily structure.
-    fetch_interval = {"4h": "60m", "1w": "1wk", "1M": "1mo"}.get(interval, interval)
-    period = ("10y" if interval == "1M" else "5y" if interval == "1w"
-              else "1y" if interval == "1d" else "3mo" if interval in ("1h", "4h") else "5d")
-    frame = yf.Ticker(symbol).history(period=period, interval=fetch_interval, auto_adjust=True, timeout=12)
-    if frame is None or frame.empty:
-        raise requests.RequestException("Yahoo returned no candle history")
-    if interval == "4h":
-        frame = frame.resample("4h").agg({
-            "Open": "first", "High": "max", "Low": "min",
-            "Close": "last", "Volume": "sum",
-        }).dropna(subset=["Open", "High", "Low", "Close"])
-    rows = []
-    now_ms = int(time.time() * 1000)
-    for stamp, bar in frame.iterrows():
-        try:
-            if getattr(stamp, "tzinfo", None) is None:
-                stamp = stamp.tz_localize("UTC")
-            timestamp = int(stamp.timestamp() * 1000)
-            if interval == "1M":
-                current = datetime.utcfromtimestamp(now_ms / 1000)
-                if stamp.year == current.year and stamp.month == current.month:
-                    continue
-            else:
-                candle_ms = {"15m": 15 * 60 * 1000, "1h": 60 * 60 * 1000,
-                             "4h": 4 * 60 * 60 * 1000, "1d": 24 * 60 * 60 * 1000,
-                             "1w": 7 * 24 * 60 * 60 * 1000}.get(interval, 15 * 60 * 1000)
-                if timestamp + candle_ms > now_ms:
-                    continue
-            row = {"open": float(bar["Open"]), "high": float(bar["High"]),
-                   "low": float(bar["Low"]), "close": float(bar["Close"]),
-                   "volume": float(bar.get("Volume", 0) or 0), "time": timestamp}
-            if row["close"] > 0 and row["high"] >= row["low"]:
-                rows.append(row)
-        except (KeyError, TypeError, ValueError):
-            continue
-    rows.sort(key=lambda item: item["time"])
-    return rows
 
 def alpha_market_tickers():
     token_url = ALPHA_BASE + "/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list"
@@ -1284,7 +1188,7 @@ def providers():
         {"id": "us", "primary": external["us"]["provider"], "fallbacks": [],
          "status": "configured" if external["us"]["configured"] else "credentials_required",
          "feed": external["us"]["feed"], "coverage": external["us"]["coverage"],
-         "note": "Alpaca credentials required; IEX is not consolidated all-exchange SIP coverage."},
+         "note": "Alpaca credentials required; delayed_sip is consolidated with a 15-minute delay, IEX is one exchange, and SIP requires entitlement."},
         {"id": "contracts", "primary": None, "fallbacks": [],
          "status": "provider_required", "note": "Not connected; instrument type must be confirmed (US options or futures)."},
         {"id": "gamma_local", "primary": "تحليل سيولة محلي من OHLCV", "fallbacks": [],
