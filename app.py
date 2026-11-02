@@ -1335,7 +1335,7 @@ def market(kind):
                 return jsonify(payload)
         except sqlite3.Error:
             app.logger.exception("Could not read scan snapshot while scan is running: %s %s", kind, timeframe)
-        return jsonify({"ok":False,"error":"الفحص جارٍ الآن؛ أعد المحاولة بعد لحظات.","scan_in_progress":True}),202
+        return jsonify({"ok":False,"error":"الفحص جارٍ الآن؛ أعد المحاولة بعد لحظات.","scan_in_progress":True}),503
     try:
         saved_scan = load_market_scan_snapshot(kind, timeframe)
         if saved_scan and int(time.time()) - saved_scan["updated_at"] < SCAN_INTERVAL_SECONDS:
