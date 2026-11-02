@@ -55,6 +55,16 @@ def test_unconfigured_markets_are_not_fabricated(tmp_path, monkeypatch):
     assert response.json["status"] == "provider_required"
     assert response.json["signals"] == []
 
+def test_market_strategy_catalog_is_explicit_and_marks_unavailable_contracts():
+    response = client.get("/api/strategies")
+    assert response.status_code == 200
+    rows = {row["market"]: row for row in response.json["items"]}
+    assert len(rows) == 8
+    assert rows["futures"]["strategy"] != rows["coinm"]["strategy"]
+    assert rows["contracts"]["status"] == "provider_required"
+    assert rows["futures"]["validation"] == "not_backtested_no_profitability_claim"
+
+
 def test_market_list_is_explicit():
     response = client.get("/api/markets")
     assert response.status_code == 200
