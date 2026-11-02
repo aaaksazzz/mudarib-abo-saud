@@ -565,6 +565,43 @@ def test_open_confirmed_trade_remains_in_opportunity_cards_after_refresh(tmp_pat
     assert card["stop_loss"] == 98.0
     assert card["tp3"] == 106.0
 
+def test_legacy_strategy_trade_stays_in_tracker_not_opportunity_cards(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "legacy-strategy.sqlite3")
+    now = int(time.time())
+    with module.db() as connection:
+        connection.execute(
+            """INSERT INTO trades
+               (market,symbol,timeframe,side,entry,stop_loss,tp1,tp2,tp3,status,
+                created_at,updated_at,signal_candle_time)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ("spot", "OLDUSDT", "15m", "BUY", 100.0, 98.0, 102.0, 104.0,
+             106.0, "OPEN", now, now, now),
+        )
+    signals, opened = module.load_saved_market_trades("spot", "15m")
+    assert signals == []
+    assert len(opened) == 1
+    assert opened[0]["strategy_version"] == "legacy"
+
+
+def test_old_strategy_snapshot_is_not_served_as_current(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "strategy-snapshot-version.sqlite3")
+    module.CACHE.pop("spot:universe", None)
+    module.SCAN_CURSORS.pop(("spot", "15m"), None)
+    module.SCAN_RUN_LOCKS.pop("spot:15m", None)
+    module.save_market_scan_snapshot("spot", "15m", {
+        "ok": True, "market": "spot", "timeframe": "15m",
+        "strategy_version": "legacy", "signals": [{"symbol": "OLDUSDT"}],
+    })
+    monkeypatch.setattr(module, "market_tickers", lambda kind: [
+        {"symbol": "AAAUSDT", "price": 2.0, "volume": 2_000_000, "change24h": 2.0}
+    ])
+    monkeypatch.setattr(module, "analyse_candidate", lambda *args: None)
+    response = client.get("/api/market/spot?timeframe=15m")
+    assert response.status_code == 200
+    assert response.json["strategy_version"] == "hawk-quant-v2"
+    assert response.json["signals"] == []
+
+
 def test_market_page_does_not_crash_when_optional_refresh_button_is_absent():
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
