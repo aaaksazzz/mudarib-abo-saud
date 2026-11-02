@@ -61,6 +61,7 @@ function applyLanguage(choice){
  const markets=Object.keys(MARKET_NAMES);document.querySelectorAll("[data-market] b").forEach(el=>{const index=markets.indexOf(el.closest("[data-market]")?.dataset.market);if(index>=0)el.textContent=(MARKET_TRANSLATIONS[lang]||MARKET_TRANSLATIONS.ar)[index]});document.querySelectorAll("[data-market] small").forEach(el=>el.textContent=tr("marketIndependent"));
  set(".switcher-heading > span","selectMarket");set(".switcher-heading small","independentSources");
  set("#directionSection .panel-top h2","direction");set("#directionSection .direction-main small","marketTrend");set("#directionSection .breadth-total small","scanned");
+ const breadthLabels=["up","down","neutral"];document.querySelectorAll("#directionSection .breadth-legend span").forEach((el,i)=>{el.childNodes.forEach(node=>{if(node.nodeType===3)node.textContent=" "+tr(breadthLabels[i]||"neutral")+" "})});
  set("#opportunitiesSection h2","opportunities");set("#opportunitiesSection p","sameFrame");set(".timeframe-label","timeframe");
  const tfKeys=["min15","hour","hour4","daily","weekly","monthly"];document.querySelectorAll("[data-timeframe]").forEach((el,i)=>{if(tfKeys[i])el.textContent=tr(tfKeys[i])});
  set("#openSection h2","openTrades");set("#openSection p","tracking");set("#footerLanguageLabel","language");
