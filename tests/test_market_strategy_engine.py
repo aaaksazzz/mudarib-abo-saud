@@ -8,8 +8,9 @@ def trend_rows(direction="up", count=45):
     for i in range(count):
         base = 100 + i * 0.30 if direction == "up" else 120 - i * 0.30
         close = base
-        rows.append({"open": close - 0.05 if direction == "up" else close + 0.05,
-                     "high": close + 0.10, "low": close - 0.10,
+        rows.append({"open": close - 0.08 if direction == "up" else close + 0.08,
+                     "high": close + (0.02 if direction == "up" else 0.10),
+                     "low": close - (0.10 if direction == "up" else 0.02),
                      "close": close, "volume": 1000})
     rows[-1]["volume"] = 1300
     return rows
