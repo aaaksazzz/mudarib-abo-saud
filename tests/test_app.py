@@ -458,3 +458,30 @@ def test_coinm_uses_contract_status_field(monkeypatch):
     ]}
     monkeypatch.setattr(module, "fetch_first_json", lambda urls: payload)
     assert module.binance_active_symbols("coinm") == {"BTCUSD_PERP"}
+
+def test_candidate_accepts_50_completed_candles_and_rejects_49(monkeypatch):
+    import timeframe_strategy
+    bars = [{"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5,
+             "volume": 1000.0, "time": i * 900000} for i in range(50)]
+    monkeypatch.setattr(module, "candles", lambda *args: bars)
+    monkeypatch.setattr(timeframe_strategy, "assess_reversal", lambda rows: {
+        "confirmed": True, "side": "SELL", "trade_state": "STRONG_SELL",
+        "source_state": "STRONG_BUY", "quality_score": 75.0, "analysis": {"candles_used": len(rows)}
+    })
+    monkeypatch.setattr(timeframe_strategy, "make_trade", lambda *args: {
+        "entry": 100.5, "stop_loss": 102.0, "tp1": 99.0, "tp2": 97.5,
+        "tp3": 96.0, "risk_percent": 1.49, "reward_risk": {"tp1": 1, "tp2": 2, "tp3": 3}
+    })
+    monkeypatch.setattr(module, "analyse_orderbook_flow", lambda *args, **kwargs: {"status": "unavailable"})
+    candidate = {"symbol": "AAAUSDT", "price": 100.5, "change24h": 1.0, "volume": 2_000_000}
+    accepted = module.analyse_candidate("spot", candidate, timeframe="15m")
+    assert accepted is not None
+    assert accepted["side"] == "SELL"
+
+    monkeypatch.setattr(module, "candles", lambda *args: bars[:49])
+    diagnostics = {}
+    rejected = module.analyse_candidate("spot", candidate, diagnostics=diagnostics, timeframe="15m")
+    assert rejected is None
+    assert diagnostics["reason"] == "insufficient_candles"
+    assert diagnostics["candles_received"] == 49
+    assert diagnostics["candles_required"] == 50
