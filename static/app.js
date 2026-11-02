@@ -303,7 +303,31 @@ async function loadNews(){
  }catch(e){root.innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
 }
 $("#newsRefresh")?.addEventListener("click",loadNews);
+
+async function loadHomeOverview(){
+ const moversRoot=$("#homeMovers"),coverageRoot=$("#homeCoverage");
+ if(!moversRoot||!coverageRoot)return;
+ try{
+  const data=await get("/api/overview",25000);
+  $("#homeAssetCount").textContent=compact(data.eligible_assets||0);
+  $("#homeMarketCount").textContent=(data.available_markets||0)+" / "+(data.markets||[]).length;
+  $("#homeMoverCount").textContent=(data.fast_movers||[]).length;
+  $("#homeUpdated").textContent="آخر فحص · "+new Date((data.updated||Date.now()/1000)*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
+  const movers=data.fast_movers||[];
+  moversRoot.innerHTML=movers.length?movers.map((x,i)=>'<div class="home-mover-row"><span class="home-mover-rank">'+(i+1)+'</span><div class="home-mover-name"><b>'+safe(x.symbol)+'</b><small>'+safe(x.market_name)+'</small></div><div class="home-mover-price"><b>'+fmt(x.price)+'</b><small>حجم 24س '+(Number(x.volume)>0?compact(x.volume):"غير متاح")+'</small></div><b class="home-mover-change '+(Number(x.change24h)>=0?"up":"down")+'">'+pct(x.change24h)+'</b></div>').join(""):'<div class="empty">لا توجد بيانات حركة مؤكدة من المصادر المتاحة حاليًا.</div>';
+  coverageRoot.innerHTML=(data.markets||[]).map(x=>{
+   const ready=x.status==="live";
+   const state=ready?"متاح":x.status==="provider_required"?"المصدر غير مربوط":"تعذر التحديث";
+   return '<a class="home-coverage-row" href="/markets/'+encodeURIComponent(x.id)+'"><span class="home-coverage-dot '+(ready?"ready":"")+'"></span><span class="home-coverage-name">'+safe(x.name)+'</span><b>'+ (ready?compact(x.eligible_assets)+" أصل":state)+'</b><span class="home-coverage-arrow">←</span></a>';
+  }).join("");
+ }catch(e){
+  moversRoot.innerHTML='<div class="empty">'+safe(e.message)+'</div>';
+  coverageRoot.innerHTML='<div class="empty">تعذر قراءة تغطية الأسواق الآن.</div>';
+ }
+}
+
 function configurePage(){
+ document.body.classList.toggle("home-page",PATH==="/");
  document.body.classList.toggle("market-page",!!marketMatch);
  const timeframeSwitcher=$("#marketTimeframeSwitcher");if(timeframeSwitcher)timeframeSwitcher.hidden=!marketMatch;
  const adminAllowed=!$("#adminPanel").hidden;$("#adminPanel").hidden=true;
@@ -312,6 +336,7 @@ function configurePage(){
  const show=(...names)=>names.forEach(id=>{const el=$("#"+id);if(el)el.hidden=false});
  if(PATH==="/"){
   hideAll();show("homeSection","marketSection","homeOverview");
+  loadHomeOverview();
   $("#homeSection h1").innerHTML='<span>'+tr("marketHomeTitle")+'</span>';
   $("#homeSection p").textContent=tr("marketPageDescription");
  }else if(marketMatch){
