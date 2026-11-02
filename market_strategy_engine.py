@@ -36,13 +36,21 @@ def _valid_bars(rows):
     return result
 
 
-def evaluate_market_strategy(market, rows, current_price=None):
+def evaluate_market_strategy(market, rows, current_price=None, market_context=None):
     """Return a market-specific directional setup or a transparent rejection."""
     strategy = MARKET_STRATEGIES.get(market)
     if not strategy:
         return {"confirmed": False, "reason": "unknown_market", "strategy": None}
     if market == "contracts":
         return {"confirmed": False, "reason": "provider_required", "strategy": strategy}
+    context = market_context if isinstance(market_context, dict) else {}
+    basis_pct = context.get("basis_percent")
+    funding_rate = context.get("funding_rate")
+    if market in ("futures", "coinm"):
+        try:
+            basis_pct, funding_rate = float(basis_pct), float(funding_rate)
+        except (TypeError, ValueError, OverflowError):
+            return {"confirmed": False, "reason": "basis_funding_context_unavailable", "strategy": strategy}
     bars = _valid_bars(rows)
     if len(bars) < 35:
         return {"confirmed": False, "reason": "insufficient_candles", "strategy": strategy,
@@ -92,8 +100,6 @@ def evaluate_market_strategy(market, rows, current_price=None):
         alpha_high = max(x["high"] for x in bars[-9:-1])
         if close > alpha_high and close > mean20 and momentum >= 0.004 and volume_ratio >= 1.35 and close_position >= 0.75:
             side, reason = "BUY", "alpha_strict_momentum_volume_breakout"
-        elif close < mean20 and momentum <= -0.006 and volume_ratio >= 1.50 and close_position <= 0.20:
-            side, reason = "SELL", "alpha_strict_downside_momentum"
     elif market == "saudi":
         compression = (range_high - range_low) / close
         if compression <= 0.045 and close > range_high and close > mean20 and volume_ratio >= 1.20 and close_position >= 0.70:
@@ -107,11 +113,20 @@ def evaluate_market_strategy(market, rows, current_price=None):
         elif close < range_low and momentum < 0 and volume_ratio >= 1.05 and close_position <= 0.30:
             side, reason = "SELL", "forex_range_expansion_down"
 
+    if side and market in ("futures", "coinm"):
+        # Avoid joining a crowded side when mark/index premium and funding both
+        # indicate one-sided positioning. Thresholds are provisional filters.
+        if side == "BUY" and basis_pct >= 0.35 and funding_rate >= 0.0005:
+            side, reason = None, "long_crowding_basis_funding"
+        elif side == "SELL" and basis_pct <= -0.35 and funding_rate <= -0.0005:
+            side, reason = None, "short_crowding_basis_funding"
     if not side:
         return {
             "confirmed": False, "reason": reason, "strategy": strategy,
             "volume_ratio": round(volume_ratio, 3), "momentum_percent": round(momentum * 100, 3),
             "structure": "up" if rising_structure else "down" if falling_structure else "mixed",
+            "basis_percent": round(basis_pct, 5) if market in ("futures", "coinm") else None,
+            "funding_rate": funding_rate if market in ("futures", "coinm") else None,
         }
     score = min(95.0, 55.0 + min(20.0, max(0.0, (volume_ratio - 1.0) * 20.0))
                 + min(20.0, abs(momentum) * 1000.0))
@@ -120,4 +135,6 @@ def evaluate_market_strategy(market, rows, current_price=None):
         "quality_score": round(score, 1), "volume_ratio": round(volume_ratio, 3),
         "momentum_percent": round(momentum * 100, 3),
         "structure": "up" if rising_structure else "down" if falling_structure else "mixed",
+        "basis_percent": round(basis_pct, 5) if market in ("futures", "coinm") else None,
+        "funding_rate": funding_rate if market in ("futures", "coinm") else None,
     }
