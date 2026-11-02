@@ -1133,7 +1133,8 @@ def providers():
 
 
 @app.get("/api/overview")
-def home_overview():@require_paid_access
+@require_paid_access
+def home_overview():
 
     """Small cached cross-market snapshot; never invents unavailable market coverage."""
     names = {item["id"]: item["name"] for item in MARKETS}
@@ -1215,7 +1216,8 @@ def home_overview():@require_paid_access
 
 
 @app.get("/api/market/<kind>")
-def market(kind):@require_paid_access
+@require_paid_access
+def market(kind):
     if kind in ("spot","futures","coinm","alpha","saudi","us","contracts","forex") and current_user()["role"]!="admin" and not section_enabled(kind):
         return jsonify({"ok":False,"error":"section_locked","message":"هذا السوق مغلق من الإدارة."}),403
 
@@ -1395,7 +1397,8 @@ def crypto_gamma():
     })
 
 @app.get("/api/trades")
-def trades():@require_paid_access
+@require_paid_access
+def trades():
 
     market_id = request.args.get("market", "")
     with db() as connection:
