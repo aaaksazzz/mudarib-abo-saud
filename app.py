@@ -913,7 +913,10 @@ def admin_payments():
 @app.post("/api/admin/payments/action")
 @require_admin
 def admin_payment_action():
-    d=request.get_json(silent=True) or {};oid=int(d.get("order_id",0));action=d.get("action")
+    d=request.get_json(silent=True) or {}
+    try:oid=int(d.get("order_id",0))
+    except (TypeError,ValueError):return jsonify({"ok":False,"message":"رقم الطلب غير صحيح."}),400
+    action=d.get("action")
     if action not in ("approve","reject"):return jsonify({"ok":False,"message":"إجراء غير صحيح."}),400
     with db() as c:
         p=c.execute("SELECT * FROM payment_orders WHERE id=?",(oid,)).fetchone()
