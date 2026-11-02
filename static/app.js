@@ -295,7 +295,7 @@ function configurePage(){
  document.body.classList.toggle("market-page",!!marketMatch);
  const timeframeSwitcher=$("#marketTimeframeSwitcher");if(timeframeSwitcher)timeframeSwitcher.hidden=!marketMatch;
  const adminAllowed=!$("#adminPanel").hidden;$("#adminPanel").hidden=true;
- const ids=["homeSection","marketSection","directionSection","cryptoGammaSection","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection"];
+ const ids=["homeSection","marketSection","directionSection","opportunitiesSection","cards","openSection","blogSection","newsSection"];
  const hideAll=()=>ids.forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
  const show=(...names)=>names.forEach(id=>{const el=$("#"+id);if(el)el.hidden=false});
  if(PATH==="/"){
@@ -304,14 +304,14 @@ function configurePage(){
   $("#homeSection p").textContent=tr("marketPageDescription");
  }else if(marketMatch){
   if(!MARKET_NAMES[market]){location.replace("/");return}
-  hideAll();show("homeSection","directionSection","opportunitiesSection","cards","openSection","historySection");
+  hideAll();show("homeSection","directionSection","opportunitiesSection","cards","openSection");
   $("#homeSection h1").innerHTML='<span>'+safe(marketName(market))+'</span>';
   $("#homeSection p").textContent="اتجاه السوق والفرص والصفقات الخاصة بهذا السوق فقط.";
  }else if(PATH.startsWith("/sections/")){
   const section=PATH.split("/").pop();
-  const map={direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["openSection"],history:["historySection"]};
+  const map={direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["opportunitiesSection","cards","openSection"]};
   hideAll();show("homeSection",...(map[section]||[]));
-  const titles={direction:"توجه السوق",opportunities:"فرص التداول","open-trades":"متابعة الصفقات",history:"سجل النتائج"};
+  const titles={direction:"توجه السوق",opportunities:"فرص التداول","open-trades":"متابعة الصفقات"};
   $("#homeSection h1").innerHTML='<span>'+safe(titles[section]||"القسم")+'</span>';
   $("#homeSection p").textContent="قسم مستقل عن الصفحة الرئيسية.";
  }else if(PATH==="/blog"){
@@ -338,8 +338,8 @@ function configurePage(){
 
 document.addEventListener("visibilitychange",()=>{
  if(document.hidden||$("#mainContent").hidden||busy)return;
- if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load();if(marketMatch)loadHistoryPage();}
- else if(PATH==="/sections/history")loadHistoryPage();
+ if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load();}
+ 
 });
 function tick(){ $("#clock").textContent=new Date().toLocaleTimeString("en-GB",{hour12:false}); }
 async function showAccess(message, user=null){
