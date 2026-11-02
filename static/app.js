@@ -52,11 +52,8 @@ function renderOpen(rows){
  root.innerHTML=rows.map(x=>{
   const pnl=x.live_pnl_percent==null?livePnl(x.side,x.entry,x.current_price):Number(x.live_pnl_percent);
   const current=x.current_price==null?"—":fmt(x.current_price);
-  const hits=[x.tp1_hit,x.tp2_hit,x.tp3_hit].filter(Boolean).length;
-  const progress=hits===3?100:hits===2?75:hits===1?45:Math.max(0,Math.min(35,pnl==null?0:(pnl>0?pnl*5:0)));
-  const state=x.status==="OPEN"?"مفتوحة الآن":x.status==="TP3"?"اكتمل الهدف الثالث":x.status==="SL"?"وصلت للوقف":"منتهية";
-  const target=(name,value,hit)=>'<div class="tracked-level '+(hit?"hit":"")+'"><small>'+name+(hit?" ✓":"")+'</small><b>'+fmt(value)+'</b></div>';
-  return '<article class="tracked-trade-card"><div class="tracked-head"><div><b>'+safe(x.symbol)+'</b><small>'+safe(MARKET_NAMES[x.market]||x.market)+' · '+(x.side==="BUY"?"شراء":"بيع")+' · '+safe(x.timeframe)+'</small></div><span class="tracked-status '+(x.status==="OPEN"?"active":"closed")+'"><i></i>'+state+'</span></div><div class="tracked-live-grid"><div><small>السعر الحالي</small><b>'+current+'</b></div><div><small>العائد الحي من الدخول</small><b class="'+(pnl>=0?"up":"down")+'">'+(pnl==null?"—":(pnl>0?"+":"")+pnl.toFixed(2)+"%")+'</b></div><div><small>سعر الدخول</small><b>'+fmt(x.entry)+'</b></div></div><div class="tracked-progress"><div><span>الأهداف المحققة</span><b>'+hits+'/3</b></div><i><span style="width:'+progress+'%"></span></i></div><div class="tracked-levels">'+target("TP1",x.tp1,x.tp1_hit)+target("TP2",x.tp2,x.tp2_hit)+target("TP3",x.tp3,x.tp3_hit)+target("وقف الخسارة",x.stop_loss,false)+'</div></article>';
+  const target=(name,value,lit,kind)=>'<div class="tracked-level '+(lit?'level-lit '+kind:'')+'"><small>'+name+'</small><b>'+fmt(value)+'</b></div>';
+  return '<article class="tracked-trade-card"><div class="tracked-head"><div><b>'+safe(x.symbol)+'</b><small>'+safe(MARKET_NAMES[x.market]||x.market)+' · '+(x.side==="BUY"?"شراء":"بيع")+' · '+safe(x.timeframe)+'</small></div></div><div class="tracked-live-grid"><div><small>السعر الحالي</small><b>'+current+'</b></div><div><small>العائد الحي من الدخول</small><b class="'+(pnl>=0?"up":"down")+'">'+(pnl==null?"—":(pnl>0?"+":"")+pnl.toFixed(2)+"%")+'</b></div><div><small>سعر الدخول</small><b>'+fmt(x.entry)+'</b></div></div><div class="tracked-levels">'+target("TP1",x.tp1,x.tp1_hit,"target-lit")+target("TP2",x.tp2,x.tp2_hit,"target-lit")+target("TP3",x.tp3,x.tp3_hit||x.status==="TP3","target-lit")+target("وقف الخسارة",x.stop_loss,x.status==="SL","stop-lit")+'</div></article>';
  }).join("");
 }
 function renderClosed(rows){
@@ -64,7 +61,7 @@ function renderClosed(rows){
  $("#historyCount").textContent=closed.length+" مغلقة";
  const root=$("#closedTrades");
  if(!closed.length){root.innerHTML='<div class="empty">لا توجد نتائج مغلقة مسجلة بعد.</div>';return}
- root.innerHTML=closed.map(x=>'<article class="history-row"><div><b>'+safe(x.symbol)+'</b><small>'+(x.side==="BUY"?"شراء":"بيع")+' · '+safe(MARKET_NAMES[x.market]||x.market)+'</small></div><div><small>الدخول</small><b>'+fmt(x.entry)+'</b></div><div><small>النتيجة</small><b class="history-status '+(x.status==="TP3"?"tp":x.status==="EXPIRED"?"expired":"sl")+'">'+(x.status==="TP3"?"وصل TP3":x.status==="EXPIRED"?"انتهت صلاحية 24س":"وقف الخسارة")+'</b></div><div><small>تاريخ الإغلاق</small><b>'+new Date((x.closed_at||x.updated_at)*1000).toLocaleDateString("ar-SA")+'</b></div></article>').join("");
+ root.innerHTML=closed.map(x=>'<article class="history-row"><div><b>'+safe(x.symbol)+'</b><small>'+(x.side==="BUY"?"شراء":"بيع")+' · '+safe(MARKET_NAMES[x.market]||x.market)+'</small></div><div><small>الدخول</small><b>'+fmt(x.entry)+'</b></div><div><small>النتيجة</small><b class="history-status '+(x.status==="TP3"?"tp history-lit-target":x.status==="EXPIRED"?"expired":"sl history-lit-stop")+'">'+(x.status==="TP3"?"وصل TP3":x.status==="EXPIRED"?"انتهت صلاحية 24س":"وقف الخسارة")+'</b></div><div><small>تاريخ الإغلاق</small><b>'+new Date((x.closed_at||x.updated_at)*1000).toLocaleDateString("ar-SA")+'</b></div></article>').join("");
 }
 async function loadHistoryPage(){
  const root=$("#closedTrades");
