@@ -42,7 +42,7 @@ hi:["Binance Spot","Binance USD-M Futures","Binance COIN-M Futures","Binance Alp
 
 const TRADE_KEYS=["currentPrice","returnFromEntry","proposedEntry","riskToStop","potentialProfit","movementSpeed","orderFlow","supportive","opposing","balanced","unavailable","quality","reversal","entryPrice","liveReturn","openCount"];
 const TRADE_TEXT={
-ar:[tr("currentPrice"),tr("returnFromEntry"),tr("proposedEntry"),tr("riskToStop"),tr("potentialProfit"),tr("movementSpeed"),tr("orderFlow"),"مؤيد","معاكس","متوازن","غير متاح","جودة الشروط","عكس الإشارة",tr("entryPrice"),tr("liveReturn"),"مفتوحة"],
+ar:["السعر الحالي · آخر تحديث","العائد من الدخول","الدخول المقترح","المخاطرة حتى الوقف","ربح محتمل","سرعة الحركة","تدفق الأوامر","مؤيد","معاكس","متوازن","غير متاح","جودة الشروط","عكس الإشارة","سعر الدخول","العائد الحي من الدخول","مفتوحة"],
 en:["Current price · latest update","Return from entry","Proposed entry","Risk to stop","Potential profit","Momentum speed","Order flow","Supportive","Opposing","Balanced","Unavailable","Setup quality","Reversal signal","Entry price","Live return from entry","Open"],
 es:["Precio actual · última actualización","Rendimiento desde la entrada","Entrada propuesta","Riesgo hasta el stop","Beneficio potencial","Velocidad del movimiento","Flujo de órdenes","A favor","En contra","Equilibrado","No disponible","Calidad de la configuración","Señal de reversión","Precio de entrada","Rendimiento actual desde la entrada","Abiertas"],
 de:["Aktueller Preis · letzte Aktualisierung","Rendite ab Einstieg","Vorgeschlagener Einstieg","Risiko bis Stop","Mögliches Gewinnziel","Bewegungsdynamik","Orderfluss","Unterstützend","Gegenläufig","Ausgeglichen","Nicht verfügbar","Setup-Qualität","Umkehrsignal","Einstiegspreis","Live-Rendite ab Einstieg","Offen"],
