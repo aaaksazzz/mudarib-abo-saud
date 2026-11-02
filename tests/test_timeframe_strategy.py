@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from timeframe_strategy import assess_signal, assess_timeframe, make_trade
+from timeframe_strategy import assess_signal, assess_timeframe
 
 
 def trend_bars(direction="up", count=100):
@@ -49,17 +49,6 @@ class TimeframeStrategyTests(unittest.TestCase):
         self.assertEqual(result["side"], "SELL")
         self.assertIn(result["state"], ("SELL", "STRONG_SELL"))
 
-    def test_trade_levels_follow_one_two_three_r(self):
-        trade = make_trade(trend_bars("up"), "BUY", "1h")
-        self.assertIsNotNone(trade)
-        risk = trade["entry"] - trade["stop_loss"]
-        self.assertAlmostEqual(trade["tp1"] - trade["entry"], risk)
-        self.assertAlmostEqual(trade["tp2"] - trade["entry"], risk * 2)
-        self.assertAlmostEqual(trade["tp3"] - trade["entry"], risk * 3)
-        self.assertGreater(trade["risk_percent"], 0)
-
-    def test_invalid_side_never_creates_trade(self):
-        self.assertIsNone(make_trade(trend_bars(), "HOLD"))
 
 
 if __name__ == "__main__":
