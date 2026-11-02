@@ -564,8 +564,9 @@ def db():
             tx_hash TEXT UNIQUE,created_at INTEGER NOT NULL,verified_at INTEGER,note TEXT)""")
         connection.execute("""CREATE TABLE IF NOT EXISTS section_settings (
             section TEXT PRIMARY KEY,enabled INTEGER NOT NULL DEFAULT 1,updated_at INTEGER NOT NULL)""")
-        for section in SECTION_NAMES:
-            connection.execute("INSERT OR IGNORE INTO section_settings(section,enabled,updated_at) VALUES(?,1,?)",(section,int(time.time())))
+        if not connection.execute("SELECT 1 FROM section_settings LIMIT 1").fetchone():
+            for section in SECTION_NAMES:
+                connection.execute("INSERT OR IGNORE INTO section_settings(section,enabled,updated_at) VALUES(?,1,?)",(section,int(time.time())))
 
         if AUTH_CONFIGURED:
             admin = connection.execute(
