@@ -61,6 +61,17 @@ class TradePersistenceTests(unittest.TestCase):
 
         self.assertEqual(len(app_module.save_new_trades("spot", [other_timeframe])), 1)
 
+    def test_repeated_candidates_do_not_block_three_new_top_opportunities(self):
+        app_module.save_new_trades("spot", [sample_signal()])
+        candidates = [sample_signal()]
+        for symbol in ("AAAUSDT", "BBBUSDT", "CCCUSDT", "DDDUSDT"):
+            signal = sample_signal()
+            signal["symbol"] = symbol
+            candidates.append(signal)
+
+        saved = app_module.save_new_trades("spot", candidates)
+        self.assertEqual([row["symbol"] for row in saved], ["AAAUSDT", "BBBUSDT", "CCCUSDT"])
+
     def test_database_uses_configured_path_and_survives_new_connections(self):
         app_module.save_new_trades("spot", [sample_signal()])
         self.assertTrue(self.db_path.exists())
