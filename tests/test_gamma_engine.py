@@ -24,6 +24,10 @@ class GammaLiquidityEngineTests(unittest.TestCase):
         self.assertLess(result["tp1"], result["tp2"])
         self.assertLess(result["tp2"], result["tp3"])
         self.assertIsNone(result["gamma_exposure"])
+        self.assertGreaterEqual(result["tp1_r_multiple"], 1.5)
+        self.assertGreaterEqual(result["tp2_r_multiple"], 2.5)
+        self.assertGreaterEqual(result["tp3_r_multiple"], 4.0)
+        self.assertEqual(result["target_method"], "adaptive_15m_atr_and_risk")
 
     def test_no_sweep_or_absorption_means_no_trade(self):
         bars = make_bars()
@@ -41,6 +45,9 @@ class GammaLiquidityEngineTests(unittest.TestCase):
         self.assertGreater(result["entry"], result["tp1"])
         self.assertGreater(result["tp1"], result["tp2"])
         self.assertGreater(result["tp2"], result["tp3"])
+        self.assertGreaterEqual(result["tp1_r_multiple"], 1.5)
+        self.assertGreaterEqual(result["tp2_r_multiple"], 2.5)
+        self.assertGreaterEqual(result["tp3_r_multiple"], 4.0)
 
 
 if __name__ == "__main__":

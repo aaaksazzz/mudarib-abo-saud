@@ -103,6 +103,15 @@ def analyse_liquidity_candidate(rows, current_price, side, market_kind="spot", d
         if risk / current > 0.045:
             return reject("risk_above_4_5pct")
         sign = 1 if side == "BUY" else -1
+        # Targets adapt to both stop distance and 15m volatility. This avoids
+        # tiny percentage targets when a sweep creates a very tight stop.
+        # Wider rewards are potential levels, not a claim that they will hit.
+        target1_distance = max(risk * 1.5, atr * 0.8)
+        target2_distance = max(risk * 2.5, atr * 1.5)
+        target3_distance = max(risk * 4.0, atr * 2.5)
+        tp1 = current + sign * target1_distance
+        tp2 = current + sign * target2_distance
+        tp3 = current + sign * target3_distance
         is_sweep = sweep_buy if side == "BUY" else sweep_sell
         is_breakout = breakout_buy if side == "BUY" else breakout_sell
         score = 58 + (18 if is_sweep else 12 if is_breakout else 8)
@@ -111,8 +120,12 @@ def analyse_liquidity_candidate(rows, current_price, side, market_kind="spot", d
             diagnostics["reason"] = "accepted"
         return {
             "side": side, "entry": current, "stop_loss": stop,
-            "tp1": current + sign * risk, "tp2": current + sign * risk * 2,
-            "tp3": current + sign * risk * 3, "risk_percent": round(risk / current * 100, 3),
+            "tp1": tp1, "tp2": tp2, "tp3": tp3,
+            "tp1_r_multiple": round(target1_distance / risk, 2),
+            "tp2_r_multiple": round(target2_distance / risk, 2),
+            "tp3_r_multiple": round(target3_distance / risk, 2),
+            "target_method": "adaptive_15m_atr_and_risk",
+            "risk_percent": round(risk / current * 100, 3),
             "quality_score": round(min(95, score), 1), "liquidity_event": event,
             "volume_ratio": round(volume_ratio, 2), "flow_pressure": round(pressure, 3),
             "flow_label": "ضغط سعري تقديري من OHLCV؛ ليس Delta منفذاً",
