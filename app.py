@@ -17,6 +17,7 @@ from market_ranking import rank_market_assets
 from institutional_flow import analyse_orderbook_flow
 from scan_rotation import select_priority_scan_batch
 from strategy_engine import rank_opportunities
+from strategy_engine import rank_opportunities
 
 try:
     import yfinance as yf
