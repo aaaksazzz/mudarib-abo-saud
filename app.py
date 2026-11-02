@@ -16,6 +16,10 @@ from gamma_engine import analyse_liquidity_candidate
 from market_ranking import rank_market_assets
 from institutional_flow import analyse_orderbook_flow
 from scan_rotation import select_priority_scan_batch
+from external_market_data import (
+    alpaca_candles, alpaca_market_tickers, provider_status,
+    sahmk_candles, sahmk_market_tickers,
+)
 
 try:
     import yfinance as yf
@@ -75,8 +79,8 @@ MARKETS = [
     {"id": "futures", "name": "Binance USD-M Futures", "provider": "Binance", "status": "live"},
     {"id": "coinm", "name": "Binance COIN-M Futures", "provider": "Binance", "status": "live"},
     {"id": "alpha", "name": "Binance Alpha", "provider": "Binance public Alpha data", "status": "live"},
-    {"id": "saudi", "name": "السوق السعودي", "provider": "Yahoo Finance (opt-in)", "status": "optional_disabled"},
-    {"id": "us", "name": "الأسهم الأمريكية", "provider": "Yahoo Finance (opt-in)", "status": "optional_disabled"},
+    {"id": "saudi", "name": "السوق السعودي", "provider": "SAHMK API (TASI equities)", "status": "credentials_required"},
+    {"id": "us", "name": "الأسهم الأمريكية", "provider": "Alpaca Market Data", "status": "credentials_required"},
     {"id": "contracts", "name": "العقود الأمريكية", "provider": None, "status": "provider_required"},
     {"id": "forex", "name": "الفوركس والذهب", "provider": "BiQuote public FX/Metals feed (no key)", "status": "live"},
 ]
@@ -349,8 +353,10 @@ def market_tickers(kind):
         return cached("alpha:universe", 60, alpha_market_tickers)
     if kind == "forex":
         return cached("forex:universe", 20, biquote_market_tickers)
-    if kind in ("saudi", "us"):
-        return cached(f"yahoo:{kind}:universe", 60, lambda: yahoo_market_tickers(kind))
+    if kind == "saudi":
+        return cached("sahmk:universe", 60, sahmk_market_tickers)
+    if kind == "us":
+        return cached("alpaca:universe", 60, alpaca_market_tickers)
     base = BASES[kind]
     path = "/api/v3/ticker/24hr" if kind == "spot" else ("/dapi/v1/ticker/24hr" if kind == "coinm" else "/fapi/v1/ticker/24hr")
     if kind == "spot":
@@ -384,8 +390,10 @@ def market_tickers(kind):
 def candles(kind, symbol, interval):
     if kind == "forex":
         return cached(f"{kind}:{symbol}:{interval}", 45, lambda: biquote_candles(symbol, interval))
-    if kind in ("saudi", "us"):
-        return cached(f"{kind}:{symbol}:{interval}", 45, lambda: yahoo_candles(symbol, interval))
+    if kind == "saudi":
+        return cached(f"sahmk:{symbol}:{interval}", 45, lambda: sahmk_candles(symbol, interval))
+    if kind == "us":
+        return cached(f"alpaca:{symbol}:{interval}", 45, lambda: alpaca_candles(symbol, interval))
     if kind == "alpha":
         path = "/bapi/defi/v1/public/alpha-trade/klines"
         payload = cached(f"{kind}:{symbol}:{interval}", 45, lambda: fetch_json(
@@ -1243,42 +1251,46 @@ def health():
 @app.get("/api/markets")
 def markets():
     rows = [dict(item) for item in MARKETS]
+    configured = provider_status()
     for item in rows:
         if item["id"] in ("saudi", "us"):
-            configured = YAHOO_ENABLED and yf is not None and bool(YAHOO_SYMBOLS.get(item["id"]))
-            item["status"] = "configured_watchlist" if configured else "provider_required"
+            item["status"] = "configured" if configured[item["id"]]["configured"] else "provider_required"
+            item["provider"] = configured[item["id"]]["provider"]
     return jsonify({"markets": rows})
 
 
 @app.get("/api/providers")
 def providers():
-    """Expose provider truth: configured, verified fallback routes versus candidates not integrated."""
+    """Report actual provider configuration and feed limitations."""
+    external = provider_status()
     return jsonify({"markets": [
         {"id": "spot", "primary": "Binance Public REST", "fallbacks": [
             "api-gcp.binance.com", "api1.binance.com", "api2.binance.com",
             "api3.binance.com", "api4.binance.com", "data-api.binance.vision"
         ], "status": "configured", "note": "Official public endpoints; spot fallback is active."},
         {"id": "futures", "primary": "Binance USD-M Futures REST", "fallbacks": [],
-         "status": "single_source", "note": "Only one documented public base endpoint; no fake mirrors configured."},
+         "status": "single_source", "note": "Official public endpoint; one source only."},
         {"id": "coinm", "primary": "Binance COIN-M Futures REST", "fallbacks": [],
-         "status": "single_source", "note": "DAPI public exchangeInfo, 24h ticker and OHLCV; USD-quoted perpetual contracts only."},
+         "status": "single_source", "note": "Official public endpoint; USD-margined perpetual universe only."},
         {"id": "alpha", "primary": "Binance Alpha public endpoints", "fallbacks": [],
-         "status": "single_source", "note": "No verified equivalent Alpha public backup."},
+         "status": "single_source", "note": "Official public Alpha endpoints; no verified equivalent backup."},
         {"id": "forex", "primary": "BiQuote public REST", "fallbacks": [],
-         "status": "configured_unverified_runtime", "note": "No-key FX/metal quotes and 15m OHLC; source must pass live freshness checks."},
-        {"id": "saudi", "primary": "Yahoo Finance via yfinance", "fallbacks": [],
-         "status": "optional_disabled" if not YAHOO_ENABLED else ("configured_watchlist" if YAHOO_SYMBOLS["saudi"] else "symbols_required"),
-         "note": "Unofficial Yahoo client; private/internal testing only. Configure YAHOO_SAUDI_SYMBOLS; fresh 15m bars required."},
-        {"id": "us", "primary": "Yahoo Finance via yfinance", "fallbacks": [],
-         "status": "optional_disabled" if not YAHOO_ENABLED else ("configured_watchlist" if YAHOO_SYMBOLS["us"] else "symbols_required"),
-         "note": "Unofficial Yahoo client; private/internal testing only. Configure YAHOO_US_SYMBOLS; fresh 15m bars required."},
+         "status": "configured_unverified_runtime", "note": "No-key FX/metals; runtime freshness must be checked."},
+        {"id": "saudi", "primary": external["saudi"]["provider"], "fallbacks": [],
+         "status": "configured" if external["saudi"]["configured"] else "credentials_required",
+         "required_plan": external["saudi"]["required_plan"],
+         "coverage": external["saudi"]["coverage"],
+         "note": "SAHMK API key required; full active TASI equity catalogue, no turnover filter."},
+        {"id": "us", "primary": external["us"]["provider"], "fallbacks": [],
+         "status": "configured" if external["us"]["configured"] else "credentials_required",
+         "feed": external["us"]["feed"], "coverage": external["us"]["coverage"],
+         "note": "Alpaca credentials required; IEX is not consolidated all-exchange SIP coverage."},
         {"id": "contracts", "primary": None, "fallbacks": [],
-         "status": "provider_required", "note": "No verified no-key 15m futures/options source integrated."},
+         "status": "provider_required", "note": "Not connected; instrument type must be confirmed (US options or futures)."},
         {"id": "gamma_local", "primary": "تحليل سيولة محلي من OHLCV", "fallbacks": [],
          "status": "local_no_key",
-         "note": "تحليل السعر والحجم وسحب السيولة والامتصاص من بيانات الشموع العامة؛ لا يدّعي قياس خيارات GEX."}
+         "note": "Price/volume liquidity proxy; not options GEX."}
     ]})
-
 
 
 @app.get("/api/overview")
@@ -1287,8 +1299,8 @@ def home_overview():
     """Small cached cross-market snapshot; never invents unavailable market coverage."""
     names = {item["id"]: item["name"] for item in MARKETS}
     kinds = ["spot", "futures", "coinm", "alpha", "forex"]
-    if YAHOO_ENABLED and yf is not None:
-        kinds.extend(kind for kind in ("us", "saudi") if YAHOO_SYMBOLS.get(kind))
+    external = provider_status()
+    kinds.extend(kind for kind in ("us", "saudi") if external[kind]["configured"])
 
     def fetch_universe(kind):
         rows = rank_market_assets(cached(kind + ":universe", 20, lambda: market_tickers(kind)))
@@ -1319,7 +1331,7 @@ def home_overview():
             kind = item["id"]
             rows = universes.get(kind, [])
             if kind in universes:
-                status = "watchlist" if kind in ("us", "saudi") else "live"
+                status = "live"
             elif kind in ("saudi", "us") and kind not in kinds:
                 status = "provider_required"
             elif kind == "contracts":
@@ -1370,8 +1382,10 @@ def market(kind):
 
     if kind not in BASES and kind not in ("alpha", "forex", "saudi", "us"):
         return jsonify({"ok": False, "status": "provider_required", "message": "مزود البيانات لهذا السوق غير مربوط؛ لن نعرض بيانات غير موثوقة.", "signals": []}), 503
-    if kind in ("saudi", "us") and (not YAHOO_ENABLED or yf is None or not YAHOO_SYMBOLS.get(kind)):
-        return jsonify({"ok": False, "status": "provider_required", "message": "Yahoo غير مفعّل أو قائمة الرموز غير مضبوطة؛ لم نعرض بيانات غير مكتملة.", "signals": []}), 503
+    external = provider_status()
+    if kind in ("saudi", "us") and not external[kind]["configured"]:
+        missing = "SAHMK_API_KEY" if kind == "saudi" else "ALPACA_API_KEY + ALPACA_SECRET_KEY"
+        return jsonify({"ok": False, "status": "credentials_required", "message": f"يلزم إعداد {missing} في متغيرات الخدمة قبل تشغيل هذا السوق.", "signals": []}), 503
     # Old browser tabs may still send 1h/4h/etc. Keep the API compatible
     # and normalize all requests to the only supported strategy timeframe.
     requested_timeframe = request.args.get("timeframe", "15m").strip()
@@ -1407,7 +1421,7 @@ def market(kind):
         down = sum(1 for row in assets if row["change24h"] < 0)
         flat = len(assets) - up - down
         direction = "BUY" if up > down else ("SELL" if down > up else "NEUTRAL")
-        source_label = ("Yahoo Finance (private/internal test watchlist)" if kind in ("saudi", "us") else "Binance Alpha public market data" if kind == "alpha" else "BiQuote public FX/Metals feed" if kind == "forex" else "Binance public market data")
+        source_label = ("SAHMK TASI equities (delayed/provider plan dependent)" if kind == "saudi" else "Alpaca US equities (" + external["us"]["feed"] + " feed)" if kind == "us" else "Binance Alpha public market data" if kind == "alpha" else "BiQuote public FX/Metals feed" if kind == "forex" else "Binance public market data")
         snapshot_updated = save_market_snapshot(kind, direction, up, down, flat, len(assets), source_label)
         # Show highest-priority fast movers first, regardless of direction.
         movers = [row for row in assets if row["change24h"] != 0][:6]
