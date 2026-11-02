@@ -496,6 +496,12 @@ def test_candidate_accepts_35_completed_candles_and_rejects_34(monkeypatch):
     accepted = module.analyse_candidate("spot", candidate, timeframe="15m")
     assert accepted is not None
     assert accepted["side"] == "SELL"
+    # 24h breadth is not allowed to override the asset's confirmed 4h + daily side.
+    accepted_with_bullish_breadth = module.analyse_candidate(
+        "spot", candidate, market_direction="BUY", timeframe="15m"
+    )
+    assert accepted_with_bullish_breadth is not None
+    assert accepted_with_bullish_breadth["side"] == "SELL"
 
     monkeypatch.setattr(module, "candles", lambda *args: bars[:34])
     diagnostics = {}
