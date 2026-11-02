@@ -14,6 +14,7 @@ import requests
 from gamma_engine import analyse_liquidity_candidate
 from market_ranking import rank_market_assets
 from institutional_flow import analyse_orderbook_flow
+from scan_rotation import select_scan_batch
 
 try:
     import yfinance as yf
@@ -45,6 +46,8 @@ STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "EUR"}
 CACHE = {}
 CACHE_LOCK = threading.Lock()
 CACHE_KEY_LOCKS = {}
+SCAN_CURSORS = {}
+SCAN_CURSOR_LOCK = threading.Lock()
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 try:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -909,8 +912,11 @@ def market(kind):
         fast_movers = assets[:10]
         prices = {row["symbol"]: row["price"] for row in assets}
         update_open_trades(kind, prices)
-        # Scan a wider, still bounded batch of the fastest/highest-volume assets.
-        candidates = assets[:40]
+        # Scan a bounded rotating batch so large universes are covered over successive refreshes.
+        with SCAN_CURSOR_LOCK:
+            scan_offset = SCAN_CURSORS.get(kind, 0)
+            candidates, next_scan_offset, scan_offset = select_scan_batch(assets, scan_offset, 40)
+            SCAN_CURSORS[kind] = next_scan_offset
         signals = []
         diagnostic_rows = [{} for _ in candidates]
         # Signal eligibility is determined by the selected asset's two reference
@@ -964,6 +970,8 @@ def market(kind):
             "signals": signals, "open_trades": active,
             "scan_diagnostics": {
                 "universe_size": len(assets), "candidates_scanned": len(candidates),
+                "scan_offset": scan_offset, "next_scan_offset": next_scan_offset,
+                "scan_cycle_complete": bool(assets) and next_scan_offset <= scan_offset,
                 "candles_ready": sum(1 for item in diagnostic_rows if item.get("candles_ready") is True),
                 "accepted_before_top3": rejection_counts.get("accepted", 0),
                 "rejected_by_reason": {key: value for key, value in rejection_counts.items() if key != "accepted"},
