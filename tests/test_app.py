@@ -254,6 +254,11 @@ def test_signal_uses_completed_entry_timeframe_candles_and_live_quote_separately
                      "time": i * 900000})
     monkeypatch.setattr(module, "candles", lambda *args: bars)
     monkeypatch.setattr(module, "analyse_orderbook_flow", lambda *args, **kwargs: {"status": "unavailable"})
+    monkeypatch.setattr(module, "analyse_liquidity_candidate", lambda *args, **kwargs: {
+        "entry": 110.0, "stop_loss": 108.0, "tp1": 112.0, "tp2": 114.0,
+        "tp3": 116.0, "risk_percent": 1.82, "quality_score": 80.0,
+        "liquidity_event": "test_sweep", "volume_ratio": 1.4, "flow_pressure": 0.5,
+    })
     candidate = {"symbol": "AAAUSDT", "price": 110.0, "change24h": 4.0, "volume": 2_000_000}
     signal = module.analyse_candidate("spot", candidate, "BUY", timeframe="15m")
     assert signal is not None
@@ -468,9 +473,10 @@ def test_candidate_accepts_50_completed_candles_and_rejects_49(monkeypatch):
         "state": "STRONG_SELL", "score": 75.0,
         "analysis": {"candles_used": len(rows)}
     })
-    monkeypatch.setattr(timeframe_strategy, "make_trade", lambda *args: {
+    monkeypatch.setattr(module, "analyse_liquidity_candidate", lambda *args, **kwargs: {
         "entry": 100.5, "stop_loss": 102.0, "tp1": 99.0, "tp2": 97.5,
-        "tp3": 96.0, "risk_percent": 1.49, "reward_risk": {"tp1": 1, "tp2": 2, "tp3": 3}
+        "tp3": 96.0, "risk_percent": 1.49, "quality_score": 75.0,
+        "liquidity_event": "test_sweep", "volume_ratio": 1.3, "flow_pressure": -0.5,
     })
     monkeypatch.setattr(module, "analyse_orderbook_flow", lambda *args, **kwargs: {"status": "unavailable"})
     candidate = {"symbol": "AAAUSDT", "price": 100.5, "change24h": 1.0, "volume": 2_000_000}
