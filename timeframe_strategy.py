@@ -1,4 +1,4 @@
-"""OHLCV-only directional confirmation for the 4h and daily reference frames.
+"""OHLCV-only directional confirmation; the live strategy calls this on 15m candles.
 
 This module intentionally avoids EMA, MACD, RSI, and external AI/API keys.
 It classifies directional structure; the entry trigger is handled separately by
