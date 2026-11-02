@@ -1426,9 +1426,9 @@ def market(kind):
             )
         signals = []
         diagnostic_rows = [{} for _ in candidates]
-        # Signal eligibility is determined by the selected asset's two reference
-        # timeframes, not by aggregate 24h market breadth. A neutral market-wide
-        # count must not suppress individually aligned setups.
+        # The selected asset must agree on 4h + daily, and the market-wide
+        # 24h breadth is a hard side gate: up permits BUY, down permits SELL,
+        # while neutral breadth blocks new entries. 15m confirms the entry.
         with ThreadPoolExecutor(max_workers=4) as pool:
             jobs = {
                 pool.submit(analyse_candidate, kind, row, direction, diagnostic_rows[index], timeframe): index
@@ -1514,7 +1514,7 @@ def market(kind):
         response_payload = {
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": timeframe,
-            "market_direction_basis": "24h_breadth_display_only",
+            "market_direction_basis": "24h_breadth_hard_gate",
             "trade_direction_basis": "4h_and_daily_agreement_then_15m_liquidity_entry",
             "movers": movers, "fast_movers": fast_movers,
             "fast_mover_method": "50% زخم 24س + 30% نطاق الحركة + 20% السيولة النسبية؛ أوزان الحقول المتاحة فقط",
@@ -1527,8 +1527,8 @@ def market(kind):
                 "scan_cycle_complete": bool(assets) and next_scan_offset <= scan_offset,
                 "candles_ready": sum(1 for item in diagnostic_rows if item.get("candles_ready") is True),
                 "candles_required": 35,
-                "market_direction_gate": "market_breadth_and_4h_daily_must_agree",
-                "trade_side_rule": "BUY only when market breadth is UP and 4h+daily are BUY; SELL only when market breadth is DOWN and 4h+daily are SELL; neutral market creates no new trades; 15m confirms liquidity entry",
+                "market_direction_gate": "24h_breadth_and_4h_daily_must_agree",
+                "trade_side_rule": "BUY only when 24h market breadth is UP and 4h+daily are BUY; SELL only when 24h market breadth is DOWN and 4h+daily are SELL; neutral market creates no new trades; 15m confirms liquidity entry",
                 "accepted_before_top3": rejection_counts.get("accepted", 0),
                 "rejected_by_reason": {key: value for key, value in rejection_counts.items() if key != "accepted"},
             },
