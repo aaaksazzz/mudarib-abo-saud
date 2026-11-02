@@ -14,6 +14,19 @@ class ScanRotationTests(unittest.TestCase):
         self.assertEqual(len(seen), 95)
         self.assertEqual(set(seen), set(rows))
 
+    def test_twenty_asset_batches_move_forward_without_repeating(self):
+        rows = list(range(53))
+        seen = []
+        offset = 0
+        sizes = []
+        for _ in range(3):
+            batch, offset, start = select_scan_batch(rows, offset, 20)
+            seen.extend(batch)
+            sizes.append(len(batch))
+        self.assertEqual(sizes, [20, 20, 13])
+        self.assertEqual(seen, rows)
+        self.assertEqual(offset, 0)
+
     def test_small_universe_returns_all_rows(self):
         batch, next_offset, start = select_scan_batch(["a", "b"], 0, 40)
         self.assertEqual(batch, ["a", "b"])
