@@ -439,6 +439,13 @@ $("#copyPaymentAddress").addEventListener("click",()=>navigator.clipboard.writeT
 $("#submitBinanceReference").addEventListener("click",async()=>{try{let r=await fetch("/api/payments/reference",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_id:+$("#activeOrderId").value,reference:$("#binancePayReference").value.trim()})}),d=await r.json();if(!r.ok)throw Error(d.message);$("#paymentNotice").textContent=d.message}catch(e){$("#paymentNotice").textContent=e.message}});
 $("#verifyPayment").addEventListener("click",async()=>{try{let r=await fetch("/api/payments/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_id:+$("#activeOrderId").value,tx_hash:$("#txHash").value.trim()})}),d=await r.json();if(!r.ok)throw Error(d.message);$("#paymentNotice").textContent=d.message;setTimeout(()=>location.reload(),700)}catch(e){$("#paymentNotice").textContent=e.message}});
 
+
+async function loadAdminPayments(){try{let d=await get("/api/admin/payments");$("#adminPayments").innerHTML=d.payments.map(p=>'<p>'+safe(p.email)+' · #'+p.id+' · '+p.months+' شهر · '+p.amount_usdt+' USDT · '+safe(p.network)+' · '+safe(p.status)+(p.note?' · '+safe(p.note):'')+(p.network==="binance_pay"&&p.status==="pending"?' <button data-pay="'+p.id+'" data-action="approve">قبول</button><button data-pay="'+p.id+'" data-action="reject">رفض</button>':'')+'</p>').join("")||"لا توجد طلبات"}catch(e){$("#adminPayments").textContent=e.message}}
+async function loadAdminSections(){try{let d=await get("/api/admin/sections");$("#adminSections").innerHTML=d.sections.map(x=>'<label>'+safe(x.name)+' <input type="checkbox" data-section="'+x.id+'" '+(x.enabled?"checked":"")+'> '+(x.enabled?"مفتوح":"مغلق")+'</label>').join("")}catch(e){$("#adminSections").textContent=e.message}}
+$("#adminPaymentsRefresh").addEventListener("click",loadAdminPayments);
+$("#adminSections").addEventListener("change",async e=>{let x=e.target.closest("[data-section]");if(!x)return;try{let r=await fetch("/api/admin/sections",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({section:x.dataset.section,enabled:x.checked})});if(!r.ok)throw Error("تعذر تحديث القسم")}catch(err){x.checked=!x.checked;alert(err.message)}});
+$("#adminPayments").addEventListener("click",async e=>{let b=e.target.closest("[data-pay]");if(!b)return;try{let r=await fetch("/api/admin/payments/action",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_id:+b.dataset.pay,action:b.dataset.action})});if(!r.ok)throw Error("تعذر تحديث الدفع");await loadAdminPayments()}catch(err){alert(err.message)}});
+
 async function loadAdminUsers(){
  try{
   const d=await get("/api/admin/users",10000);
