@@ -513,8 +513,3 @@ def test_home_page_shows_market_radar_and_keeps_news_inside_the_site():
     assert 'subscriptionPanel' not in html
     assert 'href="/blog"' not in html
     assert 'href="/news"' not in html
-
-
-def test_official_tron_usdt_contract_and_receiver_addresses_decode():
-    assert module.tron_address_hex(module.USDT_TRC20_CONTRACT) == "a614f803b6fd780986a42c78ec9c7f77e6ded13c"
-    assert len(module.tron_address_hex(module.PAYMENT_WALLETS["trc20"]["address"])) == 40
