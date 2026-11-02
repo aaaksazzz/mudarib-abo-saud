@@ -59,7 +59,13 @@ except OSError as exc:
         f"Persistent trade database directory is unavailable: {DB_PATH.parent}"
     ) from exc
 DB_INIT_LOCK = threading.Lock()
-SAVE_NEW_TRADES_LOCK = threading.Lock()
+SAVE_NEW_TRADES_LOCK = threading.Lock() 
+SUBSCRIPTION_PRICES={1:30,2:60,3:90,6:180,12:360}
+PAYMENT_WALLETS={"solana":{"label":"Solana","address":"8mUuMV7WFNTsFEmGsw3t5EpTWGUzw5618Mjgh1svugaH"},"trc20":{"label":"TRC20","address":"TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6"},"binance_pay":{"label":"Binance Pay","address":"28191866"}}
+USDT_SOLANA_MINT="Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
+USDT_TRC20_CONTRACT="TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj"
+SECTION_NAMES={"spot":"Binance Spot","futures":"Binance Futures","coinm":"COIN-M","alpha":"Binance Alpha","saudi":"السوق السعودي","us":"الأسهم الأمريكية","contracts":"العقود الأمريكية","forex":"الفوركس والذهب","direction":"توجه السوق","opportunities":"فرص التداول","open-trades":"متابعة الصفقات","history":"سجل الصفقات","news":"الأخبار","blog":"المدونة"}
+
 
 MARKETS = [
     {"id": "spot", "name": "Binance Spot", "provider": "Binance", "status": "live"},
@@ -551,7 +557,16 @@ def db():
             id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user',
             subscription_expires_at INTEGER, created_at INTEGER NOT NULL
-        )""")
+        )""") 
+        connection.execute("""CREATE TABLE IF NOT EXISTS payment_orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,months INTEGER NOT NULL,
+            amount_usdt REAL NOT NULL,network TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',
+            tx_hash TEXT UNIQUE,created_at INTEGER NOT NULL,verified_at INTEGER,note TEXT)""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS section_settings (
+            section TEXT PRIMARY KEY,enabled INTEGER NOT NULL DEFAULT 1,updated_at INTEGER NOT NULL)""")
+        for section in SECTION_NAMES:
+            connection.execute("INSERT OR IGNORE INTO section_settings(section,enabled,updated_at) VALUES(?,1,?)",(section,int(time.time())))
+
         if AUTH_CONFIGURED:
             admin = connection.execute(
                 "SELECT id, password_hash, role FROM users WHERE email=?", (ADMIN_EMAIL,)
@@ -626,6 +641,52 @@ def load_saved_market_trades(market, timeframe):
 
 def auth_setup_ready():
     return AUTH_CONFIGURED
+ 
+def subscription_active(user):
+    return bool(user and (user["role"]=="admin" or (user["subscription_expires_at"] and int(user["subscription_expires_at"])>int(time.time()))))
+
+def section_enabled(section):
+    with db() as c: row=c.execute("SELECT enabled FROM section_settings WHERE section=?",(section,)).fetchone()
+    return bool(row["enabled"]) if row else True
+
+def require_paid_access(fn):
+    @wraps(fn)
+    def wrapped(*args,**kwargs):
+        if not auth_setup_ready(): return jsonify({"ok":False,"message":"تسجيل الدخول غير مهيأ."}),503
+        user=current_user()
+        if not user:return jsonify({"ok":False,"error":"login_required","message":"سجل الدخول أولاً."}),401
+        if not subscription_active(user):return jsonify({"ok":False,"error":"subscription_required","message":"يلزم اشتراك نشط."}),403
+        return fn(*args,**kwargs)
+    return wrapped
+
+def verify_trc20_transfer(txid,expected):
+    r=requests.get(f"https://api.trongrid.io/v1/transactions/{txid}/events",params={"only_confirmed":"true","limit":200},timeout=(4,12));r.raise_for_status()
+    for e in r.json().get("data",[]):
+        x=e.get("result") or {}
+        if e.get("event_name")=="Transfer" and e.get("contract_address")==USDT_TRC20_CONTRACT and x.get("to")==PAYMENT_WALLETS["trc20"]["address"]:
+            amount=int(x.get("value","0"))/1e6
+            if amount>=expected:return {"confirmed":True,"amount":amount}
+    return {"confirmed":False,"reason":"لم نعثر على تحويل USDT مؤكّد إلى محفظتك."}
+
+def verify_solana_transfer(signature,expected):
+    rpc="https://api.mainnet-beta.solana.com"
+    def call(method,params):
+        r=requests.post(rpc,json={"jsonrpc":"2.0","id":1,"method":method,"params":params},timeout=(4,15));r.raise_for_status();d=r.json()
+        if d.get("error") or "result" not in d:raise ValueError("تعذر قراءة معاملة Solana.")
+        return d["result"]
+    wallet=PAYMENT_WALLETS["solana"]["address"]
+    a=call("getTokenAccountsByOwner",[wallet,{"mint":USDT_SOLANA_MINT},{"encoding":"jsonParsed","commitment":"finalized"}])
+    dests={x["pubkey"] for x in a.get("value",[])}
+    tx=call("getTransaction",[signature,{"encoding":"jsonParsed","commitment":"finalized","maxSupportedTransactionVersion":0}])
+    if not tx or (tx.get("meta") or {}).get("err") is not None:return {"confirmed":False,"reason":"المعاملة غير مؤكدة أو فاشلة."}
+    msg=(tx.get("transaction") or {}).get("message") or {};ins=list(msg.get("instructions",[]))
+    for group in (tx.get("meta") or {}).get("innerInstructions",[]):ins.extend(group.get("instructions",[]))
+    for item in ins:
+        p=item.get("parsed") or {};i=p.get("info") or {}
+        if p.get("type") not in ("transfer","transferChecked") or i.get("mint")!=USDT_SOLANA_MINT or i.get("destination") not in dests:continue
+        t=i.get("tokenAmount") or {};amount=float(t.get("uiAmountString") or int(i.get("amount",0))/(10**int(t.get("decimals",6))))
+        if amount>=expected:return {"confirmed":True,"amount":amount}
+    return {"confirmed":False,"reason":"لم نعثر على تحويل USDT مؤكّد إلى محفظتك."}
 
 
 def public_user(row):
@@ -750,6 +811,92 @@ def auth_login():
 def auth_logout():
     session.clear()
     return jsonify({"ok": True})
+ 
+@app.get("/api/payments/options")
+@require_login
+def payment_options():
+    return jsonify({"prices":SUBSCRIPTION_PRICES,"networks":{k:{"label":v["label"],"address":v["address"]} for k,v in PAYMENT_WALLETS.items()}})
+
+@app.post("/api/payments/orders")
+@require_login
+def create_payment_order():
+    d=request.get_json(silent=True) or {}
+    try:months=int(d.get("months"))
+    except (TypeError,ValueError):return jsonify({"ok":False,"message":"اختر مدة صحيحة."}),400
+    network=str(d.get("network","")).lower()
+    if months not in SUBSCRIPTION_PRICES or network not in PAYMENT_WALLETS:return jsonify({"ok":False,"message":"الباقة أو الشبكة غير مدعومة."}),400
+    user=current_user()
+    if user["role"]=="admin":return jsonify({"ok":False,"message":"حساب الإدارة لا يحتاج اشتراكاً."}),400
+    amount=SUBSCRIPTION_PRICES[months]
+    with db() as c:
+        cur=c.execute("INSERT INTO payment_orders(user_id,months,amount_usdt,network,created_at) VALUES(?,?,?,?,?)",(user["id"],months,amount,network,int(time.time())))
+        oid=cur.lastrowid
+    return jsonify({"ok":True,"order":{"id":oid,"months":months,"amount_usdt":amount},"payment":{**PAYMENT_WALLETS[network],"automatic_verification":network in ("trc20","solana")}}),201
+
+@app.post("/api/payments/verify")
+@require_login
+def verify_payment():
+    d=request.get_json(silent=True) or {}
+    try:oid=int(d.get("order_id"))
+    except (TypeError,ValueError):return jsonify({"ok":False,"message":"طلب غير صحيح."}),400
+    txid=str(d.get("tx_hash","")).strip()
+    if not re.fullmatch(r"[A-Za-z0-9]{32,100}",txid):return jsonify({"ok":False,"message":"رقم المعاملة غير صحيح."}),400
+    user=current_user()
+    with db() as c:order=c.execute("SELECT * FROM payment_orders WHERE id=? AND user_id=?",(oid,user["id"])).fetchone()
+    if not order:return jsonify({"ok":False,"message":"الطلب غير موجود."}),404
+    if order["status"]=="paid":return jsonify({"ok":True,"message":"الاشتراك مفعّل مسبقاً."})
+    if order["network"]=="binance_pay":return jsonify({"ok":False,"message":"Binance Pay يحتاج مراجعة الإدارة؛ لا يمكن التحقق آلياً من المعرّف وحده."}),409
+    try:result=verify_trc20_transfer(txid,order["amount_usdt"]) if order["network"]=="trc20" else verify_solana_transfer(txid,order["amount_usdt"])
+    except (requests.RequestException,ValueError,KeyError,TypeError) as exc:
+        app.logger.warning("Payment verification error: %s",exc);return jsonify({"ok":False,"message":"تعذر التحقق من الشبكة. حاول لاحقاً."}),503
+    if not result.get("confirmed"):return jsonify({"ok":False,"message":result.get("reason","لم يتم تأكيد التحويل.")}),422
+    now=int(time.time())
+    try:
+        with db() as c:
+            cur=c.execute("UPDATE payment_orders SET status='paid',tx_hash=?,verified_at=? WHERE id=? AND user_id=? AND status='pending'",(txid,now,oid,user["id"]))
+            if cur.rowcount!=1:return jsonify({"ok":False,"message":"تمت معالجة الطلب مسبقاً."}),409
+            row=c.execute("SELECT subscription_expires_at FROM users WHERE id=?",(user["id"],)).fetchone()
+            expiry=max(now,int(row["subscription_expires_at"] or 0))+int(order["months"])*30*86400
+            c.execute("UPDATE users SET subscription_expires_at=? WHERE id=?",(expiry,user["id"]))
+    except sqlite3.IntegrityError:return jsonify({"ok":False,"message":"رقم المعاملة مستخدم سابقاً."}),409
+    return jsonify({"ok":True,"message":"تم تأكيد التحويل وتفعيل الاشتراك.","subscription_expires_at":expiry})
+
+@app.get("/api/admin/payments")
+@require_admin
+def admin_payments():
+    with db() as c:rows=c.execute("SELECT p.*,u.email FROM payment_orders p JOIN users u ON u.id=p.user_id ORDER BY p.created_at DESC LIMIT 100").fetchall()
+    return jsonify({"payments":[dict(x) for x in rows]})
+
+@app.post("/api/admin/payments/action")
+@require_admin
+def admin_payment_action():
+    d=request.get_json(silent=True) or {};oid=int(d.get("order_id",0));action=d.get("action")
+    if action not in ("approve","reject"):return jsonify({"ok":False,"message":"إجراء غير صحيح."}),400
+    with db() as c:
+        p=c.execute("SELECT * FROM payment_orders WHERE id=?",(oid,)).fetchone()
+        if not p or p["network"]!="binance_pay" or p["status"]!="pending":return jsonify({"ok":False,"message":"طلب Binance Pay المعلق غير موجود."}),404
+        if action=="approve":
+            now=int(time.time());u=c.execute("SELECT subscription_expires_at FROM users WHERE id=?",(p["user_id"],)).fetchone()
+            expiry=max(now,int(u["subscription_expires_at"] or 0))+p["months"]*30*86400
+            c.execute("UPDATE users SET subscription_expires_at=? WHERE id=?",(expiry,p["user_id"]))
+            c.execute("UPDATE payment_orders SET status='paid',verified_at=? WHERE id=?",(now,oid))
+        else:c.execute("UPDATE payment_orders SET status='rejected' WHERE id=?",(oid,))
+    return jsonify({"ok":True})
+
+@app.get("/api/admin/sections")
+@require_admin
+def admin_sections():
+    with db() as c:rows=c.execute("SELECT section,enabled FROM section_settings ORDER BY section").fetchall()
+    return jsonify({"sections":[{"id":x["section"],"name":SECTION_NAMES[x["section"]],"enabled":bool(x["enabled"])} for x in rows]})
+
+@app.post("/api/admin/sections")
+@require_admin
+def update_admin_section():
+    d=request.get_json(silent=True) or {};key=str(d.get("section",""))
+    if key not in SECTION_NAMES:return jsonify({"ok":False,"message":"القسم غير معروف."}),400
+    enabled=1 if d.get("enabled") is True else 0
+    with db() as c:c.execute("UPDATE section_settings SET enabled=?,updated_at=? WHERE section=?",(enabled,int(time.time()),key))
+    return jsonify({"ok":True,"enabled":bool(enabled)})
 
 
 @app.get("/api/admin/users")
@@ -986,7 +1133,8 @@ def providers():
 
 
 @app.get("/api/overview")
-def home_overview():
+def home_overview():@require_paid_access
+
     """Small cached cross-market snapshot; never invents unavailable market coverage."""
     names = {item["id"]: item["name"] for item in MARKETS}
     kinds = ["spot", "futures", "coinm", "alpha", "forex"]
@@ -1067,7 +1215,10 @@ def home_overview():
 
 
 @app.get("/api/market/<kind>")
-def market(kind):
+def market(kind):@require_paid_access
+    if kind in ("spot","futures","coinm","alpha","saudi","us","contracts","forex") and current_user()["role"]!="admin" and not section_enabled(kind):
+        return jsonify({"ok":False,"error":"section_locked","message":"هذا السوق مغلق من الإدارة."}),403
+
     if kind not in BASES and kind not in ("alpha", "forex", "saudi", "us"):
         return jsonify({"ok": False, "status": "provider_required", "message": "مزود البيانات لهذا السوق غير مربوط؛ لن نعرض بيانات غير موثوقة.", "signals": []}), 503
     if kind in ("saudi", "us") and (not YAHOO_ENABLED or yf is None or not YAHOO_SYMBOLS.get(kind)):
@@ -1244,7 +1395,8 @@ def crypto_gamma():
     })
 
 @app.get("/api/trades")
-def trades():
+def trades():@require_paid_access
+
     market_id = request.args.get("market", "")
     with db() as connection:
         if market_id:
