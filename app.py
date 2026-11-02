@@ -1406,7 +1406,6 @@ def market(kind):
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": timeframe,
             "market_direction_basis": "24h_breadth_hard_gate",
-            "strategy_version": "hawk-quant-v2",
             "trade_direction_basis": "4h_and_daily_agreement_then_15m_liquidity_entry",
             "strategy_version": "hawk-quant-v2",
             "movers": movers, "fast_movers": fast_movers,
