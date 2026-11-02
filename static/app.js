@@ -157,6 +157,7 @@ async function load(){
  $("#health").textContent="جارٍ التحديث";
  try{
   const requestedMarket=market;
+   const requestedTimeframe=analysisTimeframe;
   const providerState=marketStatuses.get(requestedMarket);
   if(providerState && !["live","configured_watchlist"].includes(providerState.status)){
    $("#direction").textContent="غير متاح";
@@ -171,8 +172,8 @@ async function load(){
    $("#health").className="bad";
    return;
   }
-  const d=await get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(analysisTimeframe),60000);
-  if(requestedMarket!==market){pending=true;return}
+  const d=await get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(requestedTimeframe),60000);
+  if(requestedMarket!==market||requestedTimeframe!==analysisTimeframe){pending=true;return}
   $("#direction").textContent=d.direction_ar;$("#direction").className="direction-value "+(d.direction==="BUY"?"up":d.direction==="SELL"?"down":"neutral");
   $("#up").textContent=d.up;$("#down").textContent=d.down;$("#flat").textContent=d.flat??0;$("#total").textContent=d.total;
   const total=Math.max(1,Number(d.total)||0);
