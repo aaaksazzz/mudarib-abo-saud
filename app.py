@@ -397,44 +397,42 @@ def candles(kind, symbol, interval):
     return rows
 
 def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timeframe="15m"):
-    """Entry on the selected chart timeframe; both prescribed higher frames must agree."""
+    """Analyse and reverse the signal using completed candles from the selected timeframe only."""
     def reject(reason):
         if diagnostics is not None: diagnostics["reason"]=reason
         return None
     try:
-        from timeframe_strategy import TIMEFRAME_RULES, assess_strategy, make_trade
+        from timeframe_strategy import assess_reversal, make_trade
         entry_rows=candles(kind,item["symbol"],timeframe)
         if len(entry_rows)<60: return reject("insufficient_candles")
         if diagnostics is not None: diagnostics["candles_ready"]=True
-        refs=TIMEFRAME_RULES[timeframe]
-        histories={timeframe:entry_rows}
-        histories.update({tf:candles(kind,item["symbol"],tf) for tf in refs})
-        buy=assess_strategy(histories,timeframe,"BUY")
-        sell=assess_strategy(histories,timeframe,"SELL")
-        alignment=buy if buy["confirmed"] else sell if sell["confirmed"] else None
-        if not alignment: return reject("reference_timeframes_not_aligned")
-        side=alignment["side"]
+        assessment=assess_reversal(entry_rows)
+        if not assessment["confirmed"]: return reject("no_reversal_signal")
+        side=assessment["side"]
         levels=make_trade(entry_rows,side)
         if not levels: return reject("invalid_risk_levels")
         closes=[float(x["close"]) for x in entry_rows[-2:]]
         change_tf=(closes[-1]/closes[-2]-1)*100 if closes[-2] else 0
-        # Entry and all levels are calculated from completed candles of the selected timeframe.
+        state_ar={"BUY":"شراء","STRONG_BUY":"شراء قوي","SELL":"بيع","STRONG_SELL":"بيع قوي"}
         signal={**levels,"side":side,"price":item["price"],
             "symbol":item["symbol"],"change24h":item["change24h"],
             "change_timeframe":round(change_tf,4),"volume":item["volume"],
             "fast_mover_score":item.get("fast_mover_score",0),
             "fast_mover_rank":item.get("fast_mover_rank"),
-            "timeframe":timeframe,"strategy":"HAWK QUANT PRO · Multi-timeframe Alignment",
-            "timeframe_alignment":alignment["states"],
-            "reference_timeframes":refs,"quality_score":alignment["quality_score"],
-            "entry_analysis":alignment["entry"],
-            "quality_label":"قوة فنية من 100 وليست احتمال نجاح",
-            "analysis_note":"درجة فنية محسوبة من الاتجاه والزخم والبنية والسيولة الحجمية"}
+            "timeframe":timeframe,"strategy":"SMART REVERSAL PRO · Same-Timeframe",
+            "source_state":assessment["source_state"],
+            "source_state_ar":state_ar.get(assessment["source_state"],"محايد"),
+            "reversal_state":assessment["trade_state"],
+            "reversal_state_ar":state_ar.get(assessment["trade_state"],"محايد"),
+            "quality_score":assessment["quality_score"],
+            "entry_analysis":assessment["analysis"],
+            "analysis_scope":"same_timeframe_only",
+            "quality_label":"قوة الشروط الفنية من 100 وليست احتمال نجاح",
+            "analysis_note":"تم عكس إشارة الاتجاه على الفريم نفسه؛ الدخول والوقف والأهداف محسوبة من شموع الفريم المحدد"}
         flow=analyse_orderbook_flow(kind,item["symbol"],side,lambda url,params:cached(
             f"orderbook:{kind}:{item['symbol']}",5,lambda:fetch_json(url,params)))
         signal["institutional_flow"]=flow
         signal["orderbook_context"]=flow.get("status","unavailable")
-        # Order-book context is disclosed separately; it never fabricates a success probability.
         if diagnostics is not None: diagnostics["reason"]="accepted"
         return signal
     except requests.RequestException:
@@ -971,7 +969,7 @@ def market(kind):
                 "rejected_by_reason": {key: value for key, value in rejection_counts.items() if key != "accepted"},
             },
             "updated": int(time.time()),
-            "source": ("Yahoo Finance (private/internal test watchlist)" if kind in ("saudi", "us") else "Binance Alpha public market data" if kind == "alpha" else "BiQuote public FX/Metals feed" if kind == "forex" else "Binance public market data"), "strategy": "HAWK QUANT PRO · Multi-timeframe Alignment",
+            "source": ("Yahoo Finance (private/internal test watchlist)" if kind in ("saudi", "us") else "Binance Alpha public market data" if kind == "alpha" else "BiQuote public FX/Metals feed" if kind == "forex" else "Binance public market data"), "strategy": "SMART REVERSAL PRO · Same-Timeframe",
             "gamma_status": "خيارات/GEX غير متاحة من مزود موثوق لكل الأسواق؛ لا يتم اختلاق قيم Gamma.",
             "analysis_mode": "سيولة سعرية وحجم شموع؛ ضغط تقديري وليس تدفق صفقات منفذة",
             "score_note": "توافق كامل للفريمين المرجعيين المحددين لكل فريم دخول؛ ترتيب حسب التغير على فريم التحليل. درجة الجودة ليست نسبة نجاح."
