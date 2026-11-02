@@ -481,45 +481,50 @@ def test_coinm_uses_contract_status_field(monkeypatch):
     monkeypatch.setattr(module, "fetch_first_json", lambda urls: payload)
     assert module.binance_active_symbols("coinm") == {"BTCUSD_PERP"}
 
-def test_candidate_uses_only_15m_for_direction_and_entry(monkeypatch):
-    import timeframe_strategy
-    bars = [{"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5,
-             "volume": 1000.0, "time": i * 900000} for i in range(35)]
+def test_candidate_uses_4h_daily_direction_and_15m_entry(monkeypatch):
+    import strategy_engine
+
+    bars = [{"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5 + i * 0.01,
+             "volume": 1000.0, "time": i * 900000} for i in range(40)]
     candle_calls = []
-    monkeypatch.setattr(module, "candles", lambda kind, symbol, interval: (candle_calls.append(interval) or bars))
-    monkeypatch.setattr(timeframe_strategy, "assess_timeframe", lambda rows, side=None: {
-        "state": "STRONG_SELL", "score": 75.0,
-        "analysis": {"candles_used": len(rows)}
+    monkeypatch.setattr(module, "candles", lambda kind, symbol, interval: (
+        candle_calls.append(interval) or bars
+    ))
+    monkeypatch.setattr(strategy_engine, "assess_timeframe", lambda rows: {
+        "state": "STRONG_BUY", "score": 80.0,
     })
     monkeypatch.setattr(module, "analyse_liquidity_candidate", lambda *args, **kwargs: {
-        "entry": 100.5, "stop_loss": 102.0, "tp1": 99.0, "tp2": 97.5,
-        "tp3": 96.0, "risk_percent": 1.49, "quality_score": 75.0,
-        "liquidity_event": "test_sweep", "volume_ratio": 1.3, "flow_pressure": -0.5,
+        "entry": 100.5, "stop_loss": 99.0, "tp1": 102.0, "tp2": 103.0,
+        "tp3": 104.0, "risk_percent": 1.49, "quality_score": 80.0,
+        "liquidity_event": "test_sweep", "volume_ratio": 1.3, "flow_pressure": 0.5,
     })
-    monkeypatch.setattr(module, "analyse_orderbook_flow", lambda *args, **kwargs: {"status": "unavailable"})
+    monkeypatch.setattr(module, "analyse_orderbook_flow", lambda *args, **kwargs: {
+        "status": "unavailable"
+    })
     candidate = {"symbol": "AAAUSDT", "price": 100.5, "change24h": 1.0, "volume": 2_000_000}
-    accepted = module.analyse_candidate("spot", candidate, timeframe="15m")
+
+    accepted = module.analyse_candidate("spot", candidate, market_direction="BUY", timeframe="15m")
     assert accepted is not None
-    assert accepted["side"] == "SELL"
+    assert accepted["side"] == "BUY"
     assert accepted["timeframe"] == "15m"
-    assert accepted["analysis_scope"] == "single_timeframe_15m"
-    assert accepted["reference_analysis"]["15m"]["state"] == "STRONG_SELL"
-    assert candle_calls == ["15m"]
+    assert accepted["strategy_version"] == "hawk-quant-v2"
+    assert accepted["analysis_scope"] == "4h_daily_direction_15m_entry"
+    assert candle_calls == ["4h", "1d", "15m"]
 
     candle_calls.clear()
-    accepted_with_bullish_breadth = module.analyse_candidate(
-        "spot", candidate, market_direction="BUY", timeframe="15m"
-    )
-    assert accepted_with_bullish_breadth is not None
-    assert accepted_with_bullish_breadth["side"] == "SELL"
-    assert candle_calls == ["15m"]
+    rejected = module.analyse_candidate("spot", candidate, market_direction="SELL", timeframe="15m")
+    assert rejected is None
+    assert candle_calls == ["4h", "1d"]
 
     monkeypatch.setattr(module, "candles", lambda kind, symbol, interval: bars[:34])
     diagnostics = {}
-    rejected = module.analyse_candidate("spot", candidate, diagnostics=diagnostics, timeframe="15m")
+    rejected = module.analyse_candidate(
+        "spot", candidate, market_direction="BUY", diagnostics=diagnostics, timeframe="15m"
+    )
     assert rejected is None
-    assert diagnostics["reason"] == "insufficient_candles"
-    assert diagnostics["candles_received"] == 34
+    assert diagnostics["reason"] == "insufficient_4h_candles"
+    assert diagnostics["candles_4h"] == 34
+
 
 def test_auth_me_reports_unconfigured_as_nonfatal_public_status(monkeypatch):
     monkeypatch.setattr(module, "AUTH_CONFIGURED", False)
@@ -545,10 +550,10 @@ def test_open_confirmed_trade_remains_in_opportunity_cards_after_refresh(tmp_pat
         connection.execute(
             """INSERT INTO trades
                (market,symbol,timeframe,side,entry,stop_loss,tp1,tp2,tp3,status,
-                created_at,updated_at,signal_candle_time)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                created_at,updated_at,signal_candle_time,strategy_version)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             ("spot", "AAAUSDT", "15m", "BUY", 100.0, 98.0, 102.0, 104.0,
-             106.0, "OPEN", now - 300, now - 300, now - 900)
+             106.0, "OPEN", now - 300, now - 300, now - 900, "hawk-quant-v2")
         )
     response = client.get("/api/market/spot?timeframe=15m")
     assert response.status_code == 200
@@ -560,13 +565,50 @@ def test_open_confirmed_trade_remains_in_opportunity_cards_after_refresh(tmp_pat
     assert card["stop_loss"] == 98.0
     assert card["tp3"] == 106.0
 
+def test_legacy_strategy_trade_stays_in_tracker_not_opportunity_cards(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "legacy-strategy.sqlite3")
+    now = int(time.time())
+    with module.db() as connection:
+        connection.execute(
+            """INSERT INTO trades
+               (market,symbol,timeframe,side,entry,stop_loss,tp1,tp2,tp3,status,
+                created_at,updated_at,signal_candle_time)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ("spot", "OLDUSDT", "15m", "BUY", 100.0, 98.0, 102.0, 104.0,
+             106.0, "OPEN", now, now, now),
+        )
+    signals, opened = module.load_saved_market_trades("spot", "15m")
+    assert signals == []
+    assert len(opened) == 1
+    assert opened[0]["strategy_version"] == "legacy"
+
+
+def test_old_strategy_snapshot_is_not_served_as_current(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "strategy-snapshot-version.sqlite3")
+    module.CACHE.pop("spot:universe", None)
+    module.SCAN_CURSORS.pop(("spot", "15m"), None)
+    module.SCAN_RUN_LOCKS.pop("spot:15m", None)
+    module.save_market_scan_snapshot("spot", "15m", {
+        "ok": True, "market": "spot", "timeframe": "15m",
+        "strategy_version": "legacy", "signals": [{"symbol": "OLDUSDT"}],
+    })
+    monkeypatch.setattr(module, "market_tickers", lambda kind: [
+        {"symbol": "AAAUSDT", "price": 2.0, "volume": 2_000_000, "change24h": 2.0}
+    ])
+    monkeypatch.setattr(module, "analyse_candidate", lambda *args: None)
+    response = client.get("/api/market/spot?timeframe=15m")
+    assert response.status_code == 200
+    assert response.json["strategy_version"] == "hawk-quant-v2"
+    assert response.json["signals"] == []
+
+
 def test_market_page_does_not_crash_when_optional_refresh_button_is_absent():
     from pathlib import Path
     root = Path(__file__).resolve().parents[1]
     js = (root / "static" / "app.js").read_text(encoding="utf-8")
     html = (root / "static" / "index.html").read_text(encoding="utf-8")
     assert 'const refreshButton=$("#refresh");if(refreshButton)refreshButton.hidden=true;' in js
-    assert 'app.js?v=20261102.market-init-hotfix1' in html
+    assert 'app.js?v=20261102.hawk-quant-v2' in html
 
 def test_market_direction_and_open_trades_are_persisted(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "persistent-market-state.sqlite3")
@@ -583,10 +625,10 @@ def test_market_direction_and_open_trades_are_persisted(tmp_path, monkeypatch):
         connection.execute(
             """INSERT INTO trades
                (market,symbol,timeframe,side,entry,stop_loss,tp1,tp2,tp3,status,
-                created_at,updated_at,signal_candle_time)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                created_at,updated_at,signal_candle_time,strategy_version)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             ("spot", "AAAUSDT", "15m", "BUY", 100.0, 98.0, 102.0, 104.0,
-             106.0, "OPEN", now, now, now),
+             106.0, "OPEN", now, now, now, "hawk-quant-v2"),
         )
     signals, opened = module.load_saved_market_trades("spot", "15m")
     assert len(signals) == 1

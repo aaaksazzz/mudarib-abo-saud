@@ -16,6 +16,7 @@ from gamma_engine import analyse_liquidity_candidate
 from market_ranking import rank_market_assets
 from institutional_flow import analyse_orderbook_flow
 from scan_rotation import select_priority_scan_batch
+from strategy_engine import rank_opportunities
 
 try:
     import yfinance as yf
@@ -415,152 +416,44 @@ def candles(kind, symbol, interval):
     return rows
 
 def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timeframe="15m"):
-    """Confirm direction on 4h + daily, then validate liquidity and entry on completed 15m candles."""
-    def reject(reason):
-        if diagnostics is not None:
-            diagnostics["reason"] = reason
-        return None
+    """Compatibility adapter to the canonical HAWK QUANT v2 engine."""
+    from strategy_engine import evaluate_candidate
 
-    if timeframe != "15m":
-        return reject("strategy_15m_only")
+    symbol = str((item or {}).get("symbol", ""))
 
-    try:
-        from timeframe_strategy import assess_timeframe
+    def fetch_history(interval):
+        return candles(kind, symbol, interval)
 
-        # Higher-timeframe agreement controls BUY/SELL. The 15m chart is used
-        # for the actual liquidity trigger and ranking, never to reverse the
-        # confirmed 4h + daily direction.
-        reference_rows = {
-            "4h": candles(kind, item["symbol"], "4h"),
-            "1d": candles(kind, item["symbol"], "1d"),
-        }
-        reference = {}
-        for interval, rows in reference_rows.items():
-            if len(rows) < 35:
-                if diagnostics is not None:
-                    diagnostics["candles_" + interval] = len(rows)
-                    diagnostics["candles_required"] = 35
-                return reject("insufficient_" + interval + "_candles")
-            reference[interval] = assess_timeframe(rows)
-
-        states = {interval: result.get("state") for interval, result in reference.items()}
-        buy_states = {"BUY", "STRONG_BUY"}
-        sell_states = {"SELL", "STRONG_SELL"}
-        if all(state in buy_states for state in states.values()):
-            side = "BUY"
-        elif all(state in sell_states for state in states.values()):
-            side = "SELL"
-        else:
-            if diagnostics is not None:
-                diagnostics["reference_directions"] = states
-            return reject("higher_timeframe_conflict")
-
-        # Enforce the whole-market direction as a hard side gate as well.
-        # A down market must never create a BUY, and an up market must never
-        # create a SELL. Neutral/uncertain breadth produces no new trades.
-        if market_direction not in ("BUY", "SELL"):
-            if diagnostics is not None:
-                diagnostics["market_direction"] = market_direction
-            return reject("market_direction_neutral")
-        if side != market_direction:
-            if diagnostics is not None:
-                diagnostics["market_direction"] = market_direction
-                diagnostics["candidate_direction"] = side
-            return reject("market_direction_conflict")
-
-        reference_score = sum(float(result.get("score") or 0) for result in reference.values()) / 2
-        if reference_score < 55:
-            if diagnostics is not None:
-                diagnostics["reference_score"] = round(reference_score, 1)
-                diagnostics["reference_directions"] = states
-            return reject("weak_higher_timeframe_direction")
-
-        entry_rows = candles(kind, item["symbol"], "15m")
-        if len(entry_rows) < 35:
-            if diagnostics is not None:
-                diagnostics["candles_received"] = len(entry_rows)
-                diagnostics["candles_required"] = 35
-            return reject("insufficient_candles")
-        if diagnostics is not None:
-            diagnostics["candles_ready"] = True
-            diagnostics["reference_directions"] = states
-
-        entry_price = float(item.get("price") or entry_rows[-1]["close"])
-        entry_diagnostics = {}
-        levels = analyse_liquidity_candidate(
-            entry_rows, entry_price, side, market_kind=kind,
-            diagnostics=entry_diagnostics,
+    def analyse_liquidity(rows, price, side, market_kind, diagnostics=None):
+        return analyse_liquidity_candidate(
+            rows, price, side, market_kind=market_kind, diagnostics=diagnostics
         )
-        if not levels:
-            return reject(entry_diagnostics.get("reason", "liquidity_setup_not_confirmed"))
 
-        closes = [float(row["close"]) for row in entry_rows[-2:]]
-        change_tf = (closes[-1] / closes[-2] - 1) * 100 if closes[-2] else 0.0
-
-        flow = analyse_orderbook_flow(
-            kind, item["symbol"], side,
+    def analyse_book(side):
+        return analyse_orderbook_flow(
+            kind, symbol, side,
             lambda url, params: cached(
-                f"orderbook:{kind}:{item['symbol']}", 5,
+                f"orderbook:{kind}:{symbol}", 5,
                 lambda: fetch_json(url, params)
             ),
         )
-        # Public order-book data is only a soft confirmation, not a claim
-        # about hidden institutional activity.
-        flow_adjustment = 4 if flow.get("status") == "supportive" else (
-            -8 if flow.get("status") == "opposing" else 0
+
+    try:
+        return evaluate_candidate(
+            market=kind,
+            item=item,
+            market_direction=market_direction,
+            fetch_candles=fetch_history,
+            liquidity_analyzer=analyse_liquidity,
+            orderbook_analyzer=analyse_book,
+            diagnostics=diagnostics,
+            timeframe=timeframe,
         )
-        liquidity_score = float(levels.get("quality_score") or 0)
-        quality_score = max(0.0, min(95.0,
-            liquidity_score * 0.60 + reference_score * 0.40 + flow_adjustment
-        ))
-        state_ar = {
-            "BUY": "شراء", "STRONG_BUY": "شراء قوي",
-            "SELL": "بيع", "STRONG_SELL": "بيع قوي",
-        }
-        signal = {
-            **levels,
-            "side": side,
-            "price": entry_price,
-            "symbol": item["symbol"],
-            "change24h": item.get("change24h", 0),
-            "change_timeframe": round(change_tf, 4),
-            "volume": item.get("volume", 0),
-            "fast_mover_score": item.get("fast_mover_score", 0),
-            "fast_mover_rank": item.get("fast_mover_rank"),
-            "timeframe": "15m",
-            "signal_candle_time": int(entry_rows[-1]["time"]),
-            "strategy": "4h + daily direction agreement · 15m liquidity entry",
-            "signal_state": side,
-            "signal_state_ar": state_ar[side],
-            "quality_score": round(quality_score, 1),
-            "ranking_score": round(
-                quality_score * 0.65 + float(item.get("fast_mover_score", 0) or 0) * 0.35, 1
-            ),
-            "entry_analysis": {
-                "direction_score_4h": float(reference["4h"].get("score") or 0),
-                "direction_score_daily": float(reference["1d"].get("score") or 0),
-                "liquidity_event": levels.get("liquidity_event"),
-                "volume_ratio": levels.get("volume_ratio"),
-                "flow_pressure": levels.get("flow_pressure"),
-                "risk_percent": levels.get("risk_percent"),
-            },
-            "reference_analysis": reference,
-            "institutional_flow": flow,
-            "orderbook_context": flow.get("status", "unavailable"),
-            "orderbook_adjustment": flow_adjustment,
-            "analysis_scope": "4h_daily_direction_15m_entry",
-            "quality_label": "درجة توافق الشروط من 100 وليست احتمال نجاح",
-            "analysis_note": "اتجاه 4 ساعات واليومي يجب أن يتفقا؛ تأكيد السيولة والدخول والترتيب من شموع 15 دقيقة المكتملة.",
-        }
-        if diagnostics is not None:
-            diagnostics["reason"] = "accepted"
-            diagnostics["reference_directions"] = states
-            diagnostics["reference_score"] = round(reference_score, 1)
-        return signal
     except requests.RequestException:
-        return reject("provider_error")
-    except (ValueError, TypeError, KeyError, IndexError, ZeroDivisionError, OverflowError):
-        return reject("analysis_error")
+        if diagnostics is not None:
+            diagnostics["reason"] = "provider_error"
+        return None
+
 
 @contextmanager
 def db():
@@ -578,13 +471,16 @@ def db():
             tp1_hit INTEGER NOT NULL DEFAULT 0, tp2_hit INTEGER NOT NULL DEFAULT 0,
             tp3_hit INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, closed_at INTEGER,
-            signal_candle_time INTEGER NOT NULL DEFAULT 0
+            signal_candle_time INTEGER NOT NULL DEFAULT 0,
+            strategy_version TEXT NOT NULL DEFAULT 'legacy'
         )""")
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(trades)")}
         if "tp3_hit" not in columns:
             connection.execute("ALTER TABLE trades ADD COLUMN tp3_hit INTEGER NOT NULL DEFAULT 0")
         if "signal_candle_time" not in columns:
             connection.execute("ALTER TABLE trades ADD COLUMN signal_candle_time INTEGER NOT NULL DEFAULT 0")
+        if "strategy_version" not in columns:
+            connection.execute("ALTER TABLE trades ADD COLUMN strategy_version TEXT NOT NULL DEFAULT 'legacy'")
         connection.execute("""CREATE TABLE IF NOT EXISTS market_snapshots (
             market TEXT PRIMARY KEY, direction TEXT NOT NULL, up INTEGER NOT NULL,
             down INTEGER NOT NULL, flat INTEGER NOT NULL, total INTEGER NOT NULL,
@@ -729,7 +625,7 @@ def load_saved_market_trades(market, timeframe):
             "institutional_flow": {"status": "unavailable"}, "persisted": True,
         })
         open_trades.append(trade)
-    signals = [dict(row) for row in open_trades if row["timeframe"] == timeframe][:3]
+    signals = [dict(row) for row in open_trades if row["timeframe"] == timeframe and row.get("strategy_version") == "hawk-quant-v2"][:3]
     return signals, open_trades
 
 def auth_setup_ready():
@@ -1137,10 +1033,10 @@ def save_new_trades(kind, signals):
                 if recent:
                     continue
                 connection.execute("""INSERT INTO trades
-                    (market,symbol,timeframe,side,entry,stop_loss,tp1,tp2,tp3,created_at,updated_at,signal_candle_time)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (market,symbol,timeframe,side,entry,stop_loss,tp1,tp2,tp3,created_at,updated_at,signal_candle_time,strategy_version)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (kind, signal["symbol"], signal["timeframe"], signal["side"], entry,
-                     stop, tp1, tp2, tp3, now, now, candle_time))
+                     stop, tp1, tp2, tp3, now, now, candle_time, str(signal.get("strategy_version") or "legacy")))
                 inserted.append(signal)
             connection.commit()
     return inserted
@@ -1381,7 +1277,7 @@ def market(kind):
     if not scan_lock.acquire(blocking=False):
         try:
             running_snapshot = load_market_scan_snapshot(kind, timeframe)
-            if running_snapshot:
+            if running_snapshot and running_snapshot["payload"].get("strategy_version") == "hawk-quant-v2":
                 payload = dict(running_snapshot["payload"])
                 payload.update({"scan_cached": True, "scan_in_progress": True,
                                 "scan_updated_at": running_snapshot["updated_at"]})
@@ -1391,7 +1287,9 @@ def market(kind):
         return jsonify({"ok":False,"error":"الفحص جارٍ الآن؛ أعد المحاولة بعد لحظات.","scan_in_progress":True}),503
     try:
         saved_scan = load_market_scan_snapshot(kind, timeframe)
-        if saved_scan and int(time.time()) - saved_scan["updated_at"] < SCAN_INTERVAL_SECONDS:
+        if (saved_scan
+                and saved_scan["payload"].get("strategy_version") == "hawk-quant-v2"
+                and int(time.time()) - saved_scan["updated_at"] < SCAN_INTERVAL_SECONDS):
             payload = dict(saved_scan["payload"])
             payload.update({
                 "scan_cached": True,
@@ -1414,7 +1312,7 @@ def market(kind):
         fast_movers = assets[:10]
         prices = {row["symbol"]: row["price"] for row in assets}
         update_open_trades(kind, prices)
-        # Scan exactly one round-robin batch of up to 20 assets per market/timeframe.
+        # Scan one small round-robin batch of 8 assets, with up to 4 priority movers.
         # The cursor is stored in SQLite so a restart does not restart from asset zero.
         cursor_key = (kind, timeframe)
         with SCAN_CURSOR_LOCK:
@@ -1450,14 +1348,7 @@ def market(kind):
         for item in diagnostic_rows:
             reason = item.get("reason", "unknown")
             rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
-        for row in signals:
-            row["ranking_score"] = round(
-                row["quality_score"] * 0.65 + float(row.get("fast_mover_score", 0) or 0) * 0.35, 1
-            )
-        signals.sort(key=lambda row: (
-            row.get("change_timeframe", 0) if row.get("side") == "BUY" else -row.get("change_timeframe", 0),
-            row["quality_score"], row["ranking_score"],
-        ), reverse=True)
+        signals = rank_opportunities(signals, limit=len(signals))
         # Only show opportunities that were actually saved. Repeated scans of
         # the same symbol/timeframe stay in the position tracker, not as fresh cards.
         signals = save_new_trades(kind, signals)
@@ -1486,7 +1377,7 @@ def market(kind):
         }
         ticker_by_symbol = {row["symbol"]: row for row in assets}
         for trade in active:
-            if trade["timeframe"] != timeframe:
+            if trade["timeframe"] != timeframe or trade.get("strategy_version") != "hawk-quant-v2":
                 continue
             # Keep opposite-side legacy positions in the tracker, but do not
             # surface them as current opportunities against today's market bias.
@@ -1510,12 +1401,13 @@ def market(kind):
                 "institutional_flow": {"status": "unavailable"},
                 "persisted": True,
             }
-        signals = list(display_by_key.values())[:3]
+        signals = rank_opportunities(list(display_by_key.values()), limit=3)
         response_payload = {
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": timeframe,
             "market_direction_basis": "24h_breadth_hard_gate",
             "trade_direction_basis": "4h_and_daily_agreement_then_15m_liquidity_entry",
+            "strategy_version": "hawk-quant-v2",
             "movers": movers, "fast_movers": fast_movers,
             "fast_mover_method": "50% زخم 24س + 30% نطاق الحركة + 20% السيولة النسبية؛ أوزان الحقول المتاحة فقط",
             "signals": signals, "open_trades": active,
@@ -1553,7 +1445,7 @@ def market(kind):
         app.logger.exception("Market provider request failed: %s", kind)
         try:
             previous_scan = load_market_scan_snapshot(kind, timeframe)
-            if previous_scan:
+            if previous_scan and previous_scan["payload"].get("strategy_version") == "hawk-quant-v2":
                 payload = dict(previous_scan["payload"])
                 payload.update({
                     "snapshot_stale": True, "scan_cached": True,
@@ -1571,11 +1463,12 @@ def market(kind):
                     "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[snapshot["direction"]],
                     "up": snapshot["up"], "down": snapshot["down"], "flat": snapshot["flat"],
                     "total": snapshot["total"], "timeframe": timeframe,
+                    "strategy_version": "hawk-quant-v2",
                     "signals": saved_signals, "open_trades": saved_open,
                     "movers": [], "fast_movers": [],
                     "scan_diagnostics": {"universe_size": snapshot["total"], "candidates_scanned": 0, "rejected_by_reason": {}},
                     "updated": snapshot["updated_at"], "snapshot_stale": True,
-                    "source": snapshot["source"], "strategy": "15m direction + liquidity + momentum · 15m entry",
+                    "source": snapshot["source"], "strategy": "HAWK QUANT PRO · 4h + daily · 15m liquidity entry",
                     "message": "تعذر تحديث المصدر؛ نعرض آخر اتجاه وصفقات محفوظة دون اختلاق بيانات جديدة."
                 })
         except sqlite3.Error:

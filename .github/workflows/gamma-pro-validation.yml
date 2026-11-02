@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Compile Python
-        run: python -m compileall -q app.py gamma_engine.py gammaflip_client.py
+        run: python -m compileall -q app.py strategy_engine.py timeframe_strategy.py gamma_engine.py gammaflip_client.py
       - name: Check frontend syntax
         run: node --check static/app.js
       - name: Run tests

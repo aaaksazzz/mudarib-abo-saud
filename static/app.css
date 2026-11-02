@@ -85,6 +85,11 @@ a{color:inherit}
 .opportunity-heading{align-items:center}
 .ranking-note,.count-pill,.home-panel-tag{padding:6px 9px;border:1px solid rgba(99,184,238,.22);border-radius:9px;background:rgba(41,111,151,.1);color:#a9d9f2;font-size:10px;white-space:nowrap}
 .timeframe-switcher{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.strategy-steps{display:flex;align-items:center;gap:6px;flex-wrap:wrap;width:100%;padding-top:8px;border-top:1px solid var(--line-soft)}
+.strategy-steps span{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border:1px solid var(--line);border-radius:7px;background:rgba(6,15,24,.48);color:var(--muted);font-size:9px}
+.strategy-steps b{color:#b9def5;font-size:9px;letter-spacing:.03em}
+@media(max-width:680px){.strategy-steps{gap:5px}.strategy-steps span{font-size:8px;padding:4px 6px}}
+
 .timeframe-label{color:var(--muted);font-size:10px}
 .timeframe-buttons{display:flex;gap:6px}
 .tf-button{border:1px solid var(--line);border-radius:8px;background:#0a1420;padding:6px 10px;color:var(--soft);font-size:10px;cursor:pointer}

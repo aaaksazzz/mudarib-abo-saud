@@ -1,8 +1,8 @@
-"""OHLCV-only directional confirmation; the live strategy calls this on 15m candles.
+"""OHLCV directional classifier for completed 4h and daily reference candles.
 
-This module intentionally avoids EMA, MACD, RSI, and external AI/API keys.
-It classifies directional structure; the entry trigger is handled separately by
-the liquidity sweep/absorption engine.
+The canonical strategy lives in strategy_engine.py. This module scores
+higher-timeframe structure; 15m entries are handled by the liquidity engine.
+No external AI/API key or lagging indicator dependency is used.
 """
 from statistics import mean, median
 from math import isfinite

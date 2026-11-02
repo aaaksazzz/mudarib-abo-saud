@@ -5,8 +5,8 @@
 <meta name="theme-color" content="#070b12"><title>SMART TRADING PRO | التداول الذكي</title>
 <meta name="description" content="منصة احترافية لمراقبة الأسواق والاتجاهات والفرص الفنية ببيانات عامة ومصادر واضحة.">
 <link rel="preconnect" href="https://api.binance.com"><link rel="preconnect" href="https://fapi.binance.com">
-<link rel="stylesheet" href="/static/app.css?v=20261102.clean-terminal-v1">
-<script src="/static/app.js?v=20261102.terminal-phase1" defer></script>
+<link rel="stylesheet" href="/static/app.css?v=20261102.hawk-quant-v2">
+<script src="/static/app.js?v=20261102.hawk-quant-v2" defer></script>
 </head>
 <body>
 <div class="app-shell">
@@ -107,13 +107,19 @@
   </article>
  </section>
  </section>
- <section class="section-heading opportunity-heading" id="opportunitiesSection"><div><span class="kicker">SMART TRADING PRO · MARKET SIGNALS</span><h2>فرص التداول</h2><p>اتجاه 4 ساعات واليومي · تأكيد السيولة والدخول على 15 دقيقة.</p></div><span class="ranking-note">TOP 3 · أعلى تغير أولًا</span></section>
- <section id="marketTimeframeSwitcher" class="timeframe-switcher" aria-label="اختيار فريم التحليل" hidden>
-  <span class="timeframe-label">فريم التحليل</span>
+ <section class="section-heading opportunity-heading" id="opportunitiesSection"><div><span class="kicker">SMART TRADING PRO · MARKET SIGNALS</span><h2>فرص التداول</h2><p>اتجاه 4 ساعات + يومي، توافق اتجاه السوق، ودخول سيولة 15 دقيقة؛ الترتيب حسب تغير 15 دقيقة.</p></div><span class="ranking-note">TOP 3 · أعلى تغير أولًا</span></section>
+ <section id="marketTimeframeSwitcher" class="timeframe-switcher" aria-label="فريم دخول الاستراتيجية" hidden>
+  <span class="timeframe-label">فريم الدخول</span>
   <div class="timeframe-buttons" role="group" aria-label="الفريم الزمني">
    <button type="button" class="tf-button" data-timeframe="15m" aria-pressed="true">15 دقيقة</button>
   </div>
-  <span id="activeStrategy">اتجاه 4 ساعات واليومي · دخول 15 دقيقة</span>
+  <span id="activeStrategy">اتجاه 4 ساعات + يومي · دخول سيولة 15 دقيقة · ترتيب تغير 15 دقيقة</span>
+  <div class="strategy-steps" aria-label="مراحل الاستراتيجية">
+   <span><b>4H + 1D</b> اتجاه الأصل</span>
+   <span><b>24H</b> توافق السوق</span>
+   <span><b>15M</b> سيولة ودخول</span>
+   <span><b>TOP 3</b> تغير 15 دقيقة</span>
+  </div>
  </section>
  <section id="cards" class="cards"><div class="empty">جارٍ تحليل السوق...</div></section>
  <section class="panel tracker-panel" id="openSection">

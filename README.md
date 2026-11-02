@@ -36,8 +36,15 @@
 - `/api/market/alpha`
 - `/api/trades?market=spot`
 
-## GAMMA PRO
-محرك التوصيات الأساسي يحلل شموع 15 دقيقة المكتملة لاكتشاف سحب السيولة واسترداد المستوى، أو الامتصاص قرب مناطق الدعم والمقاومة، مع تأكيد حركة الشمعة والحجم النسبي. لا يستخدم EMA أو RSI أو MACD أو مؤشرات الاتجاه التقليدية. يحدد الدخول من آخر سعر متاح، والوقف خلف ذيل حدث السيولة بهامش مبني على المدى الحقيقي، والأهداف عند 1R و2R و3R. لا يصدر توصية ما لم تكتمل شروط الحدث والتأكيد وحد المخاطرة. درجة الجودة تقييم لقوة الشروط وليست احتمال ربح أو نسبة نجاح.
+## HAWK QUANT PRO v2 — محرك الاستراتيجية الموحد
+- **اتجاه الأصل:** شموع 4 ساعات واليومي المكتملة؛ لا تُقبل الصفقة إلا إذا اتفق الفريمان على BUY أو SELL.
+- **بوابة اتجاه السوق:** اتجاه اتساع السوق خلال 24 ساعة يجب أن يوافق جهة الصفقة؛ الاتجاه المحايد أو المعاكس يمنع فتح صفقات جديدة.
+- **الدخول:** تحليل شموع 15 دقيقة المكتملة فقط عبر سحب السيولة والاسترداد، أو الامتصاص، أو الاختراق/الاستمرار المؤكد بالحجم والضغط السعري.
+- **الترتيب:** يفحص النظام دفعات صغيرة من الأصول ذات الحركة والسيولة، ثم يرتب الفرص المقبولة حسب تغير 15 دقيقة الموافق لاتجاه الصفقة، ثم جودة الشروط. يعرض أفضل 3 فقط.
+- **تأكيد دفتر الأوامر:** متاح كعامل مساعد للأسواق المدعومة من Binance فقط؛ لا يمنع التحليل في الأسواق الأخرى ولا يُقدّم على أنه تدفق مؤسسي خفي.
+- **المخاطر:** وقف خلف منطقة الحدث مع هامش تقلب، و3 أهداف متكيفة مع ATR ومضاعفات المخاطرة. تُرفض المخاطرة التي تتجاوز 4.5% من سعر الدخول.
+- **الدرجة:** مقياس توافق شروط من 100، وليست نسبة نجاح أو احتمال ربح. لا توجد مفاتيح API خاصة أو ربط بحساب تداول، ولا تنفيذ آلي.
+- المحرك النشط موحد في strategy_engine.py؛ وحدات التحليل القديمة المساعدة ليست مسارات استراتيجية مستقلة في الفحص المباشر.
 
 **حدود بيانات Gamma:** لا يوجد حالياً مزود موثوق موحد لبيانات خيارات/GEX يغطي كل الأسواق والأصول. لذلك لا يعرض النظام قيمة Gamma ولا ينسب مراكز لصانع السوق عند غياب بيانات الخيارات. ضغط الشمعة والحجم النسبي إشارات مشتقة من OHLCV وليست Delta فعلية أو دفتر أوامر أو مراكز صانع السوق. يتطلب GEX الحقيقي تكامل بيانات خيارات مرخصة لكل سوق يدعمها.
 
@@ -78,5 +85,5 @@ The first administrator account is created automatically in the persistent SQLit
 
 ## Fast-mover ranking
 - ترتيب نسبي داخل كل سوق: 50% absolute 24h change, 30% 24h high-low range, 20% quote turnover/liquidity. A feature with no variation is omitted and remaining weights are normalized.
-- The scanner analyses up to the first 40 ranked assets on the selected timeframe only, reverses the detected BUY/SELL strength, and displays up to three qualifying trades.
+- The scanner rotates through small batches (8 assets, including up to 4 priority movers) per market and scan cycle. A candidate must pass 4h + daily agreement, the 24h market-breadth gate, and a completed 15m liquidity trigger. Final opportunities rank by direction-aligned 15m change and then setup quality; up to three are displayed.
 - No ranking score is a win probability. Markets without valid price/candle providers remain unavailable rather than being populated with guessed tickers.
