@@ -591,4 +591,4 @@ def test_home_page_shows_market_radar_and_keeps_news_inside_the_site():
     assert 'id="homeCoverage"' in html
     assert 'await loadHomeOverview();' in js
     assert 'target="_blank"' not in js
-    assert 'href="'+safe(x.url)+'"' not in js
+    assert "'+safe(x.url)+'" not in js
