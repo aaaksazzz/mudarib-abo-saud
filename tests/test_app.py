@@ -464,9 +464,9 @@ def test_candidate_accepts_50_completed_candles_and_rejects_49(monkeypatch):
     bars = [{"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5,
              "volume": 1000.0, "time": i * 900000} for i in range(50)]
     monkeypatch.setattr(module, "candles", lambda *args: bars)
-    monkeypatch.setattr(timeframe_strategy, "assess_reversal", lambda rows: {
-        "confirmed": True, "side": "SELL", "trade_state": "STRONG_SELL",
-        "source_state": "STRONG_BUY", "quality_score": 75.0, "analysis": {"candles_used": len(rows)}
+    monkeypatch.setattr(timeframe_strategy, "assess_timeframe", lambda rows, side=None: {
+        "state": "STRONG_SELL", "score": 75.0,
+        "analysis": {"candles_used": len(rows)}
     })
     monkeypatch.setattr(timeframe_strategy, "make_trade", lambda *args: {
         "entry": 100.5, "stop_loss": 102.0, "tp1": 99.0, "tp2": 97.5,
