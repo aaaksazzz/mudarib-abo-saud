@@ -392,7 +392,7 @@ async function showAccess(message, user=null){
 async function startAuthorized(user=null){
  $("#accessGate").hidden=true;
  $("#mainContent").hidden=false;
- $("#topLogout").hidden=true;
+ $("#topLogout").hidden=false;
  $("#adminPanel").hidden=!(user&&user.is_admin);
  $("#drawerAdmin").hidden=!(user&&user.is_admin);
  if(user&&user.is_admin) await loadAdminUsers();
