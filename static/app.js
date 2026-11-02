@@ -331,7 +331,7 @@ function configurePage(){
  document.body.classList.toggle("market-page",!!marketMatch);
  const timeframeSwitcher=$("#marketTimeframeSwitcher");if(timeframeSwitcher)timeframeSwitcher.hidden=!marketMatch;
  const adminAllowed=!$("#adminPanel").hidden;$("#adminPanel").hidden=true;
- const ids=["homeSection","marketSection","directionSection","cryptoGammaSection","systemSection","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection"];
+ const ids=["homeSection","marketSection","directionSection","cryptoGammaSection","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection"];
  const hideAll=()=>ids.forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
  const show=(...names)=>names.forEach(id=>{const el=$("#"+id);if(el)el.hidden=false});
  if(PATH==="/"){
@@ -345,9 +345,9 @@ function configurePage(){
   $("#homeSection p").textContent="اتجاه السوق والفرص والصفقات الخاصة بهذا السوق فقط.";
  }else if(PATH.startsWith("/sections/")){
   const section=PATH.split("/").pop();
-  const map={system:["systemSection"],direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["openSection"],history:["historySection"]};
+  const map={direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["openSection"],history:["historySection"]};
   hideAll();show("homeSection",...(map[section]||[]));
-  const titles={system:"مركز مراقبة المنصة",direction:"توجه السوق",opportunities:"فرص التداول","open-trades":"متابعة الصفقات",history:"سجل النتائج"};
+  const titles={direction:"توجه السوق",opportunities:"فرص التداول","open-trades":"متابعة الصفقات",history:"سجل النتائج"};
   $("#homeSection h1").innerHTML='<span>'+safe(titles[section]||"القسم")+'</span>';
   $("#homeSection p").textContent="قسم مستقل عن الصفحة الرئيسية.";
  }else if(PATH==="/blog"){
@@ -376,7 +376,6 @@ document.addEventListener("visibilitychange",()=>{
  if(document.hidden||$("#mainContent").hidden||busy)return;
  if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load();if(marketMatch)loadHistoryPage();}
  else if(PATH==="/sections/history")loadHistoryPage();
- else if(PATH==="/sections/system")loadSystemStatus();
 });
 function tick(){ $("#clock").textContent=new Date().toLocaleTimeString("en-GB",{hour12:false}); }
 async function showAccess(message, user=null){
@@ -393,7 +392,7 @@ async function showAccess(message, user=null){
 async function startAuthorized(user=null){
  $("#accessGate").hidden=true;
  $("#mainContent").hidden=false;
- $("#topLogout").hidden=true;
+ $("#topLogout").hidden=false;
  $("#adminPanel").hidden=!(user&&user.is_admin);
  $("#drawerAdmin").hidden=!(user&&user.is_admin);
  if(user&&user.is_admin) await loadAdminUsers();
@@ -402,18 +401,22 @@ async function startAuthorized(user=null){
  else if(PATH==="/"){await loadMarketStatuses();}
  else if(PATH.startsWith("/sections/") && ["direction","opportunities","open-trades"].includes(PATH.split("/").pop())){await loadMarketStatuses();await load();}
  else if(PATH==="/sections/history"){await loadHistoryPage();}
- else if(PATH==="/sections/system"){await loadSystemStatus();}
 }
 async function initializeAccess(){
- // Public browsing is enabled. Login is optional and only used for admin tools.
- let user=null;
- try{
-  const d=await get("/api/auth/me",5000);
-  if(d&&d.configured&&d.user) user=d.user;
- }catch(e){
-  console.warn("Optional account status unavailable; continuing in public mode.",e);
+ // Paid access is mandatory. Never fall back to public browsing when auth is unavailable.
+ let d=null;
+ try{d=await get("/api/auth/me",7000)}catch(e){
+  console.warn("Authentication status unavailable.",e);
+  await showAccess("تعذر الاتصال بخدمة الحسابات. لا يمكن فتح أقسام التداول قبل التحقق من الاشتراك.");
+  return;
  }
- await startAuthorized(user);
+ if(!d||!d.configured){
+  await showAccess("نظام الحسابات غير مهيأ على الخادم. يلزم ضبط SECRET_KEY وADMIN_EMAIL وADMIN_PASSWORD في إعدادات Northflank.");
+  return;
+ }
+ const user=d.user||null;
+ if(user&&(user.is_admin||user.subscribed)) await startAuthorized(user);
+ else await showAccess(user?"حسابك غير مشترك أو انتهى اشتراكه. سجّل الخروج بعد تفعيل الاشتراك من الإدارة.":"سجّل الدخول أو أنشئ حساباً للوصول إلى المنصة.",user);
 }
 let creatingAccount=false;
 $("#authToggle").addEventListener("click",()=>{
@@ -491,5 +494,6 @@ $("#siteDrawer").addEventListener("click",e=>{
 });
 
 tick();setInterval(tick,1000);
+initPreferences();
 initializeAccess();
-timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load();if(marketMatch)loadHistoryPage()}else if(PATH==="/sections/history")loadHistoryPage();else if(PATH==="/sections/system")loadSystemStatus();else if(PATH==="/")loadHomeOverview()},900000);
+timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load();if(marketMatch)loadHistoryPage()}else if(PATH==="/sections/history")loadHistoryPage();else if(PATH==="/")loadHomeOverview()},900000);
