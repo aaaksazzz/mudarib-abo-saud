@@ -38,7 +38,7 @@
    <label for="paymentNetwork">طريقة الدفع</label><select id="paymentNetwork"><option value="trc20">USDT · TRC20</option><option value="solana">USDT · Solana</option><option value="binance_pay">Binance Pay</option></select>
    <button id="createPaymentOrder" type="button">إنشاء طلب الدفع</button>
    <div id="paymentAddressWrap" hidden><label>عنوان / معرّف الدفع</label><div class="payment-address"><code id="paymentAddress"></code><button id="copyPaymentAddress" type="button">نسخ</button></div>
-    <p id="binancePayNote" hidden>تحويل Binance Pay يحتاج مراجعة الإدارة قبل التفعيل.</p>
+    <div id="binancePayNote" hidden><p>تحويل Binance Pay يحتاج مراجعة الإدارة قبل التفعيل.</p><label for="binancePayReference">رقم مرجع التحويل</label><input id="binancePayReference" type="text" placeholder="أدخل رقم العملية"><button id="submitBinanceReference" type="button">إرسال المرجع للمراجعة</button></div>
     <div id="txHashWrap" hidden><label for="txHash">رقم المعاملة (TXID / Signature)</label><input id="txHash" type="text" autocomplete="off" placeholder="الصق رقم المعاملة بعد التحويل"><button id="verifyPayment" type="button">تحقق من التحويل وفعّل الاشتراك</button></div>
    </div>
    <input id="activeOrderId" type="hidden"><p id="paymentNotice" class="auth-notice" role="status"></p>
