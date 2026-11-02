@@ -446,13 +446,8 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
         if diagnostics is not None:
             diagnostics["candles_ready"] = True
 
-        entry_analysis = assess_timeframe(entry_rows, side=side)
-        valid_states = buy_states if side == "BUY" else sell_states
-        if entry_analysis["state"] not in valid_states:
-            if diagnostics is not None:
-                diagnostics["entry_state"] = entry_analysis["state"]
-            return reject("entry_timeframe_not_confirmed")
-
+        # Entry is triggered by a completed-candle liquidity sweep or absorption,
+        # not by a second indicator-direction score on the entry timeframe.
         entry_diagnostics = {}
         levels = analyse_liquidity_candidate(
             entry_rows, item["price"], side, market_kind=kind,
