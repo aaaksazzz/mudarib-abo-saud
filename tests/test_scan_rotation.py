@@ -20,10 +20,10 @@ class ScanRotationTests(unittest.TestCase):
         self.assertEqual(next_offset, 0)
         self.assertEqual(start, 0)
 
-    def test_offset_wraps_safely(self):
+    def test_last_batch_does_not_wrap_and_duplicate_prior_assets(self):
         batch, next_offset, start = select_scan_batch([0, 1, 2, 3, 4], 4, 3)
-        self.assertEqual(batch, [4, 0, 1])
-        self.assertEqual(next_offset, 2)
+        self.assertEqual(batch, [4])
+        self.assertEqual(next_offset, 0)
         self.assertEqual(start, 4)
 
     def test_empty_universe_is_safe(self):
