@@ -53,7 +53,7 @@ function applyLanguage(choice){
  const lang=effectiveLanguage(choice);currentLanguage=lang;
  document.documentElement.lang=lang;document.documentElement.dir=lang==="ar"?"rtl":"ltr";
  const set=(selector,key)=>{const el=$(selector);if(el)el.textContent=tr(key)};
- set("#menuOpen span","menu");set(".drawer-head b","markets");set('#siteDrawer a[href="/"]',"home");
+ set("#menuOpen span","menu");set(".drawer-head b","sections");$("#menuOpen")?.setAttribute("aria-label",tr("menu"));set('#siteDrawer a[href="/"]',"home");
  const groups=document.querySelectorAll("#siteDrawer .drawer-group");if(groups[0])groups[0].textContent=tr("markets");if(groups[1])groups[1].textContent=tr("sections");if(groups[2])groups[2].textContent=tr("content");
  const navKeys=["direction","opportunities","openTrades"];const navLinks=[...document.querySelectorAll("#siteDrawer a")];
  const navMap={"/sections/direction":"direction","/sections/opportunities":"opportunities","/sections/open-trades":"openTrades"};
@@ -65,7 +65,7 @@ function applyLanguage(choice){
  set("#opportunitiesSection h2","opportunities");set("#opportunitiesSection p","sameFrame");set(".timeframe-label","timeframe");
  const tfKeys=["min15","hour","hour4","daily","weekly","monthly"];document.querySelectorAll("[data-timeframe]").forEach((el,i)=>{if(tfKeys[i])el.textContent=tr(tfKeys[i])});
  set("#openSection h2","openTrades");set("#openSection p","tracking");set("#footerLanguageLabel","language");
- const select=$("#languageSelect");if(select&&select.value!==choice)select.value=choice;
+ const select=$("#languageSelect");if(select&&select.value!==choice)select.value=choice;if(select?.options[0])select.options[0].textContent=tr("auto");
  const heading=$("#homeSection h1"),description=$("#homeSection p");
  if(heading){if(marketMatch)heading.innerHTML="<span>"+safe(marketName(market))+"</span>";else if(PATH==="/")heading.innerHTML="<span>"+tr("marketHomeTitle")+"</span>"}
  if(description){if(marketMatch||PATH==="/")description.textContent=tr("marketPageDescription")}
