@@ -409,7 +409,7 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
         assessment=assess_reversal(entry_rows)
         if not assessment["confirmed"]: return reject("no_reversal_signal")
         side=assessment["side"]
-        levels=make_trade(entry_rows,side)
+        levels=make_trade(entry_rows,side,timeframe)
         if not levels: return reject("invalid_risk_levels")
         closes=[float(x["close"]) for x in entry_rows[-2:]]
         change_tf=(closes[-1]/closes[-2]-1)*100 if closes[-2] else 0
@@ -972,7 +972,7 @@ def market(kind):
             "source": ("Yahoo Finance (private/internal test watchlist)" if kind in ("saudi", "us") else "Binance Alpha public market data" if kind == "alpha" else "BiQuote public FX/Metals feed" if kind == "forex" else "Binance public market data"), "strategy": "SMART REVERSAL PRO · Same-Timeframe",
             "gamma_status": "خيارات/GEX غير متاحة من مزود موثوق لكل الأسواق؛ لا يتم اختلاق قيم Gamma.",
             "analysis_mode": "سيولة سعرية وحجم شموع؛ ضغط تقديري وليس تدفق صفقات منفذة",
-            "score_note": "توافق كامل للفريمين المرجعيين المحددين لكل فريم دخول؛ ترتيب حسب التغير على فريم التحليل. درجة الجودة ليست نسبة نجاح."
+            "score_note": "محرك انعكاس مستقل على الفريم المحدد؛ يجمع EMA وMACD وRSI وبنية السعر والزخم والحجم. درجة الجودة من 100 وليست احتمال نجاح."
         })
     except requests.RequestException:
         app.logger.exception("Market provider request failed: %s", kind)
