@@ -5,8 +5,8 @@
 <meta name="theme-color" content="#070b12"><title>SMART TRADING PRO | التداول الذكي</title>
 <meta name="description" content="منصة احترافية لمراقبة الأسواق والاتجاهات والفرص الفنية ببيانات عامة ومصادر واضحة.">
 <link rel="preconnect" href="https://api.binance.com"><link rel="preconnect" href="https://fapi.binance.com">
-<link rel="stylesheet" href="/static/app.css?v=20261102.clean-markets-i18n-v3">
-<script src="/static/app.js?v=20261102.clean-markets-i18n-v3" defer></script>
+<link rel="stylesheet" href="/static/app.css?v=20261102.market-terminal-v4">
+<script src="/static/app.js?v=20261102.market-terminal-v4" defer></script>
 </head>
 <body>
 <div class="app-shell">
@@ -37,11 +37,11 @@
   <nav id="siteDrawer" class="site-drawer" aria-label="أقسام الموقع" aria-hidden="true">
    <div class="drawer-head"><b>أقسام المنصة</b><button id="menuClose" type="button" aria-label="إغلاق القائمة">✕</button></div>
    <a href="/">الرئيسية</a>
-   <div class="drawer-group">الأسواق المستقلة</div>
+   <div class="drawer-group">الأسواق</div>
    <a href="/markets/spot">توصيات Binance Spot</a><a href="/markets/futures">توصيات Binance USD-M</a><a href="/markets/coinm">توصيات Binance COIN-M</a><a href="/markets/alpha">توصيات Binance Alpha</a>
    <a href="/markets/saudi">توصيات السوق السعودي</a><a href="/markets/us">توصيات الأسهم الأمريكية</a><a href="/markets/contracts">توصيات العقود الأمريكية</a><a href="/markets/forex">توصيات الفوركس والذهب</a>
-   <div class="drawer-group">أقسام التحليل</div>
-   <a href="/sections/direction">توجه السوق</a><a href="/sections/opportunities">فرص التداول</a><a href="/sections/open-trades">متابعة الصفقات</a><a href="/sections/history">سجل النتائج</a>
+   <div class="drawer-group">الاتجاه والصفقات</div>
+   <a href="/sections/direction">اتجاه السوق</a><a href="/sections/open-trades">الصفقات المفتوحة</a><a href="/sections/history">سجل الصفقات</a>
    <a href="/admin" id="drawerAdmin" hidden>إدارة المشتركين</a>
   </nav>
   <button id="drawerBackdrop" class="drawer-backdrop" type="button" aria-label="إغلاق القائمة" hidden></button>
@@ -65,18 +65,6 @@
    <a data-market="forex" href="/markets/forex" class="market-tab"><span class="market-icon forex">FX</span><span><b>الفوركس والذهب</b><small>صفحة مستقلة</small></span></a>
   </div>
  </section>
- <section class="home-overview" id="homeOverview">
-  <div class="home-dashboard-head"><div><span class="kicker">GLOBAL MARKET RADAR</span><h2>رادار الأسواق العالمي</h2><p>الأصول الأسرع حركة أولاً، ثم تغطية الأسواق المتاحة.</p></div><div class="home-update"><i></i><span id="homeUpdated">بانتظار البيانات</span></div></div>
-  <div class="home-stat-grid">
-   <article class="home-stat"><small>الأصول المؤهلة</small><b id="homeAssetCount">—</b><span>بعد تطبيق شرط السيولة</span></article>
-   <article class="home-stat"><small>الأسواق المتاحة</small><b id="homeMarketCount">—</b><span>من جميع أقسام المنصة</span></article>
-   <article class="home-stat"><small>الأصول الأسرع</small><b id="homeMoverCount">—</b><span>ترتيب زخم وحركة وسيولة</span></article>
-  </div>
-  <div class="home-radar-grid">
-   <article class="home-radar-panel"><div class="home-panel-head"><div><span class="kicker">FAST MOVERS</span><h3>الأسرع حركة الآن</h3></div><span class="home-panel-tag">رصد فقط · دون توصيات</span></div><div id="homeMovers" class="home-movers-list"><div class="empty">جارٍ جلب بيانات الأسواق المتاحة...</div></div></article>
-   <article class="home-radar-panel"><div class="home-panel-head"><div><span class="kicker">MARKET COVERAGE</span><h3>تغطية الأسواق</h3></div></div><div id="homeCoverage" class="home-coverage-list"><div class="empty">جارٍ فحص مصادر الأسواق...</div></div></article>
-  </div>
- </section>
  <section class="overview-grid" id="directionSection">
   <article class="panel direction-panel">
    <div class="panel-top"><div><span class="kicker">MARKET BREADTH · 24H</span><h2>توجه السوق</h2></div><span class="live-pill"><i></i> مباشر</span></div>
@@ -86,12 +74,8 @@
    <p class="panel-note">الاتجاه محسوب من عدد الأصول الرابحة والخاسرة خلال 24 ساعة.</p>
   </article>
  </section>
- <section class="panel gamma-panel" id="cryptoGammaSection" hidden>
-  <div class="section-heading tracker-heading"><div><span class="kicker">LOCAL MARKET LIQUIDITY · NO API KEYS</span><h2>محرك السيولة المحلي</h2><p>تحليل السعر والحجم وسحب السيولة والامتصاص من بيانات الشموع العامة، دون مفاتيح خارجية.</p></div><button id="gammaRefresh" class="refresh-btn" type="button">تحديث طريقة التحليل</button></div>
-  <div id="gammaCards" class="gamma-grid"><div class="empty">يعتمد على بيانات OHLCV العامة ولا يتطلب أي مفتاح API.</div></div>
-  <p id="gammaNote" class="panel-note">لا يعرض Gamma Flip أو Net GEX أو جدران الخيارات؛ هذه تحتاج بيانات خيارات موثوقة. تحليل السوق الأساسي يعمل دونها.</p>
  </section>
- <section class="section-heading opportunity-heading" id="opportunitiesSection"><div><span class="kicker">SMART REVERSAL PRO · SAME TIMEFRAME</span><h2>فرص التداول</h2><p>بيع يتحول إلى شراء، وشراء يتحول إلى بيع؛ التحليل والدخول والوقف والأهداف على الفريم المختار نفسه.</p></div><span class="ranking-note">TOP 3 · أعلى تغير أولًا</span></section>
+ <section class="section-heading opportunity-heading" id="opportunitiesSection"><div><span class="kicker">SMART TRADING PRO · MARKET SIGNALS</span><h2>فرص التداول</h2><p>اتجاه واضح وفرص شراء أو بيع حسب إشارة السوق المؤكدة على الفريم المختار.</p></div><span class="ranking-note">TOP 3 · أعلى تغير أولًا</span></section>
  <section id="marketTimeframeSwitcher" class="timeframe-switcher" aria-label="اختيار فريم التحليل" hidden>
   <span class="timeframe-label">فريم التحليل</span>
   <div class="timeframe-buttons" role="group" aria-label="الفريم الزمني">
@@ -102,7 +86,7 @@
    <button type="button" class="tf-button" data-timeframe="1w" aria-pressed="false">أسبوعي</button>
    <button type="button" class="tf-button" data-timeframe="1M" aria-pressed="false">شهري</button>
   </div>
-  <span id="activeStrategy">15 دقيقة · عكس الإشارة على نفس الفريم</span>
+  <span id="activeStrategy">15 دقيقة · تحليل مباشر على الفريم المختار</span>
  </section>
  <section id="cards" class="cards"><div class="empty">جارٍ تحليل السوق...</div></section>
  <section class="panel tracker-panel" id="openSection">
@@ -114,17 +98,6 @@
   <div id="historySummary" class="result-summary"><article class="result-metric"><small>إجمالي الصفقات المغلقة</small><b>—</b></article></div>
   <div id="closedTrades" class="trade-list"><div class="empty">لا توجد نتائج مغلقة مسجلة بعد.</div></div>
  </section>
-  <section id="systemSection" class="panel system-panel" hidden>
-  <div class="section-heading tracker-heading"><div><span class="kicker">PLATFORM OBSERVABILITY</span><h2>مركز مراقبة المنصة</h2><p>حالة قاعدة البيانات والذاكرة المؤقتة ومصادر الأسواق. الحالة هنا تبيّن الإعداد، ولا تعني ضمان توافر المزود الخارجي.</p></div><button id="systemRefresh" class="refresh-btn" type="button">فحص الحالة</button></div>
-  <div id="systemSummary" class="system-summary">
-   <article class="system-metric"><small>قاعدة البيانات</small><b>جارٍ الفحص</b></article>
-   <article class="system-metric"><small>الأسواق المعروفة</small><b>—</b></article>
-   <article class="system-metric"><small>الصفقات المفتوحة</small><b>—</b></article>
-   <article class="system-metric"><small>الذاكرة المؤقتة</small><b>—</b></article>
-  </div>
-  <div class="system-subhead"><b>مصادر الأسواق</b><small id="systemChecked">لم يتم الفحص بعد</small></div>
-  <div id="systemProviders" class="system-providers"><div class="empty">جارٍ تحميل حالة المصادر...</div></div>
-  <p class="panel-note">لا تُجرى اختبارات ضغط أو طلبات خارجية إضافية هنا؛ تُعرض حالة الإعداد والبيانات المحلية فقط.</p>
  </section>
 <footer class="footer"><span class="footer-brand">SMART TRADING PRO</span><span id="source">مصدر البيانات: —</span><div class="footer-controls"><label id="footerLanguageLabel" for="languageSelect" data-i18n="language">اللغة</label><select id="languageSelect" aria-label="اختيار لغة الواجهة"><option value="auto">تلقائي</option><option value="ar">العربية</option><option value="en">English</option><option value="es">Español</option><option value="de">Deutsch</option><option value="id">Bahasa Indonesia</option><option value="pt-BR">Português (Brasil)</option><option value="tr">Türkçe</option><option value="fr">Français</option><option value="hi">हिन्दी</option></select></div><span data-i18n="manualExecution">تحليل آلي · تنفيذ يدوي فقط</span></footer>
  <p class="disclaimer">المعلومات للتحليل والمتابعة وليست ضمانًا للربح أو توصية استثمارية. درجة جودة الشروط ليست نسبة نجاح. لا ينفذ الموقع أوامر تداول آلية.</p>

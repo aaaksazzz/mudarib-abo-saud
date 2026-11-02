@@ -640,3 +640,20 @@ body{font-feature-settings:"tnum" 1,"ss01" 1}
  .home-mover-row{grid-template-columns:20px minmax(0,1fr) auto auto;gap:6px;padding:8px 6px}
  .home-mover-name b{font-size:11px}.home-mover-price b,.home-mover-change{font-size:10px}
 }
+
+/* Focused market terminal: direction, signals and tracked trades only */
+.home-page .main{max-width:1180px;padding-top:22px}
+.home-page .welcome{min-height:110px;margin:4px 0 14px;padding:20px 24px}
+.home-page .welcome p{max-width:560px}
+.market-page .welcome{min-height:96px;margin-bottom:14px;padding:18px 24px}
+.market-page .overview-grid{margin:0 0 16px}
+.market-page .direction-panel{width:100%}
+.market-page .opportunity-heading{margin-top:18px}
+.market-page .tracker-panel,.market-page .history-panel{margin-top:18px}
+.market-page .market-switcher,.market-page .home-overview,.market-page .gamma-panel{display:none!important}
+@media(max-width:700px){
+ .home-page .main,.market-page .main{padding:12px 12px 28px}
+ .home-page .welcome,.market-page .welcome{min-height:0;padding:16px;border-radius:15px}
+ .market-page .direction-main{gap:12px}
+ .market-page .timeframe-switcher{overflow-x:auto}
+}
