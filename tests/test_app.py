@@ -550,10 +550,10 @@ def test_open_confirmed_trade_remains_in_opportunity_cards_after_refresh(tmp_pat
         connection.execute(
             """INSERT INTO trades
                (market,symbol,timeframe,side,entry,stop_loss,tp1,tp2,tp3,status,
-                created_at,updated_at,signal_candle_time)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                created_at,updated_at,signal_candle_time,strategy_version)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             ("spot", "AAAUSDT", "15m", "BUY", 100.0, 98.0, 102.0, 104.0,
-             106.0, "OPEN", now - 300, now - 300, now - 900)
+             106.0, "OPEN", now - 300, now - 300, now - 900, "hawk-quant-v2")
         )
     response = client.get("/api/market/spot?timeframe=15m")
     assert response.status_code == 200
@@ -571,7 +571,7 @@ def test_market_page_does_not_crash_when_optional_refresh_button_is_absent():
     js = (root / "static" / "app.js").read_text(encoding="utf-8")
     html = (root / "static" / "index.html").read_text(encoding="utf-8")
     assert 'const refreshButton=$("#refresh");if(refreshButton)refreshButton.hidden=true;' in js
-    assert 'app.js?v=20261102.market-init-hotfix1' in html
+    assert 'app.js?v=20261102.hawk-quant-v2' in html
 
 def test_market_direction_and_open_trades_are_persisted(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "persistent-market-state.sqlite3")
@@ -588,10 +588,10 @@ def test_market_direction_and_open_trades_are_persisted(tmp_path, monkeypatch):
         connection.execute(
             """INSERT INTO trades
                (market,symbol,timeframe,side,entry,stop_loss,tp1,tp2,tp3,status,
-                created_at,updated_at,signal_candle_time)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                created_at,updated_at,signal_candle_time,strategy_version)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             ("spot", "AAAUSDT", "15m", "BUY", 100.0, 98.0, 102.0, 104.0,
-             106.0, "OPEN", now, now, now),
+             106.0, "OPEN", now, now, now, "hawk-quant-v2"),
         )
     signals, opened = module.load_saved_market_trades("spot", "15m")
     assert len(signals) == 1
