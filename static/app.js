@@ -309,7 +309,7 @@ function configurePage(){
   $("#homeSection p").textContent="اتجاه السوق والفرص والصفقات الخاصة بهذا السوق فقط.";
  }else if(PATH.startsWith("/sections/")){
   const section=PATH.split("/").pop();
-  const map={direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["openSection"],history:["historySection"]};
+  const map={direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["opportunitiesSection","cards","openSection"]};
   hideAll();show("homeSection",...(map[section]||[]));
   const titles={direction:"توجه السوق",opportunities:"فرص التداول","open-trades":"متابعة الصفقات"};
   $("#homeSection h1").innerHTML='<span>'+safe(titles[section]||"القسم")+'</span>';
@@ -338,8 +338,8 @@ function configurePage(){
 
 document.addEventListener("visibilitychange",()=>{
  if(document.hidden||$("#mainContent").hidden||busy)return;
- if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load();if(marketMatch)loadHistoryPage();}
- else if(PATH==="/sections/history")loadHistoryPage();
+ if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load();}
+ 
 });
 function tick(){ $("#clock").textContent=new Date().toLocaleTimeString("en-GB",{hour12:false}); }
 async function showAccess(message, user=null){
