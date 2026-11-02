@@ -708,7 +708,8 @@ def verify_solana_transfer(signature,expected):
     for group in (tx.get("meta") or {}).get("innerInstructions",[]):ins.extend(group.get("instructions",[]))
     for item in ins:
         p=item.get("parsed") or {};i=p.get("info") or {}
-        if p.get("type") not in ("transfer","transferChecked") or i.get("mint")!=USDT_SOLANA_MINT or i.get("destination") not in dests:continue
+        if p.get("type") not in ("transfer","transferChecked") or i.get("destination") not in dests:continue
+        if i.get("mint") and i.get("mint")!=USDT_SOLANA_MINT:continue
         t=i.get("tokenAmount") or {};amount=float(t.get("uiAmountString") or int(i.get("amount",0))/(10**int(t.get("decimals",6))))
         if amount>=expected:return {"confirmed":True,"amount":amount,"timestamp":int(tx.get("blockTime") or 0)}
     return {"confirmed":False,"reason":"لم نعثر على تحويل USDT مؤكّد إلى محفظتك."}
