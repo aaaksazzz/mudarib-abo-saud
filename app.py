@@ -515,6 +515,7 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             "timeframe": "15m",
             "signal_candle_time": int(entry_rows[-1]["time"]),
             "strategy": strategy_result.get("strategy"),
+            "strategy_label": {"spot": "اختراق اتجاه صاعد بحجم نسبي", "futures": "استمرار الاتجاه والزخم", "coinm": "انعكاس بعد سحب السيولة", "alpha": "اختراق زخم وحجم مشدد", "saudi": "اختراق الانضغاط السعري", "us": "استعادة الاتجاه مع الحجم", "forex": "اختراق نطاق الحركة", "contracts": "غير متاح لغياب مزود البيانات"}.get(kind, strategy_result.get("strategy")),
             "strategy_reason": strategy_result.get("reason"),
             "strategy_metrics": {key: strategy_result.get(key) for key in ("volume_ratio", "momentum_percent", "structure")},
             "signal_state": state,
