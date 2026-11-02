@@ -102,6 +102,10 @@ def evaluate_candidate(
                 reference_directions=states,
             )
 
+        if diagnostics is not None:
+            diagnostics["candles_ready"] = True
+            diagnostics["reference_directions"] = states
+
         entry_price = float(item.get("price") or entry_rows[-1]["close"])
         if entry_price <= 0:
             return _reject(diagnostics, "invalid_entry_price")
