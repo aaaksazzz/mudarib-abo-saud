@@ -1277,7 +1277,7 @@ def market(kind):
     if not scan_lock.acquire(blocking=False):
         try:
             running_snapshot = load_market_scan_snapshot(kind, timeframe)
-            if running_snapshot:
+            if running_snapshot and running_snapshot["payload"].get("strategy_version") == "hawk-quant-v2":
                 payload = dict(running_snapshot["payload"])
                 payload.update({"scan_cached": True, "scan_in_progress": True,
                                 "scan_updated_at": running_snapshot["updated_at"]})
@@ -1287,7 +1287,9 @@ def market(kind):
         return jsonify({"ok":False,"error":"الفحص جارٍ الآن؛ أعد المحاولة بعد لحظات.","scan_in_progress":True}),503
     try:
         saved_scan = load_market_scan_snapshot(kind, timeframe)
-        if saved_scan and int(time.time()) - saved_scan["updated_at"] < SCAN_INTERVAL_SECONDS:
+        if (saved_scan
+                and saved_scan["payload"].get("strategy_version") == "hawk-quant-v2"
+                and int(time.time()) - saved_scan["updated_at"] < SCAN_INTERVAL_SECONDS):
             payload = dict(saved_scan["payload"])
             payload.update({
                 "scan_cached": True,
@@ -1310,7 +1312,7 @@ def market(kind):
         fast_movers = assets[:10]
         prices = {row["symbol"]: row["price"] for row in assets}
         update_open_trades(kind, prices)
-        # Scan exactly one round-robin batch of up to 20 assets per market/timeframe.
+        # Scan one small round-robin batch of 8 assets, with up to 4 priority movers.
         # The cursor is stored in SQLite so a restart does not restart from asset zero.
         cursor_key = (kind, timeframe)
         with SCAN_CURSOR_LOCK:
@@ -1444,7 +1446,7 @@ def market(kind):
         app.logger.exception("Market provider request failed: %s", kind)
         try:
             previous_scan = load_market_scan_snapshot(kind, timeframe)
-            if previous_scan:
+            if previous_scan and previous_scan["payload"].get("strategy_version") == "hawk-quant-v2":
                 payload = dict(previous_scan["payload"])
                 payload.update({
                     "snapshot_stale": True, "scan_cached": True,
