@@ -209,6 +209,7 @@ def alpaca_market_tickers():
         if isinstance(row, dict) and row.get("tradable")
         and row.get("status") == "active"
         and str(row.get("exchange") or "").upper() != "OTC"
+        and not ({"etf", "closed_end_fund"} & {str(v).lower() for v in (row.get("attributes") or [])})
         and row.get("symbol")
     ]
     output = []
