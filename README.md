@@ -12,10 +12,10 @@
 - Binance COIN-M Futures: واجهة Binance DAPI العامة؛ سوق مستقل لعقود COIN-M الدائمة النشطة، مع شرط قيمة تداول 24 ساعة لا تقل عن مليون دولار.
 - Binance Alpha: واجهات Binance العامة لقائمة الرموز ومعلومات أزواج USDT والشموع؛ لا تحتاج مفاتيح API، ولا يوجد بديل مطابق موثوق.
 - الفوركس والذهب: رُبط BiQuote العام دون مفتاح API لاكتشاف رموز Forex/Commodity وجلب الأسعار والشموع المغلقة 15m؛ تُرفض الأسعار المغلقة أو الأقدم من 5 دقائق.
-- الأسهم السعودية والأسهم الأمريكية: أُضيف موصل Yahoo Finance اختياري عبر yfinance للاختبار الداخلي فقط. لا يعمل افتراضياً؛ يتطلب YAHOO_FINANCE_ENABLED=1 وقوائم YAHOO_SAUDI_SYMBOLS وYAHOO_US_SYMBOLS (رموز مفصولة بفواصل). يفحص فقط الرموز المضبوطة، ويرفض الأسعار الأقدم من 45 دقيقة والشموع غير المكتملة. لا يعتبر هذا تغطية كاملة للسوق ولا يجوز إعادة توزيع بيانات Yahoo على موقع عام دون ترخيص. لا تفعّل هذا المصدر على موقع عام قبل التأكد من شروط الاستخدام وتأمين الموقع الخاص.
-- العقود الأمريكية: ما زالت غير مفعّلة؛ موصل Yahoo هذا لا يوفر فحصاً موثوقاً لكل عقود الخيارات.
-- `/api/providers` يعرض حالة كل مزود ومسارات الاحتياط المفعّلة فعلياً، ويميزها عن المصادر التي لم تُدمج أو لم تُتحقق.
-- Yahoo اختياري ويتطلب إعداد متغيرات البيئة في الاستضافة؛ لا يتم تفعيله تلقائياً.
+- السوق السعودي: موصل SAHMK يكتشف جميع الأسهم النشطة من TASI (أسهم Equity فقط، دون فلتر حجم تداول)، ويجلب الأسعار على دفعات من 50 رمزاً والشموع عبر `/historical/{symbol}/`. يلزم `SAHMK_API_KEY` في أسرار الاستضافة؛ شموع 15m و60m تتطلب باقة Pro أو أعلى، وحد Starter 5,000 طلب يومياً لا يكفي لفحص كثيف لكل الأسهم.
+- الأسهم الأمريكية: موصل Alpaca يكتشف الأسهم النشطة القابلة للتداول ويجلب snapshots على دفعات، مع فلتر قيمة تداول يومية لا تقل عن مليون دولار. يلزم `ALPACA_API_KEY` و`ALPACA_SECRET_KEY`. الوضع الافتراضي `ALPACA_DATA_FEED=delayed_sip` لتغطية أمريكية مجمعة بتأخير 15 دقيقة؛ `iex` يغطي IEX فقط، و`sip` يتطلب صلاحية الاشتراك المناسبة.
+- العقود الأمريكية: غير مفعّلة حتى تحديد المقصود: عقود خيارات الأسهم (Options) أم العقود الآجلة (Futures). لا نخلط بيانات الخيارات مع بيانات العقود الآجلة.
+- `/api/providers` و`/api/markets` يعرضان حالة الربط الفعلية ومتطلبات كل مزود. لا تظهر الأسواق التي ينقصها مفتاح بيانات على أنها متصلة.
 
 ## لوحة المنصة
 - اتجاه السوق محسوب من عدد الأصول الصاعدة والهابطة والمحايدة خلال 24 ساعة.
@@ -80,3 +80,14 @@ The first administrator account is created automatically in the persistent SQLit
 - ترتيب نسبي داخل كل سوق: 50% absolute 24h change, 30% 24h high-low range, 20% quote turnover/liquidity. A feature with no variation is omitted and remaining weights are normalized.
 - The scanner analyses up to the first 40 ranked assets on the selected timeframe only, reverses the detected BUY/SELL strength, and displays up to three qualifying trades.
 - No ranking score is a win probability. Markets without valid price/candle providers remain unavailable rather than being populated with guessed tickers.
+
+
+## External market-data secrets
+
+Set these values in Northflank Secrets / environment variables; never commit credentials to GitHub or send them in chat:
+
+- `SAHMK_API_KEY`: SAHMK developer key. A plan with 15m and 60m historical candles (Pro+) is required for the existing 4h + daily confirmation and 15m entry strategy.
+- `ALPACA_API_KEY` and `ALPACA_SECRET_KEY`: Alpaca credentials for US equity data.
+- `ALPACA_DATA_FEED`: defaults to `delayed_sip` (consolidated US exchange data delayed by 15 minutes). Use `iex` only if IEX-only coverage is acceptable; `sip` requires the relevant paid entitlement.
+
+After setting secrets, restart/redeploy the service and verify `/api/providers`, `/api/markets`, and each market endpoint. Code integration alone does not prove provider credentials, plan entitlements, or runtime connectivity.
