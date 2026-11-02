@@ -580,7 +580,7 @@ def test_market_page_does_not_crash_when_optional_refresh_button_is_absent():
     js = (root / "static" / "app.js").read_text(encoding="utf-8")
     html = (root / "static" / "index.html").read_text(encoding="utf-8")
     assert 'const refreshButton=$("#refresh");if(refreshButton)refreshButton.hidden=true;' in js
-    assert 'app.js?v=20261102.market-strategy1' in html
+    assert 'app.js?v=20261102.market-strategy2' in html
 
 def test_market_direction_and_open_trades_are_persisted(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "persistent-market-state.sqlite3")
