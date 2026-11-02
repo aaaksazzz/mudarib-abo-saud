@@ -199,42 +199,6 @@ async function loadGamma(){
 }
 $("#gammaRefresh")?.addEventListener("click",loadGamma);
 
-const PROVIDER_LABELS={
- configured:"مهيأ",single_source:"مصدر واحد",configured_unverified_runtime:"مهيأ · يحتاج تحقق وقت التشغيل",
- configured_watchlist:"قائمة رموز مهيأة",optional_disabled:"غير مفعّل",symbols_required:"قائمة الرموز مطلوبة",
- provider_required:"مصدر غير مربوط",secret_required:"إعداد مطلوب",unavailable_no_key:"غير متاح"
-};
-async function loadSystemStatus(){
- const button=$("#systemRefresh"),summary=$("#systemSummary"),root=$("#systemProviders");
- if(button&&button.disabled)return;
- if(button){button.disabled=true;button.textContent="جارٍ الفحص..."}
- try{
-  const d=await get("/api/system/status",10000);
-  const healthy=d.database==="ok";
-  const metrics=[
-   ["قاعدة البيانات",healthy?"سليمة":"تحتاج فحص",healthy],
-   ["الأسواق المعروفة",(d.markets||[]).length+" أسواق",true],
-   ["الصفقات المفتوحة",d.trades?.open??0,true],
-   ["عناصر الذاكرة المؤقتة",d.cache_entries??0,true]
-  ];
-  summary.innerHTML=metrics.map(x=>'<article class="system-metric"><small>'+x[0]+'</small><b class="'+(x[2]?"state-good":"down")+'">'+safe(x[1])+'</b></article>').join("");
-  const items=d.markets||[];
-  root.innerHTML=items.map(x=>{
-   const status=PROVIDER_LABELS[x.status]||x.status||"غير معروف";
-   const cls=["configured","configured_watchlist","single_source"].includes(x.status)?"ready":
-    x.status==="configured_unverified_runtime"?"check":"missing";
-   return '<article class="provider-row"><div class="provider-main"><b>'+safe(x.name)+'</b><small>'+safe(x.provider||"غير محدد")+'</small></div><span class="provider-state '+cls+'">'+safe(status)+'</span><small class="provider-note">'+safe(x.note||"")+'</small><small class="provider-fallback">مسارات احتياط موثقة: '+(x.fallbacks||0)+'</small></article>';
-  }).join("")||'<div class="empty">لا توجد مصادر مسجلة.</div>';
-  const stamp=d.cache_last_update?new Date(d.cache_last_update*1000).toLocaleTimeString("ar-SA"):"لا توجد بيانات مخزنة";
-  $("#systemChecked").textContent="فحص "+new Date(d.timestamp*1000).toLocaleTimeString("ar-SA")+" · آخر تحديث مخزن "+stamp;
-  $("#health").textContent=healthy?"متصل":"قاعدة البيانات تحتاج فحص";
-  $("#health").className=healthy?"ok":"bad";
- }catch(e){
-  summary.innerHTML='<article class="system-metric"><small>حالة الفحص</small><b class="down">تعذر جلب الحالة</b></article>';
-  root.innerHTML='<div class="empty">'+safe(e.message)+'</div>';
- }finally{if(button){button.disabled=false;button.textContent="فحص الحالة"}}
-}
-$("#systemRefresh")?.addEventListener("click",loadSystemStatus);
 
 async function load(){
  if(busy){pending=true;return}
