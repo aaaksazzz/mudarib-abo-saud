@@ -85,13 +85,13 @@ def assess_timeframe(rows):
         return round(min(100.0, score), 1)
 
     buy_score, sell_score = score_for("BUY"), score_for("SELL")
-    if buy_score >= 70 and buy_score - sell_score >= 15:
+    if buy_score >= 70 and buy_score - sell_score >= 12:
         state, score = "STRONG_BUY", buy_score
-    elif sell_score >= 70 and sell_score - buy_score >= 15:
+    elif sell_score >= 70 and sell_score - buy_score >= 12:
         state, score = "STRONG_SELL", sell_score
-    elif buy_score >= 55 and buy_score - sell_score >= 8:
+    elif buy_score >= 45 and buy_score - sell_score >= 5:
         state, score = "BUY", buy_score
-    elif sell_score >= 55 and sell_score - buy_score >= 8:
+    elif sell_score >= 45 and sell_score - buy_score >= 5:
         state, score = "SELL", sell_score
     else:
         state, score = "NEUTRAL", max(buy_score, sell_score)

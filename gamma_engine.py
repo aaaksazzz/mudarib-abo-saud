@@ -66,18 +66,28 @@ def analyse_liquidity_candidate(rows, current_price, side, market_kind="spot", d
                       and volume_ratio >= threshold)
         absorb_sell = (close >= pool_high - 0.30 * atr and upper_wick >= max(body * 1.5, 0.20 * atr)
                        and volume_ratio >= threshold)
+        breakout_buy = close > pool_high and close > open_price and pressure >= 0.25
+        breakout_sell = close < pool_low and close < open_price and pressure <= -0.25
+        continuation_buy = (close > open_price and pressure >= 0.35
+                            and close >= pool_high - 0.25 * atr and volume_ratio >= threshold * 1.15)
+        continuation_sell = (close < open_price and pressure <= -0.35
+                             and close <= pool_low + 0.25 * atr and volume_ratio >= threshold * 1.15)
         if side == "BUY":
-            event = "سحب سيولة بيع واسترداد" if sweep_buy else "امتصاص بيع قرب الدعم"
-            valid_event = sweep_buy or absorb_buy
+            event = ("سحب سيولة بيع واسترداد" if sweep_buy else
+                     "اختراق مقاومة بحجم مؤكد" if breakout_buy else
+                     "امتصاص بيع قرب الدعم" if absorb_buy else "استمرار زخم صاعد مؤكد")
+            valid_event = sweep_buy or absorb_buy or breakout_buy or continuation_buy
             confirmation = close > open_price and pressure >= -0.10
-            extreme = low
+            extreme = low if (sweep_buy or absorb_buy) else min(low, pool_high)
         else:
-            event = "سحب سيولة شراء ورفض" if sweep_sell else "امتصاص شراء قرب المقاومة"
-            valid_event = sweep_sell or absorb_sell
+            event = ("سحب سيولة شراء ورفض" if sweep_sell else
+                     "كسر دعم بحجم مؤكد" if breakout_sell else
+                     "امتصاص شراء قرب المقاومة" if absorb_sell else "استمرار زخم هابط مؤكد")
+            valid_event = sweep_sell or absorb_sell or breakout_sell or continuation_sell
             confirmation = close < open_price and pressure <= 0.10
-            extreme = high
+            extreme = high if (sweep_sell or absorb_sell) else max(high, pool_low)
         if not valid_event:
-            return reject("no_sweep_or_absorption")
+            return reject("no_confirmed_liquidity_or_momentum_setup")
         if volume_ratio < threshold:
             return reject("volume_below_threshold")
         if not confirmation:
@@ -93,8 +103,10 @@ def analyse_liquidity_candidate(rows, current_price, side, market_kind="spot", d
         if risk / current > 0.045:
             return reject("risk_above_4_5pct")
         sign = 1 if side == "BUY" else -1
-        score = 55 + (18 if (sweep_buy if side == "BUY" else sweep_sell) else 10)
-        score += min(12, max(0, (volume_ratio - 1.0) * 8)) + min(10, abs(pressure) * 10) + 5
+        is_sweep = sweep_buy if side == "BUY" else sweep_sell
+        is_breakout = breakout_buy if side == "BUY" else breakout_sell
+        score = 58 + (18 if is_sweep else 12 if is_breakout else 8)
+        score += min(12, max(0, (volume_ratio - 1.0) * 8)) + min(10, abs(pressure) * 10)
         if diagnostics is not None:
             diagnostics["reason"] = "accepted"
         return {

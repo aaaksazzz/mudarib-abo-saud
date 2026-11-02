@@ -464,10 +464,10 @@ def test_coinm_uses_contract_status_field(monkeypatch):
     monkeypatch.setattr(module, "fetch_first_json", lambda urls: payload)
     assert module.binance_active_symbols("coinm") == {"BTCUSD_PERP"}
 
-def test_candidate_accepts_50_completed_candles_and_rejects_49(monkeypatch):
+def test_candidate_accepts_35_completed_candles_and_rejects_34(monkeypatch):
     import timeframe_strategy
     bars = [{"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5,
-             "volume": 1000.0, "time": i * 900000} for i in range(50)]
+             "volume": 1000.0, "time": i * 900000} for i in range(35)]
     monkeypatch.setattr(module, "candles", lambda *args: bars)
     monkeypatch.setattr(timeframe_strategy, "assess_timeframe", lambda rows, side=None: {
         "state": "STRONG_SELL", "score": 75.0,
@@ -484,9 +484,9 @@ def test_candidate_accepts_50_completed_candles_and_rejects_49(monkeypatch):
     assert accepted is not None
     assert accepted["side"] == "SELL"
 
-    monkeypatch.setattr(module, "candles", lambda *args: bars[:49])
+    monkeypatch.setattr(module, "candles", lambda *args: bars[:34])
     diagnostics = {}
     rejected = module.analyse_candidate("spot", candidate, diagnostics=diagnostics, timeframe="15m")
     assert rejected is None
     assert diagnostics["reason"] == "insufficient_reference_candles"
-    assert diagnostics["reference_candles"] == {"4h": 49, "1d": 49}
+    assert diagnostics["reference_candles"] == {"4h": 34, "1d": 34}
