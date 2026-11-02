@@ -231,7 +231,7 @@ async function load(){
     $("#source").textContent="مصدر البيانات: "+d.source+" · "+d.strategy;
     
   renderSignals(d.signals,d.scan_diagnostics||{});renderOpen(d.open_trades);
-  const strategyLabel={"15m":"15 دقيقة · الإشارة الأصلية على نفس الفريم","1h":"ساعة · الإشارة الأصلية على نفس الفريم","4h":"4 ساعات · الإشارة الأصلية على نفس الفريم","1d":"يومي · الإشارة الأصلية على نفس الفريم","1w":"أسبوعي · الإشارة الأصلية على نفس الفريم","1M":"شهري · الإشارة الأصلية على نفس الفريم"};
+  const strategyLabel={"15m":"تأكيد 4 ساعات + يومي · دخول 15 دقيقة","1h":"تأكيد 4 ساعات + يومي · دخول ساعة","4h":"تأكيد 4 ساعات + يومي · دخول 4 ساعات","1d":"تأكيد 4 ساعات + يومي · دخول يومي","1w":"تأكيد 4 ساعات + يومي · دخول أسبوعي","1M":"تأكيد 4 ساعات + يومي · دخول شهري"};
   const label=$("#activeStrategy");if(label)label.textContent=strategyLabel[analysisTimeframe]||analysisTimeframe;
   $("#health").textContent="متصل";$("#health").className="ok";
  }catch(e){
@@ -356,31 +356,27 @@ async function showAccess(message, user=null){
 async function startAuthorized(user=null){
  $("#accessGate").hidden=true;
  $("#mainContent").hidden=false;
- $("#topLogout").hidden=false;
+ $("#topLogout").hidden=!user;
  $("#adminPanel").hidden=!(user&&user.is_admin);
  $("#drawerAdmin").hidden=!(user&&user.is_admin);
  if(user&&user.is_admin) await loadAdminUsers();
  configurePage();
- if(marketMatch){await loadMarketStatuses();await load();await loadHistoryPage();}
+ if(marketMatch){await loadMarketStatuses();await load();}
  else if(PATH==="/"){await loadMarketStatuses();}
  else if(PATH.startsWith("/sections/") && ["direction","opportunities","open-trades"].includes(PATH.split("/").pop())){await loadMarketStatuses();await load();}
  else if(PATH==="/sections/history"){await loadHistoryPage();}
 }
 async function initializeAccess(){
- // Paid access is mandatory. Never fall back to public browsing when auth is unavailable.
- let d=null;
- try{d=await get("/api/auth/me",7000)}catch(e){
-  console.warn("Authentication status unavailable.",e);
-  await showAccess("تعذر الاتصال بخدمة الحسابات. لا يمكن فتح أقسام التداول قبل التحقق من الاشتراك.");
-  return;
+ // Public, read-only market browsing is available without a paid subscription.
+ // Keep account sign-in optional; admin tools remain protected server-side.
+ let user=null;
+ try{
+  const d=await get("/api/auth/me",7000);
+  user=d?.user||null;
+ }catch(e){
+  console.warn("Optional account status unavailable; opening public market view.",e);
  }
- if(!d||!d.configured){
-  await showAccess("نظام الحسابات غير مهيأ على الخادم. يلزم ضبط SECRET_KEY وADMIN_EMAIL وADMIN_PASSWORD في إعدادات Northflank.");
-  return;
- }
- const user=d.user||null;
- if(user&&(user.is_admin||user.subscribed)) await startAuthorized(user);
- else await showAccess(user?"حسابك غير مشترك أو انتهى اشتراكه. سجّل الخروج بعد تفعيل الاشتراك من الإدارة.":"سجّل الدخول أو أنشئ حساباً للوصول إلى المنصة.",user);
+ await startAuthorized(user);
 }
 let creatingAccount=false;
 $("#authToggle").addEventListener("click",()=>{
@@ -460,4 +456,4 @@ $("#siteDrawer").addEventListener("click",e=>{
 tick();setInterval(tick,1000);
 initPreferences();
 initializeAccess();
-timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load();if(marketMatch)loadHistoryPage()}else if(PATH==="/sections/history")loadHistoryPage();else if(PATH==="/")loadHomeOverview()},900000);
+timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load()}else if(PATH==="/")loadHomeOverview()},60000);

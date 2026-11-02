@@ -21,10 +21,10 @@
 - اتجاه السوق محسوب من عدد الأصول الصاعدة والهابطة والمحايدة خلال 24 ساعة.
 - ترتيب الأصول الأسرع حركة أولاً بدرجة نسبية تعتمد على زخم 24 ساعة ونطاق الحركة والسيولة، ثم فحص أول 40 أصلاً في الترتيب. الدرجة ترتيب فحص وليست احتمال ربح.
 - التحقق من أن رموز Binance Spot وUSD-M وCOIN-M نشطة وقابلة للتداول عبر exchangeInfo قبل إدراجها.
-- فريمات التحليل القابلة للاختيار: 15m و1h و4h و1d و1w و1M؛ كل طلب يفحص الفريم المختار فقط، دون تأكيد من فريمات أخرى، مع حد أقصى لأربع عمليات تحليل متوازية.
+- فريمات التحليل القابلة للاختيار: 15m و1h و4h و1d و1w و1M؛ تأكيد اتجاه الأصل من 4 ساعات واليومي معاً؛ لا تُقبل إلا جهة متوافقة في الفريمين. الدخول يُحلل على الفريم المختار (15m افتراضياً)، وترتيب الفرص يعتمد على تغير شمعة 15m المكتملة. حد أقصى لأربع عمليات تحليل متوازية.
 - عرض الدخول والأهداف الثلاثة والوقف ومؤشرات المخاطرة وجودة الشروط.
 - سجل الصفقات المفتوحة والصفقات المغلقة.
-- تحديث تلقائي كل 30 ثانية، مع منع تداخل الطلبات ومهلة اتصال.
+- تحديث تلقائي كل 60 ثانية عند بقاء الصفحة ظاهرة، مع منع تداخل الطلبات ومهلة اتصال.
 - تصميم RTL داكن متجاوب للجوال وسطح المكتب.
 
 ## API
@@ -50,7 +50,7 @@
 
 ## Accounts and subscriptions
 
-The app now requires an account with an active subscription to access market analysis and trade history. New registrations are pending until an administrator grants access. Administrators can grant 30, 90, or 365 days from the in-app subscriber panel, or revoke access; expiry is enforced by the server.
+Market data, analysis, and trade tracking are available in read-only mode without a paid subscription. Account sign-in is optional. Administrative user and subscription management endpoints remain restricted to the administrator.
 
 Configure these secrets in the hosting service before enabling access:
 
@@ -58,7 +58,7 @@ Configure these secrets in the hosting service before enabling access:
 - `ADMIN_EMAIL`: the administrator login email.
 - `ADMIN_PASSWORD`: the initial administrator password (at least 12 characters).
 
-The first administrator account is created automatically in the persistent SQLite database on first request. Keep `/data` on persistent storage so accounts and subscriptions survive restarts. Do not commit secret values to GitHub. Registration currently uses email/password without email verification or payment processing; subscriptions are granted manually by the administrator.
+The first administrator account is created automatically in the persistent SQLite database on first request. Keep `/data` on persistent storage so accounts survive restarts. Do not commit secret values to GitHub. Optional registration uses email/password; no payment processing is integrated.
 
 
 ## GammaFlip crypto GEX
