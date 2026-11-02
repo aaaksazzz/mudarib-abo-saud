@@ -530,3 +530,11 @@ def test_open_confirmed_trade_remains_in_opportunity_cards_after_refresh(tmp_pat
     assert card["entry"] == 100.0
     assert card["stop_loss"] == 98.0
     assert card["tp3"] == 106.0
+
+def test_market_page_does_not_crash_when_optional_refresh_button_is_absent():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    js = (root / "static" / "app.js").read_text(encoding="utf-8")
+    html = (root / "static" / "index.html").read_text(encoding="utf-8")
+    assert 'const refreshButton=$("#refresh");if(refreshButton)refreshButton.hidden=true;' in js
+    assert 'app.js?v=20261102.market-init-hotfix1' in html

@@ -329,7 +329,7 @@ function configurePage(){
   loadNews();
  }else{hideAll();show("homeSection","marketSection")}
  $("#marketSection").hidden=PATH!=="/";
- $("#refresh").hidden=true;
+ const refreshButton=$("#refresh");if(refreshButton)refreshButton.hidden=true;
  if(PATH==="/admin"){
   if(!adminAllowed){location.replace("/");return}
   hideAll();show("homeSection","adminPanel");$("#adminPanel").hidden=false;
