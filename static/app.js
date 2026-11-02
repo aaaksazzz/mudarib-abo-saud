@@ -179,7 +179,7 @@ async function loadMarketStatuses(){
   marketStatuses=states;
   document.querySelectorAll("[data-market]").forEach(b=>{
    const item=states.get(b.dataset.market);if(!item)return;
-   const live=item.status==="live"||item.status==="configured_watchlist";
+   const live=["live","configured_watchlist","configured"].includes(item.status);
    const small=b.querySelector("small");if(small)small.textContent=live?"مصدر متاح":item.status==="provider_required"?"مزود البيانات غير مربوط":"يتطلب إعداد المصدر";
    b.title=live?"مصدر البيانات متاح":"صفحة السوق مستقلة، لكن مصدر البيانات يحتاج إعدادًا";
    b.classList.toggle("active",b.dataset.market===market);
@@ -214,7 +214,7 @@ async function load(){
   const requestedMarket=market;
    const requestedTimeframe=analysisTimeframe;
   const providerState=marketStatuses.get(requestedMarket);
-  if(providerState && !["live","configured_watchlist"].includes(providerState.status)){
+  if(providerState && !["live","configured_watchlist","configured"].includes(providerState.status)){
    $("#direction").textContent="غير متاح";
    $("#direction").className="direction-value neutral";
    ["#up","#down","#flat","#total"].forEach(id=>$(id).textContent="—");
