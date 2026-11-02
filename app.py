@@ -442,12 +442,12 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
     try:
         return evaluate_candidate(
             market=kind,
-        item=item,
-        market_direction=market_direction,
-        fetch_candles=fetch_history,
-        liquidity_analyzer=analyse_liquidity,
-        orderbook_analyzer=analyse_book,
-        diagnostics=diagnostics,
+            item=item,
+            market_direction=market_direction,
+            fetch_candles=fetch_history,
+            liquidity_analyzer=analyse_liquidity,
+            orderbook_analyzer=analyse_book,
+            diagnostics=diagnostics,
             timeframe=timeframe,
         )
     except requests.RequestException:
