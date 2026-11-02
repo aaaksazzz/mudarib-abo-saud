@@ -432,7 +432,8 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             "change_timeframe":round(change_tf,4),"volume":item["volume"],
             "fast_mover_score":item.get("fast_mover_score",0),
             "fast_mover_rank":item.get("fast_mover_rank"),
-            "timeframe":timeframe,"strategy":"SMART SIGNAL PRO · Same-Timeframe",
+            "timeframe":timeframe,"signal_candle_time":int(entry_rows[-1]["time"]),
+            "strategy":"SMART SIGNAL PRO · Same-Timeframe",
             "signal_state":assessment["state"],
             "signal_state_ar":state_ar.get(assessment["state"],"محايد"),
             "quality_score":assessment["quality_score"],
@@ -466,11 +467,14 @@ def db():
             tp1 REAL NOT NULL, tp2 REAL NOT NULL, tp3 REAL NOT NULL, status TEXT NOT NULL DEFAULT 'OPEN',
             tp1_hit INTEGER NOT NULL DEFAULT 0, tp2_hit INTEGER NOT NULL DEFAULT 0,
             tp3_hit INTEGER NOT NULL DEFAULT 0,
+            signal_candle_time INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, closed_at INTEGER
         )""")
         columns = {row["name"] for row in connection.execute("PRAGMA table_info(trades)")}
         if "tp3_hit" not in columns:
             connection.execute("ALTER TABLE trades ADD COLUMN tp3_hit INTEGER NOT NULL DEFAULT 0")
+        if "signal_candle_time" not in columns:
+            connection.execute("ALTER TABLE trades ADD COLUMN signal_candle_time INTEGER NOT NULL DEFAULT 0")
         connection.execute("""CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user',
@@ -678,10 +682,10 @@ def admin_subscription():
 
 
 def save_new_trades(kind, signals):
-    """Persist fresh opportunities once; return only rows actually inserted.
+    """Persist at most one fresh trade per symbol/timeframe/completed candle.
 
-    A symbol/timeframe is not re-issued for 24 hours, even if its prior trade
-    closed during that window. Existing positions remain visible in open_trades.
+    A new completed candle can produce a new trade even when an earlier trade
+    for the same symbol and timeframe is still open or has already closed.
     """
     now = int(time.time())
     inserted = []
@@ -690,7 +694,7 @@ def save_new_trades(kind, signals):
             for signal in signals:
                 if len(inserted) >= 3:
                     break
-                required = ("symbol", "timeframe", "side", "entry", "stop_loss", "tp1", "tp2", "tp3")
+                required = ("symbol", "timeframe", "signal_candle_time", "side", "entry", "stop_loss", "tp1", "tp2", "tp3")
                 if any(key not in signal or signal[key] is None for key in required):
                     continue
                 try:
@@ -707,19 +711,25 @@ def save_new_trades(kind, signals):
                     continue
                 if signal["side"] not in ("BUY", "SELL"):
                     continue
+                try:
+                    candle_time = int(signal["signal_candle_time"])
+                except (TypeError, ValueError, OverflowError):
+                    continue
+                if candle_time <= 0:
+                    continue
                 recent = connection.execute(
                     """SELECT id FROM trades
-                       WHERE market=? AND symbol=? AND timeframe=? AND created_at>=?
-                       ORDER BY created_at DESC LIMIT 1""",
-                    (kind, signal["symbol"], signal["timeframe"], now - 24 * 60 * 60)
+                       WHERE market=? AND symbol=? AND timeframe=? AND signal_candle_time=?
+                       LIMIT 1""",
+                    (kind, signal["symbol"], signal["timeframe"], candle_time)
                 ).fetchone()
                 if recent:
                     continue
                 connection.execute("""INSERT INTO trades
-                    (market,symbol,timeframe,side,entry,stop_loss,tp1,tp2,tp3,created_at,updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    (market,symbol,timeframe,side,entry,stop_loss,tp1,tp2,tp3,signal_candle_time,created_at,updated_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (kind, signal["symbol"], signal["timeframe"], signal["side"], entry,
-                     stop, tp1, tp2, tp3, now, now))
+                     stop, tp1, tp2, tp3, candle_time, now, now))
                 inserted.append(signal)
             connection.commit()
     return inserted
