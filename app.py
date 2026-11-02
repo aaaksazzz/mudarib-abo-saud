@@ -949,7 +949,7 @@ def home_overview():
             kind = item["id"]
             rows = universes.get(kind, [])
             if kind in universes:
-                status = "live"
+                status = "watchlist" if kind in ("us", "saudi") else "live"
             elif kind in ("saudi", "us") and kind not in kinds:
                 status = "provider_required"
             elif kind == "contracts":
