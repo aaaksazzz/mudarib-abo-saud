@@ -14,7 +14,7 @@ import requests
 from gamma_engine import analyse_liquidity_candidate
 from market_ranking import rank_market_assets
 from institutional_flow import analyse_orderbook_flow
-from scan_rotation import select_scan_batch
+from scan_rotation import select_scan_batch, select_priority_scan_batch
 
 try:
     import yfinance as yf
@@ -222,7 +222,7 @@ def yahoo_market_tickers(kind):
             volume = float(recent["Volume"].fillna(0).sum() * price)
             if price <= 0 or prior <= 0:
                 continue
-            if kind == "us" and volume < 1_000_000:
+            if volume < 1_000_000:
                 continue
             high = float(recent["High"].max()) if "High" in recent else price
             low = float(recent["Low"].min()) if "Low" in recent else price
@@ -305,7 +305,7 @@ def alpha_market_tickers():
             change = float(token.get("percentChange24h") or 0)
         except (TypeError, ValueError):
             continue
-        if price > 0 and volume > 0:
+        if price > 0 and volume >= 1_000_000:
             output.append({
                 "symbol": pair, "price": price, "volume": volume,
                 "change24h": change, "asset": token.get("symbol") or symbol_id,
@@ -916,6 +916,79 @@ def system_status():
     }), (200 if database == "ok" else 503)
 
 
+
+
+@app.get("/api/overview")
+def home_overview():
+    """Small cached cross-market snapshot; never invents unavailable market coverage."""
+    names = {item["id"]: item["name"] for item in MARKETS}
+    kinds = ["spot", "futures", "coinm", "alpha", "forex"]
+    if YAHOO_ENABLED and yf is not None:
+        kinds.extend(kind for kind in ("us", "saudi") if YAHOO_SYMBOLS.get(kind))
+
+    def fetch_universe(kind):
+        rows = cached(kind + ":universe", 20, lambda: market_tickers(kind))
+        return kind, rank_market_assets(rows)
+
+    def build():
+        universes = {}
+        errors = {}
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            jobs = {pool.submit(fetch_universe, kind): kind for kind in kinds}
+            for job in as_completed(jobs):
+                kind = jobs[job]
+                try:
+                    _, rows = job.result()
+                    universes[kind] = rows
+                except Exception as exc:
+                    errors[kind] = str(exc)[:180]
+                    app.logger.warning("Home overview unavailable for %s: %s", kind, exc)
+
+        market_rows = []
+        for item in MARKETS:
+            kind = item["id"]
+            rows = universes.get(kind, [])
+            if kind in universes:
+                status = "live"
+            elif kind in ("saudi", "us") and kind not in kinds:
+                status = "provider_required"
+            elif kind == "contracts":
+                status = "provider_required"
+            else:
+                status = "unavailable"
+            market_rows.append({
+                "id": kind, "name": names.get(kind, kind), "status": status,
+                "eligible_assets": len(rows), "error": errors.get(kind),
+            })
+
+        movers = []
+        for kind, rows in universes.items():
+            for row in rows[:5]:
+                movers.append({
+                    "market": kind, "market_name": names.get(kind, kind),
+                    "symbol": row["symbol"], "price": row["price"],
+                    "change24h": row["change24h"], "volume": row.get("volume", 0),
+                    "fast_mover_score": row.get("fast_mover_score", 0),
+                })
+        movers.sort(key=lambda row: (
+            row["fast_mover_score"], abs(row["change24h"]), row["volume"]
+        ), reverse=True)
+        return {
+            "ok": True, "markets": market_rows,
+            "eligible_assets": sum(len(rows) for rows in universes.values()),
+            "available_markets": len(universes),
+            "fast_movers": movers[:8], "updated": int(time.time()),
+            "fast_mover_method": "ترتيب نسبي للزخم اليومي ونطاق الحركة والسيولة المتاحة؛ ليس توصية تداول.",
+        }
+
+    try:
+        payload = cached("home:overview", 30, build)
+        return jsonify(payload)
+    except Exception:
+        app.logger.exception("Home overview failed")
+        return jsonify({"ok": False, "error": "تعذر تحديث ملخص الأسواق حاليًا."}), 502
+
+
 @app.get("/api/market/<kind>")
 def market(kind):
     if kind not in BASES and kind not in ("alpha", "forex", "saudi", "us"):
@@ -940,7 +1013,7 @@ def market(kind):
         # Scan a bounded rotating batch so large universes are covered over successive refreshes.
         with SCAN_CURSOR_LOCK:
             scan_offset = SCAN_CURSORS.get(kind, 0)
-            candidates, next_scan_offset, scan_offset = select_scan_batch(assets, scan_offset, 40)
+            candidates, next_scan_offset, scan_offset, priority_candidates = select_priority_scan_batch(assets, scan_offset, 40, 10)
             SCAN_CURSORS[kind] = next_scan_offset
         signals = []
         diagnostic_rows = [{} for _ in candidates]
@@ -1000,6 +1073,7 @@ def market(kind):
             "scan_diagnostics": {
                 "universe_size": len(assets), "candidates_scanned": len(candidates),
                 "scan_offset": scan_offset, "next_scan_offset": next_scan_offset,
+                "priority_candidates": priority_candidates,
                 "scan_cycle_complete": bool(assets) and next_scan_offset <= scan_offset,
                 "candles_ready": sum(1 for item in diagnostic_rows if item.get("candles_ready") is True),
                 "candles_required": 50,
