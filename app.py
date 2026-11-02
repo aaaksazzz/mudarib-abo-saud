@@ -739,7 +739,7 @@ def market_page(market_id):
 
 @app.get("/sections/<section_id>")
 def section_page(section_id):
-    allowed = {"direction", "movers", "opportunities", "open-trades", "history", "system"}
+    allowed = {"direction", "opportunities", "open-trades", "history"}
     if section_id not in allowed:
         return send_from_directory("static", "index.html"), 404
     return send_from_directory("static", "index.html")
@@ -887,8 +887,7 @@ def home_overview():
 
 @app.get("/api/market/<kind>")
 def market(kind):
-    # Public market data and scans stay available without membership or login.
-    # Paid access remains reserved for account, payment and administration routes.
+    # Every market endpoint is public read-only data; no account or exchange credentials are used.
 
     if kind not in BASES and kind not in ("alpha", "forex", "saudi", "us"):
         return jsonify({"ok": False, "status": "provider_required", "message": "مزود البيانات لهذا السوق غير مربوط؛ لن نعرض بيانات غير موثوقة.", "signals": []}), 503
