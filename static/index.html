@@ -1,142 +1,77 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#070b12"><title>SMART TRADING PRO | التداول الذكي</title>
-<meta name="description" content="منصة احترافية لمراقبة الأسواق والاتجاهات والفرص الفنية ببيانات عامة ومصادر واضحة.">
-<link rel="preconnect" href="https://api.binance.com"><link rel="preconnect" href="https://fapi.binance.com">
-<link rel="stylesheet" href="/static/app.css?v=20261102.membership-payments-v1">
-<script src="/static/app.js?v=20261102.strategy-15m-fix2" defer></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#080d16">
+<title>SMART TRADING PRO</title>
+<meta name="description" content="منصة مستقلة لمراقبة الأسواق وتحليل السيولة والفرص ومتابعة الصفقات.">
+<link rel="stylesheet" href="/static/app.css?v=clean-core-1">
+<script src="/static/app.js?v=clean-core-1" defer></script>
 </head>
 <body>
-<div class="app-shell">
 <header class="topbar">
-  <button id="menuOpen" class="menu-open" type="button" aria-label="فتح القائمة" aria-expanded="false">☰ <span>القائمة</span></button>
- <a class="brand" href="/" aria-label="SMART TRADING PRO"><span class="logo">ST</span><span class="brand-copy"><b>SMART <i>TRADING PRO</i></b><small>منصة الأسواق والتحليل الذكي</small></span></a>
- <div class="top-status"><button id="themeToggle" class="theme-toggle" type="button" aria-label="تغيير المظهر">☀️ نهاري</button><button id="topLogout" class="top-logout" type="button" hidden>خروج</button><span class="live-dot"></span><span id="health">فحص الاتصال</span><span class="top-divider"></span><span id="clock">--:--:--</span></div>
+ <button class="icon-btn" id="menuOpen" aria-label="فتح القائمة">☰</button>
+ <a class="brand" href="/"><span class="brand-mark">ST</span><span><b>SMART TRADING <i>PRO</i></b><small>MARKET INTELLIGENCE</small></span></a>
+ <div class="top-actions"><span class="live-status"><i></i><span id="health">جاري الاتصال</span></span><button class="icon-btn" id="themeToggle" aria-label="تغيير المظهر">◐</button></div>
 </header>
-<section id="accessGate" class="access-gate" hidden>
- <div class="access-card">
-  <div class="access-mark">ST</div>
-  <span class="kicker">PUBLIC ACCESS · SMART TRADING PRO</span>
-  <h1 id="accessTitle">تسجيل الدخول</h1>
-  <p id="accessMessage">تصفح الأسواق والتحليلات مباشرة دون الحاجة إلى تسجيل الدخول.</p>
-  <form id="authForm" class="auth-form">
-   <label for="authEmail">البريد الإلكتروني</label>
-   <input id="authEmail" type="email" autocomplete="email" required placeholder="name@example.com">
-   <label for="authPassword">كلمة المرور</label>
-   <input id="authPassword" type="password" autocomplete="current-password" minlength="10" required placeholder="10 أحرف على الأقل">
-   <button id="authSubmit" type="submit">دخول</button>
-  </form>
-  <button id="authToggle" class="text-action" type="button">ليس لديك حساب؟ إنشاء حساب</button>
-  <button id="authLogout" class="text-action" type="button" hidden>تسجيل الخروج</button>
-  <p id="authNotice" class="auth-notice" role="status"></p>
-  <section id="subscriptionPanel" class="subscription-panel" hidden>
-   <div class="subscription-title"><span class="kicker">SMART TRADING PRO MEMBERSHIP</span><h2>اختر مدة الاشتراك</h2><p>30 دولار لكل شهر · تفعيل بعد تأكيد التحويل.</p></div>
-   <label for="planMonths">مدة الاشتراك</label><select id="planMonths"><option value="1">شهر واحد</option></select>
-   <div class="plan-amount"><small>المبلغ المطلوب</small><b id="planAmount">$30 USDT</b></div>
-   <label for="paymentNetwork">طريقة الدفع</label><select id="paymentNetwork"><option value="trc20">USDT · TRC20</option><option value="solana">USDT · Solana</option><option value="binance_pay">Binance Pay</option></select>
-   <button id="createPaymentOrder" type="button">إنشاء طلب الدفع</button>
-   <div id="paymentAddressWrap" hidden><label>عنوان / معرّف الدفع</label><div class="payment-address"><code id="paymentAddress"></code><button id="copyPaymentAddress" type="button">نسخ</button></div>
-    <div id="binancePayNote" hidden><p>تحويل Binance Pay يحتاج مراجعة الإدارة قبل التفعيل.</p><label for="binancePayReference">رقم مرجع التحويل</label><input id="binancePayReference" type="text" placeholder="أدخل رقم العملية"><button id="submitBinanceReference" type="button">إرسال المرجع للمراجعة</button></div>
-    <div id="txHashWrap" hidden><label for="txHash">رقم المعاملة (TXID / Signature)</label><input id="txHash" type="text" autocomplete="off" placeholder="الصق رقم المعاملة بعد التحويل"><button id="verifyPayment" type="button">تحقق من التحويل وفعّل الاشتراك</button></div>
-   </div>
-   <input id="activeOrderId" type="hidden"><p id="paymentNotice" class="auth-notice" role="status"></p>
-  </section>
- </div>
-</section>
-<main class="main" id="mainContent" hidden>
-  <nav id="siteDrawer" class="site-drawer" aria-label="أقسام الموقع" aria-hidden="true">
-   <div class="drawer-head"><b>أقسام المنصة</b><button id="menuClose" type="button" aria-label="إغلاق القائمة">✕</button></div>
-   <a href="/">الرئيسية</a>
-   <div class="drawer-group">الأسواق</div>
-   <a href="/markets/spot">توصيات Binance Spot</a><a href="/markets/futures">توصيات Binance USD-M</a><a href="/markets/coinm">توصيات Binance COIN-M</a><a href="/markets/alpha">توصيات Binance Alpha</a>
-   <a href="/markets/saudi">توصيات السوق السعودي</a><a href="/markets/us">توصيات الأسهم الأمريكية</a><a href="/markets/contracts">توصيات العقود الأمريكية</a><a href="/markets/forex">توصيات الفوركس والذهب</a>
-   <div class="drawer-group">الاتجاه والصفقات</div>
-   <a href="/sections/direction">توجه السوق</a><a href="/sections/opportunities">فرص التداول</a><a href="/sections/open-trades">متابعة الصفقات</a>
-   <div class="drawer-group">المحتوى</div><a href="/blog">المدونة التعليمية</a><a href="/news">أخبار الأسواق</a>
-   <a href="/admin" id="drawerAdmin" hidden>إدارة المشتركين</a>
+<div class="layout">
+ <aside class="sidebar" id="sidebar">
+  <div class="side-label">المنصة</div>
+  <a class="nav-link" href="/" data-page="home"><span>⌂</span> نظرة عامة</a>
+  <div class="side-label">الأسواق المستقلة</div>
+  <nav id="marketNav">
+   <a class="nav-link" href="/markets/spot" data-market="spot"><span>₿</span> Binance Spot</a>
+   <a class="nav-link" href="/markets/futures" data-market="futures"><span>↗</span> Futures USD-M</a>
+   <a class="nav-link" href="/markets/coinm" data-market="coinm"><span>◈</span> Futures COIN-M</a>
+   <a class="nav-link" href="/markets/alpha" data-market="alpha"><span>α</span> Binance Alpha</a>
+   <a class="nav-link" href="/markets/saudi" data-market="saudi"><span>🇸🇦</span> السوق السعودي</a>
+   <a class="nav-link" href="/markets/us" data-market="us"><span>🇺🇸</span> الأسهم الأمريكية</a>
+   <a class="nav-link" href="/markets/contracts" data-market="contracts"><span>⌁</span> العقود الأمريكية</a>
+   <a class="nav-link" href="/markets/forex" data-market="forex"><span>＄</span> الفوركس والذهب</a>
   </nav>
-  <button id="drawerBackdrop" class="drawer-backdrop" type="button" aria-label="إغلاق القائمة" hidden></button>
- <section id="adminPanel" class="panel admin-panel" hidden>
-  <div class="section-heading tracker-heading"><div><span class="kicker">ADMIN CONTROL</span><h2>إدارة المشتركين</h2><p>إدارة الحسابات وتفعيل أو إلغاء الاشتراكات.</p></div><button id="adminRefresh" class="refresh-btn" type="button">تحديث الحسابات</button></div>
-  <div id="adminUsers" class="admin-users"><div class="empty">جارٍ تحميل الحسابات...</div></div>
-  <div class="admin-extra-grid">
-   <section class="admin-subpanel"><div class="panel-top"><h3>طلبات الدفع</h3><button id="adminPaymentsRefresh" class="top-logout" type="button">تحديث</button></div><div id="adminPayments" class="admin-users"></div></section>
-   <section class="admin-subpanel"><div class="panel-top"><h3>قفل وفتح الأقسام</h3></div><div id="adminSections" class="admin-section-list"></div></section>
-  </div>
- </section>
- <section class="welcome" id="homeSection">
-  <div><div class="eyebrow"><span class="eyebrow-line"></span> MARKET INTELLIGENCE TERMINAL</div><h1>مركز <span>الأسواق</span></h1><p>لوحة موحّدة لمراقبة الأسواق العالمية، قراءة الاتجاه، وفرص فنية بمستويات واضحة ومصادر بيانات مستقلة.</p></div>
- </section>
- <section class="market-switcher" id="marketSection">
-  <div class="switcher-heading"><span>اختر السوق</span><small>مصادر مستقلة لكل سوق</small></div>
-  <div id="markets" class="market-list">
-   <a data-market="spot" href="/markets/spot" class="market-tab"><span class="market-icon crypto">₿</span><span><b>Binance Spot</b><small>صفحة مستقلة</small></span></a>
-   <a data-market="futures" href="/markets/futures" class="market-tab"><span class="market-icon futures">↗</span><span><b>Binance USD-M Futures</b><small>صفحة مستقلة</small></span></a>
-   <a data-market="coinm" href="/markets/coinm" class="market-tab"><span class="market-icon futures">₿</span><span><b>Binance COIN-M Futures</b><small>صفحة مستقلة</small></span></a>
-   <a data-market="alpha" href="/markets/alpha" class="market-tab"><span class="market-icon alpha">α</span><span><b>Binance Alpha</b><small>صفحة مستقلة</small></span></a>
-   <a data-market="saudi" href="/markets/saudi" class="market-tab"><span class="market-icon saudi">ر.س</span><span><b>السوق السعودي</b><small>صفحة مستقلة</small></span></a>
-   <a data-market="us" href="/markets/us" class="market-tab"><span class="market-icon usa">$</span><span><b>الأسهم الأمريكية</b><small>صفحة مستقلة</small></span></a>
-   <a data-market="contracts" href="/markets/contracts" class="market-tab"><span class="market-icon contracts">⌁</span><span><b>العقود الأمريكية</b><small>صفحة مستقلة</small></span></a>
-   <a data-market="forex" href="/markets/forex" class="market-tab"><span class="market-icon forex">FX</span><span><b>الفوركس والذهب</b><small>صفحة مستقلة</small></span></a>
-  </div>
- </section>
- <section id="homeOverview" class="home-overview" hidden>
-  <div class="home-dashboard-head">
-   <div><span class="kicker">GLOBAL MARKET RADAR</span><h2>نبض الأسواق</h2><p>اتجاهات الأسواق والأصول الأسرع حركة — دون توصيات تداول.</p></div>
-   <span id="homeUpdated" class="home-update"><i></i> جارٍ الفحص</span>
-  </div>
-  <div class="home-stat-grid">
-   <article class="home-stat"><small>الأصول المتاحة للفحص</small><b id="homeAssetCount">—</b><span>من مصادر البيانات المتاحة</span></article>
-   <article class="home-stat"><small>الأسواق المتاحة</small><b id="homeMarketCount">—</b><span>مع توضيح الأسواق غير المربوطة</span></article>
-   <article class="home-stat"><small>الأصول الأسرع حركة</small><b id="homeMoverCount">—</b><span>ترتيب زخم وليس توصيات</span></article>
-  </div>
-  <div class="home-radar-grid">
-   <article class="home-radar-panel"><div class="home-panel-head"><div><span class="kicker">FAST MOVERS</span><h3>الأصول الأسرع حركة</h3></div><span class="home-panel-tag">تغير 24 ساعة</span></div><div id="homeMovers" class="home-movers-list"><div class="empty">جارٍ تحميل الحركة...</div></div></article>
-   <article class="home-radar-panel"><div class="home-panel-head"><div><span class="kicker">MARKET COVERAGE</span><h3>اتجاه وتغطية الأسواق</h3></div><span class="home-panel-tag">كل سوق مستقل</span></div><div id="homeCoverage" class="home-coverage-list"><div class="empty">جارٍ فحص الأسواق...</div></div></article>
-  </div>
- </section>
- <section class="overview-grid" id="directionSection">
-  <article class="panel direction-panel">
-   <div class="panel-top"><div><span class="kicker">MARKET BREADTH · 24H</span><h2>توجه السوق</h2></div><span class="live-pill"><i></i> مباشر</span></div>
-   <div class="direction-main"><div><small>الاتجاه العام</small><strong id="direction" class="direction-value">—</strong></div><div class="breadth-total"><b id="total">—</b><small>أصل مفحوص</small></div></div>
-   <div class="breadth-bar"><span id="upBar"></span><span id="downBar"></span><span id="flatBar"></span></div>
-   <div class="breadth-legend"><span><i class="legend-up"></i> صاعد <b id="up">—</b></span><span><i class="legend-down"></i> هابط <b id="down">—</b></span><span><i class="legend-flat"></i> محايد <b id="flat">—</b></span></div>
-   <p class="panel-note">الاتجاه محسوب من عدد الأصول الرابحة والخاسرة خلال 24 ساعة.</p>
-  </article>
- </section>
- </section>
- <section class="section-heading opportunity-heading" id="opportunitiesSection"><div><span class="kicker">SMART TRADING PRO · MARKET SIGNALS</span><h2>فرص التداول</h2><p>الاتجاه والسيولة والزخم والدخول كلها على فريم 15 دقيقة.</p></div><span class="ranking-note">TOP 3 · أعلى تغير أولًا</span></section>
- <section id="marketTimeframeSwitcher" class="timeframe-switcher" aria-label="اختيار فريم التحليل" hidden>
-  <span class="timeframe-label">فريم التحليل</span>
-  <div class="timeframe-buttons" role="group" aria-label="الفريم الزمني">
-   <button type="button" class="tf-button" data-timeframe="15m" aria-pressed="true">15 دقيقة</button>
-  </div>
-  <span id="activeStrategy">الاتجاه والسيولة والزخم والدخول · 15 دقيقة</span>
- </section>
- <section id="cards" class="cards"><div class="empty">جارٍ تحليل السوق...</div></section>
- <section class="panel tracker-panel" id="openSection">
-  <div class="section-heading tracker-heading"><div><span class="kicker">POSITION MONITOR</span><h2>متابعة الصفقات</h2><p>تتبع تلقائي لمستويات الأهداف ووقف الخسارة عند تحديث السوق.</p></div><span id="openCount" class="count-pill">0 مفتوحة</span></div>
-  <div id="openTrades" class="trade-list"><div class="empty">لا توجد صفقات مفتوحة محفوظة لهذا السوق.</div></div>
- </section>
+  <div class="side-label">إدارة التداول</div>
+  <a class="nav-link" href="/sections/direction" data-section="direction"><span>◉</span> اتجاه الأسواق</a>
+  <a class="nav-link" href="/sections/open-trades" data-section="open-trades"><span>◷</span> الصفقات المفتوحة</a>
+  <a class="nav-link" href="/sections/history" data-section="history"><span>▤</span> سجل الصفقات</a>
+  <div class="sidebar-foot">تحليل آلي · تنفيذ يدوي<br><small>البيانات العامة فقط — بدون ربط حساب التداول</small></div>
+ </aside>
+ <button class="scrim" id="scrim" aria-label="إغلاق القائمة" hidden></button>
+ <main class="content">
+  <section id="homePage" class="page" hidden>
+   <div class="page-head"><div><div class="eyebrow">SMART MARKET OVERVIEW</div><h1>نظرة عامة على الأسواق</h1><p>الاتجاه العام وحركة الأصول في كل سوق بشكل مستقل.</p></div><button class="primary-btn" id="refreshHome">↻ تحديث</button></div>
+   <div class="metric-row">
+    <article class="metric"><small>الأسواق المتاحة الآن</small><b id="availableMarkets">—</b></article>
+    <article class="metric"><small>الأصول المفحوصة</small><b id="eligibleAssets">—</b></article>
+    <article class="metric"><small>أسرع الأصول حركة</small><b id="moverCount">—</b></article>
+   </div>
+   <div class="section-title"><div><h2>اتجاه الأسواق</h2><small>مبني على اتساع الحركة خلال 24 ساعة</small></div><span id="homeUpdated" class="muted">—</span></div>
+   <div class="market-grid" id="marketOverview"><div class="loading">جاري تحميل الأسواق…</div></div>
+   <div class="section-title"><div><h2>الأصول الأسرع حركة</h2><small>ترتيب نسبي للزخم والنطاق والسيولة، وليس توصية</small></div></div>
+   <div class="table-wrap"><table><thead><tr><th>السوق</th><th>الأصل</th><th>التغير 24س</th><th>السيولة</th></tr></thead><tbody id="fastMovers"><tr><td colspan="4">جاري التحميل…</td></tr></tbody></table></div>
   </section>
-<section id="blogSection" class="editorial-section" hidden>
-  <div class="section-heading"><div><span class="kicker">SMART TRADING ACADEMY</span><h2>المدونة التعليمية</h2><p>مقالات مبسطة لفهم السوق وإدارة المخاطر.</p></div></div>
-  <div class="editorial-grid">
-   <article class="editorial-card"><small>إدارة المخاطر</small><h3>كيف تحدد حجم الصفقة قبل الدخول؟</h3><p>حدد مبلغ الخسارة المقبول أولًا، ثم احسب حجم المركز بناءً على المسافة بين الدخول ووقف الخسارة.</p></article>
-   <article class="editorial-card"><small>التحليل الفني</small><h3>ما الفرق بين الاتجاه والتذبذب؟</h3><p>الاتجاه يعني سيطرة حركة صاعدة أو هابطة، أما التذبذب فيعني حركة متقطعة بلا اتجاه واضح.</p></article>
-   <article class="editorial-card"><small>تقييم الاستراتيجية</small><h3>لماذا لا تكفي نسبة الفوز وحدها؟</h3><p>قيّم متوسط الربح والخسارة والرسوم وأقصى تراجع وعدد الصفقات.</p></article>
-   <article class="editorial-card"><small>الانضباط</small><h3>خطة تداول بسيطة قابلة للالتزام</h3><p>اكتب شروط الدخول والخروج مسبقًا، وسجل سبب كل صفقة ونتيجتها لمراجعة الأداء.</p></article>
-  </div>
- </section>
- <section id="newsSection" class="editorial-section" hidden>
-  <div class="section-heading"><div><span class="kicker">MARKET NEWS</span><h2>أخبار الأسواق</h2><p>عناوين مجمعة من Google News RSS مع رابط المصدر الأصلي.</p></div><button id="newsRefresh" class="refresh-btn" type="button">تحديث الأخبار</button></div>
-  <div id="newsFeed" class="news-feed"><div class="empty">جارٍ تحميل الأخبار...</div></div>
-  <p class="disclaimer">الأخبار من مصادر خارجية؛ تحقق من الخبر الأصلي قبل اتخاذ أي قرار مالي.</p>
- </section>
-<footer class="footer"><span class="footer-brand">SMART TRADING PRO</span><span id="source">مصدر البيانات: —</span><div class="footer-controls"><label id="footerLanguageLabel" for="languageSelect" data-i18n="language">اللغة</label><select id="languageSelect" aria-label="اختيار لغة الواجهة"><option value="auto">تلقائي</option><option value="ar">العربية</option><option value="en">English</option><option value="es">Español</option><option value="de">Deutsch</option><option value="id">Bahasa Indonesia</option><option value="pt-BR">Português (Brasil)</option><option value="tr">Türkçe</option><option value="fr">Français</option><option value="hi">हिन्दी</option></select></div><span data-i18n="manualExecution">تحليل آلي · تنفيذ يدوي فقط</span></footer>
- <p class="disclaimer">المعلومات للتحليل والمتابعة وليست ضمانًا للربح أو توصية استثمارية. درجة جودة الشروط ليست نسبة نجاح. لا ينفذ الموقع أوامر تداول آلية.</p>
-</main>
+  <section id="marketPage" class="page" hidden>
+   <div class="page-head"><div><div class="eyebrow" id="marketEyebrow">INDEPENDENT MARKET</div><h1 id="marketTitle">السوق</h1><p id="marketDescription">بيانات هذا السوق وتحليله فقط.</p></div><button class="primary-btn" id="refreshMarket">↻ فحص الآن</button></div>
+   <div class="direction-strip">
+    <div><small>اتجاه السوق</small><b id="marketDirection">—</b></div>
+    <div><small>صاعد</small><b id="upCount" class="positive">—</b></div>
+    <div><small>هابط</small><b id="downCount" class="negative">—</b></div>
+    <div><small>محايد</small><b id="flatCount">—</b></div>
+    <div><small>الأصول</small><b id="totalCount">—</b></div>
+   </div>
+   <div class="scan-meta"><span id="scanStatus">بانتظار الفحص</span><span id="scanBatch">دفعة الفحص: —</span><span id="scanUpdated">—</span></div>
+   <div class="section-title"><div><h2>أفضل فرص التداول</h2><small>الصفقات المؤكدة فقط — دخول ووقف وثلاثة أهداف</small></div><span class="tag">15 دقيقة</span></div>
+   <div class="trade-grid" id="tradeCards"><div class="loading">جاري تحليل السوق…</div></div>
+   <div class="section-title"><div><h2>الأصول الأسرع حركة</h2><small>قائمة مختصرة لهذا السوق فقط</small></div></div>
+   <div class="table-wrap"><table><thead><tr><th>الأصل</th><th>السعر</th><th>التغير 24س</th><th>ترتيب الحركة</th></tr></thead><tbody id="marketMovers"><tr><td colspan="4">—</td></tr></tbody></table></div>
+   <details class="diagnostics"><summary>تفاصيل الفحص ومصدر البيانات</summary><div id="diagnosticBody">—</div></details>
+  </section>
+  <section id="tradesPage" class="page" hidden>
+   <div class="page-head"><div><div class="eyebrow">TRADE TRACKER</div><h1 id="tradesTitle">متابعة الصفقات</h1><p>حالة الصفقات المفتوحة والنتائج المسجلة من بيانات السوق.</p></div><button class="primary-btn" id="refreshTrades">↻ تحديث</button></div>
+   <div class="trade-grid" id="trackedTrades"><div class="loading">جاري تحميل الصفقات…</div></div>
+  </section>
+  <footer>SMART TRADING PRO <span>·</span> تحليل آلي وتنفيذ يدوي فقط <span>·</span> درجة الجودة ليست احتمال نجاح</footer>
+ </main>
 </div>
-</body></html>
+</body>
+</html>
