@@ -18,7 +18,7 @@ const safe=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;
 
 const LANG_KEYS=["menu","close","home","markets","sections","content","marketIndependent","direction","marketTrend","scanned","up","down","neutral","opportunities","strategyConfirm","timeframe","min15","hour","hour4","daily","weekly","monthly","openTrades","tracking","noOpenTrades","language","auto","night","day","manualExecution","marketHomeTitle","marketPageDescription","selectMarket","independentSources","rankingTop3","dataSource","buy","sell","entry","stopLoss","target1","target2","target3","noTrade","live"];
 const LANG_TEXT={
-ar:["القائمة","إغلاق","الرئيسية","الأسواق المستقلة","أقسام المنصة","المحتوى","صفحة مستقلة","توجه السوق","الاتجاه العام","أصل مفحوص","صاعد","هابط","محايد","فرص التداول","تأكيد 4 ساعات + يومي · الدخول على الفريم المختار","فريم التحليل","15 دقيقة","ساعة","4 ساعات","يومي","أسبوعي","شهري","متابعة الصفقات","متابعة تلقائية للصفقات","لا توجد صفقات مفتوحة محفوظة لهذا السوق.","اللغة","تلقائي","وضع ليلي","وضع نهاري","تحليل آلي · تنفيذ يدوي فقط","الأسواق الذكية","بيانات واتجاهات وفرص هذا السوق فقط.","اختر السوق","مصادر مستقلة لكل سوق","أفضل 3 فرص","مصدر البيانات","شراء","بيع","الدخول","وقف الخسارة","الهدف الأول","الهدف الثاني","الهدف الثالث","لا توجد صفقة مؤكدة الآن. ننتظر اكتمال شروط الدخول والوقف والأهداف.","مباشر"],
+ar:["القائمة","إغلاق","الرئيسية","الأسواق","أقسام المنصة","المحتوى","السوق","توجه السوق","الاتجاه العام","أصل مفحوص","صاعد","هابط","محايد","فرص التداول","تأكيد 4 ساعات + يومي · الدخول على الفريم المختار","فريم التحليل","15 دقيقة","ساعة","4 ساعات","يومي","أسبوعي","شهري","متابعة الصفقات","متابعة تلقائية للصفقات","لا توجد صفقات مفتوحة محفوظة لهذا السوق.","اللغة","تلقائي","وضع ليلي","وضع نهاري","تحليل آلي · تنفيذ يدوي فقط","الأسواق الذكية","بيانات واتجاهات وفرص هذا السوق فقط.","اختر السوق","مصادر مستقلة لكل سوق","أفضل 3 فرص","مصدر البيانات","شراء","بيع","الدخول","وقف الخسارة","الهدف الأول","الهدف الثاني","الهدف الثالث","لا توجد صفقة مؤكدة الآن. ننتظر اكتمال شروط الدخول والوقف والأهداف.","مباشر"],
 en:["Menu","Close","Home","Markets","Sections","Content","Independent page","Market direction","Overall trend","Assets scanned","Bullish","Bearish","Neutral","Trading opportunities","4h + Daily confirmation · entry on selected timeframe","Timeframe","15 minutes","1 hour","4 hours","Daily","Weekly","Monthly","Trade tracker","Automatic trade tracking","No open trades saved for this market.","Language","Auto","Dark mode","Light mode","Automated analysis · Manual execution only","Smart Markets","Market data, direction and opportunities only.","Select market","Independent data sources","Top 3 opportunities","Data source","Buy","Sell","Entry","Stop loss","Target 1","Target 2","Target 3","No confirmed trade now. Waiting for valid entry, stop and targets.","Live"],
 es:["Menú","Cerrar","Inicio","Mercados","Secciones","Contenido","Página independiente","Dirección del mercado","Tendencia general","Activos analizados","Alcista","Bajista","Neutral","Oportunidades","Confirmación 4h + diario · entrada en el marco elegido","Marco temporal","15 minutos","1 hora","4 horas","Diario","Semanal","Mensual","Seguimiento de operaciones","Seguimiento automático","No hay operaciones abiertas guardadas para este mercado.","Idioma","Automático","Modo oscuro","Modo claro","Análisis automático · Ejecución manual","Mercados inteligentes","Solo datos, dirección y oportunidades de este mercado.","Elegir mercado","Fuentes independientes","Mejores 3 oportunidades","Fuente de datos","Comprar","Vender","Entrada","Stop loss","Objetivo 1","Objetivo 2","Objetivo 3","No hay operaciones confirmadas. Esperando condiciones válidas.","En vivo"],
 de:["Menü","Schließen","Startseite","Märkte","Bereiche","Inhalte","Eigene Marktseite","Marktrichtung","Gesamttrend","Geprüfte Assets","Aufwärts","Abwärts","Neutral","Handelschancen","4h- und Tagesbestätigung · Einstieg im gewählten Zeitrahmen","Zeitrahmen","15 Minuten","1 Stunde","4 Stunden","Täglich","Wöchentlich","Monatlich","Trade-Überwachung","Automatische Trade-Überwachung","Keine offenen Trades für diesen Markt gespeichert.","Sprache","Automatisch","Dunkelmodus","Hellmodus","Automatische Analyse · Manuelle Ausführung","Intelligente Märkte","Nur Daten, Richtung und Chancen dieses Marktes.","Markt wählen","Unabhängige Datenquellen","Top 3 Chancen","Datenquelle","Kaufen","Verkaufen","Einstieg","Stop-Loss","Ziel 1","Ziel 2","Ziel 3","Kein bestätigter Trade. Warte auf gültige Bedingungen.","Live"],
@@ -380,6 +380,18 @@ async function startAuthorized(user=null){
  else if(PATH==="/sections/history"){await loadHistoryPage();}
 }
 async function initializeAccess(){
+ const isPublicSection=PATH.startsWith("/sections/");
+ if(isPublicSection){
+  $("#accessGate").hidden=true;
+  $("#topLogout").hidden=true;
+  $("#adminPanel").hidden=true;
+  $("#drawerAdmin").hidden=true;
+  $("#authForm").hidden=true;
+  $("#authToggle").hidden=true;
+  $("#subscriptionPanel").hidden=true;
+  await startAuthorized(null);
+  return;
+ }
  let user=null;
  try{
   const d=await get("/api/auth/me",7000);
