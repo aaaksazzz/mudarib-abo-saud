@@ -600,7 +600,7 @@ body{font-feature-settings:"tnum" 1,"ss01" 1}
 .home-panel-head h3{margin:4px 0 0;font-size:14px;color:var(--text)}
 .home-panel-tag{font-size:9px;color:var(--muted);padding:5px 8px;border:1px solid var(--line);border-radius:20px;white-space:nowrap}
 .home-movers-list,.home-coverage-list{display:flex;flex-direction:column;gap:6px}
-.home-mover-row{display:grid;grid-template-columns:23px minmax(0,1fr) auto auto;align-items:center;gap:9px;padding:9px 8px;border:1px solid var(--line);border-radius:10px;background:rgba(120,150,180,.045);min-width:0}
+.home-mover-row{display:grid;grid-template-columns:23px minmax(0,1fr) auto;align-items:center;gap:9px;padding:9px 8px;border:1px solid var(--line);border-radius:10px;background:rgba(120,150,180,.045);min-width:0}
 .home-mover-rank{font-size:10px;color:var(--muted);text-align:center}
 .home-mover-name,.home-mover-price{display:flex;flex-direction:column;gap:3px;min-width:0}
 .home-mover-name b{font-size:12px;color:var(--text)}
@@ -622,7 +622,7 @@ body{font-feature-settings:"tnum" 1,"ss01" 1}
  .home-stat-grid{gap:7px}.home-stat{padding:11px 9px}.home-stat b{font-size:20px}.home-stat span{font-size:8px}
  .home-radar-grid{grid-template-columns:1fr}
  .home-dashboard-head{align-items:flex-start;flex-direction:column}
- .home-mover-row{grid-template-columns:20px minmax(0,1fr) auto auto;gap:6px;padding:8px 6px}
+ .home-mover-row{grid-template-columns:20px minmax(0,1fr) auto;gap:6px;padding:8px 6px}
  .home-mover-name b{font-size:11px}.home-mover-price b,.home-mover-change{font-size:10px}
 }
 
