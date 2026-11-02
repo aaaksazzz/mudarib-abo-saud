@@ -455,6 +455,19 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
                 diagnostics["reference_directions"] = states
             return reject("higher_timeframe_conflict")
 
+        # Enforce the whole-market direction as a hard side gate as well.
+        # A down market must never create a BUY, and an up market must never
+        # create a SELL. Neutral/uncertain breadth produces no new trades.
+        if market_direction not in ("BUY", "SELL"):
+            if diagnostics is not None:
+                diagnostics["market_direction"] = market_direction
+            return reject("market_direction_neutral")
+        if side != market_direction:
+            if diagnostics is not None:
+                diagnostics["market_direction"] = market_direction
+                diagnostics["candidate_direction"] = side
+            return reject("market_direction_conflict")
+
         reference_score = sum(float(result.get("score") or 0) for result in reference.values()) / 2
         if reference_score < 55:
             if diagnostics is not None:
@@ -1475,6 +1488,10 @@ def market(kind):
         for trade in active:
             if trade["timeframe"] != timeframe:
                 continue
+            # Keep opposite-side legacy positions in the tracker, but do not
+            # surface them as current opportunities against today's market bias.
+            if direction not in ("BUY", "SELL") or trade.get("side") != direction:
+                continue
             key = (trade["symbol"], trade["timeframe"])
             if key in display_by_key:
                 continue
@@ -1510,8 +1527,8 @@ def market(kind):
                 "scan_cycle_complete": bool(assets) and next_scan_offset <= scan_offset,
                 "candles_ready": sum(1 for item in diagnostic_rows if item.get("candles_ready") is True),
                 "candles_required": 35,
-                "market_direction_gate": "4h_and_daily_must_agree",
-                "trade_side_rule": "BUY only when 4h and daily both BUY; SELL only when both SELL; 15m confirms liquidity entry",
+                "market_direction_gate": "market_breadth_and_4h_daily_must_agree",
+                "trade_side_rule": "BUY only when market breadth is UP and 4h+daily are BUY; SELL only when market breadth is DOWN and 4h+daily are SELL; neutral market creates no new trades; 15m confirms liquidity entry",
                 "accepted_before_top3": rejection_counts.get("accepted", 0),
                 "rejected_by_reason": {key: value for key, value in rejection_counts.items() if key != "accepted"},
             },
