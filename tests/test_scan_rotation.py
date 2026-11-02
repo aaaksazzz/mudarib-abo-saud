@@ -1,6 +1,6 @@
 import unittest
 
-from scan_rotation import select_scan_batch
+from scan_rotation import select_scan_batch, select_priority_scan_batch
 
 
 class ScanRotationTests(unittest.TestCase):
@@ -25,6 +25,24 @@ class ScanRotationTests(unittest.TestCase):
         self.assertEqual(batch, [4])
         self.assertEqual(next_offset, 0)
         self.assertEqual(start, 4)
+
+    def test_priority_assets_are_rescanned_and_remainder_rotates(self):
+        rows = list(range(100))
+        first, offset, _, priority = select_priority_scan_batch(rows, 0, 40, 10)
+        second, offset2, _, priority2 = select_priority_scan_batch(rows, offset, 40, 10)
+        self.assertEqual(first[:10], list(range(10)))
+        self.assertEqual(second[:10], list(range(10)))
+        self.assertEqual(first[10:], list(range(10, 40)))
+        self.assertEqual(second[10:], list(range(40, 70)))
+        self.assertEqual(priority, 10)
+        self.assertEqual(priority2, 10)
+        self.assertEqual(offset2, 60)
+
+    def test_priority_scan_handles_small_universe(self):
+        rows = ["a", "b", "c"]
+        batch, next_offset, start, priority = select_priority_scan_batch(rows, 0, 40, 10)
+        self.assertEqual(batch, rows)
+        self.assertEqual((next_offset, start, priority), (0, 0, 3))
 
     def test_empty_universe_is_safe(self):
         self.assertEqual(select_scan_batch([], 0, 40), ([], 0, 0))

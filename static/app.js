@@ -1,5 +1,7 @@
 const $=s=>document.querySelector(s);
+const MARKET_IDS=["spot","futures","coinm","alpha","saudi","us","contracts","forex"];
 const MARKET_NAMES={spot:"Binance Spot",futures:"Binance USD-M Futures",coinm:"Binance COIN-M Futures",alpha:"Binance Alpha",saudi:"السوق السعودي",us:"الأسهم الأمريكية",contracts:"العقود الأمريكية",forex:"الفوركس والذهب"};
+function marketName(id){const i=MARKET_IDS.indexOf(id);return i<0?(MARKET_NAMES[id]||id):(MARKET_TRANSLATIONS[currentLanguage]||MARKET_TRANSLATIONS.ar)[i]}
 const PATH=location.pathname.replace(/\/+$/,"")||"/";
 const marketMatch=PATH.match(/^\/markets\/([a-z]+)$/);
 let market=marketMatch?marketMatch[1]:"spot",busy=false,pending=false,timer=null;
@@ -13,6 +15,90 @@ const fmt=n=>Number(n).toLocaleString("en-US",{maximumFractionDigits:8});
 const compact=n=>{n=Number(n)||0;if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return fmt(n)};
 const pct=n=>(Number(n)>=0?"+":"")+Number(n).toFixed(2)+"%";
 const safe=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+const LANG_KEYS=["menu","close","home","markets","sections","content","marketIndependent","direction","marketTrend","scanned","up","down","neutral","opportunities","sameFrame","timeframe","min15","hour","hour4","daily","weekly","monthly","openTrades","tracking","noOpenTrades","language","auto","night","day","manualExecution","marketHomeTitle","marketPageDescription","selectMarket","independentSources","rankingTop3","dataSource","buy","sell","entry","stopLoss","target1","target2","target3","noTrade","live"];
+const LANG_TEXT={
+ar:["القائمة","إغلاق","الرئيسية","الأسواق المستقلة","أقسام المنصة","المحتوى","صفحة مستقلة","توجه السوق","الاتجاه العام","أصل مفحوص","صاعد","هابط","محايد","فرص التداول","التحليل على الفريم نفسه","فريم التحليل","15 دقيقة","ساعة","4 ساعات","يومي","أسبوعي","شهري","متابعة الصفقات","متابعة تلقائية للصفقات","لا توجد صفقات مفتوحة محفوظة لهذا السوق.","اللغة","تلقائي","وضع ليلي","وضع نهاري","تحليل آلي · تنفيذ يدوي فقط","الأسواق الذكية","بيانات واتجاهات وفرص هذا السوق فقط.","اختر السوق","مصادر مستقلة لكل سوق","أفضل 3 فرص","مصدر البيانات","شراء","بيع","الدخول","وقف الخسارة","الهدف الأول","الهدف الثاني","الهدف الثالث","لا توجد صفقة مؤكدة الآن. ننتظر اكتمال شروط الدخول والوقف والأهداف.","مباشر"],
+en:["Menu","Close","Home","Markets","Sections","Content","Independent page","Market direction","Overall trend","Assets scanned","Bullish","Bearish","Neutral","Trading opportunities","Analysis on the same timeframe","Timeframe","15 minutes","1 hour","4 hours","Daily","Weekly","Monthly","Trade tracker","Automatic trade tracking","No open trades saved for this market.","Language","Auto","Dark mode","Light mode","Automated analysis · Manual execution only","Smart Markets","Market data, direction and opportunities only.","Select market","Independent data sources","Top 3 opportunities","Data source","Buy","Sell","Entry","Stop loss","Target 1","Target 2","Target 3","No confirmed trade now. Waiting for valid entry, stop and targets.","Live"],
+es:["Menú","Cerrar","Inicio","Mercados","Secciones","Contenido","Página independiente","Dirección del mercado","Tendencia general","Activos analizados","Alcista","Bajista","Neutral","Oportunidades","Análisis en el mismo marco temporal","Marco temporal","15 minutos","1 hora","4 horas","Diario","Semanal","Mensual","Seguimiento de operaciones","Seguimiento automático","No hay operaciones abiertas guardadas para este mercado.","Idioma","Automático","Modo oscuro","Modo claro","Análisis automático · Ejecución manual","Mercados inteligentes","Solo datos, dirección y oportunidades de este mercado.","Elegir mercado","Fuentes independientes","Mejores 3 oportunidades","Fuente de datos","Comprar","Vender","Entrada","Stop loss","Objetivo 1","Objetivo 2","Objetivo 3","No hay operaciones confirmadas. Esperando condiciones válidas.","En vivo"],
+de:["Menü","Schließen","Startseite","Märkte","Bereiche","Inhalte","Eigene Marktseite","Marktrichtung","Gesamttrend","Geprüfte Assets","Aufwärts","Abwärts","Neutral","Handelschancen","Analyse im selben Zeitrahmen","Zeitrahmen","15 Minuten","1 Stunde","4 Stunden","Täglich","Wöchentlich","Monatlich","Trade-Überwachung","Automatische Trade-Überwachung","Keine offenen Trades für diesen Markt gespeichert.","Sprache","Automatisch","Dunkelmodus","Hellmodus","Automatische Analyse · Manuelle Ausführung","Intelligente Märkte","Nur Daten, Richtung und Chancen dieses Marktes.","Markt wählen","Unabhängige Datenquellen","Top 3 Chancen","Datenquelle","Kaufen","Verkaufen","Einstieg","Stop-Loss","Ziel 1","Ziel 2","Ziel 3","Kein bestätigter Trade. Warte auf gültige Bedingungen.","Live"],
+id:["Menu","Tutup","Beranda","Pasar","Bagian","Konten","Halaman terpisah","Arah pasar","Tren keseluruhan","Aset dipindai","Naik","Turun","Netral","Peluang trading","Analisis pada kerangka waktu yang sama","Kerangka waktu","15 menit","1 jam","4 jam","Harian","Mingguan","Bulanan","Pemantauan posisi","Pemantauan otomatis","Tidak ada posisi terbuka tersimpan untuk pasar ini.","Bahasa","Otomatis","Mode gelap","Mode terang","Analisis otomatis · Eksekusi manual","Pasar Cerdas","Hanya data, arah, dan peluang pasar ini.","Pilih pasar","Sumber data independen","3 peluang teratas","Sumber data","Beli","Jual","Entry","Stop loss","Target 1","Target 2","Target 3","Belum ada transaksi terkonfirmasi. Menunggu kondisi valid.","Live"],
+"pt-BR":["Menu","Fechar","Início","Mercados","Seções","Conteúdo","Página independente","Direção do mercado","Tendência geral","Ativos analisados","Alta","Baixa","Neutro","Oportunidades","Análise no mesmo período","Período","15 minutos","1 hora","4 horas","Diário","Semanal","Mensal","Acompanhamento de operações","Acompanhamento automático","Não há operações abertas salvas para este mercado.","Idioma","Automático","Modo escuro","Modo claro","Análise automática · Execução manual","Mercados inteligentes","Somente dados, direção e oportunidades deste mercado.","Selecionar mercado","Fontes de dados independentes","3 melhores oportunidades","Fonte de dados","Comprar","Vender","Entrada","Stop loss","Alvo 1","Alvo 2","Alvo 3","Nenhuma operação confirmada. Aguardando condições válidas.","Ao vivo"],
+tr:["Menü","Kapat","Ana sayfa","Piyasalar","Bölümler","İçerik","Bağımsız sayfa","Piyasa yönü","Genel eğilim","Taranan varlıklar","Yükseliş","Düşüş","Nötr","İşlem fırsatları","Aynı zaman diliminde analiz","Zaman dilimi","15 dakika","1 saat","4 saat","Günlük","Haftalık","Aylık","İşlem takibi","Otomatik işlem takibi","Bu piyasa için kayıtlı açık işlem yok.","Dil","Otomatik","Koyu mod","Açık mod","Otomatik analiz · Manuel işlem","Akıllı Piyasalar","Yalnızca bu piyasanın verileri, yönü ve fırsatları.","Piyasa seç","Bağımsız veri kaynakları","En iyi 3 fırsat","Veri kaynağı","Al","Sat","Giriş","Zarar durdur","Hedef 1","Hedef 2","Hedef 3","Onaylanmış işlem yok. Geçerli koşullar bekleniyor.","Canlı"],
+fr:["Menu","Fermer","Accueil","Marchés","Sections","Contenu","Page indépendante","Direction du marché","Tendance générale","Actifs analysés","Hausse","Baisse","Neutre","Opportunités","Analyse sur la même unité de temps","Unité de temps","15 minutes","1 heure","4 heures","Quotidien","Hebdomadaire","Mensuel","Suivi des trades","Suivi automatique","Aucun trade ouvert enregistré pour ce marché.","Langue","Automatique","Mode sombre","Mode clair","Analyse automatique · Exécution manuelle","Marchés intelligents","Données, direction et opportunités de ce marché uniquement.","Choisir un marché","Sources de données indépendantes","Top 3 opportunités","Source des données","Acheter","Vendre","Entrée","Stop loss","Objectif 1","Objectif 2","Objectif 3","Aucun trade confirmé. En attente de conditions valides.","En direct"],
+hi:["मेनू","बंद करें","होम","बाज़ार","अनुभाग","सामग्री","अलग पृष्ठ","बाज़ार की दिशा","समग्र रुझान","स्कैन की गई संपत्तियाँ","तेज़ी","मंदी","तटस्थ","ट्रेडिंग अवसर","उसी समय-सीमा पर विश्लेषण","समय-सीमा","15 मिनट","1 घंटा","4 घंटे","दैनिक","साप्ताहिक","मासिक","ट्रेड निगरानी","स्वचालित निगरानी","इस बाज़ार के लिए कोई खुला ट्रेड सहेजा नहीं गया है।","भाषा","स्वचालित","डार्क मोड","लाइट मोड","स्वचालित विश्लेषण · मैन्युअल निष्पादन","स्मार्ट मार्केट","केवल इस बाज़ार का डेटा, दिशा और अवसर।","बाज़ार चुनें","स्वतंत्र डेटा स्रोत","शीर्ष 3 अवसर","डेटा स्रोत","खरीदें","बेचें","प्रवेश","स्टॉप लॉस","लक्ष्य 1","लक्ष्य 2","लक्ष्य 3","अभी कोई पुष्ट ट्रेड नहीं। वैध शर्तों की प्रतीक्षा है।","लाइव"]
+};
+const MARKET_TRANSLATIONS={
+ar:["Binance Spot","Binance USD-M Futures","Binance COIN-M Futures","Binance Alpha","السوق السعودي","الأسهم الأمريكية","العقود الأمريكية","الفوركس والذهب"],
+en:["Binance Spot","Binance USD-M Futures","Binance COIN-M Futures","Binance Alpha","Saudi Market","U.S. Stocks","U.S. Contracts","Forex & Gold"],
+es:["Binance Spot","Futuros Binance USD-M","Futuros Binance COIN-M","Binance Alpha","Mercado saudí","Acciones de EE. UU.","Contratos de EE. UU.","Forex y oro"],
+de:["Binance Spot","Binance USD-M Futures","Binance COIN-M Futures","Binance Alpha","Saudi-Arabischer Markt","US-Aktien","US-Kontrakte","Forex & Gold"],
+id:["Binance Spot","Binance USD-M Futures","Binance COIN-M Futures","Binance Alpha","Pasar Saudi","Saham AS","Kontrak AS","Forex & Emas"],
+"pt-BR":["Binance Spot","Futuros Binance USD-M","Futuros Binance COIN-M","Binance Alpha","Mercado saudita","Ações dos EUA","Contratos dos EUA","Forex e ouro"],
+tr:["Binance Spot","Binance USD-M Vadeli","Binance COIN-M Vadeli","Binance Alpha","Suudi Piyasası","ABD Hisseleri","ABD Kontratları","Forex ve Altın"],
+fr:["Binance Spot","Futures Binance USD-M","Futures Binance COIN-M","Binance Alpha","Marché saoudien","Actions américaines","Contrats américains","Forex et or"],
+hi:["Binance Spot","Binance USD-M Futures","Binance COIN-M Futures","Binance Alpha","सऊदी बाज़ार","अमेरिकी शेयर","अमेरिकी कॉन्ट्रैक्ट","फॉरेक्स और सोना"]
+};
+
+const TRADE_KEYS=["currentPrice","returnFromEntry","proposedEntry","riskToStop","potentialProfit","movementSpeed","orderFlow","supportive","opposing","balanced","unavailable","quality","reversal","entryPrice","liveReturn","openCount"];
+const TRADE_TEXT={
+ar:["السعر الحالي · آخر تحديث","العائد من الدخول","الدخول المقترح","المخاطرة حتى الوقف","ربح محتمل","سرعة الحركة","تدفق الأوامر","مؤيد","معاكس","متوازن","غير متاح","جودة الشروط","عكس الإشارة","سعر الدخول","العائد الحي من الدخول","مفتوحة"],
+en:["Current price · latest update","Return from entry","Proposed entry","Risk to stop","Potential profit","Momentum speed","Order flow","Supportive","Opposing","Balanced","Unavailable","Setup quality","Reversal signal","Entry price","Live return from entry","Open"],
+es:["Precio actual · última actualización","Rendimiento desde la entrada","Entrada propuesta","Riesgo hasta el stop","Beneficio potencial","Velocidad del movimiento","Flujo de órdenes","A favor","En contra","Equilibrado","No disponible","Calidad de la configuración","Señal de reversión","Precio de entrada","Rendimiento actual desde la entrada","Abiertas"],
+de:["Aktueller Preis · letzte Aktualisierung","Rendite ab Einstieg","Vorgeschlagener Einstieg","Risiko bis Stop","Mögliches Gewinnziel","Bewegungsdynamik","Orderfluss","Unterstützend","Gegenläufig","Ausgeglichen","Nicht verfügbar","Setup-Qualität","Umkehrsignal","Einstiegspreis","Live-Rendite ab Einstieg","Offen"],
+id:["Harga saat ini · pembaruan terakhir","Imbal hasil dari entry","Entry yang disarankan","Risiko ke stop","Potensi keuntungan","Kecepatan momentum","Arus order","Mendukung","Berlawanan","Seimbang","Tidak tersedia","Kualitas setup","Sinyal pembalikan","Harga entry","Imbal hasil langsung dari entry","Terbuka"],
+"pt-BR":["Preço atual · última atualização","Retorno desde a entrada","Entrada sugerida","Risco até o stop","Lucro potencial","Velocidade do movimento","Fluxo de ordens","Favorável","Contrário","Equilibrado","Indisponível","Qualidade da configuração","Sinal de reversão","Preço de entrada","Retorno ao vivo desde a entrada","Abertas"],
+tr:["Güncel fiyat · son güncelleme","Girişten getiri","Önerilen giriş","Stop seviyesine risk","Potansiyel kâr","Hareket hızı","Emir akışı","Destekleyici","Karşıt","Dengeli","Kullanılamıyor","Kurulum kalitesi","Dönüş sinyali","Giriş fiyatı","Girişten anlık getiri","Açık"],
+fr:["Prix actuel · dernière mise à jour","Rendement depuis l’entrée","Entrée proposée","Risque jusqu’au stop","Profit potentiel","Vitesse du mouvement","Flux des ordres","Favorable","Opposé","Équilibré","Indisponible","Qualité du signal","Signal de retournement","Prix d’entrée","Rendement en direct depuis l’entrée","Ouverts"],
+hi:["वर्तमान मूल्य · नवीनतम अपडेट","एंट्री से रिटर्न","सुझाई गई एंट्री","स्टॉप तक जोखिम","संभावित लाभ","मूवमेंट की गति","ऑर्डर फ्लो","समर्थक","विरोधी","संतुलित","उपलब्ध नहीं","सेटअप गुणवत्ता","रिवर्सल संकेत","एंट्री मूल्य","एंट्री से लाइव रिटर्न","खुले"]
+};
+
+const LANG_INDEX=Object.fromEntries(LANG_KEYS.map((key,i)=>[key,i]));
+let currentLanguage="ar";
+function tr(key){const i=LANG_INDEX[key];if(i!==undefined)return (LANG_TEXT[currentLanguage]||LANG_TEXT.ar)[i];const j=TRADE_KEYS.indexOf(key);return j<0?key:(TRADE_TEXT[currentLanguage]||TRADE_TEXT.ar)[j]}
+function effectiveLanguage(choice){
+ if(choice!=="auto")return LANG_TEXT[choice]?choice:"ar";
+ const browser=(navigator.language||"ar").toLowerCase();
+ if(browser.startsWith("pt"))return "pt-BR";
+ const match=["ar","en","es","de","id","tr","fr","hi"].find(code=>browser.startsWith(code));
+ return match||"ar";
+}
+function applyLanguage(choice){
+ const lang=effectiveLanguage(choice);currentLanguage=lang;
+ document.documentElement.lang=lang;document.documentElement.dir=lang==="ar"?"rtl":"ltr";
+ const set=(selector,key)=>{const el=$(selector);if(el)el.textContent=tr(key)};
+ set("#menuOpen span","menu");set(".drawer-head b","sections");$("#menuOpen")?.setAttribute("aria-label",tr("menu"));set('#siteDrawer a[href="/"]',"home");
+ const groups=document.querySelectorAll("#siteDrawer .drawer-group");if(groups[0])groups[0].textContent=tr("markets");if(groups[1])groups[1].textContent=tr("sections");if(groups[2])groups[2].textContent=tr("content");
+ const navKeys=["direction","opportunities","openTrades"];const navLinks=[...document.querySelectorAll("#siteDrawer a")];
+ const navMap={"/sections/direction":"direction","/sections/opportunities":"opportunities","/sections/open-trades":"openTrades"};
+ navLinks.forEach(a=>{const key=navMap[a.getAttribute("href")];if(key)a.textContent=tr(key)});
+ const markets=Object.keys(MARKET_NAMES);document.querySelectorAll("[data-market] b").forEach(el=>{const index=markets.indexOf(el.closest("[data-market]")?.dataset.market);if(index>=0)el.textContent=(MARKET_TRANSLATIONS[lang]||MARKET_TRANSLATIONS.ar)[index]});document.querySelectorAll("[data-market] small").forEach(el=>el.textContent=tr("marketIndependent"));
+ set(".switcher-heading > span","selectMarket");set(".switcher-heading small","independentSources");
+ set("#directionSection .panel-top h2","direction");set("#directionSection .direction-main small","marketTrend");set("#directionSection .breadth-total small","scanned");
+ const breadthLabels=["up","down","neutral"];document.querySelectorAll("#directionSection .breadth-legend span").forEach((el,i)=>{el.childNodes.forEach(node=>{if(node.nodeType===3)node.textContent=" "+tr(breadthLabels[i]||"neutral")+" "})});
+ set("#opportunitiesSection h2","opportunities");set("#opportunitiesSection p","sameFrame");set(".timeframe-label","timeframe");
+ const tfKeys=["min15","hour","hour4","daily","weekly","monthly"];document.querySelectorAll("[data-timeframe]").forEach((el,i)=>{if(tfKeys[i])el.textContent=tr(tfKeys[i])});
+ set("#openSection h2","openTrades");set("#openSection p","tracking");set("#footerLanguageLabel","language");
+ const select=$("#languageSelect");if(select&&select.value!==choice)select.value=choice;if(select?.options[0])select.options[0].textContent=tr("auto");
+ const heading=$("#homeSection h1"),description=$("#homeSection p");
+ if(heading){if(marketMatch)heading.innerHTML="<span>"+safe(marketName(market))+"</span>";else if(PATH==="/")heading.innerHTML="<span>"+tr("marketHomeTitle")+"</span>"}
+ if(description){if(marketMatch||PATH==="/")description.textContent=tr("marketPageDescription")}
+
+ const theme=$("#themeToggle");if(theme)theme.textContent=(document.documentElement.dataset.theme==="light"?"🌙 "+tr("night"):"☀️ "+tr("day"));
+}
+function applyTheme(theme){
+ const value=theme==="light"?"light":"dark";document.documentElement.dataset.theme=value;
+ const button=$("#themeToggle");if(button)button.textContent=(value==="light"?"🌙 "+tr("night"):"☀️ "+tr("day"));
+ try{localStorage.setItem("stp-theme",value)}catch{}
+}
+function initPreferences(){
+ let language="auto",theme="dark";
+ try{language=localStorage.getItem("stp-language")||"auto";theme=localStorage.getItem("stp-theme")||"dark"}catch{}
+ const select=$("#languageSelect");if(select){select.value=language;select.addEventListener("change",()=>{try{localStorage.setItem("stp-language",select.value)}catch{}applyLanguage(select.value)})}
+ $("#themeToggle")?.addEventListener("click",()=>applyTheme(document.documentElement.dataset.theme==="light"?"dark":"light"));
+ applyTheme(theme);applyLanguage(language);
+}
+
 async function get(url,timeout=18000){
  const controller=new AbortController(),id=setTimeout(()=>controller.abort(),timeout);
  try{
@@ -33,7 +119,7 @@ function renderSignals(rows,diagnostics={}){
   const reasons=diagnostics.rejected_by_reason||{};
   const names={insufficient_candles:"شموع غير كافية",provider_error:"تعذر جلب بيانات المصدر",analysis_error:"خطأ في التحليل",no_sweep_or_absorption:"لم يظهر سحب سيولة أو امتصاص ضمن نطاق الحركة القريب",volume_below_threshold:"حجم التداول دون الشرط",candle_not_confirmed:"شمعة الدخول غير مؤكدة",risk_above_4_5pct:"مخاطرة أعلى من الحد",invalid_risk_levels:"وقف الخسارة أو مستويات المخاطرة غير صالحة",entry_beyond_stop:"السعر تجاوز الوقف",missing_volume:"بيانات الحجم ناقصة",no_reversal_signal:"إشارة الفريم غير واضحة أو لا تحقق شروط العكس",reference_timeframes_not_aligned:"الفريمات المرجعية غير متوافقة",invalid_atr:"مدى الحركة غير صالح",malformed_candles:"بيانات شموع غير سليمة",invalid_ohlc:"بيانات سعر غير سليمة",timeframe_conflict:"تعارض الأطر الزمنية أو عدم تأكيد الساعة"};
   const top=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,3);
-  root.innerHTML='<div class="empty">لا توجد صفقة مؤكدة الآن. ننتظر اكتمال شروط الدخول والوقف والأهداف.</div>';
+  root.innerHTML='<div class="empty">'+tr("noTrade")+'</div>';
    return;
  }
  root.innerHTML=rows.map((x,i)=>{
@@ -43,17 +129,17 @@ function renderSignals(rows,diagnostics={}){
   const live=Number(x.price),pnl=livePnl(x.side,x.entry,live);
   const rank=i===0?"gold":i===1?"silver":i===2?"bronze":"standard";const medal=i===0?"👑":i===1?"🥈":i===2?"🥉":"";const rankLabel=i===0?"المركز الأول · ذهبي":i===1?"المركز الثاني · فضي":i===2?"المركز الثالث · برونزي":"ترتيب "+(i+1);
   const flow=x.institutional_flow||{};
-  return '<article class="trade pro-trade-card"><div class="pro-card-top '+(i<3?"podium-"+rank:"")+'"><div class="trade-title"><span class="rank '+rank+'"><span class="rank-medal">'+medal+'</span><b>'+(i+1)+'</b></span><div><b>'+safe(x.symbol)+'</b><small class="card-market-label">'+safe(MARKET_NAMES[market]||market)+' · '+safe(x.timeframe||"15m")+'</small></div></div><div class="card-live-state"><i></i> '+rankLabel+'</div></div><div class="pro-signal-strip"><span class="market-direction '+(x.side==="BUY"?"up":"down")+'">'+(x.side==="BUY"?"▲ اتجاه صاعد":"▼ اتجاه هابط")+'</span><span class="tag '+(x.side==="BUY"?"buy":"sell")+'">'+(x.side==="BUY"?"شراء":"بيع")+'</span><span class="quality-chip">جودة الشروط '+Number(x.quality_score||0)+'/100</span><span class="quality-chip">عكس الإشارة: '+safe(x.source_state_ar||"—")+' ← '+safe(x.reversal_state_ar||"—")+'</span></div><div class="pro-live-price"><div><small>السعر الحالي · آخر تحديث</small><b>'+fmt(live)+'</b></div><div class="live-pnl '+(pnl>=0?"up":"down")+'"><small>العائد من الدخول</small><b>'+(pnl===null?"—":(pnl>0?"+":"")+pnl.toFixed(2)+"%")+'</b></div></div><div class="pro-entry-line"><span>الدخول المقترح</span><b>'+fmt(x.entry)+'</b><span>المخاطرة حتى الوقف</span><b class="down">'+stopPct+'</b></div><div class="pro-target-grid"><div class="target-box"><small>TP1 · ربح محتمل</small><b>'+fmt(x.tp1)+'</b><em>'+targetPct(x.tp1)+'</em></div><div class="target-box"><small>TP2 · ربح محتمل</small><b>'+fmt(x.tp2)+'</b><em>'+targetPct(x.tp2)+'</em></div><div class="target-box"><small>TP3 · ربح محتمل</small><b>'+fmt(x.tp3)+'</b><em>'+targetPct(x.tp3)+'</em></div><div class="target-box stop-box"><small>وقف الخسارة</small><b>'+fmt(x.stop_loss)+'</b><em>'+stopPct+'</em></div></div><div class="pro-card-footer"><span>سرعة الحركة <b>'+Number(x.fast_mover_score||0)+'/100</b></span><span>تدفق الأوامر <b>'+safe(flow.status==="supportive"?"مؤيد":flow.status==="opposing"?"معاكس":flow.status==="balanced"?"متوازن":"غير متاح")+'</b></span><span>تغير 24س <b class="'+(x.change24h>=0?"up":"down")+'">'+pct(x.change24h)+'</b></span></div><div class="pro-card-note">العائد المحتمل محسوب من الدخول إلى الهدف، وليس ضمانًا للربح.</div></article>';
+  return '<article class="trade pro-trade-card"><div class="pro-card-top '+(i<3?"podium-"+rank:"")+'"><div class="trade-title"><span class="rank '+rank+'"><span class="rank-medal">'+medal+'</span><b>'+(i+1)+'</b></span><div><b>'+safe(x.symbol)+'</b><small class="card-market-label">'+safe(marketName(market))+' · '+safe(x.timeframe||"15m")+'</small></div></div><div class="card-live-state"><i></i> '+rankLabel+'</div></div><div class="pro-signal-strip"><span class="market-direction '+(x.side==="BUY"?"up":"down")+'">'+(x.side==="BUY"?"▲ "+tr("up"):"▼ "+tr("down"))+'</span><span class="tag '+(x.side==="BUY"?"buy":"sell")+'">'+(x.side==="BUY"?tr("buy"):tr("sell"))+'</span><span class="quality-chip">جودة الشروط '+Number(x.quality_score||0)+'/100</span><span class="quality-chip">عكس الإشارة: '+safe(x.source_state_ar||"—")+' ← '+safe(x.reversal_state_ar||"—")+'</span></div><div class="pro-live-price"><div><small>السعر الحالي · آخر تحديث</small><b>'+fmt(live)+'</b></div><div class="live-pnl '+(pnl>=0?"up":"down")+'"><small>العائد من الدخول</small><b>'+(pnl===null?"—":(pnl>0?"+":"")+pnl.toFixed(2)+"%")+'</b></div></div><div class="pro-entry-line"><span>الدخول المقترح</span><b>'+fmt(x.entry)+'</b><span>المخاطرة حتى الوقف</span><b class="down">'+stopPct+'</b></div><div class="pro-target-grid"><div class="target-box"><small>TP1 · ربح محتمل</small><b>'+fmt(x.tp1)+'</b><em>'+targetPct(x.tp1)+'</em></div><div class="target-box"><small>TP2 · ربح محتمل</small><b>'+fmt(x.tp2)+'</b><em>'+targetPct(x.tp2)+'</em></div><div class="target-box"><small>TP3 · ربح محتمل</small><b>'+fmt(x.tp3)+'</b><em>'+targetPct(x.tp3)+'</em></div><div class="target-box stop-box"><small>وقف الخسارة</small><b>'+fmt(x.stop_loss)+'</b><em>'+stopPct+'</em></div></div><div class="pro-card-footer"><span>سرعة الحركة <b>'+Number(x.fast_mover_score||0)+'/100</b></span><span>تدفق الأوامر <b>'+safe(flow.status==="supportive"?tr("supportive"):flow.status==="opposing"?tr("opposing"):flow.status==="balanced"?tr("balanced"):tr("unavailable"))+'</b></span><span>تغير 24س <b class="'+(x.change24h>=0?"up":"down")+'">'+pct(x.change24h)+'</b></span></div><div class="pro-card-note">العائد المحتمل محسوب من الدخول إلى الهدف، وليس ضمانًا للربح.</div></article>';
  }).join("");
 }
 function renderOpen(rows){
  const root=$("#openTrades");$("#openCount").textContent=(rows?.length||0)+" مفتوحة";
- if(!rows||!rows.length){root.innerHTML='<div class="empty">لا توجد صفقات مفتوحة محفوظة لهذا السوق.</div>';return}
+ if(!rows||!rows.length){root.innerHTML='<div class="empty">'+tr("noOpenTrades")+'</div>';return}
  root.innerHTML=rows.map(x=>{
   const pnl=x.live_pnl_percent==null?livePnl(x.side,x.entry,x.current_price):Number(x.live_pnl_percent);
   const current=x.current_price==null?"—":fmt(x.current_price);
   const target=(name,value,lit,kind)=>'<div class="tracked-level '+(lit?'level-lit '+kind:'')+'"><small>'+name+'</small><b>'+fmt(value)+'</b></div>';
-  return '<article class="tracked-trade-card"><div class="tracked-head"><div><b>'+safe(x.symbol)+'</b><small>'+safe(MARKET_NAMES[x.market]||x.market)+' · '+(x.side==="BUY"?"شراء":"بيع")+' · '+safe(x.timeframe)+'</small></div></div><div class="tracked-live-grid"><div><small>السعر الحالي</small><b>'+current+'</b></div><div><small>العائد الحي من الدخول</small><b class="'+(pnl>=0?"up":"down")+'">'+(pnl==null?"—":(pnl>0?"+":"")+pnl.toFixed(2)+"%")+'</b></div><div><small>سعر الدخول</small><b>'+fmt(x.entry)+'</b></div></div><div class="tracked-levels">'+target("TP1",x.tp1,x.tp1_hit,"target-lit")+target("TP2",x.tp2,x.tp2_hit,"target-lit")+target("TP3",x.tp3,x.tp3_hit||x.status==="TP3","target-lit")+target("وقف الخسارة",x.stop_loss,x.status==="SL","stop-lit")+'</div></article>';
+  return '<article class="tracked-trade-card"><div class="tracked-head"><div><b>'+safe(x.symbol)+'</b><small>'+safe(marketName(x.market))+' · '+(x.side==="BUY"?tr("buy"):tr("sell"))+' · '+safe(x.timeframe)+'</small></div></div><div class="tracked-live-grid"><div><small>السعر الحالي</small><b>'+current+'</b></div><div><small>العائد الحي من الدخول</small><b class="'+(pnl>=0?"up":"down")+'">'+(pnl==null?"—":(pnl>0?"+":"")+pnl.toFixed(2)+"%")+'</b></div><div><small>سعر الدخول</small><b>'+fmt(x.entry)+'</b></div></div><div class="tracked-levels">'+target("TP1",x.tp1,x.tp1_hit,"target-lit")+target("TP2",x.tp2,x.tp2_hit,"target-lit")+target("TP3",x.tp3,x.tp3_hit||x.status==="TP3","target-lit")+target(tr("stopLoss"),x.stop_loss,x.status==="SL","stop-lit")+'</div></article>';
  }).join("");
 }
 function renderClosed(rows){
@@ -61,7 +147,7 @@ function renderClosed(rows){
  $("#historyCount").textContent=closed.length+" مغلقة";
  const root=$("#closedTrades");
  if(!closed.length){root.innerHTML='<div class="empty">لا توجد نتائج مغلقة مسجلة بعد.</div>';return}
- root.innerHTML=closed.map(x=>'<article class="history-row"><div><b>'+safe(x.symbol)+'</b><small>'+(x.side==="BUY"?"شراء":"بيع")+' · '+safe(MARKET_NAMES[x.market]||x.market)+'</small></div><div><small>الدخول</small><b>'+fmt(x.entry)+'</b></div><div><small>النتيجة</small><b class="history-status '+(x.status==="TP3"?"tp history-lit-target":x.status==="EXPIRED"?"expired":"sl history-lit-stop")+'">'+(x.status==="TP3"?"وصل TP3":x.status==="EXPIRED"?"انتهت صلاحية 24س":"وقف الخسارة")+'</b></div><div><small>تاريخ الإغلاق</small><b>'+new Date((x.closed_at||x.updated_at)*1000).toLocaleDateString("ar-SA")+'</b></div></article>').join("");
+ root.innerHTML=closed.map(x=>'<article class="history-row"><div><b>'+safe(x.symbol)+'</b><small>'+(x.side==="BUY"?"شراء":"بيع")+' · '+safe(marketName(x.market))+'</small></div><div><small>الدخول</small><b>'+fmt(x.entry)+'</b></div><div><small>النتيجة</small><b class="history-status '+(x.status==="TP3"?"tp history-lit-target":x.status==="EXPIRED"?"expired":"sl history-lit-stop")+'">'+(x.status==="TP3"?"وصل TP3":x.status==="EXPIRED"?"انتهت صلاحية 24س":"وقف الخسارة")+'</b></div><div><small>تاريخ الإغلاق</small><b>'+new Date((x.closed_at||x.updated_at)*1000).toLocaleDateString("ar-SA")+'</b></div></article>').join("");
 }
 async function loadHistoryPage(){
  const root=$("#closedTrades");
@@ -157,6 +243,7 @@ async function load(){
  $("#health").textContent="جارٍ التحديث";
  try{
   const requestedMarket=market;
+   const requestedTimeframe=analysisTimeframe;
   const providerState=marketStatuses.get(requestedMarket);
   if(providerState && !["live","configured_watchlist"].includes(providerState.status)){
    $("#direction").textContent="غير متاح";
@@ -165,15 +252,15 @@ async function load(){
       $("#source").textContent="مصدر البيانات غير مربوط";
    $("#upBar").style.width="0%";$("#downBar").style.width="0%";$("#flatBar").style.width="0%";
       $("#cards").innerHTML='<article class="scan-diagnostic"><h3>مصدر البيانات غير مربوط</h3><p>هذا السوق لا يملك حالياً مزود بيانات مفعّلاً. لن نعرض أسعاراً أو توصيات غير موثوقة.</p></article>';
-   $("#openTrades").innerHTML='<div class="empty">لا توجد بيانات صفقات متاحة لهذا السوق.</div>';
+   $("#openTrades").innerHTML='<div class="empty">'+tr("noOpenTrades")+'</div>';
    $("#openCount").textContent="—";
    $("#health").textContent="المصدر غير مربوط";
    $("#health").className="bad";
    return;
   }
-  const d=await get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(analysisTimeframe),60000);
-  if(requestedMarket!==market){pending=true;return}
-  $("#direction").textContent=d.direction_ar;$("#direction").className="direction-value "+(d.direction==="BUY"?"up":d.direction==="SELL"?"down":"neutral");
+  const d=await get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(requestedTimeframe),60000);
+  if(requestedMarket!==market||requestedTimeframe!==analysisTimeframe){pending=true;return}
+  $("#direction").textContent=d.direction==="BUY"?tr("up"):d.direction==="SELL"?tr("down"):tr("neutral");$("#direction").className="direction-value "+(d.direction==="BUY"?"up":d.direction==="SELL"?"down":"neutral");
   $("#up").textContent=d.up;$("#down").textContent=d.down;$("#flat").textContent=d.flat??0;$("#total").textContent=d.total;
   const total=Math.max(1,Number(d.total)||0);
   $("#upBar").style.width=(d.up/total*100)+"%";$("#downBar").style.width=(d.down/total*100)+"%";$("#flatBar").style.width=((d.flat||0)/total*100)+"%";
@@ -216,7 +303,32 @@ async function loadNews(){
  }catch(e){root.innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
 }
 $("#newsRefresh")?.addEventListener("click",loadNews);
+
+async function loadHomeOverview(){
+ const moversRoot=$("#homeMovers"),coverageRoot=$("#homeCoverage");
+ if(!moversRoot||!coverageRoot)return;
+ try{
+  const data=await get("/api/overview",25000);
+  $("#homeAssetCount").textContent=compact(data.eligible_assets||0);
+  $("#homeMarketCount").textContent=(data.available_markets||0)+" / "+(data.markets||[]).length;
+  $("#homeMoverCount").textContent=(data.fast_movers||[]).length;
+  $("#homeUpdated").textContent="آخر فحص · "+new Date((data.updated||Date.now()/1000)*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
+  const movers=data.fast_movers||[];
+  moversRoot.innerHTML=movers.length?movers.map((x,i)=>'<div class="home-mover-row"><span class="home-mover-rank">'+(i+1)+'</span><div class="home-mover-name"><b>'+safe(x.symbol)+'</b><small>'+safe(x.market_name)+'</small></div><div class="home-mover-price"><b>'+fmt(x.price)+'</b><small>حجم 24س '+(Number(x.volume)>0?compact(x.volume):"غير متاح")+'</small></div><b class="home-mover-change '+(Number(x.change24h)>=0?"up":"down")+'">'+pct(x.change24h)+'</b></div>').join(""):'<div class="empty">لا توجد بيانات حركة مؤكدة من المصادر المتاحة حاليًا.</div>';
+  coverageRoot.innerHTML=(data.markets||[]).map(x=>{
+   const ready=x.status==="live"||x.status==="watchlist";
+   const state=x.status==="watchlist"?"قائمة محددة":ready?"متاح":x.status==="provider_required"?"المصدر غير مربوط":"تعذر التحديث";
+   return '<a class="home-coverage-row" href="/markets/'+encodeURIComponent(x.id)+'"><span class="home-coverage-dot '+(ready?"ready":"")+'"></span><span class="home-coverage-name">'+safe(x.name)+'</span><b>'+ (ready?compact(x.eligible_assets)+" أصل · "+state:state)+'</b><span class="home-coverage-arrow">←</span></a>';
+  }).join("");
+ }catch(e){
+  moversRoot.innerHTML='<div class="empty">'+safe(e.message)+'</div>';
+  coverageRoot.innerHTML='<div class="empty">تعذر قراءة تغطية الأسواق الآن.</div>';
+ }
+}
+
 function configurePage(){
+ document.body.classList.toggle("home-page",PATH==="/");
+ document.body.classList.toggle("market-page",!!marketMatch);
  const timeframeSwitcher=$("#marketTimeframeSwitcher");if(timeframeSwitcher)timeframeSwitcher.hidden=!marketMatch;
  const adminAllowed=!$("#adminPanel").hidden;$("#adminPanel").hidden=true;
  const ids=["homeSection","homeOverview","marketSection","directionSection","cryptoGammaSection","systemSection","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection"];
@@ -224,13 +336,14 @@ function configurePage(){
  const show=(...names)=>names.forEach(id=>{const el=$("#"+id);if(el)el.hidden=false});
  if(PATH==="/"){
   hideAll();show("homeSection","marketSection","homeOverview");
-  $("#homeSection h1").innerHTML='منصة <span>الأسواق الذكية</span>';
-  $("#homeSection p").textContent="لوحة متابعة مستقلة لاتجاهات الأسواق ومصادر البيانات. التوصيات والصفقات تظهر داخل صفحة كل سوق فقط.";
+  loadHomeOverview();
+  $("#homeSection h1").innerHTML='<span>'+tr("marketHomeTitle")+'</span>';
+  $("#homeSection p").textContent=tr("marketPageDescription");
  }else if(marketMatch){
   if(!MARKET_NAMES[market]){location.replace("/");return}
   hideAll();show("homeSection","directionSection","opportunitiesSection","cards","openSection");
-  $("#homeSection h1").innerHTML='<span>'+MARKET_NAMES[market]+'</span>';
-  $("#homeSection p").textContent="صفحة مستقلة؛ بيانات واتجاهات وفرص وسجل هذا السوق فقط.";
+  $("#homeSection h1").innerHTML='<span>'+safe(marketName(market))+'</span>';
+  $("#homeSection p").textContent=tr("marketPageDescription");
  }else if(PATH.startsWith("/sections/")){
   const section=PATH.split("/").pop();
   const map={system:["systemSection"],direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["openSection"],history:["historySection"]};

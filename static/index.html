@@ -5,15 +5,15 @@
 <meta name="theme-color" content="#070b12"><title>SMART TRADING PRO | التداول الذكي</title>
 <meta name="description" content="منصة احترافية لمراقبة الأسواق والاتجاهات والفرص الفنية ببيانات عامة ومصادر واضحة.">
 <link rel="preconnect" href="https://api.binance.com"><link rel="preconnect" href="https://fapi.binance.com">
-<link rel="stylesheet" href="/static/app.css?v=20261102.direction-trades">
-<script src="/static/app.js?v=20261102.direction-trades" defer></script>
+<link rel="stylesheet" href="/static/app.css?v=20261102.clean-markets-i18n-v3">
+<script src="/static/app.js?v=20261102.clean-markets-i18n-v3" defer></script>
 </head>
 <body>
 <div class="app-shell">
 <header class="topbar">
   <button id="menuOpen" class="menu-open" type="button" aria-label="فتح القائمة" aria-expanded="false">☰ <span>القائمة</span></button>
  <a class="brand" href="/" aria-label="SMART TRADING PRO"><span class="logo">ST</span><span class="brand-copy"><b>SMART <i>TRADING PRO</i></b><small>منصة الأسواق والتحليل الذكي</small></span></a>
- <div class="top-status"><button id="topLogout" class="top-logout" type="button" hidden>خروج</button><span class="live-dot"></span><span id="health">فحص الاتصال</span><span class="top-divider"></span><span id="clock">--:--:--</span></div>
+ <div class="top-status"><button id="themeToggle" class="theme-toggle" type="button" aria-label="تغيير المظهر">☀️ نهاري</button><button id="topLogout" class="top-logout" type="button" hidden>خروج</button><span class="live-dot"></span><span id="health">فحص الاتصال</span><span class="top-divider"></span><span id="clock">--:--:--</span></div>
 </header>
 <section id="accessGate" class="access-gate" hidden>
  <div class="access-card">
@@ -68,9 +68,16 @@
   </div>
  </section>
  <section class="home-overview" id="homeOverview">
-  <a class="home-feature" href="/sections/direction"><span class="home-feature-icon">↗</span><div><small>MARKET DIRECTION</small><b>توجهات الأسواق</b><p>تابع الصعود والهبوط واتساع حركة السوق.</p></div><span class="home-arrow">←</span></a>
-  <a class="home-feature" href="/sections/history"><span class="home-feature-icon">▤</span><div><small>PERFORMANCE CENTER</small><b>مركز النتائج</b><p>راجع الصفقات المغلقة ونتائج كل سوق.</p></div><span class="home-arrow">←</span></a>
-  <a class="home-feature" href="/sections/system"><span class="home-feature-icon">⌁</span><div><small>DATA & SYSTEM</small><b>مصادر البيانات</b><p>تحقق من حالة الأسواق ومصادرها.</p></div><span class="home-arrow">←</span></a>
+  <div class="home-dashboard-head"><div><span class="kicker">GLOBAL MARKET RADAR</span><h2>رادار الأسواق العالمي</h2><p>الأصول الأسرع حركة أولاً، ثم تغطية الأسواق المتاحة.</p></div><div class="home-update"><i></i><span id="homeUpdated">بانتظار البيانات</span></div></div>
+  <div class="home-stat-grid">
+   <article class="home-stat"><small>الأصول المؤهلة</small><b id="homeAssetCount">—</b><span>بعد تطبيق شرط السيولة</span></article>
+   <article class="home-stat"><small>الأسواق المتاحة</small><b id="homeMarketCount">—</b><span>من جميع أقسام المنصة</span></article>
+   <article class="home-stat"><small>الأصول الأسرع</small><b id="homeMoverCount">—</b><span>ترتيب زخم وحركة وسيولة</span></article>
+  </div>
+  <div class="home-radar-grid">
+   <article class="home-radar-panel"><div class="home-panel-head"><div><span class="kicker">FAST MOVERS</span><h3>الأسرع حركة الآن</h3></div><span class="home-panel-tag">رصد فقط · دون توصيات</span></div><div id="homeMovers" class="home-movers-list"><div class="empty">جارٍ جلب بيانات الأسواق المتاحة...</div></div></article>
+   <article class="home-radar-panel"><div class="home-panel-head"><div><span class="kicker">MARKET COVERAGE</span><h3>تغطية الأسواق</h3></div></div><div id="homeCoverage" class="home-coverage-list"><div class="empty">جارٍ فحص مصادر الأسواق...</div></div></article>
+  </div>
  </section>
  <section class="overview-grid" id="directionSection">
   <article class="panel direction-panel">
@@ -135,7 +142,7 @@
   <div id="newsFeed" class="news-feed"><div class="empty">جارٍ تحميل الأخبار...</div></div>
   <p class="disclaimer">الأخبار من مصادر خارجية؛ تحقق من الخبر الأصلي قبل اتخاذ أي قرار مالي.</p>
  </section>
-<footer class="footer"><span class="footer-brand">SMART TRADING PRO</span><span id="source">مصدر البيانات: —</span><span>تحليل آلي · تنفيذ يدوي فقط</span></footer>
+<footer class="footer"><span class="footer-brand">SMART TRADING PRO</span><span id="source">مصدر البيانات: —</span><div class="footer-controls"><label id="footerLanguageLabel" for="languageSelect" data-i18n="language">اللغة</label><select id="languageSelect" aria-label="اختيار لغة الواجهة"><option value="auto">تلقائي</option><option value="ar">العربية</option><option value="en">English</option><option value="es">Español</option><option value="de">Deutsch</option><option value="id">Bahasa Indonesia</option><option value="pt-BR">Português (Brasil)</option><option value="tr">Türkçe</option><option value="fr">Français</option><option value="hi">हिन्दी</option></select></div><span data-i18n="manualExecution">تحليل آلي · تنفيذ يدوي فقط</span></footer>
  <p class="disclaimer">المعلومات للتحليل والمتابعة وليست ضمانًا للربح أو توصية استثمارية. درجة جودة الشروط ليست نسبة نجاح. لا ينفذ الموقع أوامر تداول آلية.</p>
 </main>
 </div>

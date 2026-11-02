@@ -9,6 +9,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      DATA_DIR: ${{ runner.temp }}/smart-trading-pro-data
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
