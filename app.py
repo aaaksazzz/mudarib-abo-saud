@@ -980,7 +980,10 @@ def market(kind):
         signals = save_new_trades(kind, signals)
         with db() as connection:
             active = [dict(row) for row in connection.execute(
-                "SELECT * FROM trades WHERE market=? AND status='OPEN' ORDER BY created_at DESC LIMIT 100", (kind,)
+                """SELECT * FROM trades
+                   WHERE market=? AND timeframe=? AND status='OPEN'
+                   ORDER BY created_at DESC LIMIT 100""",
+                (kind, timeframe)
             ).fetchall()]
         for trade in active:
             trade["current_price"] = prices.get(trade["symbol"])
