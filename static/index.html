@@ -68,9 +68,16 @@
   </div>
  </section>
  <section class="home-overview" id="homeOverview">
-  <a class="home-feature" href="/sections/direction"><span class="home-feature-icon">↗</span><div><small>MARKET DIRECTION</small><b>توجهات الأسواق</b><p>تابع الصعود والهبوط واتساع حركة السوق.</p></div><span class="home-arrow">←</span></a>
-  <a class="home-feature" href="/sections/history"><span class="home-feature-icon">▤</span><div><small>PERFORMANCE CENTER</small><b>مركز النتائج</b><p>راجع الصفقات المغلقة ونتائج كل سوق.</p></div><span class="home-arrow">←</span></a>
-  <a class="home-feature" href="/sections/system"><span class="home-feature-icon">⌁</span><div><small>DATA & SYSTEM</small><b>مصادر البيانات</b><p>تحقق من حالة الأسواق ومصادرها.</p></div><span class="home-arrow">←</span></a>
+  <div class="home-dashboard-head"><div><span class="kicker">GLOBAL MARKET RADAR</span><h2>رادار الأسواق العالمي</h2><p>الأصول الأسرع حركة أولاً، ثم تغطية الأسواق المتاحة.</p></div><div class="home-update"><i></i><span id="homeUpdated">بانتظار البيانات</span></div></div>
+  <div class="home-stat-grid">
+   <article class="home-stat"><small>الأصول المؤهلة</small><b id="homeAssetCount">—</b><span>بعد تطبيق شرط السيولة</span></article>
+   <article class="home-stat"><small>الأسواق المتاحة</small><b id="homeMarketCount">—</b><span>من جميع أقسام المنصة</span></article>
+   <article class="home-stat"><small>الأصول الأسرع</small><b id="homeMoverCount">—</b><span>ترتيب زخم وحركة وسيولة</span></article>
+  </div>
+  <div class="home-radar-grid">
+   <article class="home-radar-panel"><div class="home-panel-head"><div><span class="kicker">FAST MOVERS</span><h3>الأسرع حركة الآن</h3></div><span class="home-panel-tag">رصد فقط · دون توصيات</span></div><div id="homeMovers" class="home-movers-list"><div class="empty">جارٍ جلب بيانات الأسواق المتاحة...</div></div></article>
+   <article class="home-radar-panel"><div class="home-panel-head"><div><span class="kicker">MARKET COVERAGE</span><h3>تغطية الأسواق</h3></div></div><div id="homeCoverage" class="home-coverage-list"><div class="empty">جارٍ فحص مصادر الأسواق...</div></div></article>
+  </div>
  </section>
  <section class="overview-grid" id="directionSection">
   <article class="panel direction-panel">
