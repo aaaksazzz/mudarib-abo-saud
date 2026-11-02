@@ -457,7 +457,10 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
         if not levels:
             return reject("invalid_risk_levels")
 
-        closes = [float(row["close"]) for row in entry_rows[-2:]]
+        ranking_rows = entry_rows if timeframe == "15m" else candles(kind, item["symbol"], "15m")
+        if len(ranking_rows) < 2:
+            return reject("insufficient_15m_ranking_candles")
+        closes = [float(row["close"]) for row in ranking_rows[-2:]]
         change_tf = (closes[-1] / closes[-2] - 1) * 100 if closes[-2] else 0.0
         state_ar = {"BUY": "شراء", "STRONG_BUY": "شراء قوي",
                     "SELL": "بيع", "STRONG_SELL": "بيع قوي"}
