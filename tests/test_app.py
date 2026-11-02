@@ -592,3 +592,31 @@ def test_home_page_shows_market_radar_and_keeps_news_inside_the_site():
     assert 'await loadHomeOverview();' in js
     assert 'target="_blank"' not in js
     assert "'+safe(x.url)+'" not in js
+
+
+def test_subscription_checkout_requires_login_and_prices_months(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "membership.sqlite3")
+    module.app.config["SESSION_COOKIE_SECURE"] = False
+    monkeypatch.setattr(module, "AUTH_CONFIGURED", True)
+    monkeypatch.setattr(module, "ADMIN_EMAIL", "owner@example.test")
+    monkeypatch.setattr(module, "ADMIN_PASSWORD", "owner-password-123")
+    client = module.app.test_client()
+    assert client.get("/api/payments/options").status_code == 401
+    registered = client.post("/api/auth/register", json={
+        "email": "member@example.test", "password": "member-password-123"
+    })
+    assert registered.status_code == 201
+    order = client.post("/api/payments/orders", json={"months": 3, "network": "trc20"})
+    assert order.status_code == 201
+    assert order.json["order"]["amount_usdt"] == 90
+    assert order.json["payment"]["address"] == module.PAYMENT_WALLETS["trc20"]["address"]
+    assert order.json["payment"]["automatic_verification"] is True
+    assert client.get("/api/market/spot").status_code == 403
+    with module.db() as connection:
+        admin = connection.execute("SELECT id FROM users WHERE email=?", ("owner@example.test",)).fetchone()
+    with client.session_transaction() as session:
+        session.clear()
+        session["user_id"] = admin["id"]
+    assert client.get("/api/admin/sections").status_code == 200
+    assert client.post("/api/admin/sections", json={"section":"spot","enabled":False}).status_code == 200
+    assert client.get("/api/admin/payments").status_code == 200
