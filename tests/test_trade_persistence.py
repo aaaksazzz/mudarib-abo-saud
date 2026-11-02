@@ -91,3 +91,21 @@ class TradePersistenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_market_scan_snapshot_persists_full_results_per_market_and_timeframe(self):
+        payload = {
+            "ok": True,
+            "market": "spot",
+            "timeframe": "15m",
+            "direction": "BUY",
+            "signals": [{"symbol": "BTCUSDT", "side": "BUY", "entry": 100.0}],
+            "open_trades": [{"symbol": "BTCUSDT", "status": "OPEN"}],
+            "scan_diagnostics": {"candidates_scanned": 12},
+        }
+        app_module.save_market_scan_snapshot("spot", "15m", payload)
+        restored = app_module.load_market_scan_snapshot("spot", "15m")
+        self.assertIsNotNone(restored)
+        self.assertEqual(restored["payload"], payload)
+        self.assertGreater(restored["updated_at"], 0)
+        self.assertIsNone(app_module.load_market_scan_snapshot("spot", "1h"))
