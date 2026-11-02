@@ -764,8 +764,8 @@ def latest_news():
             if not raw_summary:
                 raw_summary = (node.findtext("{http://purl.org/rss/1.0/modules/content/}encoded") or "").strip()
             summary = html_lib.unescape(re.sub(r"<[^>]+>", " ", raw_summary))
-            summary = re.sub(r"\\s+", " ", summary).strip()
-            summary = re.sub(r"\\s*Read more\\s*$", "", summary, flags=re.I).strip()
+            summary = re.sub(r"\s+", " ", summary).strip()
+            summary = re.sub(r"\s*Read more\s*$", "", summary, flags=re.I).strip()
             if title and link.startswith(("https://", "http://")):
                 items.append({
                     "title": title, "url": link, "source": source,
