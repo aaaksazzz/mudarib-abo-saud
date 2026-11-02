@@ -1426,9 +1426,9 @@ def market(kind):
             )
         signals = []
         diagnostic_rows = [{} for _ in candidates]
-        # Signal eligibility is determined by the selected asset's two reference
-        # timeframes, not by aggregate 24h market breadth. A neutral market-wide
-        # count must not suppress individually aligned setups.
+        # The selected asset must agree on 4h + daily, and the market-wide
+        # 24h breadth is a hard side gate: up permits BUY, down permits SELL,
+        # while neutral breadth blocks new entries. 15m confirms the entry.
         with ThreadPoolExecutor(max_workers=4) as pool:
             jobs = {
                 pool.submit(analyse_candidate, kind, row, direction, diagnostic_rows[index], timeframe): index
