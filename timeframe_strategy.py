@@ -227,3 +227,22 @@ def make_trade(rows, side):
         }
     except (TypeError, ValueError, ZeroDivisionError, OverflowError):
         return None
+
+
+def assess_reversal(rows):
+    """Invert the completed-candle direction on this exact timeframe only."""
+    analysis = assess_timeframe(rows)
+    source_state = analysis.get("state")
+    reverse = {
+        "BUY": ("SELL", "SELL"),
+        "STRONG_BUY": ("SELL", "STRONG_SELL"),
+        "SELL": ("BUY", "BUY"),
+        "STRONG_SELL": ("BUY", "STRONG_BUY"),
+    }
+    if source_state not in reverse:
+        return {"confirmed": False, "reason": analysis.get("reason", "no_clear_direction"),
+                "source_state": source_state, "analysis": analysis}
+    side, trade_state = reverse[source_state]
+    return {"confirmed": True, "source_state": source_state, "side": side,
+            "trade_state": trade_state, "quality_score": analysis.get("score", 0.0),
+            "analysis": analysis, "reason": "same_timeframe_reversal"}
