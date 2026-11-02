@@ -63,7 +63,7 @@ SAVE_NEW_TRADES_LOCK = threading.Lock()
 SUBSCRIPTION_PRICES={1:30,2:60,3:90,6:180,12:360}
 PAYMENT_WALLETS={"solana":{"label":"Solana","address":"8mUuMV7WFNTsFEmGsw3t5EpTWGUzw5618Mjgh1svugaH"},"trc20":{"label":"TRC20","address":"TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6"},"binance_pay":{"label":"Binance Pay","address":"28191866"}}
 USDT_SOLANA_MINT="Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
-USDT_TRC20_CONTRACT="TXLAQ63Xg1NAzckPwKHvzw7CSEmLMEqcdj"
+USDT_TRC20_CONTRACT="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6"
 SECTION_NAMES={"spot":"Binance Spot","futures":"Binance Futures","coinm":"COIN-M","alpha":"Binance Alpha","saudi":"السوق السعودي","us":"الأسهم الأمريكية","contracts":"العقود الأمريكية","forex":"الفوركس والذهب","direction":"توجه السوق","opportunities":"فرص التداول","open-trades":"متابعة الصفقات","history":"سجل الصفقات","news":"الأخبار","blog":"المدونة"}
 
 
