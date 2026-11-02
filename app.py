@@ -413,7 +413,7 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
         return None
 
     try:
-        from timeframe_strategy import assess_timeframe, make_trade
+        from timeframe_strategy import assess_timeframe
 
         reference_rows = {
             "4h": candles(kind, item["symbol"], "4h"),
@@ -453,15 +453,24 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
                 diagnostics["entry_state"] = entry_analysis["state"]
             return reject("entry_timeframe_not_confirmed")
 
-        levels = make_trade(entry_rows, side, timeframe)
+        entry_diagnostics = {}
+        levels = analyse_liquidity_candidate(
+            entry_rows, item["price"], side, market_kind=kind,
+            diagnostics=entry_diagnostics,
+        )
         if not levels:
-            return reject("invalid_risk_levels")
+            return reject(entry_diagnostics.get("reason", "liquidity_setup_not_confirmed"))
 
         ranking_rows = entry_rows if timeframe == "15m" else candles(kind, item["symbol"], "15m")
         if len(ranking_rows) < 2:
             return reject("insufficient_15m_ranking_candles")
         closes = [float(row["close"]) for row in ranking_rows[-2:]]
         change_tf = (closes[-1] / closes[-2] - 1) * 100 if closes[-2] else 0.0
+        reference_state = (
+            "STRONG_BUY" if side == "BUY" and all(state == "STRONG_BUY" for state in states)
+            else "STRONG_SELL" if side == "SELL" and all(state == "STRONG_SELL" for state in states)
+            else side
+        )
         state_ar = {"BUY": "شراء", "STRONG_BUY": "شراء قوي",
                     "SELL": "بيع", "STRONG_SELL": "بيع قوي"}
         signal = {
@@ -471,15 +480,20 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             "fast_mover_score": item.get("fast_mover_score", 0),
             "fast_mover_rank": item.get("fast_mover_rank"),
             "timeframe": timeframe, "signal_candle_time": int(entry_rows[-1]["time"]),
-            "strategy": "4H + Daily confirmation · timeframe entry",
-            "signal_state": entry_analysis["state"],
-            "signal_state_ar": state_ar.get(entry_analysis["state"], "محايد"),
-            "quality_score": entry_analysis["score"],
-            "entry_analysis": entry_analysis,
+            "strategy": "4H + Daily direction · liquidity sweep/absorption entry",
+            "signal_state": reference_state,
+            "signal_state_ar": state_ar.get(reference_state, "محايد"),
+            "quality_score": levels["quality_score"],
+            "entry_analysis": {
+                "liquidity_event": levels.get("liquidity_event"),
+                "volume_ratio": levels.get("volume_ratio"),
+                "flow_pressure": levels.get("flow_pressure"),
+                "risk_percent": levels.get("risk_percent"),
+            },
             "reference_analysis": reference,
-            "analysis_scope": "4h_daily_confirmed",
-            "quality_label": "قوة الشروط الفنية من 100 وليست احتمال نجاح",
-            "analysis_note": "اتجاه 4 ساعات واليومي متوافق؛ تأكيد الدخول من الفريم المحدد",
+            "analysis_scope": "4h_daily_direction_plus_liquidity_entry",
+            "quality_label": "قوة شروط السيولة من 100 وليست احتمال نجاح",
+            "analysis_note": "اتجاه 4 ساعات واليومي متوافق؛ الدخول بعد سحب سيولة أو امتصاص مؤكد على الفريم المحدد",
         }
         flow = analyse_orderbook_flow(
             kind, item["symbol"], side,
