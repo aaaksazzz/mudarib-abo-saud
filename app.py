@@ -43,7 +43,7 @@ YAHOO_SYMBOLS = {
     "saudi": [x.strip().upper() for x in os.environ.get("YAHOO_SAUDI_SYMBOLS", "").split(",") if x.strip()],
 }
 SCAN_INTERVAL = "15m"
-SCAN_INTERVAL_SECONDS = 15 * 60
+SCAN_INTERVAL_SECONDS = 5 * 60
 STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "EUR"}
 CACHE = {}
 CACHE_LOCK = threading.Lock()
@@ -1241,7 +1241,6 @@ def providers():
 
 
 @app.get("/api/overview")
-@require_paid_access
 def home_overview():
 
     """Small cached cross-market snapshot; never invents unavailable market coverage."""
@@ -1324,13 +1323,9 @@ def home_overview():
 
 
 @app.get("/api/market/<kind>")
-@require_paid_access
 def market(kind):
-    requested_section=request.args.get("section") or kind
-    if current_user()["role"]!="admin":
-        for section_key in {kind,requested_section}:
-            if section_key in SECTION_NAMES and not section_enabled(section_key):
-                return jsonify({"ok":False,"error":"section_locked","message":"هذا القسم مغلق من الإدارة."}),403
+    # Public market data and scans stay available without membership or login.
+    # Paid access remains reserved for account, payment and administration routes.
 
     if kind not in BASES and kind not in ("alpha", "forex", "saudi", "us"):
         return jsonify({"ok": False, "status": "provider_required", "message": "مزود البيانات لهذا السوق غير مربوط؛ لن نعرض بيانات غير موثوقة.", "signals": []}), 503
