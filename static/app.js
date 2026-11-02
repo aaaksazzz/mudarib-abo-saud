@@ -316,9 +316,9 @@ async function loadHomeOverview(){
   const movers=data.fast_movers||[];
   moversRoot.innerHTML=movers.length?movers.map((x,i)=>'<div class="home-mover-row"><span class="home-mover-rank">'+(i+1)+'</span><div class="home-mover-name"><b>'+safe(x.symbol)+'</b><small>'+safe(x.market_name)+'</small></div><div class="home-mover-price"><b>'+fmt(x.price)+'</b><small>حجم 24س '+(Number(x.volume)>0?compact(x.volume):"غير متاح")+'</small></div><b class="home-mover-change '+(Number(x.change24h)>=0?"up":"down")+'">'+pct(x.change24h)+'</b></div>').join(""):'<div class="empty">لا توجد بيانات حركة مؤكدة من المصادر المتاحة حاليًا.</div>';
   coverageRoot.innerHTML=(data.markets||[]).map(x=>{
-   const ready=x.status==="live";
-   const state=ready?"متاح":x.status==="provider_required"?"المصدر غير مربوط":"تعذر التحديث";
-   return '<a class="home-coverage-row" href="/markets/'+encodeURIComponent(x.id)+'"><span class="home-coverage-dot '+(ready?"ready":"")+'"></span><span class="home-coverage-name">'+safe(x.name)+'</span><b>'+ (ready?compact(x.eligible_assets)+" أصل":state)+'</b><span class="home-coverage-arrow">←</span></a>';
+   const ready=x.status==="live"||x.status==="watchlist";
+   const state=x.status==="watchlist"?"قائمة محددة":ready?"متاح":x.status==="provider_required"?"المصدر غير مربوط":"تعذر التحديث";
+   return '<a class="home-coverage-row" href="/markets/'+encodeURIComponent(x.id)+'"><span class="home-coverage-dot '+(ready?"ready":"")+'"></span><span class="home-coverage-name">'+safe(x.name)+'</span><b>'+ (ready?compact(x.eligible_assets)+" أصل · "+state:state)+'</b><span class="home-coverage-arrow">←</span></a>';
   }).join("");
  }catch(e){
   moversRoot.innerHTML='<div class="empty">'+safe(e.message)+'</div>';
