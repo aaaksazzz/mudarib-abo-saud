@@ -222,7 +222,20 @@ async function load(){
    $("#health").className="bad";
    return;
   }
-  const d=await get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(requestedTimeframe),60000);
+  // Refresh direction separately; candle analysis must not block the breadth panel.
+  try{
+   const breadth=await get("/api/direction/"+requestedMarket,10000);
+   if(requestedMarket===market){
+    $("#direction").textContent=breadth.direction==="BUY"?tr("up"):breadth.direction==="SELL"?tr("down"):tr("neutral");
+    $("#direction").className="direction-value "+(breadth.direction==="BUY"?"up":breadth.direction==="SELL"?"down":"neutral");
+    $("#up").textContent=breadth.up;$("#down").textContent=breadth.down;$("#flat").textContent=breadth.flat??0;$("#total").textContent=breadth.total;
+    const breadthTotal=Math.max(1,Number(breadth.total)||0);
+    $("#upBar").style.width=(breadth.up/breadthTotal*100)+"%";
+    $("#downBar").style.width=(breadth.down/breadthTotal*100)+"%";
+    $("#flatBar").style.width=((breadth.flat||0)/breadthTotal*100)+"%";
+   }
+  }catch(directionError){console.warn("Independent direction refresh failed",directionError)}
+  const d=await get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(requestedTimeframe),30000);
   if(requestedMarket!==market||requestedTimeframe!==analysisTimeframe){pending=true;return}
   $("#direction").textContent=d.direction==="BUY"?tr("up"):d.direction==="SELL"?tr("down"):tr("neutral");$("#direction").className="direction-value "+(d.direction==="BUY"?"up":d.direction==="SELL"?"down":"neutral");
   $("#up").textContent=d.up;$("#down").textContent=d.down;$("#flat").textContent=d.flat??0;$("#total").textContent=d.total;
