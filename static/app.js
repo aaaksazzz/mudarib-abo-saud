@@ -239,7 +239,7 @@ async function load(){
   const strategyLabel={"15m":"تأكيد 4 ساعات + يومي · دخول 15 دقيقة","1h":"تأكيد 4 ساعات + يومي · دخول ساعة","4h":"تأكيد 4 ساعات + يومي · دخول 4 ساعات","1d":"تأكيد 4 ساعات + يومي · دخول يومي","1w":"تأكيد 4 ساعات + يومي · دخول أسبوعي","1M":"تأكيد 4 ساعات + يومي · دخول شهري"};
   const label=$("#activeStrategy");if(label)label.textContent=strategyLabel[analysisTimeframe]||analysisTimeframe;
   $("#health").textContent=d.snapshot_stale?"آخر اتجاه محفوظ · المصدر متوقف مؤقتاً":"متصل";
-  $("#health").className=d.snapshot_stale?"warning":"ok";
+  $("#health").className=d.snapshot_stale?"bad":"ok";
   if(d.snapshot_stale&&d.message)$("#source").textContent+=" · "+d.message;
  }catch(e){
   $("#direction").textContent="غير متاح";$("#direction").className="direction-value neutral";
