@@ -384,10 +384,8 @@ async function initializeAccess(){
  try{
   const d=await get("/api/auth/me",7000);
   user=d?.user||null;
-  if(user&&(user.is_admin||user.subscribed)){await startAuthorized(user);return;}
-  await showAccess(user?"حسابك جاهز. اختر مدة الاشتراك وأكمل الدفع لتفعيل المنصة.":"سجل الدخول أو أنشئ حساباً جديداً للبدء.",user);
-  if(user)await loadPaymentOptions();
- }catch(e){await showAccess("تعذر التحقق من الحساب. حدّث الصفحة أو حاول تسجيل الدخول.");}
+ }catch(e){console.warn("Optional account lookup failed; continuing with public market access.",e)}
+ await startAuthorized(user);
 }
 let creatingAccount=false;
 $("#authToggle").addEventListener("click",()=>{
@@ -423,7 +421,7 @@ $("#topLogout").addEventListener("click",logout);
 async function loadUserSectionAccess(){
  try{
   const d=await get("/api/access/sections",7000),sections=d.sections||{};
-  document.querySelectorAll("[data-market]").forEach(el=>{el.hidden=sections[el.dataset.market]===false});
+  // Market pages remain public; section switches cannot hide market access.
   const links={"/sections/direction":"direction","/sections/opportunities":"opportunities","/sections/open-trades":"open-trades","/sections/history":"history","/news":"news","/blog":"blog"};
   Object.entries(links).forEach(([href,key])=>{const el=document.querySelector('#siteDrawer a[href="'+href+'"]');if(el)el.hidden=sections[key]===false});
   const page=PATH.startsWith("/sections/")?PATH.split("/").pop():(PATH==="/blog"?"blog":PATH==="/news"?"news":"");
@@ -493,4 +491,4 @@ $("#siteDrawer").addEventListener("click",e=>{
 tick();setInterval(tick,1000);
 initPreferences();
 initializeAccess();
-timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load()}else if(PATH==="/")loadHomeOverview()},900000);
+timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load()}else if(PATH==="/")loadHomeOverview()},60000);
