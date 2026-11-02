@@ -15,6 +15,6 @@ jobs:
         with:
           python-version: "3.12.12"
       - run: pip install -r requirements.txt
-      - run: python -m compileall -q app.py
+      - run: python -m compileall -q app.py strategy_engine.py timeframe_strategy.py gamma_engine.py
       - run: node --check static/app.js
       - run: pytest -q
