@@ -236,15 +236,14 @@ function configurePage(){
   $("#homeSection p").textContent="لوحة متابعة مستقلة لاتجاهات الأسواق ومصادر البيانات. التوصيات والصفقات تظهر داخل صفحة كل سوق فقط.";
  }else if(marketMatch){
   if(!MARKET_NAMES[market]){location.replace("/");return}
-  hideAll();show("homeSection","directionSection","moversSection","movers","opportunitiesSection","cards","openSection");
-  show("cryptoGammaSection");
+  hideAll();show("homeSection","directionSection","opportunitiesSection","cards","openSection");
   $("#homeSection h1").innerHTML='<span>'+MARKET_NAMES[market]+'</span>';
   $("#homeSection p").textContent="صفحة مستقلة؛ بيانات واتجاهات وفرص وسجل هذا السوق فقط.";
  }else if(PATH.startsWith("/sections/")){
   const section=PATH.split("/").pop();
-  const map={system:["systemSection"],direction:["directionSection"],movers:["moversSection","movers"],opportunities:["opportunitiesSection","cards"],"open-trades":["openSection"],history:["historySection"]};
+  const map={system:["systemSection"],direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["openSection"],history:["historySection"]};
   hideAll();show("homeSection",...(map[section]||[]));
-  const titles={system:"مركز مراقبة المنصة",direction:"توجه السوق",movers:"الأصول الأكثر حركة",opportunities:"أفضل الفرص الفنية","open-trades":"متابعة الصفقات",history:"سجل النتائج"};
+  const titles={system:"مركز مراقبة المنصة",direction:"توجه السوق",opportunities:"فرص التداول","open-trades":"متابعة الصفقات",history:"سجل النتائج"};
   $("#homeSection h1").innerHTML='<span>'+safe(titles[section]||"القسم")+'</span>';
   $("#homeSection p").textContent="قسم مستقل عن الصفحة الرئيسية.";
  }else if(PATH==="/blog"){
