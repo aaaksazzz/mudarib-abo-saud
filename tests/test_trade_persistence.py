@@ -66,13 +66,6 @@ class TradePersistenceTests(unittest.TestCase):
         other_timeframe["timeframe"] = "1h"
         self.assertEqual(len(app_module.save_new_trades("spot", [other_timeframe])), 1)
 
-    def test_same_symbol_on_another_timeframe_is_independent(self):
-        self.assertEqual(len(app_module.save_new_trades("spot", [sample_signal()])), 1)
-        other_timeframe = sample_signal()
-        other_timeframe["timeframe"] = "1h"
-
-        self.assertEqual(len(app_module.save_new_trades("spot", [other_timeframe])), 1)
-
     def test_repeated_candidates_do_not_block_three_new_top_opportunities(self):
         app_module.save_new_trades("spot", [sample_signal()])
         candidates = [sample_signal()]
