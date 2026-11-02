@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from timeframe_strategy import assess_reversal, assess_timeframe, make_trade
+from timeframe_strategy import assess_signal, assess_timeframe, make_trade
 
 
 def trend_bars(direction="up", count=100):
@@ -37,17 +37,17 @@ class TimeframeStrategyTests(unittest.TestCase):
         self.assertLessEqual(result["score"], 100)
         self.assertIn(result["state"], ("BUY", "STRONG_BUY", "NEUTRAL", "SELL", "STRONG_SELL"))
 
-    def test_reverse_mapping_turns_uptrend_into_sell(self):
-        result = assess_reversal(trend_bars("up"))
-        self.assertTrue(result["confirmed"])
-        self.assertEqual(result["side"], "SELL")
-        self.assertIn(result["trade_state"], ("SELL", "STRONG_SELL"))
-
-    def test_reverse_mapping_turns_downtrend_into_buy(self):
-        result = assess_reversal(trend_bars("down"))
+    def test_uptrend_keeps_original_buy_direction(self):
+        result = assess_signal(trend_bars("up"))
         self.assertTrue(result["confirmed"])
         self.assertEqual(result["side"], "BUY")
-        self.assertIn(result["trade_state"], ("BUY", "STRONG_BUY"))
+        self.assertIn(result["state"], ("BUY", "STRONG_BUY"))
+
+    def test_downtrend_keeps_original_sell_direction(self):
+        result = assess_signal(trend_bars("down"))
+        self.assertTrue(result["confirmed"])
+        self.assertEqual(result["side"], "SELL")
+        self.assertIn(result["state"], ("SELL", "STRONG_SELL"))
 
     def test_trade_levels_follow_one_two_three_r(self):
         trade = make_trade(trend_bars("up"), "BUY", "1h")
