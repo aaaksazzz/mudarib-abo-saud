@@ -1270,9 +1270,11 @@ def home_overview():
 @app.get("/api/market/<kind>")
 @require_paid_access
 def market(kind):
-    section=request.args.get("section") or kind
-    if section in SECTION_NAMES and current_user()["role"]!="admin" and not section_enabled(section):
-        return jsonify({"ok":False,"error":"section_locked","message":"هذا القسم مغلق من الإدارة."}),403
+    requested_section=request.args.get("section") or kind
+    if current_user()["role"]!="admin":
+        for section_key in {kind,requested_section}:
+            if section_key in SECTION_NAMES and not section_enabled(section_key):
+                return jsonify({"ok":False,"error":"section_locked","message":"هذا القسم مغلق من الإدارة."}),403
 
     if kind not in BASES and kind not in ("alpha", "forex", "saudi", "us"):
         return jsonify({"ok": False, "status": "provider_required", "message": "مزود البيانات لهذا السوق غير مربوط؛ لن نعرض بيانات غير موثوقة.", "signals": []}), 503
@@ -1437,6 +1439,7 @@ def market(kind):
 
 @app.get("/api/analysis/method")
 @app.get("/api/gamma/crypto")
+@require_paid_access
 def crypto_gamma():
     """No-key local OHLCV analysis method; the legacy route remains compatible."""
     return jsonify({
