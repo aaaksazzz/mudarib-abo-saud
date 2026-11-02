@@ -482,6 +482,5 @@ def test_candidate_accepts_50_completed_candles_and_rejects_49(monkeypatch):
     diagnostics = {}
     rejected = module.analyse_candidate("spot", candidate, diagnostics=diagnostics, timeframe="15m")
     assert rejected is None
-    assert diagnostics["reason"] == "insufficient_candles"
-    assert diagnostics["candles_received"] == 49
-    assert diagnostics["candles_required"] == 50
+    assert diagnostics["reason"] == "insufficient_reference_candles"
+    assert diagnostics["reference_candles"] == {"4h": 49, "1d": 49}
