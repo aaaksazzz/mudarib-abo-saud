@@ -415,152 +415,39 @@ def candles(kind, symbol, interval):
     return rows
 
 def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timeframe="15m"):
-    """Confirm direction on 4h + daily, then validate liquidity and entry on completed 15m candles."""
-    def reject(reason):
-        if diagnostics is not None:
-            diagnostics["reason"] = reason
-        return None
+    """Compatibility adapter to the canonical HAWK QUANT v2 engine."""
+    from strategy_engine import evaluate_candidate
 
-    if timeframe != "15m":
-        return reject("strategy_15m_only")
+    symbol = str((item or {}).get("symbol", ""))
 
-    try:
-        from timeframe_strategy import assess_timeframe
+    def fetch_history(interval):
+        return candles(kind, symbol, interval)
 
-        # Higher-timeframe agreement controls BUY/SELL. The 15m chart is used
-        # for the actual liquidity trigger and ranking, never to reverse the
-        # confirmed 4h + daily direction.
-        reference_rows = {
-            "4h": candles(kind, item["symbol"], "4h"),
-            "1d": candles(kind, item["symbol"], "1d"),
-        }
-        reference = {}
-        for interval, rows in reference_rows.items():
-            if len(rows) < 35:
-                if diagnostics is not None:
-                    diagnostics["candles_" + interval] = len(rows)
-                    diagnostics["candles_required"] = 35
-                return reject("insufficient_" + interval + "_candles")
-            reference[interval] = assess_timeframe(rows)
-
-        states = {interval: result.get("state") for interval, result in reference.items()}
-        buy_states = {"BUY", "STRONG_BUY"}
-        sell_states = {"SELL", "STRONG_SELL"}
-        if all(state in buy_states for state in states.values()):
-            side = "BUY"
-        elif all(state in sell_states for state in states.values()):
-            side = "SELL"
-        else:
-            if diagnostics is not None:
-                diagnostics["reference_directions"] = states
-            return reject("higher_timeframe_conflict")
-
-        # Enforce the whole-market direction as a hard side gate as well.
-        # A down market must never create a BUY, and an up market must never
-        # create a SELL. Neutral/uncertain breadth produces no new trades.
-        if market_direction not in ("BUY", "SELL"):
-            if diagnostics is not None:
-                diagnostics["market_direction"] = market_direction
-            return reject("market_direction_neutral")
-        if side != market_direction:
-            if diagnostics is not None:
-                diagnostics["market_direction"] = market_direction
-                diagnostics["candidate_direction"] = side
-            return reject("market_direction_conflict")
-
-        reference_score = sum(float(result.get("score") or 0) for result in reference.values()) / 2
-        if reference_score < 55:
-            if diagnostics is not None:
-                diagnostics["reference_score"] = round(reference_score, 1)
-                diagnostics["reference_directions"] = states
-            return reject("weak_higher_timeframe_direction")
-
-        entry_rows = candles(kind, item["symbol"], "15m")
-        if len(entry_rows) < 35:
-            if diagnostics is not None:
-                diagnostics["candles_received"] = len(entry_rows)
-                diagnostics["candles_required"] = 35
-            return reject("insufficient_candles")
-        if diagnostics is not None:
-            diagnostics["candles_ready"] = True
-            diagnostics["reference_directions"] = states
-
-        entry_price = float(item.get("price") or entry_rows[-1]["close"])
-        entry_diagnostics = {}
-        levels = analyse_liquidity_candidate(
-            entry_rows, entry_price, side, market_kind=kind,
-            diagnostics=entry_diagnostics,
+    def analyse_liquidity(rows, price, side, market_kind, diagnostics=None):
+        return analyse_liquidity_candidate(
+            rows, price, side, market_kind=market_kind, diagnostics=diagnostics
         )
-        if not levels:
-            return reject(entry_diagnostics.get("reason", "liquidity_setup_not_confirmed"))
 
-        closes = [float(row["close"]) for row in entry_rows[-2:]]
-        change_tf = (closes[-1] / closes[-2] - 1) * 100 if closes[-2] else 0.0
-
-        flow = analyse_orderbook_flow(
-            kind, item["symbol"], side,
+    def analyse_book(side):
+        return analyse_orderbook_flow(
+            kind, symbol, side,
             lambda url, params: cached(
-                f"orderbook:{kind}:{item['symbol']}", 5,
+                f"orderbook:{kind}:{symbol}", 5,
                 lambda: fetch_json(url, params)
             ),
         )
-        # Public order-book data is only a soft confirmation, not a claim
-        # about hidden institutional activity.
-        flow_adjustment = 4 if flow.get("status") == "supportive" else (
-            -8 if flow.get("status") == "opposing" else 0
-        )
-        liquidity_score = float(levels.get("quality_score") or 0)
-        quality_score = max(0.0, min(95.0,
-            liquidity_score * 0.60 + reference_score * 0.40 + flow_adjustment
-        ))
-        state_ar = {
-            "BUY": "شراء", "STRONG_BUY": "شراء قوي",
-            "SELL": "بيع", "STRONG_SELL": "بيع قوي",
-        }
-        signal = {
-            **levels,
-            "side": side,
-            "price": entry_price,
-            "symbol": item["symbol"],
-            "change24h": item.get("change24h", 0),
-            "change_timeframe": round(change_tf, 4),
-            "volume": item.get("volume", 0),
-            "fast_mover_score": item.get("fast_mover_score", 0),
-            "fast_mover_rank": item.get("fast_mover_rank"),
-            "timeframe": "15m",
-            "signal_candle_time": int(entry_rows[-1]["time"]),
-            "strategy": "4h + daily direction agreement · 15m liquidity entry",
-            "signal_state": side,
-            "signal_state_ar": state_ar[side],
-            "quality_score": round(quality_score, 1),
-            "ranking_score": round(
-                quality_score * 0.65 + float(item.get("fast_mover_score", 0) or 0) * 0.35, 1
-            ),
-            "entry_analysis": {
-                "direction_score_4h": float(reference["4h"].get("score") or 0),
-                "direction_score_daily": float(reference["1d"].get("score") or 0),
-                "liquidity_event": levels.get("liquidity_event"),
-                "volume_ratio": levels.get("volume_ratio"),
-                "flow_pressure": levels.get("flow_pressure"),
-                "risk_percent": levels.get("risk_percent"),
-            },
-            "reference_analysis": reference,
-            "institutional_flow": flow,
-            "orderbook_context": flow.get("status", "unavailable"),
-            "orderbook_adjustment": flow_adjustment,
-            "analysis_scope": "4h_daily_direction_15m_entry",
-            "quality_label": "درجة توافق الشروط من 100 وليست احتمال نجاح",
-            "analysis_note": "اتجاه 4 ساعات واليومي يجب أن يتفقا؛ تأكيد السيولة والدخول والترتيب من شموع 15 دقيقة المكتملة.",
-        }
-        if diagnostics is not None:
-            diagnostics["reason"] = "accepted"
-            diagnostics["reference_directions"] = states
-            diagnostics["reference_score"] = round(reference_score, 1)
-        return signal
-    except requests.RequestException:
-        return reject("provider_error")
-    except (ValueError, TypeError, KeyError, IndexError, ZeroDivisionError, OverflowError):
-        return reject("analysis_error")
+
+    return evaluate_candidate(
+        market=kind,
+        item=item,
+        market_direction=market_direction,
+        fetch_candles=fetch_history,
+        liquidity_analyzer=analyse_liquidity,
+        orderbook_analyzer=analyse_book,
+        diagnostics=diagnostics,
+        timeframe=timeframe,
+    )
+
 
 @contextmanager
 def db():
