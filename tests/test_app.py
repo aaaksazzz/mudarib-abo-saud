@@ -304,7 +304,7 @@ def test_yahoo_candles_drop_forming_bar(monkeypatch):
     assert rows[0]["close"] == 11.0
 
 
-def test_public_market_access_and_admin_subscription_management(tmp_path, monkeypatch):
+def test_paid_market_access_and_admin_subscription_management(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "auth.sqlite3")
     module.app.config["SESSION_COOKIE_SECURE"] = False
     monkeypatch.setattr(module, "AUTH_CONFIGURED", True)
@@ -321,9 +321,8 @@ def test_public_market_access_and_admin_subscription_management(tmp_path, monkey
         {"symbol": "AAAUSDT", "price": 1.0, "volume": 2_000_000, "change24h": 1.0}
     ])
     monkeypatch.setattr(module, "analyse_candidate", lambda *args: None)
-    public_market = auth_client.get("/api/market/spot")
-    assert public_market.status_code == 200
-    assert public_market.json["market"] == "spot"
+    unpaid_market = auth_client.get("/api/market/spot")
+    assert unpaid_market.status_code == 403
     with module.db() as connection:
         admin = connection.execute("SELECT id FROM users WHERE email=?", ("owner@example.test",)).fetchone()
         member = connection.execute("SELECT id FROM users WHERE email=?", ("member@example.test",)).fetchone()
@@ -334,11 +333,25 @@ def test_public_market_access_and_admin_subscription_management(tmp_path, monkey
         "user_id": member["id"], "action": "grant", "days": 30
     })
     assert granted.status_code == 200
+    locked = auth_client.post("/api/admin/sections", json={"section":"spot","enabled":False})
+    assert locked.status_code == 200
+    with auth_client.session_transaction() as session:
+        session.clear()
+        session["user_id"] = member["id"]
+    assert auth_client.get("/api/market/spot").status_code == 403
+    with auth_client.session_transaction() as session:
+        session.clear()
+        session["user_id"] = admin["id"]
+    assert auth_client.post("/api/admin/sections",json={"section":"spot","enabled":True}).status_code == 200
     with auth_client.session_transaction() as session:
         session.clear()
         session["user_id"] = member["id"]
     status = auth_client.get("/api/auth/me")
     assert status.json["user"]["subscribed"] is True
+    module.CACHE.pop("spot:universe", None)
+    paid_market = auth_client.get("/api/market/spot")
+    assert paid_market.status_code == 200
+    assert paid_market.json["market"] == "spot"
     revoked = auth_client.post("/api/admin/subscription", json={
         "user_id": member["id"], "action": "revoke"
     })
@@ -592,3 +605,57 @@ def test_home_page_shows_market_radar_and_keeps_news_inside_the_site():
     assert 'await loadHomeOverview();' in js
     assert 'target="_blank"' not in js
     assert "'+safe(x.url)+'" not in js
+
+
+def test_subscription_checkout_requires_login_and_prices_months(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "membership.sqlite3")
+    module.app.config["SESSION_COOKIE_SECURE"] = False
+    monkeypatch.setattr(module, "AUTH_CONFIGURED", True)
+    monkeypatch.setattr(module, "ADMIN_EMAIL", "owner@example.test")
+    monkeypatch.setattr(module, "ADMIN_PASSWORD", "owner-password-123")
+    client = module.app.test_client()
+    assert client.get("/api/payments/options").status_code == 401
+    registered = client.post("/api/auth/register", json={
+        "email": "member@example.test", "password": "member-password-123"
+    })
+    assert registered.status_code == 201
+    order = client.post("/api/payments/orders", json={"months": 3, "network": "trc20"})
+    assert order.status_code == 201
+    assert order.json["order"]["amount_usdt"] == 90
+    assert order.json["payment"]["address"] == module.PAYMENT_WALLETS["trc20"]["address"]
+    assert order.json["payment"]["automatic_verification"] is True
+    assert client.get("/api/market/spot").status_code == 403
+    with module.db() as connection:
+        admin = connection.execute("SELECT id FROM users WHERE email=?", ("owner@example.test",)).fetchone()
+    with client.session_transaction() as session:
+        session.clear()
+        session["user_id"] = admin["id"]
+    assert client.get("/api/admin/sections").status_code == 200
+    assert client.post("/api/admin/sections", json={"section":"spot","enabled":False}).status_code == 200
+    assert client.get("/api/admin/payments").status_code == 200
+
+
+def test_confirmed_chain_payment_activates_selected_months(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "chain-payment.sqlite3")
+    module.app.config["SESSION_COOKIE_SECURE"] = False
+    monkeypatch.setattr(module, "AUTH_CONFIGURED", True)
+    monkeypatch.setattr(module, "ADMIN_EMAIL", "owner@example.test")
+    monkeypatch.setattr(module, "ADMIN_PASSWORD", "owner-password-123")
+    client = module.app.test_client()
+    client.post("/api/auth/register", json={"email":"member@example.test","password":"member-password-123"})
+    order = client.post("/api/payments/orders", json={"months":2,"network":"solana"})
+    assert order.status_code == 201
+    with module.db() as connection:
+        row = connection.execute("SELECT created_at FROM payment_orders WHERE id=?",(order.json["order"]["id"],)).fetchone()
+    monkeypatch.setattr(module,"verify_solana_transfer",lambda *_:{"confirmed":True,"amount":60,"timestamp":row["created_at"]-1})
+    rejected = client.post("/api/payments/verify",json={"order_id":order.json["order"]["id"],"tx_hash":"A"*64})
+    assert rejected.status_code == 422
+    monkeypatch.setattr(module,"verify_solana_transfer",lambda *_:{"confirmed":True,"amount":60,"timestamp":int(time.time())+1})
+    verified = client.post("/api/payments/verify",json={"order_id":order.json["order"]["id"],"tx_hash":"B"*64})
+    assert verified.status_code == 200
+    assert client.get("/api/auth/me").json["user"]["subscribed"] is True
+
+
+def test_official_tron_usdt_contract_and_receiver_addresses_decode():
+    assert module.tron_address_hex(module.USDT_TRC20_CONTRACT) == "a614f803b6fd780986a42c78ec9c7f77e6ded13c"
+    assert len(module.tron_address_hex(module.PAYMENT_WALLETS["trc20"]["address"])) == 40

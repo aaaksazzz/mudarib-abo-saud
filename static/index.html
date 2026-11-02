@@ -5,8 +5,8 @@
 <meta name="theme-color" content="#070b12"><title>SMART TRADING PRO | التداول الذكي</title>
 <meta name="description" content="منصة احترافية لمراقبة الأسواق والاتجاهات والفرص الفنية ببيانات عامة ومصادر واضحة.">
 <link rel="preconnect" href="https://api.binance.com"><link rel="preconnect" href="https://fapi.binance.com">
-<link rel="stylesheet" href="/static/app.css?v=20261102.home-radar-v1">
-<script src="/static/app.js?v=20261102.home-radar-internal-news-v1" defer></script>
+<link rel="stylesheet" href="/static/app.css?v=20261102.membership-payments-v1">
+<script src="/static/app.js?v=20261102.membership-payments-v1" defer></script>
 </head>
 <body>
 <div class="app-shell">
@@ -31,6 +31,18 @@
   <button id="authToggle" class="text-action" type="button">ليس لديك حساب؟ إنشاء حساب</button>
   <button id="authLogout" class="text-action" type="button" hidden>تسجيل الخروج</button>
   <p id="authNotice" class="auth-notice" role="status"></p>
+  <section id="subscriptionPanel" class="subscription-panel" hidden>
+   <div class="subscription-title"><span class="kicker">SMART TRADING PRO MEMBERSHIP</span><h2>اختر مدة الاشتراك</h2><p>30 دولار لكل شهر · تفعيل بعد تأكيد التحويل.</p></div>
+   <label for="planMonths">مدة الاشتراك</label><select id="planMonths"><option value="1">شهر واحد</option></select>
+   <div class="plan-amount"><small>المبلغ المطلوب</small><b id="planAmount">$30 USDT</b></div>
+   <label for="paymentNetwork">طريقة الدفع</label><select id="paymentNetwork"><option value="trc20">USDT · TRC20</option><option value="solana">USDT · Solana</option><option value="binance_pay">Binance Pay</option></select>
+   <button id="createPaymentOrder" type="button">إنشاء طلب الدفع</button>
+   <div id="paymentAddressWrap" hidden><label>عنوان / معرّف الدفع</label><div class="payment-address"><code id="paymentAddress"></code><button id="copyPaymentAddress" type="button">نسخ</button></div>
+    <div id="binancePayNote" hidden><p>تحويل Binance Pay يحتاج مراجعة الإدارة قبل التفعيل.</p><label for="binancePayReference">رقم مرجع التحويل</label><input id="binancePayReference" type="text" placeholder="أدخل رقم العملية"><button id="submitBinanceReference" type="button">إرسال المرجع للمراجعة</button></div>
+    <div id="txHashWrap" hidden><label for="txHash">رقم المعاملة (TXID / Signature)</label><input id="txHash" type="text" autocomplete="off" placeholder="الصق رقم المعاملة بعد التحويل"><button id="verifyPayment" type="button">تحقق من التحويل وفعّل الاشتراك</button></div>
+   </div>
+   <input id="activeOrderId" type="hidden"><p id="paymentNotice" class="auth-notice" role="status"></p>
+  </section>
  </div>
 </section>
 <main class="main" id="mainContent" hidden>
@@ -49,6 +61,10 @@
  <section id="adminPanel" class="panel admin-panel" hidden>
   <div class="section-heading tracker-heading"><div><span class="kicker">ADMIN CONTROL</span><h2>إدارة المشتركين</h2><p>إدارة الحسابات وتفعيل أو إلغاء الاشتراكات.</p></div><button id="adminRefresh" class="refresh-btn" type="button">تحديث الحسابات</button></div>
   <div id="adminUsers" class="admin-users"><div class="empty">جارٍ تحميل الحسابات...</div></div>
+  <div class="admin-extra-grid">
+   <section class="admin-subpanel"><div class="panel-top"><h3>طلبات الدفع</h3><button id="adminPaymentsRefresh" class="top-logout" type="button">تحديث</button></div><div id="adminPayments" class="admin-users"></div></section>
+   <section class="admin-subpanel"><div class="panel-top"><h3>قفل وفتح الأقسام</h3></div><div id="adminSections" class="admin-section-list"></div></section>
+  </div>
  </section>
  <section class="welcome" id="homeSection">
   <div><div class="eyebrow"><span class="eyebrow-line"></span> MARKET INTELLIGENCE TERMINAL</div><h1>مركز <span>الأسواق</span></h1><p>لوحة موحّدة لمراقبة الأسواق العالمية، قراءة الاتجاه، وفرص فنية بمستويات واضحة ومصادر بيانات مستقلة.</p></div>

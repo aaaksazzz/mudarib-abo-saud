@@ -227,7 +227,8 @@ async function load(){
    $("#health").className="bad";
    return;
   }
-  const d=await get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(requestedTimeframe),60000);
+  const section=PATH.startsWith("/sections/")?PATH.split("/").pop():requestedMarket;
+  const d=await get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(requestedTimeframe)+"&section="+encodeURIComponent(section),60000);
   if(requestedMarket!==market||requestedTimeframe!==analysisTimeframe){pending=true;return}
   $("#direction").textContent=d.direction==="BUY"?tr("up"):d.direction==="SELL"?tr("down"):tr("neutral");$("#direction").className="direction-value "+(d.direction==="BUY"?"up":d.direction==="SELL"?"down":"neutral");
   $("#up").textContent=d.up;$("#down").textContent=d.down;$("#flat").textContent=d.flat??0;$("#total").textContent=d.total;
@@ -352,15 +353,11 @@ document.addEventListener("visibilitychange",()=>{
 });
 function tick(){ $("#clock").textContent=new Date().toLocaleTimeString("en-GB",{hour12:false}); }
 async function showAccess(message, user=null){
- $("#mainContent").hidden=true;
- $("#accessGate").hidden=false;
- $("#topLogout").hidden=true;
- $("#authNotice").textContent=message||"";
- $("#authLogout").hidden=!user;
- $("#authToggle").hidden=!!user;
- $("#authForm").hidden=!!user;
- $("#accessTitle").textContent=user?"الاشتراك غير مفعل":"تسجيل الدخول";
- $("#accessMessage").textContent=user?"حسابك مسجل، لكن لا يوجد اشتراك نشط. تواصل مع الإدارة لتفعيل الوصول إلى الأسواق.":"أنشئ حسابًا أو سجل دخولك. الوصول إلى الأسواق للمشتركين فقط.";
+ $("#mainContent").hidden=true;$("#accessGate").hidden=false;$("#topLogout").hidden=true;
+ $("#authNotice").textContent=message||"";$("#authLogout").hidden=!user;$("#authToggle").hidden=!!user;
+ $("#authForm").hidden=!!user;$("#subscriptionPanel").hidden=!user;
+ $("#accessTitle").textContent=user?"اختر اشتراكك":"تسجيل الدخول";
+ $("#accessMessage").textContent=user?"اختر المدة والشبكة، ثم أرسل التحويل.":"أنشئ حساباً أو سجل دخولك للوصول إلى المنصة.";
 }
 async function startAuthorized(user=null){
  $("#accessGate").hidden=true;
@@ -368,24 +365,22 @@ async function startAuthorized(user=null){
  $("#topLogout").hidden=!user;
  $("#adminPanel").hidden=!(user&&user.is_admin);
  $("#drawerAdmin").hidden=!(user&&user.is_admin);
- if(user&&user.is_admin) await loadAdminUsers();
+ if(user&&user.is_admin){await loadAdminUsers();await loadAdminPayments();await loadAdminSections();}
  configurePage();
+ if(user&&!user.is_admin)await loadUserSectionAccess();
  if(marketMatch){await loadMarketStatuses();await load();}
  else if(PATH==="/"){await loadMarketStatuses();await loadHomeOverview();}
  else if(PATH.startsWith("/sections/") && ["direction","opportunities","open-trades"].includes(PATH.split("/").pop())){await loadMarketStatuses();await load();}
  else if(PATH==="/sections/history"){await loadHistoryPage();}
 }
 async function initializeAccess(){
- // Public, read-only market browsing is available without a paid subscription.
- // Keep account sign-in optional; admin tools remain protected server-side.
- let user=null;
  try{
-  const d=await get("/api/auth/me",7000);
-  user=d?.user||null;
- }catch(e){
-  console.warn("Optional account status unavailable; opening public market view.",e);
- }
- await startAuthorized(user);
+  const d=await get("/api/auth/me",7000),user=d?.user||null;
+  if(!user){await showAccess("سجل الدخول أو أنشئ حساباً للمتابعة.");return}
+  if(user.is_admin||user.subscribed){await startAuthorized(user);return}
+  await showAccess("حسابك جاهز. اختر مدة الاشتراك وأكمل الدفع لتفعيل المنصة.",user);
+  await loadPaymentOptions();
+ }catch(e){await showAccess("تعذر التحقق من الحساب. حاول تحديث الصفحة.")}
 }
 let creatingAccount=false;
 $("#authToggle").addEventListener("click",()=>{
@@ -408,7 +403,7 @@ $("#authForm").addEventListener("submit",async e=>{
   const d=await response.json();
   if(!response.ok)throw Error(d.message||"تعذر إكمال الطلب.");
   if(d.user?.is_admin || d.user?.subscribed) await startAuthorized(d.user);
-  else await showAccess("تم إنشاء الحساب بنجاح. الاشتراك يحتاج موافقة الأدمن.",d.user);
+  else {await showAccess("تم إنشاء الحساب. اختر الباقة وأكمل الدفع.",d.user);await loadPaymentOptions();}
  }catch(err){$("#authNotice").textContent=err.message}
  finally{button.disabled=false}
 });
@@ -418,6 +413,195 @@ async function logout(){
 }
 $("#authLogout").addEventListener("click",logout);
 $("#topLogout").addEventListener("click",logout);
+
+
+async function loadUserSectionAccess(){
+ try{
+  const d=await get("/api/access/sections",7000),sections=d.sections||{};
+  const marketKeys=["spot","futures","coinm","alpha","saudi","us","contracts","forex"];
+  document.querySelectorAll("[data-market]").forEach(el=>{el.hidden=sections[el.dataset.market]===false});
+  const links={"/sections/direction":"direction","/sections/opportunities":"opportunities","/sections/open-trades":"open-trades","/sections/history":"history","/news":"news","/blog":"blog"};
+  Object.entries(links).forEach(([href,key])=>{const el=document.querySelector('#siteDrawer a[href="'+href+'"]');if(el)el.hidden=sections[key]===false});
+  const page=PATH.startsWith("/sections/")?PATH.split("/").pop():(PATH==="/blog"?"blog":PATH==="/news"?"news":"");
+  if(page&&sections[page]===false){
+   const ids={direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["opportunitiesSection","cards","openSection"],history:["historySection"],blog:["blogSection"],news:["newsSection"]};
+   (ids[page]||[]).forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
+   $("#homeSection p").textContent="هذا القسم مغلق حالياً من إدارة المنصة.";
+  }
+ }catch(e){console.warn("Section permissions unavailable",e)}
+}
+
+async function loadPaymentOptions(){
+ try{
+  const d=await get("/api/payments/options",7000);
+  $("#planMonths").innerHTML=Object.entries(d.prices).map(([m,p])=>'<option value="'+m+'">'+m+' '+(Number(m)===1?'شهر':'أشهر')+' — 
+ try{
+  const d=await get("/api/admin/users",10000);
+  const root=$("#adminUsers");
+  if(!d.users.length){root.innerHTML='<div class="empty">لا توجد حسابات بعد.</div>';return}
+  root.innerHTML=d.users.map(u=>{
+   const expiry=u.subscription_expires_at?new Date(u.subscription_expires_at*1000).toLocaleDateString("ar-SA"):"—";
+   const status=u.role==="admin"?"أدمن":u.subscribed?"مشترك حتى "+expiry:"غير مشترك";
+   const actions=u.role==="admin"?"":'<div class="admin-actions"><button data-admin-action="grant" data-days="30" data-user="'+u.id+'">شهر</button><button data-admin-action="grant" data-days="60" data-user="'+u.id+'">شهرين</button><button data-admin-action="grant" data-days="90" data-user="'+u.id+'">3 أشهر</button><button data-admin-action="grant" data-days="180" data-user="'+u.id+'">6 أشهر</button><button data-admin-action="grant" data-days="365" data-user="'+u.id+'">سنة</button><button class="revoke" data-admin-action="revoke" data-user="'+u.id+'">إلغاء</button></div>';
+   return '<article class="admin-user"><div><b>'+safe(u.email)+'</b><small>رقم الحساب: '+u.id+' · '+status+'</small></div>'+actions+'</article>';
+  }).join("");
+ }catch(e){$("#adminUsers").innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
+}
+$("#adminRefresh").addEventListener("click",loadAdminUsers);
+$("#adminUsers").addEventListener("click",async e=>{
+ const b=e.target.closest("[data-admin-action]");if(!b)return;
+ b.disabled=true;
+ try{
+  const response=await fetch("/api/admin/subscription",{
+   method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({user_id:Number(b.dataset.user),action:b.dataset.adminAction,days:Number(b.dataset.days||0)})
+  });
+  const d=await response.json();if(!response.ok)throw Error(d.message||"تعذر تعديل الاشتراك.");
+  await loadAdminUsers();
+ }catch(err){alert(err.message);b.disabled=false}
+});
+
+function closeDrawer(){
+ const drawer=$("#siteDrawer"),backdrop=$("#drawerBackdrop"),open=$("#menuOpen");
+ drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true");
+ backdrop.hidden=true;open.setAttribute("aria-expanded","false");
+}
+$("#menuOpen").addEventListener("click",()=>{
+ const drawer=$("#siteDrawer"),backdrop=$("#drawerBackdrop"),open=$("#menuOpen");
+ drawer.classList.add("open");drawer.setAttribute("aria-hidden","false");
+ backdrop.hidden=false;open.setAttribute("aria-expanded","true");
+});
+$("#menuClose").addEventListener("click",closeDrawer);
+$("#drawerBackdrop").addEventListener("click",closeDrawer);
+$("#siteDrawer").addEventListener("click",e=>{
+ const link=e.target.closest("a");if(!link)return;
+ closeDrawer();
+});
+
+tick();setInterval(tick,1000);
+initPreferences();
+initializeAccess();
+timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load()}else if(PATH==="/")loadHomeOverview()},60000);
++p+'</option>').join("");
+  $("#paymentNetwork").innerHTML='<option value="trc20">USDT · TRC20</option><option value="solana">USDT · Solana</option><option value="binance_pay">Binance Pay · مراجعة الإدارة</option>';
+  updatePlanAmount();
+ }catch(e){$("#paymentNotice").textContent=e.message}
+}
+function updatePlanAmount(){const p={1:30,2:60,3:90,6:180,12:360};$("#planAmount").textContent="$"+(p[Number($("#planMonths").value)]||30)+" USDT"}
+$("#planMonths").addEventListener("change",updatePlanAmount);
+$("#createPaymentOrder").addEventListener("click",async()=>{
+ const b=$("#createPaymentOrder");b.disabled=true;
+ try{
+  const r=await fetch("/api/payments/orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({months:Number($("#planMonths").value),network:$("#paymentNetwork").value})});
+  const d=await r.json();if(!r.ok)throw Error(d.message||"تعذر إنشاء الطلب.");
+  $("#activeOrderId").value=d.order.id;$("#paymentAddress").textContent=d.payment.address;
+  $("#paymentAddressWrap").hidden=false;$("#txHashWrap").hidden=!d.payment.automatic_verification;
+  $("#binancePayNote").hidden=d.payment.automatic_verification;
+  $("#paymentNotice").textContent="طلب #"+d.order.id+" · "+d.order.months+" شهر · $"+d.order.amount_usdt+" USDT";
+ }catch(e){$("#paymentNotice").textContent=e.message}finally{b.disabled=false}
+});
+$("#copyPaymentAddress").addEventListener("click",async()=>{
+ try{await navigator.clipboard.writeText($("#paymentAddress").textContent);$("#paymentNotice").textContent="تم نسخ عنوان الدفع."}
+ catch(e){$("#paymentNotice").textContent="انسخ العنوان يدوياً."}
+});
+$("#submitBinanceReference").addEventListener("click",async()=>{
+ const b=$("#submitBinanceReference");b.disabled=true;
+ try{
+  const r=await fetch("/api/payments/reference",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_id:Number($("#activeOrderId").value),reference:$("#binancePayReference").value.trim()})});
+  const d=await r.json();if(!r.ok)throw Error(d.message||"تعذر إرسال المرجع.");
+  $("#paymentNotice").textContent=d.message;
+ }catch(e){$("#paymentNotice").textContent=e.message}finally{b.disabled=false}
+});
+$("#verifyPayment").addEventListener("click",async()=>{
+ const b=$("#verifyPayment");b.disabled=true;
+ try{
+  const r=await fetch("/api/payments/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_id:Number($("#activeOrderId").value),tx_hash:$("#txHash").value.trim()})});
+  const d=await r.json();if(!r.ok)throw Error(d.message||"لم يتم تأكيد التحويل.");
+  $("#paymentNotice").textContent=d.message;setTimeout(()=>location.reload(),700);
+ }catch(e){$("#paymentNotice").textContent=e.message}finally{b.disabled=false}
+});
+async function loadAdminPayments(){
+ try{
+  const d=await get("/api/admin/payments",10000);
+  $("#adminPayments").innerHTML=d.payments.length?d.payments.map(p=>{
+   const status=p.status==="pending"?"بانتظار التحقق":p.status==="paid"?"مدفوع":"مرفوض";
+   const actions=p.network==="binance_pay"&&p.status==="pending"?'<button data-payment-action="approve" data-order="'+p.id+'">تأكيد الدفع</button><button class="revoke" data-payment-action="reject" data-order="'+p.id+'">رفض</button>':"";
+   return '<article class="admin-user"><div><b>'+safe(p.email)+'</b><small>طلب #'+p.id+' · '+p.months+' شهر · 
+ try{
+  const d=await get("/api/admin/users",10000);
+  const root=$("#adminUsers");
+  if(!d.users.length){root.innerHTML='<div class="empty">لا توجد حسابات بعد.</div>';return}
+  root.innerHTML=d.users.map(u=>{
+   const expiry=u.subscription_expires_at?new Date(u.subscription_expires_at*1000).toLocaleDateString("ar-SA"):"—";
+   const status=u.role==="admin"?"أدمن":u.subscribed?"مشترك حتى "+expiry:"غير مشترك";
+   const actions=u.role==="admin"?"":'<div class="admin-actions"><button data-admin-action="grant" data-days="30" data-user="'+u.id+'">شهر</button><button data-admin-action="grant" data-days="60" data-user="'+u.id+'">شهرين</button><button data-admin-action="grant" data-days="90" data-user="'+u.id+'">3 أشهر</button><button data-admin-action="grant" data-days="180" data-user="'+u.id+'">6 أشهر</button><button data-admin-action="grant" data-days="365" data-user="'+u.id+'">سنة</button><button class="revoke" data-admin-action="revoke" data-user="'+u.id+'">إلغاء</button></div>';
+   return '<article class="admin-user"><div><b>'+safe(u.email)+'</b><small>رقم الحساب: '+u.id+' · '+status+'</small></div>'+actions+'</article>';
+  }).join("");
+ }catch(e){$("#adminUsers").innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
+}
+$("#adminRefresh").addEventListener("click",loadAdminUsers);
+$("#adminUsers").addEventListener("click",async e=>{
+ const b=e.target.closest("[data-admin-action]");if(!b)return;
+ b.disabled=true;
+ try{
+  const response=await fetch("/api/admin/subscription",{
+   method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({user_id:Number(b.dataset.user),action:b.dataset.adminAction,days:Number(b.dataset.days||0)})
+  });
+  const d=await response.json();if(!response.ok)throw Error(d.message||"تعذر تعديل الاشتراك.");
+  await loadAdminUsers();
+ }catch(err){alert(err.message);b.disabled=false}
+});
+
+function closeDrawer(){
+ const drawer=$("#siteDrawer"),backdrop=$("#drawerBackdrop"),open=$("#menuOpen");
+ drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true");
+ backdrop.hidden=true;open.setAttribute("aria-expanded","false");
+}
+$("#menuOpen").addEventListener("click",()=>{
+ const drawer=$("#siteDrawer"),backdrop=$("#drawerBackdrop"),open=$("#menuOpen");
+ drawer.classList.add("open");drawer.setAttribute("aria-hidden","false");
+ backdrop.hidden=false;open.setAttribute("aria-expanded","true");
+});
+$("#menuClose").addEventListener("click",closeDrawer);
+$("#drawerBackdrop").addEventListener("click",closeDrawer);
+$("#siteDrawer").addEventListener("click",e=>{
+ const link=e.target.closest("a");if(!link)return;
+ closeDrawer();
+});
+
+tick();setInterval(tick,1000);
+initPreferences();
+initializeAccess();
+timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load()}else if(PATH==="/")loadHomeOverview()},60000);
++p.amount_usdt+' · '+safe(p.network)+' · '+status+(p.note?' · '+safe(p.note):'')+'</small></div><div class="admin-actions">'+actions+'</div></article>';
+  }).join(""):'<div class="empty">لا توجد طلبات دفع.</div>';
+ }catch(e){$("#adminPayments").innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
+}
+async function loadAdminSections(){
+ try{
+  const d=await get("/api/admin/sections",10000);
+  $("#adminSections").innerHTML=d.sections.map(s=>'<label class="section-lock-row"><span>'+safe(s.name)+'</span><input type="checkbox" data-section="'+safe(s.id)+'" '+(s.enabled?'checked':'')+'><small>'+(s.enabled?'مفتوح':'مغلق')+'</small></label>').join("");
+ }catch(e){$("#adminSections").innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
+}
+$("#adminPaymentsRefresh").addEventListener("click",loadAdminPayments);
+$("#adminSections").addEventListener("change",async e=>{
+ const i=e.target.closest("[data-section]");if(!i)return;
+ try{
+  const r=await fetch("/api/admin/sections",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({section:i.dataset.section,enabled:i.checked})});
+  const d=await r.json();if(!r.ok)throw Error(d.message||"تعذر تحديث القسم.");
+  i.nextElementSibling.textContent=i.checked?"مفتوح":"مغلق";
+ }catch(err){i.checked=!i.checked;alert(err.message)}
+});
+$("#adminPayments").addEventListener("click",async e=>{
+ const b=e.target.closest("[data-payment-action]");if(!b)return;b.disabled=true;
+ try{
+  const r=await fetch("/api/admin/payments/action",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_id:Number(b.dataset.order),action:b.dataset.paymentAction})});
+  const d=await r.json();if(!r.ok)throw Error(d.message||"تعذر معالجة الدفع.");
+  await loadAdminPayments();await loadAdminUsers();
+ }catch(err){alert(err.message);b.disabled=false}
+});
+
 async function loadAdminUsers(){
  try{
   const d=await get("/api/admin/users",10000);
