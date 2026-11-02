@@ -16,6 +16,7 @@ from gamma_engine import analyse_liquidity_candidate
 from market_ranking import rank_market_assets
 from institutional_flow import analyse_orderbook_flow
 from scan_rotation import select_priority_scan_batch
+from strategy_engine import rank_opportunities
 
 try:
     import yfinance as yf
@@ -437,16 +438,21 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             ),
         )
 
-    return evaluate_candidate(
-        market=kind,
+    try:
+        return evaluate_candidate(
+            market=kind,
         item=item,
         market_direction=market_direction,
         fetch_candles=fetch_history,
         liquidity_analyzer=analyse_liquidity,
         orderbook_analyzer=analyse_book,
         diagnostics=diagnostics,
-        timeframe=timeframe,
-    )
+            timeframe=timeframe,
+        )
+    except requests.RequestException:
+        if diagnostics is not None:
+            diagnostics["reason"] = "provider_error"
+        return None
 
 
 @contextmanager
@@ -1337,14 +1343,7 @@ def market(kind):
         for item in diagnostic_rows:
             reason = item.get("reason", "unknown")
             rejection_counts[reason] = rejection_counts.get(reason, 0) + 1
-        for row in signals:
-            row["ranking_score"] = round(
-                row["quality_score"] * 0.65 + float(row.get("fast_mover_score", 0) or 0) * 0.35, 1
-            )
-        signals.sort(key=lambda row: (
-            row.get("change_timeframe", 0) if row.get("side") == "BUY" else -row.get("change_timeframe", 0),
-            row["quality_score"], row["ranking_score"],
-        ), reverse=True)
+        signals = rank_opportunities(signals, limit=len(signals))
         # Only show opportunities that were actually saved. Repeated scans of
         # the same symbol/timeframe stay in the position tracker, not as fresh cards.
         signals = save_new_trades(kind, signals)
@@ -1397,12 +1396,13 @@ def market(kind):
                 "institutional_flow": {"status": "unavailable"},
                 "persisted": True,
             }
-        signals = list(display_by_key.values())[:3]
+        signals = rank_opportunities(list(display_by_key.values()), limit=3)
         response_payload = {
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": timeframe,
             "market_direction_basis": "24h_breadth_hard_gate",
             "trade_direction_basis": "4h_and_daily_agreement_then_15m_liquidity_entry",
+            "strategy_version": "hawk-quant-v2",
             "movers": movers, "fast_movers": fast_movers,
             "fast_mover_method": "50% زخم 24س + 30% نطاق الحركة + 20% السيولة النسبية؛ أوزان الحقول المتاحة فقط",
             "signals": signals, "open_trades": active,
@@ -1462,7 +1462,7 @@ def market(kind):
                     "movers": [], "fast_movers": [],
                     "scan_diagnostics": {"universe_size": snapshot["total"], "candidates_scanned": 0, "rejected_by_reason": {}},
                     "updated": snapshot["updated_at"], "snapshot_stale": True,
-                    "source": snapshot["source"], "strategy": "15m direction + liquidity + momentum · 15m entry",
+                    "source": snapshot["source"], "strategy": "HAWK QUANT PRO · 4h + daily · 15m liquidity entry",
                     "message": "تعذر تحديث المصدر؛ نعرض آخر اتجاه وصفقات محفوظة دون اختلاق بيانات جديدة."
                 })
         except sqlite3.Error:
