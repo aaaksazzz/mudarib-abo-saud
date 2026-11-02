@@ -206,13 +206,20 @@ document.querySelectorAll("[data-timeframe]").forEach(button=>button.addEventLis
  const url=new URL(location.href);url.searchParams.set("timeframe",next);history.replaceState({}, "", url);
  load();
 }));
+let newsItems=[];
+function openNewsArticle(index){
+ const item=newsItems[index];const reader=$("#newsReader");if(!item||!reader)return;
+ reader.innerHTML='<div class="news-reader-head"><div><small>'+safe(item.source||"مصدر خارجي")+' · '+safe(item.published||"")+'</small><h2>'+safe(item.title)+'</h2></div><button type="button" class="news-reader-close" data-news-close aria-label="إغلاق">×</button></div><div class="news-reader-content"><span class="kicker">موجز الخبر</span><p>'+safe(item.summary||"لم يرفق المصدر وصفًا تفصيليًا لهذا الخبر. يمكنك قراءة التفاصيل من المصدر الأصلي عبر الرابط أدناه.")+'</p><p class="news-reader-note">هذا موجز النص الذي أتاحه موجز الأخبار، وليس إعادة نشر للمقال الصحفي الكامل.</p><a class="news-source-link" href="'+safe(item.url)+'" target="_blank" rel="noopener noreferrer">فتح المقال الأصلي لدى '+safe(item.source||"المصدر")+' ↗</a></div>';
+ reader.hidden=false;reader.scrollIntoView({behavior:"smooth",block:"start"});
+}
 async function loadNews(){
  const root=$("#newsFeed");if(!root)return;
- root.innerHTML='<div class="empty">جارٍ جلب آخر العناوين...</div>';
+ root.innerHTML='<div class="empty">جارٍ جلب الأخبار...</div>';
  try{
-  const d=await get("/api/news",10000);
-  if(!d.items?.length){root.innerHTML='<div class="empty">'+safe(d.error||"لا توجد عناوين متاحة الآن.")+'</div>';return}
-  root.innerHTML=d.items.map(x=>'<article class="news-item"><div><small>'+safe(x.source||"مصدر خارجي")+' · '+safe(x.published||"")+'</small><h3><a href="'+safe(x.url)+'" target="_blank" rel="noopener noreferrer">'+safe(x.title)+'</a></h3></div><span class="news-arrow">↗</span></article>').join("");
+  const d=await get("/api/news",10000);newsItems=Array.isArray(d.items)?d.items:[];
+  if(!newsItems.length){root.innerHTML='<div class="empty">'+safe(d.error||"لا توجد عناوين متاحة الآن.")+'</div>';return}
+  root.innerHTML=newsItems.map((x,i)=>'<article class="news-item"><div><small>'+safe(x.source||"مصدر خارجي")+' · '+safe(x.published||"")+'</small><h3><button type="button" class="news-open" data-news-index="'+i+'">'+safe(x.title)+'</button></h3><p>'+safe(x.summary||"افتح موجز الخبر لعرض التفاصيل المتاحة.")+'</p><button type="button" class="news-read" data-news-index="'+i+'">اقرأ داخل المنصة <span>←</span></button></div><span class="news-arrow">⌄</span></article>').join("");
+  if(!root.dataset.readerBound){$("#newsSection")?.addEventListener("click",e=>{const close=e.target.closest("[data-news-close]");if(close){const reader=$("#newsReader");if(reader)reader.hidden=true;return}const trigger=e.target.closest("[data-news-index]");if(trigger)openNewsArticle(Number(trigger.dataset.newsIndex))});root.dataset.readerBound="1"}
  }catch(e){root.innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
 }
 $("#newsRefresh")?.addEventListener("click",loadNews);

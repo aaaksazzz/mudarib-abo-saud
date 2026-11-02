@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from functools import wraps
 import re
+import html as html_lib
 import xml.etree.ElementTree as ET
 
 import requests
@@ -747,18 +748,31 @@ def editorial_page():
 @app.get("/api/news")
 def latest_news():
     def load_news():
-        url = "https://news.google.com/rss/search?q=markets+crypto+stocks+forex&hl=ar&gl=SA&ceid=SA:ar"
-        response = requests.get(url, timeout=(3.5, 7), headers={"User-Agent": "SmartTradingPro/2.0"})
+        feed_url = "https://news.google.com/rss/search?q=markets+crypto+stocks+forex&hl=ar&gl=SA&ceid=SA:ar"
+        response = requests.get(feed_url, timeout=(3.5, 7), headers={"User-Agent": "SmartTradingPro/2.0"})
         response.raise_for_status()
         root = ET.fromstring(response.content)
         items = []
         for node in root.findall("./channel/item")[:20]:
             title = (node.findtext("title") or "").strip()
             link = (node.findtext("link") or "").strip()
-            source = (node.findtext("source") or "Google News").strip()
+            source_node = node.find("source")
+            source = ((source_node.text if source_node is not None else None) or "Google News").strip()
+            source_url = (source_node.attrib.get("url", "") if source_node is not None else "")
             published = (node.findtext("pubDate") or "").strip()
+            raw_summary = (node.findtext("description") or "").strip()
+            if not raw_summary:
+                raw_summary = (node.findtext("{http://purl.org/rss/1.0/modules/content/}encoded") or "").strip()
+            summary = html_lib.unescape(re.sub(r"<[^>]+>", " ", raw_summary))
+            summary = re.sub(r"\s+", " ", summary).strip()
+            summary = re.sub(r"\s*Read more\s*$", "", summary, flags=re.I).strip()
             if title and link.startswith(("https://", "http://")):
-                items.append({"title": title, "url": link, "source": source, "published": published})
+                items.append({
+                    "title": title, "url": link, "source": source,
+                    "source_url": source_url, "published": published,
+                    "summary": summary[:1800],
+                    "has_summary": bool(summary)
+                })
         return items
     try:
         items = cached("editorial:news:ar", 300, load_news)
