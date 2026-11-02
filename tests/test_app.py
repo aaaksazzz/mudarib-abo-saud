@@ -55,6 +55,16 @@ def test_unconfigured_markets_are_not_fabricated(tmp_path, monkeypatch):
     assert response.json["status"] == "provider_required"
     assert response.json["signals"] == []
 
+def test_market_strategy_catalog_is_explicit_and_marks_unavailable_contracts():
+    response = client.get("/api/strategies")
+    assert response.status_code == 200
+    rows = {row["market"]: row for row in response.json["items"]}
+    assert len(rows) == 8
+    assert rows["futures"]["strategy"] != rows["coinm"]["strategy"]
+    assert rows["contracts"]["status"] == "provider_required"
+    assert rows["futures"]["validation"] == "not_backtested_no_profitability_claim"
+
+
 def test_market_list_is_explicit():
     response = client.get("/api/markets")
     assert response.status_code == 200
@@ -483,6 +493,10 @@ def test_coinm_uses_contract_status_field(monkeypatch):
 
 def test_candidate_uses_only_15m_for_direction_and_entry(monkeypatch):
     import timeframe_strategy
+    monkeypatch.setattr(module, "evaluate_market_strategy", lambda kind, rows, price=None: {
+        "confirmed": True, "side": "SELL", "strategy": "test_market_strategy",
+        "reason": "test_setup", "quality_score": 75.0,
+    })
     bars = [{"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5,
              "volume": 1000.0, "time": i * 900000} for i in range(35)]
     candle_calls = []
@@ -566,7 +580,7 @@ def test_market_page_does_not_crash_when_optional_refresh_button_is_absent():
     js = (root / "static" / "app.js").read_text(encoding="utf-8")
     html = (root / "static" / "index.html").read_text(encoding="utf-8")
     assert 'const refreshButton=$("#refresh");if(refreshButton)refreshButton.hidden=true;' in js
-    assert 'app.js?v=20261102.market-init-hotfix1' in html
+    assert 'app.js?v=20261102.market-strategy2' in html
 
 def test_market_direction_and_open_trades_are_persisted(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "persistent-market-state.sqlite3")

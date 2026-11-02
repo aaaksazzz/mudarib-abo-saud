@@ -118,3 +118,42 @@ def assess_signal(rows):
         "quality_score": analysis["score"], "analysis": analysis,
         "reason": "completed_ohlcv_direction",
     }
+
+
+
+def make_trade(rows, side, timeframe="15m"):
+    """Compatibility risk model: ATR-buffered structure stop and 1R/2R/3R targets."""
+    if side not in ("BUY", "SELL"):
+        return None
+    bars = _normalise(rows)
+    if len(bars) < 35:
+        return None
+    confirmation = assess_signal(rows)
+    if not confirmation.get("confirmed") or confirmation.get("side") != side:
+        return None
+    recent = bars[-15:]
+    true_ranges = []
+    for index, bar in enumerate(recent):
+        previous_close = bars[-16 + index]["close"]
+        true_ranges.append(max(
+            bar["high"] - bar["low"],
+            abs(bar["high"] - previous_close),
+            abs(bar["low"] - previous_close),
+        ))
+    atr = mean(true_ranges)
+    entry = bars[-1]["close"]
+    buffer = max(atr * 0.12, entry * 0.0005)
+    stop = min(bar["low"] for bar in recent) - buffer if side == "BUY" else max(
+        bar["high"] for bar in recent
+    ) + buffer
+    risk = entry - stop if side == "BUY" else stop - entry
+    if risk <= 0 or risk / entry > 0.045:
+        return None
+    sign = 1 if side == "BUY" else -1
+    return {
+        "side": side, "timeframe": timeframe, "entry": entry, "stop_loss": stop,
+        "tp1": entry + sign * risk, "tp2": entry + sign * risk * 2,
+        "tp3": entry + sign * risk * 3,
+        "risk_percent": round(risk / entry * 100, 3),
+        "risk_per_unit": risk, "target_method": "1R_2R_3R",
+    }

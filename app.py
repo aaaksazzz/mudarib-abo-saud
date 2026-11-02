@@ -16,6 +16,7 @@ from gamma_engine import analyse_liquidity_candidate
 from market_ranking import rank_market_assets
 from institutional_flow import analyse_orderbook_flow
 from scan_rotation import select_priority_scan_batch
+from market_strategy_engine import MARKET_STRATEGIES, evaluate_market_strategy
 
 try:
     import yfinance as yf
@@ -414,6 +415,40 @@ def candles(kind, symbol, interval):
     rows.sort(key=lambda row: row["time"])
     return rows
 
+def perpetual_market_context(kind):
+    """Read Binance mark/index premium and latest funding for active perpetuals."""
+    if kind not in ("futures", "coinm"):
+        return {}
+    path = "/fapi/v1/premiumIndex" if kind == "futures" else "/dapi/v1/premiumIndex"
+    payload = cached(
+        f"{kind}:premium-index-context", 30,
+        lambda: fetch_json(BASES[kind] + path)
+    )
+    rows = payload if isinstance(payload, list) else [payload]
+    now_ms = int(time.time() * 1000)
+    output = {}
+    for row in rows:
+        if not isinstance(row, dict) or not row.get("symbol"):
+            continue
+        try:
+            mark = float(row.get("markPrice") or 0)
+            index = float(row.get("indexPrice") or 0)
+            funding = float(row.get("lastFundingRate"))
+            stamp = int(row.get("time") or now_ms)
+            if mark <= 0 or index <= 0 or now_ms - stamp > 120_000:
+                continue
+            output[row["symbol"]] = {
+                "basis_percent": (mark / index - 1.0) * 100,
+                "funding_rate": funding,
+                "time": stamp,
+            }
+        except (TypeError, ValueError, OverflowError, ZeroDivisionError):
+            continue
+    if not output:
+        raise requests.RequestException("Binance returned no fresh mark/index/funding context")
+    return output
+
+
 def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timeframe="15m"):
     """Analyse direction, liquidity and entry exclusively from completed 15m candles."""
     def reject(reason):
@@ -456,6 +491,22 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
                 diagnostics["direction_score"] = direction_score
             return reject("weak_15m_direction")
 
+        # Each market now has its own setup gate. A shared liquidity engine may
+        # calculate risk levels only after the market-specific rule confirms.
+        market_context = {}
+        if kind in ("futures", "coinm"):
+            market_context = perpetual_market_context(kind).get(item["symbol"], {})
+        strategy_result = evaluate_market_strategy(kind, entry_rows, item.get("price"), market_context)
+        if diagnostics is not None:
+            diagnostics["market_strategy"] = strategy_result.get("strategy")
+            diagnostics["market_strategy_reason"] = strategy_result.get("reason")
+        if not strategy_result.get("confirmed"):
+            return reject(strategy_result.get("reason", "market_strategy_not_confirmed"))
+        side = strategy_result.get("side")
+        expected_side = "BUY" if state in buy_states else "SELL"
+        if side != expected_side:
+            return reject("market_strategy_direction_conflict")
+
         entry_price = float(item.get("price") or entry_rows[-1]["close"])
         entry_diagnostics = {}
         levels = analyse_liquidity_candidate(
@@ -481,8 +532,10 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             -8 if flow.get("status") == "opposing" else 0
         )
         liquidity_score = float(levels.get("quality_score") or 0)
+        strategy_score = float(strategy_result.get("quality_score") or direction_score)
         quality_score = max(0.0, min(95.0,
-            liquidity_score * 0.60 + direction_score * 0.40 + flow_adjustment
+            liquidity_score * 0.45 + direction_score * 0.25
+            + strategy_score * 0.30 + flow_adjustment
         ))
         state_ar = {
             "BUY": "شراء", "STRONG_BUY": "شراء قوي",
@@ -500,7 +553,10 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             "fast_mover_rank": item.get("fast_mover_rank"),
             "timeframe": "15m",
             "signal_candle_time": int(entry_rows[-1]["time"]),
-            "strategy": "15m direction + liquidity sweep/absorption + momentum/volume",
+            "strategy": strategy_result.get("strategy"),
+            "strategy_label": {"spot": "اختراق اتجاه صاعد بحجم نسبي", "futures": "استمرار الاتجاه والزخم", "coinm": "انعكاس بعد سحب السيولة", "alpha": "اختراق زخم وحجم مشدد", "saudi": "اختراق الانضغاط السعري", "us": "استعادة الاتجاه مع الحجم", "forex": "اختراق نطاق الحركة", "contracts": "غير متاح لغياب مزود البيانات"}.get(kind, strategy_result.get("strategy")),
+            "strategy_reason": strategy_result.get("reason"),
+            "strategy_metrics": {key: strategy_result.get(key) for key in ("volume_ratio", "momentum_percent", "structure", "basis_percent", "funding_rate")},
             "signal_state": state,
             "signal_state_ar": state_ar.get(state, "محايد"),
             "quality_score": round(quality_score, 1),
@@ -509,6 +565,8 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             ),
             "entry_analysis": {
                 "direction_score_15m": direction_score,
+                "market_strategy_score": strategy_result.get("quality_score"),
+                "market_strategy_reason": strategy_result.get("reason"),
                 "liquidity_event": levels.get("liquidity_event"),
                 "volume_ratio": levels.get("volume_ratio"),
                 "flow_pressure": levels.get("flow_pressure"),
@@ -520,7 +578,7 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             "orderbook_adjustment": flow_adjustment,
             "analysis_scope": "single_timeframe_15m",
             "quality_label": "درجة توافق الشروط من 100 وليست احتمال نجاح",
-            "analysis_note": "الاتجاه والزخم والسيولة وتأكيد الدخول كلها محسوبة من شموع 15 دقيقة المكتملة.",
+            "analysis_note": "تُطبق قاعدة دخول مستقلة لكل سوق على شموع 15 دقيقة المكتملة، ثم يؤكد محرك السيولة مستويات المخاطرة. الدرجة ليست احتمال ربح.",
         }
         if diagnostics is not None:
             diagnostics["reason"] = "accepted"
@@ -1220,6 +1278,37 @@ def markets():
     return jsonify({"markets": rows})
 
 
+@app.get("/api/strategies")
+def strategies():
+    """Publish the distinct rule family and honest provider/validation status per market."""
+    labels = {
+        "spot": ("Binance Spot", "اختراق اتجاه صاعد بحجم نسبي؛ شراء فقط"),
+        "futures": ("Binance USD-M Futures", "استمرار الاتجاه الصاعد أو الهابط مع زخم وحجم"),
+        "coinm": ("Binance COIN-M", "انعكاس بعد سحب سيولة وعودة داخل النطاق"),
+        "alpha": ("Binance Alpha", "اختراق زخم وحجم بشروط أكثر تشددًا"),
+        "saudi": ("السوق السعودي", "انضغاط ثم توسع سعري مع حجم؛ شراء فقط"),
+        "us": ("الأسهم الأمريكية", "استعادة الاتجاه بعد تراجع مع حجم؛ شراء فقط"),
+        "forex": ("الفوركس والذهب", "اختراق نطاق مع توسع الحركة وحجم ticks"),
+        "contracts": ("العقود الأمريكية", "غير مفعّل حتى ربط مزود موثوق"),
+    }
+    rows = []
+    for market_id, strategy_id in MARKET_STRATEGIES.items():
+        name, description = labels[market_id]
+        if market_id == "contracts":
+            status = "provider_required"
+        elif market_id in ("saudi", "us"):
+            status = "configured_watchlist_only" if YAHOO_ENABLED and YAHOO_SYMBOLS.get(market_id) else "provider_required"
+        else:
+            status = "strategy_candidate_not_validated"
+        rows.append({
+            "market": market_id, "name": name, "strategy": strategy_id,
+            "description": description, "status": status,
+            "validation": "not_backtested_no_profitability_claim",
+            "entry_timeframe": "15m",
+        })
+    return jsonify({"items": rows})
+
+
 @app.get("/api/providers")
 def providers():
     """Expose provider truth: configured, verified fallback routes versus candidates not integrated."""
@@ -1499,7 +1588,7 @@ def market(kind):
                 "rejected_by_reason": {key: value for key, value in rejection_counts.items() if key != "accepted"},
             },
             "updated": snapshot_updated, "snapshot_stale": False,
-            "source": source_label, "strategy": "15m direction + liquidity + momentum · 15m entry",
+            "source": source_label, "strategy": "استراتيجية مستقلة حسب السوق · دخول 15 دقيقة",
             "gamma_status": "خيارات/GEX غير متاحة من مزود موثوق لكل الأسواق؛ لا يتم اختلاق قيم Gamma.",
             "analysis_mode": "سيولة سعرية وحجم شموع؛ ضغط تقديري وليس تدفق صفقات منفذة",
             "score_note": "الاتجاه والسيولة والزخم والدخول كلها من شموع 15 دقيقة المكتملة. درجة الجودة من 100 وليست احتمال نجاح."
