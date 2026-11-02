@@ -219,7 +219,7 @@ async function loadNews(){
   const d=await get("/api/news",10000);newsItems=Array.isArray(d.items)?d.items:[];
   if(!newsItems.length){root.innerHTML='<div class="empty">'+safe(d.error||"لا توجد عناوين متاحة الآن.")+'</div>';return}
   root.innerHTML=newsItems.map((x,i)=>'<article class="news-item"><div><small>'+safe(x.source||"مصدر خارجي")+' · '+safe(x.published||"")+'</small><h3><button type="button" class="news-open" data-news-index="'+i+'">'+safe(x.title)+'</button></h3><p>'+safe(x.summary||"افتح موجز الخبر لعرض التفاصيل المتاحة.")+'</p><button type="button" class="news-read" data-news-index="'+i+'">اقرأ داخل المنصة <span>←</span></button></div><span class="news-arrow">⌄</span></article>').join("");
-  if(!root.dataset.readerBound){root.addEventListener("click",e=>{const close=e.target.closest("[data-news-close]");if(close){const reader=$("#newsReader");if(reader)reader.hidden=true;return}const trigger=e.target.closest("[data-news-index]");if(trigger)openNewsArticle(Number(trigger.dataset.newsIndex))});root.dataset.readerBound="1"}
+  if(!root.dataset.readerBound){$("#newsSection")?.addEventListener("click",e=>{const close=e.target.closest("[data-news-close]");if(close){const reader=$("#newsReader");if(reader)reader.hidden=true;return}const trigger=e.target.closest("[data-news-index]");if(trigger)openNewsArticle(Number(trigger.dataset.newsIndex))});root.dataset.readerBound="1"}
  }catch(e){root.innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
 }
 $("#newsRefresh")?.addEventListener("click",loadNews);
