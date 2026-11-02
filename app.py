@@ -998,6 +998,36 @@ def home_overview():
         return jsonify({"ok": False, "error": "تعذر تحديث ملخص الأسواق حاليًا."}), 502
 
 
+@app.get("/api/direction/<kind>")
+def market_direction(kind):
+    """Fast market-breadth snapshot, independently refreshed every 15 minutes."""
+    supported = set(BASES) | {"alpha", "forex", "saudi", "us"}
+    if kind not in supported:
+        return jsonify({"ok": False, "status": "provider_required", "message": "مصدر بيانات هذا السوق غير مربوط."}), 503
+    if kind in ("saudi", "us") and (not YAHOO_ENABLED or yf is None or not YAHOO_SYMBOLS.get(kind)):
+        return jsonify({"ok": False, "status": "provider_required", "message": "مصدر بيانات هذا السوق غير مفعّل."}), 503
+
+    def build_direction():
+        assets = cached(kind + ":universe", 20, lambda: market_tickers(kind))
+        up = sum(1 for row in assets if float(row.get("change24h", 0) or 0) > 0)
+        down = sum(1 for row in assets if float(row.get("change24h", 0) or 0) < 0)
+        flat = max(0, len(assets) - up - down)
+        direction = "BUY" if up > down else ("SELL" if down > up else "NEUTRAL")
+        return {
+            "ok": True, "market": kind, "direction": direction,
+            "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
+            "up": up, "down": down, "flat": flat, "total": len(assets),
+            "updated": int(time.time()), "refresh_interval_seconds": 900,
+            "basis": "اتساع السوق حسب تغير الأسعار خلال 24 ساعة؛ لقطة اتجاه مستقلة عن فحص الصفقات."
+        }
+
+    try:
+        return jsonify(cached(kind + ":direction_snapshot_15m", 900, build_direction))
+    except requests.RequestException:
+        app.logger.exception("Market direction refresh failed: %s", kind)
+        return jsonify({"ok": False, "error": "تعذر تحديث اتجاه السوق من المصدر الآن.", "market": kind}), 502
+
+
 @app.get("/api/market/<kind>")
 def market(kind):
     if kind not in BASES and kind not in ("alpha", "forex", "saudi", "us"):
@@ -1029,7 +1059,9 @@ def market(kind):
         # Signal eligibility is determined by the selected asset's two reference
         # timeframes, not by aggregate 24h market breadth. A neutral market-wide
         # count must not suppress individually aligned setups.
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        # Candle reads are network-bound; eight bounded workers reduce serial wait
+        # while keeping the request burst controlled for public market-data providers.
+        with ThreadPoolExecutor(max_workers=8) as pool:
             jobs = {
                 pool.submit(analyse_candidate, kind, row, direction, diagnostic_rows[index], timeframe): index
                 for index, row in enumerate(candidates)
