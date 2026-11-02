@@ -1029,7 +1029,9 @@ def market(kind):
         # Signal eligibility is determined by the selected asset's two reference
         # timeframes, not by aggregate 24h market breadth. A neutral market-wide
         # count must not suppress individually aligned setups.
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        # Candle reads are network-bound; eight bounded workers reduce serial wait
+        # while keeping the request burst controlled for public market-data providers.
+        with ThreadPoolExecutor(max_workers=8) as pool:
             jobs = {
                 pool.submit(analyse_candidate, kind, row, direction, diagnostic_rows[index], timeframe): index
                 for index, row in enumerate(candidates)
