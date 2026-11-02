@@ -379,4 +379,4 @@ $("#siteDrawer").addEventListener("click",e=>{
 
 tick();setInterval(tick,1000);
 initializeAccess();
-timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();else if(PATH==="/sections/history")loadHistoryPage();else if(PATH==="/sections/system")loadSystemStatus()},30000);
+timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();else if(PATH==="/sections/history")loadHistoryPage();else if(PATH==="/sections/system")loadSystemStatus()},900000);
