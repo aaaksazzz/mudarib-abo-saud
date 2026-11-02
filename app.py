@@ -51,7 +51,6 @@ SCAN_CURSOR_LOCK = threading.Lock()
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data")).expanduser()
 DB_PATH = Path(os.environ.get("DB_PATH", str(DATA_DIR / "trades.sqlite3"))).expanduser()
 try:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 except OSError as exc:
     # Never silently fall back to ephemeral storage: that would make trade
@@ -691,6 +690,8 @@ def save_new_trades(kind, signals):
     with SAVE_NEW_TRADES_LOCK:
         with db() as connection:
             for signal in signals:
+                if len(inserted) >= 3:
+                    break
                 required = ("symbol", "timeframe", "side", "entry", "stop_loss", "tp1", "tp2", "tp3")
                 if any(key not in signal or signal[key] is None for key in required):
                     continue
@@ -974,7 +975,6 @@ def market(kind):
         signals.sort(key=lambda row: (
             row["ranking_score"], row["quality_score"], abs(row.get("change_timeframe", 0))
         ), reverse=True)
-        signals = signals[:3]
         # Only show opportunities that were actually saved. Repeated scans of
         # the same symbol/timeframe stay in the position tracker, not as fresh cards.
         signals = save_new_trades(kind, signals)
