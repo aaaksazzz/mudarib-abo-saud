@@ -674,7 +674,7 @@ def tron_address_hex(address):
 
 
 def verify_trc20_transfer(txid,expected):
-    response=requests.post("https://api.trongrid.io/wallet/gettransactioninfobyid",
+    response=requests.post("https://api.trongrid.io/walletsolidity/gettransactioninfobyid",
                            json={"value":txid},timeout=(4,12))
     response.raise_for_status()
     info=response.json()
