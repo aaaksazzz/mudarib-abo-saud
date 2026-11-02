@@ -7,17 +7,6 @@ import app as module
 
 client = module.app.test_client()
 
-def admin_session(monkeypatch):
-    module.app.config["SESSION_COOKIE_SECURE"] = False
-    monkeypatch.setattr(module, "AUTH_CONFIGURED", True)
-    monkeypatch.setattr(module, "ADMIN_EMAIL", "admin@example.test")
-    monkeypatch.setattr(module, "ADMIN_PASSWORD", "test-admin-password-123")
-    with module.db() as connection:
-        row = connection.execute("SELECT id FROM users WHERE email=?", ("admin@example.test",)).fetchone()
-    with client.session_transaction() as session:
-        session.clear()
-        session["user_id"] = row["id"]
-
 def test_health_and_home():
     assert client.get("/health").json["ok"] is True
     response = client.get("/")
@@ -30,7 +19,6 @@ def test_health_and_home():
 
 def test_market_api_accepts_only_15m_strategy_timeframe(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "timeframe-support.sqlite3")
-    admin_session(monkeypatch)
     module.CACHE.pop("spot:universe", None)
     monkeypatch.setattr(module, "market_tickers", lambda kind: [
         {"symbol": "AAAUSDT", "price": 2.0, "volume": 2_000_000, "change24h": 1.0}
@@ -49,7 +37,6 @@ def test_market_api_accepts_only_15m_strategy_timeframe(tmp_path, monkeypatch):
 
 def test_unconfigured_markets_are_not_fabricated(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "unconfigured.sqlite3")
-    admin_session(monkeypatch)
     response = client.get("/api/market/saudi")
     assert response.status_code == 503
     assert response.json["status"] == "provider_required"
@@ -121,7 +108,6 @@ def test_cache_reuses_successful_value():
 
 def test_market_response_includes_breadth_and_real_movers(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "market-test.sqlite3")
-    admin_session(monkeypatch)
     module.CACHE.pop("spot:universe", None)
     rows = [
         {"symbol":"AAAUSDT","price":2.0,"volume":3_000_000,"change24h":8.0},
@@ -173,7 +159,6 @@ def test_alpha_candles_parse_public_kline_payload(monkeypatch):
 
 def test_alpha_market_endpoint_accepts_public_provider(tmp_path, monkeypatch):
     monkeypatch.setattr(module, 'DB_PATH', tmp_path / 'alpha.sqlite3')
-    admin_session(monkeypatch)
     rows = [{'symbol':'ALPHA_175USDT','price':0.01,'volume':250000,'change24h':12.5}]
     monkeypatch.setattr(module, 'market_tickers', lambda kind: rows)
     monkeypatch.setattr(module, 'analyse_candidate', lambda *args: None)
@@ -274,7 +259,6 @@ def test_signal_uses_completed_entry_timeframe_candles_and_live_quote_separately
 
 def test_yahoo_provider_is_disabled_by_default(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "yahoo-disabled.sqlite3")
-    admin_session(monkeypatch)
     original = module.YAHOO_ENABLED
     try:
         module.YAHOO_ENABLED = False
@@ -308,105 +292,22 @@ def test_yahoo_candles_drop_forming_bar(monkeypatch):
     assert rows[0]["close"] == 11.0
 
 
-def test_paid_market_access_and_admin_subscription_management(tmp_path, monkeypatch):
-    monkeypatch.setattr(module, "DB_PATH", tmp_path / "auth.sqlite3")
-    module.app.config["SESSION_COOKIE_SECURE"] = False
-    monkeypatch.setattr(module, "AUTH_CONFIGURED", True)
-    monkeypatch.setattr(module, "ADMIN_EMAIL", "owner@example.test")
-    monkeypatch.setattr(module, "ADMIN_PASSWORD", "owner-password-123")
-    auth_client = module.app.test_client()
-    registered = auth_client.post("/api/auth/register", json={
-        "email": "member@example.test", "password": "member-password-123"
-    })
-    assert registered.status_code == 201
-    assert registered.json["user"]["subscribed"] is False
-    module.CACHE.pop("spot:universe", None)
-    monkeypatch.setattr(module, "market_tickers", lambda kind: [
-        {"symbol": "AAAUSDT", "price": 1.0, "volume": 2_000_000, "change24h": 1.0}
-    ])
-    monkeypatch.setattr(module, "analyse_candidate", lambda *args: None)
-    unpaid_market = auth_client.get("/api/market/spot")
-    assert unpaid_market.status_code == 403
-    with module.db() as connection:
-        admin = connection.execute("SELECT id FROM users WHERE email=?", ("owner@example.test",)).fetchone()
-        member = connection.execute("SELECT id FROM users WHERE email=?", ("member@example.test",)).fetchone()
-    with auth_client.session_transaction() as session:
-        session.clear()
-        session["user_id"] = admin["id"]
-    granted = auth_client.post("/api/admin/subscription", json={
-        "user_id": member["id"], "action": "grant", "days": 30
-    })
-    assert granted.status_code == 200
-    locked = auth_client.post("/api/admin/sections", json={"section":"spot","enabled":False})
-    assert locked.status_code == 200
-    with auth_client.session_transaction() as session:
-        session.clear()
-        session["user_id"] = member["id"]
-    assert auth_client.get("/api/market/spot").status_code == 403
-    with auth_client.session_transaction() as session:
-        session.clear()
-        session["user_id"] = admin["id"]
-    assert auth_client.post("/api/admin/sections",json={"section":"spot","enabled":True}).status_code == 200
-    with auth_client.session_transaction() as session:
-        session.clear()
-        session["user_id"] = member["id"]
-    status = auth_client.get("/api/auth/me")
-    assert status.json["user"]["subscribed"] is True
-    module.CACHE.pop("spot:universe", None)
-    paid_market = auth_client.get("/api/market/spot")
-    assert paid_market.status_code == 200
-    assert paid_market.json["market"] == "spot"
-    revoked = auth_client.post("/api/admin/subscription", json={
-        "user_id": member["id"], "action": "revoke"
-    })
-    assert revoked.status_code == 403
-
-
-def test_admin_password_rotation_updates_existing_admin_without_losing_subscription(tmp_path, monkeypatch):
-    monkeypatch.setattr(module, "DB_PATH", tmp_path / "admin-rotation.sqlite3")
-    monkeypatch.setattr(module, "AUTH_CONFIGURED", True)
-    monkeypatch.setattr(module, "ADMIN_EMAIL", "admin@example.test")
-    monkeypatch.setattr(module, "ADMIN_PASSWORD", "old-admin-password-123")
-    with module.db() as connection:
-        admin = connection.execute("SELECT id FROM users WHERE email=?", ("admin@example.test",)).fetchone()
-        connection.execute(
-            "INSERT INTO users(email,password_hash,role,subscription_expires_at,created_at) VALUES(?,?,?,?,?)",
-            ("member@example.test", module.generate_password_hash("member-password-123"), "user", 2000000000, int(time.time()))
-        )
-    monkeypatch.setattr(module, "ADMIN_PASSWORD", "new-admin-password-456")
-    with module.db() as connection:
-        admin_row = connection.execute("SELECT password_hash, role FROM users WHERE email=?", ("admin@example.test",)).fetchone()
-        member = connection.execute("SELECT subscription_expires_at FROM users WHERE email=?", ("member@example.test",)).fetchone()
-    assert module.check_password_hash(admin_row["password_hash"], "new-admin-password-456")
-    assert not module.check_password_hash(admin_row["password_hash"], "old-admin-password-123")
-    assert admin_row["role"] == "admin"
-    assert member["subscription_expires_at"] == 2000000000
-
-
 def test_independent_pages_are_served():
     paths = [
         "/markets/spot", "/markets/futures", "/markets/alpha",
         "/markets/saudi", "/markets/us", "/markets/contracts",
-        "/markets/forex", "/sections/direction", "/sections/movers",
-        "/sections/opportunities", "/sections/open-trades",
-        "/sections/history", "/sections/system", "/blog", "/news", "/admin",
+        "/markets/forex", "/sections/direction",
+        "/sections/opportunities", "/sections/open-trades", "/sections/history",
     ]
     for path in paths:
         response = client.get(path)
         assert response.status_code == 200
-        assert 'id="mainContent"' in response.text
+        assert 'id="homePage"' in response.text
+    for path in ("/blog", "/news", "/admin"):
+        assert client.get(path).status_code == 404
 
 def test_invalid_market_page_is_not_found():
     assert client.get("/markets/not-a-market").status_code == 404
-
-def test_news_feed_returns_clear_fallback_when_provider_fails(monkeypatch):
-    def fail(*args, **kwargs):
-        raise module.requests.RequestException("offline")
-    monkeypatch.setattr(module.requests, "get", fail)
-    response = client.get("/api/news")
-    assert response.status_code == 502
-    assert response.json["items"] == []
-
 
 def test_market_scan_reports_candidate_rejection_reasons(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "scan-diagnostics.sqlite3")
@@ -451,7 +352,6 @@ def test_no_key_analysis_method_has_clear_non_options_description():
 
 def test_candidate_worker_failure_does_not_abort_market_scan(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "worker-failure.sqlite3")
-    admin_session(monkeypatch)
     module.CACHE.pop("spot:universe", None)
     monkeypatch.setattr(module, "market_tickers", lambda kind: [
         {"symbol": "AAAUSDT", "price": 2.0, "volume": 2_000_000, "change24h": 2.0},
@@ -521,17 +421,6 @@ def test_candidate_uses_only_15m_for_direction_and_entry(monkeypatch):
     assert diagnostics["reason"] == "insufficient_candles"
     assert diagnostics["candles_received"] == 34
 
-def test_auth_me_reports_unconfigured_as_nonfatal_public_status(monkeypatch):
-    monkeypatch.setattr(module, "AUTH_CONFIGURED", False)
-    with client.session_transaction() as session:
-        session.clear()
-    response = client.get("/api/auth/me")
-    assert response.status_code == 200
-    assert response.json["ok"] is True
-    assert response.json["configured"] is False
-    assert response.json["auth_available"] is False
-    assert response.json["user"] is None
-
 def test_open_confirmed_trade_remains_in_opportunity_cards_after_refresh(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "persistent-cards.sqlite3")
     module.CACHE.pop("spot:universe", None)
@@ -565,8 +454,9 @@ def test_market_page_does_not_crash_when_optional_refresh_button_is_absent():
     root = Path(__file__).resolve().parents[1]
     js = (root / "static" / "app.js").read_text(encoding="utf-8")
     html = (root / "static" / "index.html").read_text(encoding="utf-8")
-    assert 'const refreshButton=$("#refresh");if(refreshButton)refreshButton.hidden=true;' in js
-    assert 'app.js?v=20261102.market-init-hotfix1' in html
+    assert 'id="refreshMarket"' in html
+    assert 'function marketLoad()' in js
+    assert 'clean-core-1' in html
 
 def test_market_direction_and_open_trades_are_persisted(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "persistent-market-state.sqlite3")
@@ -615,61 +505,14 @@ def test_home_page_shows_market_radar_and_keeps_news_inside_the_site():
     root = Path(__file__).resolve().parents[1]
     html = (root / "static" / "index.html").read_text(encoding="utf-8")
     js = (root / "static" / "app.js").read_text(encoding="utf-8")
-    assert 'id="homeOverview"' in html
-    assert 'id="homeMovers"' in html
-    assert 'id="homeCoverage"' in html
-    assert 'await loadHomeOverview();' in js
-    assert 'target="_blank"' not in js
-    assert "'+safe(x.url)+'" not in js
-
-
-def test_subscription_checkout_requires_login_and_prices_months(tmp_path, monkeypatch):
-    monkeypatch.setattr(module, "DB_PATH", tmp_path / "membership.sqlite3")
-    module.app.config["SESSION_COOKIE_SECURE"] = False
-    monkeypatch.setattr(module, "AUTH_CONFIGURED", True)
-    monkeypatch.setattr(module, "ADMIN_EMAIL", "owner@example.test")
-    monkeypatch.setattr(module, "ADMIN_PASSWORD", "owner-password-123")
-    client = module.app.test_client()
-    assert client.get("/api/payments/options").status_code == 401
-    registered = client.post("/api/auth/register", json={
-        "email": "member@example.test", "password": "member-password-123"
-    })
-    assert registered.status_code == 201
-    order = client.post("/api/payments/orders", json={"months": 3, "network": "trc20"})
-    assert order.status_code == 201
-    assert order.json["order"]["amount_usdt"] == 90
-    assert order.json["payment"]["address"] == module.PAYMENT_WALLETS["trc20"]["address"]
-    assert order.json["payment"]["automatic_verification"] is True
-    assert client.get("/api/market/spot").status_code == 403
-    with module.db() as connection:
-        admin = connection.execute("SELECT id FROM users WHERE email=?", ("owner@example.test",)).fetchone()
-    with client.session_transaction() as session:
-        session.clear()
-        session["user_id"] = admin["id"]
-    assert client.get("/api/admin/sections").status_code == 200
-    assert client.post("/api/admin/sections", json={"section":"spot","enabled":False}).status_code == 200
-    assert client.get("/api/admin/payments").status_code == 200
-
-
-def test_confirmed_chain_payment_activates_selected_months(tmp_path, monkeypatch):
-    monkeypatch.setattr(module, "DB_PATH", tmp_path / "chain-payment.sqlite3")
-    module.app.config["SESSION_COOKIE_SECURE"] = False
-    monkeypatch.setattr(module, "AUTH_CONFIGURED", True)
-    monkeypatch.setattr(module, "ADMIN_EMAIL", "owner@example.test")
-    monkeypatch.setattr(module, "ADMIN_PASSWORD", "owner-password-123")
-    client = module.app.test_client()
-    client.post("/api/auth/register", json={"email":"member@example.test","password":"member-password-123"})
-    order = client.post("/api/payments/orders", json={"months":2,"network":"solana"})
-    assert order.status_code == 201
-    with module.db() as connection:
-        row = connection.execute("SELECT created_at FROM payment_orders WHERE id=?",(order.json["order"]["id"],)).fetchone()
-    monkeypatch.setattr(module,"verify_solana_transfer",lambda *_:{"confirmed":True,"amount":60,"timestamp":row["created_at"]-1})
-    rejected = client.post("/api/payments/verify",json={"order_id":order.json["order"]["id"],"tx_hash":"A"*64})
-    assert rejected.status_code == 422
-    monkeypatch.setattr(module,"verify_solana_transfer",lambda *_:{"confirmed":True,"amount":60,"timestamp":int(time.time())+1})
-    verified = client.post("/api/payments/verify",json={"order_id":order.json["order"]["id"],"tx_hash":"B"*64})
-    assert verified.status_code == 200
-    assert client.get("/api/auth/me").json["user"]["subscribed"] is True
+    assert 'id="marketOverview"' in html
+    assert 'id="fastMovers"' in html
+    assert 'id="tradeCards"' in html
+    assert 'async function home()' in js
+    assert 'authForm' not in html
+    assert 'subscriptionPanel' not in html
+    assert 'href="/blog"' not in html
+    assert 'href="/news"' not in html
 
 
 def test_official_tron_usdt_contract_and_receiver_addresses_decode():
