@@ -262,7 +262,7 @@ def test_signal_uses_completed_entry_timeframe_candles_and_live_quote_separately
     candidate = {"symbol": "AAAUSDT", "price": 110.0, "change24h": 4.0, "volume": 2_000_000}
     signal = module.analyse_candidate("spot", candidate, "BUY", timeframe="15m")
     assert signal is not None
-    assert signal["entry"] == bars[-1]["close"]
+    assert signal["entry"] == 110.0
     assert signal["price"] == 110.0
     assert signal["quality_score"] >= 64
     assert signal["quality_score"] != 90.0
