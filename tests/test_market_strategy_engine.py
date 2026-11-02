@@ -31,8 +31,8 @@ def test_spot_is_long_only_and_requires_breakout():
 
 
 def test_usd_m_trend_engine_supports_both_directions():
-    up = evaluate_market_strategy("futures", trend_rows("up"))
-    down = evaluate_market_strategy("futures", trend_rows("down"))
+    up = evaluate_market_strategy("futures", trend_rows("up"), market_context={"basis_percent": 0.02, "funding_rate": 0.0001})
+    down = evaluate_market_strategy("futures", trend_rows("down"), market_context={"basis_percent": -0.02, "funding_rate": -0.0001})
     assert up["confirmed"] and up["side"] == "BUY"
     assert down["confirmed"] and down["side"] == "SELL"
 
@@ -41,7 +41,7 @@ def test_coinm_requires_a_liquidity_sweep_reversal():
     rows = [{"open": 100, "high": 101, "low": 99, "close": 100.2, "volume": 1000}
             for _ in range(44)]
     rows.append({"open": 99.3, "high": 100.2, "low": 98.5, "close": 100.0, "volume": 1500})
-    result = evaluate_market_strategy("coinm", rows)
+    result = evaluate_market_strategy("coinm", rows, market_context={"basis_percent": 0.01, "funding_rate": -0.0001})
     assert result["confirmed"] and result["side"] == "BUY"
     assert result["reason"] == "coin_m_sell_side_sweep_reclaim"
 
