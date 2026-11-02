@@ -231,7 +231,7 @@ async function load(){
     $("#source").textContent="مصدر البيانات: "+d.source+" · "+d.strategy;
     
   renderSignals(d.signals,d.scan_diagnostics||{});renderOpen(d.open_trades);
-  const strategyLabel={"15m":"15 دقيقة · الإشارة الأصلية على نفس الفريم","1h":"ساعة · الإشارة الأصلية على نفس الفريم","4h":"4 ساعات · الإشارة الأصلية على نفس الفريم","1d":"يومي · الإشارة الأصلية على نفس الفريم","1w":"أسبوعي · الإشارة الأصلية على نفس الفريم","1M":"شهري · الإشارة الأصلية على نفس الفريم"};
+  const strategyLabel={"15m":"تأكيد 4 ساعات + يومي · دخول 15 دقيقة","1h":"تأكيد 4 ساعات + يومي · دخول ساعة","4h":"تأكيد 4 ساعات + يومي · دخول 4 ساعات","1d":"تأكيد 4 ساعات + يومي · دخول يومي","1w":"تأكيد 4 ساعات + يومي · دخول أسبوعي","1M":"تأكيد 4 ساعات + يومي · دخول شهري"};
   const label=$("#activeStrategy");if(label)label.textContent=strategyLabel[analysisTimeframe]||analysisTimeframe;
   $("#health").textContent="متصل";$("#health").className="ok";
  }catch(e){
