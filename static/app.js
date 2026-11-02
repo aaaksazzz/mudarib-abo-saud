@@ -324,25 +324,24 @@ function configurePage(){
  const hideAll=()=>ids.forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
  const show=(...names)=>names.forEach(id=>{const el=$("#"+id);if(el)el.hidden=false});
  if(PATH==="/"){
-  hideAll();show("homeSection","marketSection","homeOverview");
-  loadHomeOverview();
+  hideAll();show("homeSection","marketSection");
   $("#homeSection h1").innerHTML='<span>'+tr("marketHomeTitle")+'</span>';
-  $("#homeSection p").textContent=tr("marketPageDescription");
+  $("#homeSection p").textContent="اختر السوق لعرض اتجاهه وفرصه وصفقاته فقط.";
  }else if(marketMatch){
   if(!MARKET_NAMES[market]){location.replace("/");return}
-  hideAll();show("homeSection","directionSection","opportunitiesSection","cards","openSection");
+  hideAll();show("homeSection","directionSection","opportunitiesSection","cards","openSection","historySection");
   $("#homeSection h1").innerHTML='<span>'+safe(marketName(market))+'</span>';
-  $("#homeSection p").textContent=tr("marketPageDescription");
+  $("#homeSection p").textContent="اتجاه السوق والفرص والصفقات الخاصة بهذا السوق فقط.";
  }else if(PATH.startsWith("/sections/")){
   const section=PATH.split("/").pop();
-  const map={system:["systemSection"],direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["openSection"],history:["historySection"]};
+  const map={direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["openSection"],history:["historySection"]};
   hideAll();show("homeSection",...(map[section]||[]));
-  const titles={system:"مركز مراقبة المنصة",direction:"توجه السوق",opportunities:"فرص التداول","open-trades":"متابعة الصفقات",history:"سجل النتائج"};
-  $("#homeSection h1").innerHTML='<span>'+safe(titles[section]||"القسم")+'</span>';
-  $("#homeSection p").textContent="قسم مستقل عن الصفحة الرئيسية.";
+  const titles={direction:"اتجاه السوق",opportunities:"فرص التداول","open-trades":"الصفقات المفتوحة",history:"سجل الصفقات"};
+  $("#homeSection h1").innerHTML='<span>'+safe(titles[section]||"الأسواق")+'</span>';
+  $("#homeSection p").textContent="بيانات السوق والصفقات فقط.";
  }else{hideAll();show("homeSection","marketSection")}
  $("#marketSection").hidden=PATH!=="/";
- $("#refresh").hidden=PATH==="/"||PATH==="/sections/system";
+ $("#refresh").hidden=true;
  if(PATH==="/admin"){
   if(!adminAllowed){location.replace("/");return}
   hideAll();show("homeSection","adminPanel");$("#adminPanel").hidden=false;
@@ -355,7 +354,7 @@ function configurePage(){
 
 document.addEventListener("visibilitychange",()=>{
  if(document.hidden||$("#mainContent").hidden||busy)return;
- if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();
+ if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load();if(marketMatch)loadHistoryPage();}
  else if(PATH==="/sections/history")loadHistoryPage();
  else if(PATH==="/sections/system")loadSystemStatus();
 });
@@ -379,7 +378,7 @@ async function startAuthorized(user=null){
  $("#drawerAdmin").hidden=!(user&&user.is_admin);
  if(user&&user.is_admin) await loadAdminUsers();
  configurePage();
- if(marketMatch){await loadMarketStatuses();await load();}
+ if(marketMatch){await loadMarketStatuses();await load();await loadHistoryPage();}
  else if(PATH==="/"){await loadMarketStatuses();}
  else if(PATH.startsWith("/sections/") && ["direction","opportunities","open-trades"].includes(PATH.split("/").pop())){await loadMarketStatuses();await load();}
  else if(PATH==="/sections/history"){await loadHistoryPage();}
@@ -473,4 +472,4 @@ $("#siteDrawer").addEventListener("click",e=>{
 
 tick();setInterval(tick,1000);
 initializeAccess();
-timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();else if(PATH==="/sections/history")loadHistoryPage();else if(PATH==="/sections/system")loadSystemStatus()},900000);
+timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load();if(marketMatch)loadHistoryPage()}else if(PATH==="/sections/history")loadHistoryPage();else if(PATH==="/sections/system")loadSystemStatus();else if(PATH==="/")loadHomeOverview()},900000);
