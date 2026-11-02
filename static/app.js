@@ -172,6 +172,7 @@ async function load(){
    ["#up","#down","#flat","#total"].forEach(id=>$(id).textContent="—");
    $("#updated").textContent="—";
    $("#source").textContent="مصدر البيانات غير مربوط";
+   $("#upBar").style.width="0%";$("#downBar").style.width="0%";$("#flatBar").style.width="0%";
    $("#sourceShort").textContent="غير متاح";
    $("#scanState").textContent="مصدر البيانات غير مربوط";
    $("#scanState").className="down";
@@ -200,7 +201,9 @@ async function load(){
  }catch(e){
   $("#direction").textContent="غير متاح";$("#direction").className="direction-value neutral";
   ["#up","#down","#flat","#total"].forEach(id=>$(id).textContent="—");
-  $("#updated").textContent="—";$("#sourceShort").textContent="غير متاح";
+  $("#updated").textContent="—";$("#sourceShort").textContent="غير متاح";$("#source").textContent="مصدر البيانات: غير متاح";
+  $("#upBar").style.width="0%";$("#downBar").style.width="0%";$("#flatBar").style.width="0%";
+  $("#openCount").textContent="—";
   $("#movers").innerHTML='<div class="empty">تعذر تحديث بيانات الحركة؛ لا نعرض بيانات قديمة على أنها مباشرة.</div>';
   $("#openTrades").innerHTML='<div class="empty">تعذر تحديث متابعة الصفقات؛ أعد المحاولة عند عودة المصدر.</div>';
   $("#cards").innerHTML='<div class="empty">'+safe(e.message)+'</div>';
