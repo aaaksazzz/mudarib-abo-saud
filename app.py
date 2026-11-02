@@ -1409,7 +1409,7 @@ def market(kind):
                 SCAN_CURSORS[cursor_key] = load_market_scan_cursor(kind, timeframe)
             scan_offset = SCAN_CURSORS[cursor_key]
             candidates, next_scan_offset, scan_offset, priority_candidates = select_priority_scan_batch(
-                assets, scan_offset, batch_size=20, priority_size=10
+                assets, scan_offset, batch_size=8, priority_size=4
             )
         signals = []
         diagnostic_rows = [{} for _ in candidates]
@@ -1504,7 +1504,7 @@ def market(kind):
             "signals": signals, "open_trades": active,
             "scan_diagnostics": {
                 "universe_size": len(assets), "candidates_scanned": len(candidates),
-                "batch_size": 20, "batch_start": scan_offset,
+                "batch_size": 8, "batch_start": scan_offset,
                 "scan_offset": scan_offset, "next_scan_offset": next_scan_offset,
                 "priority_candidates": priority_candidates,
                 "scan_cycle_complete": bool(assets) and next_scan_offset <= scan_offset,
