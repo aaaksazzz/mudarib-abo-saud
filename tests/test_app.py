@@ -39,8 +39,12 @@ def test_market_api_accepts_only_15m_strategy_timeframe(tmp_path, monkeypatch):
     accepted = client.get("/api/market/spot?timeframe=15m")
     assert accepted.status_code == 200
     assert accepted.json["timeframe"] == "15m"
+    # Legacy links and cached browser tabs are normalized to the single
+    # supported strategy timeframe instead of surfacing an unsupported error.
     for timeframe in ("5m", "1h", "4h", "1d", "1w", "1M"):
-        assert client.get("/api/market/spot?timeframe=" + timeframe).status_code == 400
+        response = client.get("/api/market/spot?timeframe=" + timeframe)
+        assert response.status_code == 200
+        assert response.json["timeframe"] == "15m"
     assert module.SCAN_INTERVAL == "15m"
 
 def test_unconfigured_markets_are_not_fabricated(tmp_path, monkeypatch):
