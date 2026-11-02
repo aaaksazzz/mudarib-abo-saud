@@ -486,3 +486,25 @@ body{font-feature-settings:"tnum" 1,"ss01" 1}
 @media(hover:none){
  .market-tab:hover,.mover:hover,.trade:hover,.pro-trade-card:hover{transform:none}
 }
+
+/* Ranked podium cards: gold, silver, bronze, then clean numbered ranks */
+.pro-card-top{min-height:42px}
+.pro-card-top .trade-title{display:flex;align-items:center;gap:11px;min-width:0}
+.rank{display:grid;place-items:center;position:relative;flex:0 0 42px;width:42px;height:42px;border-radius:13px;border:1px solid #34495d;background:#152438;color:#dbe7f2;box-shadow:inset 0 1px 0 rgba(255,255,255,.06);font-variant-numeric:tabular-nums}
+.rank>b{font-size:15px;line-height:1}
+.rank-medal{font-size:15px;line-height:1}
+.rank.gold{border-color:rgba(241,197,85,.72);background:linear-gradient(145deg,rgba(154,111,27,.42),rgba(65,48,20,.5));color:#ffe39a;box-shadow:0 0 20px rgba(235,183,54,.12),inset 0 1px 0 rgba(255,235,170,.18)}
+.rank.silver{border-color:rgba(190,207,222,.65);background:linear-gradient(145deg,rgba(111,132,151,.4),rgba(44,57,72,.55));color:#e6f0f8;box-shadow:0 0 18px rgba(187,205,220,.1)}
+.rank.bronze{border-color:rgba(196,132,91,.68);background:linear-gradient(145deg,rgba(133,77,45,.45),rgba(61,38,28,.55));color:#f0bd9b;box-shadow:0 0 18px rgba(194,123,77,.1)}
+.rank.standard{width:34px;height:34px;flex-basis:34px;border-radius:10px}
+.rank.standard .rank-medal{display:none}
+.rank.standard>b{font-size:13px}
+.pro-card-top.podium-gold{padding:0 0 10px;border-bottom:1px solid rgba(241,197,85,.2)}
+.pro-card-top.podium-silver{padding:0 0 10px;border-bottom:1px solid rgba(190,207,222,.17)}
+.pro-card-top.podium-bronze{padding:0 0 10px;border-bottom:1px solid rgba(196,132,91,.17)}
+.pro-card-top.podium-gold .card-live-state{color:#ffe09a;border-color:rgba(241,197,85,.35);background:rgba(179,132,34,.12)}
+.pro-card-top.podium-silver .card-live-state{color:#e0eaf2;border-color:rgba(190,207,222,.3);background:rgba(145,165,184,.1)}
+.pro-card-top.podium-bronze .card-live-state{color:#e8b18e;border-color:rgba(196,132,91,.3);background:rgba(151,91,56,.1)}
+.pro-card-top .card-live-state{font-weight:800}
+.pro-trade-card{overflow:hidden}
+@media(max-width:420px){.rank{width:38px;height:38px;flex-basis:38px}.rank-medal{font-size:13px}.pro-card-top{gap:7px}.pro-card-top .card-live-state{font-size:8px;padding:5px 7px}}
