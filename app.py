@@ -1342,9 +1342,10 @@ def market(kind):
         return jsonify({"ok": False, "status": "provider_required", "message": "مزود البيانات لهذا السوق غير مربوط؛ لن نعرض بيانات غير موثوقة.", "signals": []}), 503
     if kind in ("saudi", "us") and (not YAHOO_ENABLED or yf is None or not YAHOO_SYMBOLS.get(kind)):
         return jsonify({"ok": False, "status": "provider_required", "message": "Yahoo غير مفعّل أو قائمة الرموز غير مضبوطة؛ لم نعرض بيانات غير مكتملة.", "signals": []}), 503
-    timeframe=request.args.get("timeframe","15m").strip()
-    if timeframe != "15m":
-        return jsonify({"ok":False,"error":"فريم التحليل غير مدعوم"}),400
+    # Old browser tabs may still send 1h/4h/etc. Keep the API compatible
+    # and normalize all requests to the only supported strategy timeframe.
+    requested_timeframe = request.args.get("timeframe", "15m").strip()
+    timeframe = "15m"
     with SCAN_CURSOR_LOCK:
         scan_lock = SCAN_RUN_LOCKS.setdefault(f"{kind}:{timeframe}", threading.Lock())
     if not scan_lock.acquire(blocking=False):
@@ -1479,7 +1480,7 @@ def market(kind):
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": timeframe,
             "market_direction_basis": "24h_breadth_display_only",
-            "trade_direction_basis": "per_asset_4h_daily_alignment",
+            "trade_direction_basis": "per_asset_15m_direction_and_liquidity",
             "movers": movers, "fast_movers": fast_movers,
             "fast_mover_method": "50% زخم 24س + 30% نطاق الحركة + 20% السيولة النسبية؛ أوزان الحقول المتاحة فقط",
             "signals": signals, "open_trades": active,
@@ -1492,15 +1493,15 @@ def market(kind):
                 "candles_ready": sum(1 for item in diagnostic_rows if item.get("candles_ready") is True),
                 "candles_required": 35,
                 "market_direction_gate": False,
-                "trade_side_rule": "BUY when this asset 4h and daily are BUY; SELL when both are SELL",
+                "trade_side_rule": "BUY or SELL only from this asset 15m direction and confirmed liquidity setup",
                 "accepted_before_top3": rejection_counts.get("accepted", 0),
                 "rejected_by_reason": {key: value for key, value in rejection_counts.items() if key != "accepted"},
             },
             "updated": snapshot_updated, "snapshot_stale": False,
-            "source": source_label, "strategy": "4H + Daily confirmation · selected-timeframe entry",
+            "source": source_label, "strategy": "15m direction + liquidity + momentum · 15m entry",
             "gamma_status": "خيارات/GEX غير متاحة من مزود موثوق لكل الأسواق؛ لا يتم اختلاق قيم Gamma.",
             "analysis_mode": "سيولة سعرية وحجم شموع؛ ضغط تقديري وليس تدفق صفقات منفذة",
-            "score_note": "اتجاه 4 ساعات واليومي من بنية OHLCV والزخم والحجم؛ الدخول من سحب سيولة أو الامتصاص وتأكيد الشمعة على الفريم المحدد. درجة الجودة من 100 وليست احتمال نجاح."
+            "score_note": "الاتجاه والسيولة والزخم والدخول كلها من شموع 15 دقيقة المكتملة. درجة الجودة من 100 وليست احتمال نجاح."
         }
         scan_saved_at = save_market_scan_snapshot(kind, timeframe, response_payload)
         save_market_scan_cursor(kind, timeframe, next_scan_offset)
@@ -1539,7 +1540,7 @@ def market(kind):
                     "movers": [], "fast_movers": [],
                     "scan_diagnostics": {"universe_size": snapshot["total"], "candidates_scanned": 0, "rejected_by_reason": {}},
                     "updated": snapshot["updated_at"], "snapshot_stale": True,
-                    "source": snapshot["source"], "strategy": "4H + Daily confirmation · selected-timeframe entry",
+                    "source": snapshot["source"], "strategy": "15m direction + liquidity + momentum · 15m entry",
                     "message": "تعذر تحديث المصدر؛ نعرض آخر اتجاه وصفقات محفوظة دون اختلاق بيانات جديدة."
                 })
         except sqlite3.Error:
