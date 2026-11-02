@@ -195,9 +195,9 @@ body{background:radial-gradient(ellipse at 78% -18%,rgba(37,112,176,.24),transpa
 
 .timeframe-switcher{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:12px 0 18px;padding:12px 14px;border:1px solid #263b51;border-radius:12px;background:rgba(10,20,33,.88)}
 .timeframe-switcher label{font-size:13px;color:#a9bfd2;font-weight:700}
-.timeframe-switcher select{min-width:230px;max-width:100%;padding:10px 12px;border:1px solid #38536d;border-radius:9px;background:#101d2b;color:#f3f7fb;font:inherit}
-.timeframe-switcher span{font-size:12px;color:#83b9d9}
-@media(max-width:600px){.timeframe-switcher{align-items:stretch}.timeframe-switcher select{width:100%;min-width:0}.timeframe-switcher span{line-height:1.6}}
+.timeframe-buttons{display:flex;gap:7px;flex-wrap:wrap}.tf-button{padding:8px 13px;border:1px solid #38536d;border-radius:9px;background:#101d2b;color:#d7e3ef;font:inherit;font-size:13px;font-weight:700;cursor:pointer;transition:background .15s,border-color .15s,color .15s}.tf-button:hover{border-color:#6c9bc2}.tf-button.active{background:#173b56;border-color:#63b5e8;color:#fff;box-shadow:inset 0 0 0 1px rgba(99,181,232,.2)}.tf-button:focus-visible{outline:2px solid #83c8f3;outline-offset:2px}
+.timeframe-switcher span{font-size:12px;color:#83b9d9}.timeframe-switcher .timeframe-label{font-weight:800;color:#a9bfd2}
+@media(max-width:600px){.timeframe-switcher{align-items:flex-start}.timeframe-buttons{width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.tf-button{padding:9px 5px}.timeframe-switcher span{line-height:1.6}}
 
 /* =========================================================
    GLOBAL TERMINAL REDESIGN · 2026
