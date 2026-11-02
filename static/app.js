@@ -293,6 +293,17 @@ document.querySelectorAll("[data-timeframe]").forEach(button=>button.addEventLis
  const url=new URL(location.href);url.searchParams.set("timeframe",next);history.replaceState({}, "", url);
  load();
 }));
+async function loadNews(){
+ const root=$("#newsFeed");if(!root)return;
+ root.innerHTML='<div class="empty">جارٍ جلب آخر العناوين...</div>';
+ try{
+  const d=await get("/api/news",10000);
+  if(!d.items?.length){root.innerHTML='<div class="empty">'+safe(d.error||"لا توجد عناوين متاحة الآن.")+'</div>';return}
+  root.innerHTML=d.items.map(x=>'<article class="news-item"><div><small>'+safe(x.source||"مصدر خارجي")+' · '+safe(x.published||"")+'</small><h3><a href="'+safe(x.url)+'" target="_blank" rel="noopener noreferrer">'+safe(x.title)+'</a></h3></div><span class="news-arrow">↗</span></article>').join("");
+ }catch(e){root.innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
+}
+$("#newsRefresh")?.addEventListener("click",loadNews);
+
 async function loadHomeOverview(){
  const moversRoot=$("#homeMovers"),coverageRoot=$("#homeCoverage");
  if(!moversRoot||!coverageRoot)return;
@@ -320,13 +331,13 @@ function configurePage(){
  document.body.classList.toggle("market-page",!!marketMatch);
  const timeframeSwitcher=$("#marketTimeframeSwitcher");if(timeframeSwitcher)timeframeSwitcher.hidden=!marketMatch;
  const adminAllowed=!$("#adminPanel").hidden;$("#adminPanel").hidden=true;
- const ids=["homeSection","homeOverview","marketSection","directionSection","cryptoGammaSection","systemSection","opportunitiesSection","cards","openSection","historySection"];
+ const ids=["homeSection","marketSection","directionSection","cryptoGammaSection","systemSection","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection"];
  const hideAll=()=>ids.forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
  const show=(...names)=>names.forEach(id=>{const el=$("#"+id);if(el)el.hidden=false});
  if(PATH==="/"){
   hideAll();show("homeSection","marketSection");
   $("#homeSection h1").innerHTML='<span>'+tr("marketHomeTitle")+'</span>';
-  $("#homeSection p").textContent="اختر السوق لعرض اتجاهه وفرصه وصفقاته فقط.";
+  $("#homeSection p").textContent=tr("marketPageDescription");
  }else if(marketMatch){
   if(!MARKET_NAMES[market]){location.replace("/");return}
   hideAll();show("homeSection","directionSection","opportunitiesSection","cards","openSection","historySection");
@@ -334,11 +345,20 @@ function configurePage(){
   $("#homeSection p").textContent="اتجاه السوق والفرص والصفقات الخاصة بهذا السوق فقط.";
  }else if(PATH.startsWith("/sections/")){
   const section=PATH.split("/").pop();
-  const map={direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["openSection"],history:["historySection"]};
+  const map={system:["systemSection"],direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["openSection"],history:["historySection"]};
   hideAll();show("homeSection",...(map[section]||[]));
-  const titles={direction:"اتجاه السوق",opportunities:"فرص التداول","open-trades":"الصفقات المفتوحة",history:"سجل الصفقات"};
-  $("#homeSection h1").innerHTML='<span>'+safe(titles[section]||"الأسواق")+'</span>';
-  $("#homeSection p").textContent="بيانات السوق والصفقات فقط.";
+  const titles={system:"مركز مراقبة المنصة",direction:"توجه السوق",opportunities:"فرص التداول","open-trades":"متابعة الصفقات",history:"سجل النتائج"};
+  $("#homeSection h1").innerHTML='<span>'+safe(titles[section]||"القسم")+'</span>';
+  $("#homeSection p").textContent="قسم مستقل عن الصفحة الرئيسية.";
+ }else if(PATH==="/blog"){
+  hideAll();show("homeSection","blogSection");
+  $("#homeSection h1").innerHTML='المدونة <span>التعليمية</span>';
+  $("#homeSection p").textContent="محتوى تعليمي مستقل عن صفحات الأسواق.";
+ }else if(PATH==="/news"){
+  hideAll();show("homeSection","newsSection");
+  $("#homeSection h1").innerHTML='أخبار <span>الأسواق</span>';
+  $("#homeSection p").textContent="آخر العناوين من موجز أخبار خارجي.";
+  loadNews();
  }else{hideAll();show("homeSection","marketSection")}
  $("#marketSection").hidden=PATH!=="/";
  $("#refresh").hidden=true;
