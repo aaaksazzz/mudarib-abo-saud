@@ -15,7 +15,7 @@ import requests
 from gamma_engine import analyse_liquidity_candidate
 from market_ranking import rank_market_assets
 from institutional_flow import analyse_orderbook_flow
-from scan_rotation import select_scan_batch, select_priority_scan_batch
+from scan_rotation import select_scan_batch
 
 try:
     import yfinance as yf
@@ -553,6 +553,10 @@ def db():
             market TEXT NOT NULL, timeframe TEXT NOT NULL, payload_json TEXT NOT NULL,
             updated_at INTEGER NOT NULL, PRIMARY KEY(market,timeframe)
         )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS market_scan_cursors (
+            market TEXT NOT NULL, timeframe TEXT NOT NULL, next_offset INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL, PRIMARY KEY(market,timeframe)
+        )""")
         connection.execute("""CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user',
@@ -647,6 +651,25 @@ def load_market_scan_snapshot(market, timeframe):
     except (TypeError, ValueError):
         return None
     return {"payload": payload, "updated_at": int(row["updated_at"])}
+
+
+def load_market_scan_cursor(market, timeframe):
+    with db() as connection:
+        row = connection.execute(
+            "SELECT next_offset FROM market_scan_cursors WHERE market=? AND timeframe=?",
+            (market, timeframe),
+        ).fetchone()
+    return max(0, int(row["next_offset"])) if row else 0
+
+
+def save_market_scan_cursor(market, timeframe, next_offset):
+    with db() as connection:
+        connection.execute(
+            """INSERT INTO market_scan_cursors(market,timeframe,next_offset,updated_at)
+               VALUES(?,?,?,?) ON CONFLICT(market,timeframe) DO UPDATE SET
+               next_offset=excluded.next_offset,updated_at=excluded.updated_at""",
+            (market, timeframe, max(0, int(next_offset)), int(time.time())),
+        )
 
 
 def load_saved_market_trades(market, timeframe):
@@ -1354,11 +1377,15 @@ def market(kind):
         fast_movers = assets[:10]
         prices = {row["symbol"]: row["price"] for row in assets}
         update_open_trades(kind, prices)
-        # Scan a bounded rotating batch so large universes are covered over successive refreshes.
+        # Scan exactly one round-robin batch of up to 20 assets per market/timeframe.
+        # The cursor is stored in SQLite so a restart does not restart from asset zero.
+        cursor_key = (kind, timeframe)
         with SCAN_CURSOR_LOCK:
-            scan_offset = SCAN_CURSORS.get(kind, 0)
-            candidates, next_scan_offset, scan_offset, priority_candidates = select_priority_scan_batch(assets, scan_offset, 12, 6)
-            SCAN_CURSORS[kind] = next_scan_offset
+            if cursor_key not in SCAN_CURSORS:
+                SCAN_CURSORS[cursor_key] = load_market_scan_cursor(kind, timeframe)
+            scan_offset = SCAN_CURSORS[cursor_key]
+            candidates, next_scan_offset, scan_offset = select_scan_batch(assets, scan_offset, 20)
+        priority_candidates = 0
         signals = []
         diagnostic_rows = [{} for _ in candidates]
         # Signal eligibility is determined by the selected asset's two reference
@@ -1452,6 +1479,7 @@ def market(kind):
             "signals": signals, "open_trades": active,
             "scan_diagnostics": {
                 "universe_size": len(assets), "candidates_scanned": len(candidates),
+                "batch_size": 20, "batch_start": scan_offset,
                 "scan_offset": scan_offset, "next_scan_offset": next_scan_offset,
                 "priority_candidates": priority_candidates,
                 "scan_cycle_complete": bool(assets) and next_scan_offset <= scan_offset,
@@ -1469,6 +1497,9 @@ def market(kind):
             "score_note": "اتجاه 4 ساعات واليومي من بنية OHLCV والزخم والحجم؛ الدخول من سحب سيولة أو الامتصاص وتأكيد الشمعة على الفريم المحدد. درجة الجودة من 100 وليست احتمال نجاح."
         }
         scan_saved_at = save_market_scan_snapshot(kind, timeframe, response_payload)
+        save_market_scan_cursor(kind, timeframe, next_scan_offset)
+        with SCAN_CURSOR_LOCK:
+            SCAN_CURSORS[cursor_key] = next_scan_offset
         response_payload.update({
             "scan_cached": False, "scan_in_progress": False,
             "scan_updated_at": scan_saved_at,
