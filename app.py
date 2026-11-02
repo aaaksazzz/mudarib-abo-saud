@@ -100,7 +100,7 @@ def cached(key, ttl, loader):
         return value
 
 def fetch_json(url, params=None):
-    response = requests.get(url, params=params, timeout=(3.5, 7), headers={"User-Agent": "SmartTradingPro/2.0"})
+    response = requests.get(url, params=params, timeout=(2.5, 5), headers={"User-Agent": "SmartTradingPro/2.0"})
     response.raise_for_status()
     return response.json()
 
@@ -1272,7 +1272,7 @@ def home_overview():
         universes = {}
         breadth = {}
         errors = {}
-        with ThreadPoolExecutor(max_workers=3) as pool:
+        with ThreadPoolExecutor(max_workers=2) as pool:
             jobs = {pool.submit(fetch_universe, kind): kind for kind in kinds}
             for job in as_completed(jobs):
                 kind = jobs[job]
@@ -1392,14 +1392,14 @@ def market(kind):
                 SCAN_CURSORS[cursor_key] = load_market_scan_cursor(kind, timeframe)
             scan_offset = SCAN_CURSORS[cursor_key]
             candidates, next_scan_offset, scan_offset, priority_candidates = select_priority_scan_batch(
-                assets, scan_offset, batch_size=20, priority_size=10
+                assets, scan_offset, batch_size=6, priority_size=3
             )
         signals = []
         diagnostic_rows = [{} for _ in candidates]
         # Signal eligibility is determined by the selected asset's two reference
         # timeframes, not by aggregate 24h market breadth. A neutral market-wide
         # count must not suppress individually aligned setups.
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=2) as pool:
             jobs = {
                 pool.submit(analyse_candidate, kind, row, direction, diagnostic_rows[index], timeframe): index
                 for index, row in enumerate(candidates)
@@ -1487,7 +1487,7 @@ def market(kind):
             "signals": signals, "open_trades": active,
             "scan_diagnostics": {
                 "universe_size": len(assets), "candidates_scanned": len(candidates),
-                "batch_size": 20, "batch_start": scan_offset,
+                "batch_size": 6, "batch_start": scan_offset,
                 "scan_offset": scan_offset, "next_scan_offset": next_scan_offset,
                 "priority_candidates": priority_candidates,
                 "scan_cycle_complete": bool(assets) and next_scan_offset <= scan_offset,
