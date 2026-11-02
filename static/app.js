@@ -498,6 +498,14 @@ $("#copyPaymentAddress").addEventListener("click",async()=>{
  try{await navigator.clipboard.writeText($("#paymentAddress").textContent);$("#paymentNotice").textContent="تم نسخ عنوان الدفع."}
  catch(e){$("#paymentNotice").textContent="انسخ العنوان يدوياً."}
 });
+$("#submitBinanceReference").addEventListener("click",async()=>{
+ const b=$("#submitBinanceReference");b.disabled=true;
+ try{
+  const r=await fetch("/api/payments/reference",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_id:Number($("#activeOrderId").value),reference:$("#binancePayReference").value.trim()})});
+  const d=await r.json();if(!r.ok)throw Error(d.message||"تعذر إرسال المرجع.");
+  $("#paymentNotice").textContent=d.message;
+ }catch(e){$("#paymentNotice").textContent=e.message}finally{b.disabled=false}
+});
 $("#verifyPayment").addEventListener("click",async()=>{
  const b=$("#verifyPayment");b.disabled=true;
  try{
@@ -560,7 +568,7 @@ tick();setInterval(tick,1000);
 initPreferences();
 initializeAccess();
 timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load()}else if(PATH==="/")loadHomeOverview()},60000);
-+p.amount_usdt+' · '+safe(p.network)+' · '+status+'</small></div><div class="admin-actions">'+actions+'</div></article>';
++p.amount_usdt+' · '+safe(p.network)+' · '+status+(p.note?' · '+safe(p.note):'')+'</small></div><div class="admin-actions">'+actions+'</div></article>';
   }).join(""):'<div class="empty">لا توجد طلبات دفع.</div>';
  }catch(e){$("#adminPayments").innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
 }
