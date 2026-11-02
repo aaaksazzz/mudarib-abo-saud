@@ -217,6 +217,7 @@ async function loadNews(){
 }
 $("#newsRefresh")?.addEventListener("click",loadNews);
 function configurePage(){
+ const timeframeSwitcher=$("#marketTimeframeSwitcher");if(timeframeSwitcher)timeframeSwitcher.hidden=!marketMatch;
  const adminAllowed=!$("#adminPanel").hidden;$("#adminPanel").hidden=true;
  const ids=["homeSection","homeOverview","marketSection","directionSection","cryptoGammaSection","systemSection","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection"];
  const hideAll=()=>ids.forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
