@@ -333,6 +333,16 @@ def test_paid_market_access_and_admin_subscription_management(tmp_path, monkeypa
         "user_id": member["id"], "action": "grant", "days": 30
     })
     assert granted.status_code == 200
+    locked = auth_client.post("/api/admin/sections", json={"section":"spot","enabled":False})
+    assert locked.status_code == 200
+    with auth_client.session_transaction() as session:
+        session.clear()
+        session["user_id"] = member["id"]
+    assert auth_client.get("/api/market/spot").status_code == 403
+    with auth_client.session_transaction() as session:
+        session.clear()
+        session["user_id"] = admin["id"]
+    assert auth_client.post("/api/admin/sections",json={"section":"spot","enabled":True}).status_code == 200
     with auth_client.session_transaction() as session:
         session.clear()
         session["user_id"] = member["id"]
