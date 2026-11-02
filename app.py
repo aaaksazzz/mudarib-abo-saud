@@ -891,7 +891,7 @@ def verify_payment():
     except (requests.RequestException,ValueError,KeyError,TypeError) as exc:
         app.logger.warning("Payment verification error: %s",exc);return jsonify({"ok":False,"message":"تعذر التحقق من الشبكة. حاول لاحقاً."}),503
     if not result.get("confirmed"):return jsonify({"ok":False,"message":result.get("reason","لم يتم تأكيد التحويل.")}),422
-    if not result.get("timestamp") or int(result["timestamp"]) < int(order["created_at"]):
+    if not result.get("timestamp") or int(result["timestamp"]) <= int(order["created_at"]):
         return jsonify({"ok":False,"message":"المعاملة أقدم من طلب الدفع أو وقتها غير متاح؛ أنشئ طلباً جديداً وحوّل بعده."}),422
     now=int(time.time())
     try:
