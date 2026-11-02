@@ -23,11 +23,6 @@ async function get(url,timeout=18000){
  }catch(e){if(e.name==="AbortError")throw Error("تأخر مصدر البيانات؛ حاول التحديث بعد قليل.");throw e}
  finally{clearTimeout(id)}
 }
-function renderMovers(rows){
- const root=$("#movers");
- if(!rows||!rows.length){root.innerHTML='<div class="empty">لا تتوفر حركة أصول كافية للعرض.</div>';return}
- root.innerHTML=rows.map(x=>'<article class="mover"><div class="mover-head"><b class="mover-symbol">'+safe(x.symbol)+'</b><span class="mover-side">#'+Number(x.fast_mover_rank||0)+' · '+(x.change24h>=0?"صاعد":"هابط")+'</span></div><b class="mover-price">'+fmt(x.price)+'</b><div class="mover-change '+(x.change24h>=0?"up":"down")+'">'+pct(x.change24h)+'</div><small class="mover-volume">سرعة الحركة '+Number(x.fast_mover_score||0)+'/100 · حجم 24س '+compact(x.volume)+'</small></article>').join("");
-}
 function livePnl(side,entry,current){
  if(!Number.isFinite(Number(entry))||!Number.isFinite(Number(current))||Number(entry)<=0)return null;
  return (Number(current)/Number(entry)-1)*(side==="BUY"?1:-1)*100;
@@ -38,8 +33,8 @@ function renderSignals(rows,diagnostics={}){
   const reasons=diagnostics.rejected_by_reason||{};
   const names={insufficient_candles:"شموع غير كافية",provider_error:"تعذر جلب بيانات المصدر",analysis_error:"خطأ في التحليل",no_sweep_or_absorption:"لم يظهر سحب سيولة أو امتصاص ضمن نطاق الحركة القريب",volume_below_threshold:"حجم التداول دون الشرط",candle_not_confirmed:"شمعة الدخول غير مؤكدة",risk_above_4_5pct:"مخاطرة أعلى من الحد",invalid_risk_levels:"وقف الخسارة أو مستويات المخاطرة غير صالحة",entry_beyond_stop:"السعر تجاوز الوقف",missing_volume:"بيانات الحجم ناقصة",no_reversal_signal:"إشارة الفريم غير واضحة أو لا تحقق شروط العكس",reference_timeframes_not_aligned:"الفريمات المرجعية غير متوافقة",invalid_atr:"مدى الحركة غير صالح",malformed_candles:"بيانات شموع غير سليمة",invalid_ohlc:"بيانات سعر غير سليمة",timeframe_conflict:"تعارض الأطر الزمنية أو عدم تأكيد الساعة"};
   const top=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,3);
-  root.innerHTML='<article class="scan-diagnostic"><div class="scan-diagnostic-head"><div><span class="kicker">LIVE MARKET SCAN</span><h3>لا توجد صفقة مؤكدة الآن</h3><p>لا نعرض صفقة إلا بعد تحقق شروط الدخول والوقف والأهداف.</p></div><span class="scan-wait">بانتظار فرصة</span></div><div class="scan-metrics"><div><small>الأصول المتاحة</small><b>'+Number(diagnostics.universe_size||0)+'</b></div><div><small>تم فحصها</small><b>'+Number(diagnostics.candidates_scanned||0)+'</b></div><div><small>شموع جاهزة</small><b>'+Number(diagnostics.candles_ready||0)+'</b></div><div><small>فرص مقبولة</small><b>'+Number(diagnostics.accepted_before_top3||0)+'</b></div></div><div class="scan-reasons"><b>أكثر أسباب الاستبعاد</b>'+(top.length?top.map(([k,v])=>'<div><span>'+safe(names[k]||k)+'</span><strong>'+v+'</strong></div>').join(""):'<div><span>لا توجد تفاصيل رفض متاحة بعد</span><strong>—</strong></div>')+'</div></article>';
-  return;
+  root.innerHTML='<div class="empty">لا توجد صفقة مؤكدة الآن. ننتظر اكتمال شروط الدخول والوقف والأهداف.</div>';
+   return;
  }
  root.innerHTML=rows.map((x,i)=>{
   const side=x.side==="BUY"?1:-1;
@@ -162,7 +157,7 @@ async function load(){
  if(busy){pending=true;return}
  busy=true;pending=false;
  const refresh=$("#refresh");if(refresh){refresh.disabled=true;refresh.innerHTML="<span>↻</span> جارٍ التحديث";}
- $("#health").textContent="جارٍ التحديث";$("#scanState").textContent="يفحص السوق";$("#scanState").className="";
+ $("#health").textContent="جارٍ التحديث";
  try{
   const requestedMarket=market;
   const providerState=marketStatuses.get(requestedMarket);
@@ -170,14 +165,9 @@ async function load(){
    $("#direction").textContent="غير متاح";
    $("#direction").className="direction-value neutral";
    ["#up","#down","#flat","#total"].forEach(id=>$(id).textContent="—");
-   $("#updated").textContent="—";
-   $("#source").textContent="مصدر البيانات غير مربوط";
+      $("#source").textContent="مصدر البيانات غير مربوط";
    $("#upBar").style.width="0%";$("#downBar").style.width="0%";$("#flatBar").style.width="0%";
-   $("#sourceShort").textContent="غير متاح";
-   $("#scanState").textContent="مصدر البيانات غير مربوط";
-   $("#scanState").className="down";
-   $("#cards").innerHTML='<article class="scan-diagnostic"><h3>مصدر البيانات غير مربوط</h3><p>هذا السوق لا يملك حالياً مزود بيانات مفعّلاً. لن نعرض أسعاراً أو توصيات غير موثوقة.</p></article>';
-   $("#movers").innerHTML='<div class="empty">لا تتوفر بيانات حركة لهذا السوق حالياً.</div>';
+      $("#cards").innerHTML='<article class="scan-diagnostic"><h3>مصدر البيانات غير مربوط</h3><p>هذا السوق لا يملك حالياً مزود بيانات مفعّلاً. لن نعرض أسعاراً أو توصيات غير موثوقة.</p></article>';
    $("#openTrades").innerHTML='<div class="empty">لا توجد بيانات صفقات متاحة لهذا السوق.</div>';
    $("#openCount").textContent="—";
    $("#health").textContent="المصدر غير مربوط";
@@ -190,24 +180,20 @@ async function load(){
   $("#up").textContent=d.up;$("#down").textContent=d.down;$("#flat").textContent=d.flat??0;$("#total").textContent=d.total;
   const total=Math.max(1,Number(d.total)||0);
   $("#upBar").style.width=(d.up/total*100)+"%";$("#downBar").style.width=(d.down/total*100)+"%";$("#flatBar").style.width=((d.flat||0)/total*100)+"%";
-  $("#updated").textContent=new Date(d.updated*1000).toLocaleTimeString("ar-SA");
-  $("#source").textContent="مصدر البيانات: "+d.source+" · "+d.strategy;
-  $("#sourceShort").textContent=d.source||"بيانات عامة";
-  $("#scanState").textContent="اكتمل";$("#scanState").className="state-good";
-  renderMovers(d.movers);renderSignals(d.signals,d.scan_diagnostics||{});renderOpen(d.open_trades);
+    $("#source").textContent="مصدر البيانات: "+d.source+" · "+d.strategy;
+    
+  renderSignals(d.signals,d.scan_diagnostics||{});renderOpen(d.open_trades);
   const strategyLabel={"15m":"15 دقيقة · عكس الإشارة على نفس الفريم","1h":"ساعة · عكس الإشارة على نفس الفريم","4h":"4 ساعات · عكس الإشارة على نفس الفريم","1d":"يومي · عكس الإشارة على نفس الفريم","1w":"أسبوعي · عكس الإشارة على نفس الفريم","1M":"شهري · عكس الإشارة على نفس الفريم"};
   const label=$("#activeStrategy");if(label)label.textContent=strategyLabel[analysisTimeframe]||analysisTimeframe;
   $("#health").textContent="متصل";$("#health").className="ok";
  }catch(e){
   $("#direction").textContent="غير متاح";$("#direction").className="direction-value neutral";
   ["#up","#down","#flat","#total"].forEach(id=>$(id).textContent="—");
-  $("#updated").textContent="—";$("#sourceShort").textContent="غير متاح";$("#source").textContent="مصدر البيانات: غير متاح";
-  $("#upBar").style.width="0%";$("#downBar").style.width="0%";$("#flatBar").style.width="0%";
+    $("#upBar").style.width="0%";$("#downBar").style.width="0%";$("#flatBar").style.width="0%";
   $("#openCount").textContent="—";
-  $("#movers").innerHTML='<div class="empty">تعذر تحديث بيانات الحركة؛ لا نعرض بيانات قديمة على أنها مباشرة.</div>';
   $("#openTrades").innerHTML='<div class="empty">تعذر تحديث متابعة الصفقات؛ أعد المحاولة عند عودة المصدر.</div>';
   $("#cards").innerHTML='<div class="empty">'+safe(e.message)+'</div>';
-  $("#scanState").textContent="تعذر الفحص";$("#scanState").className="down";
+  
   $("#health").textContent="غير متصل";$("#health").className="bad";
  }finally{
   busy=false;if(refresh){refresh.disabled=false;refresh.innerHTML="<span>↻</span> تحديث البيانات";}
@@ -235,7 +221,7 @@ async function loadNews(){
 $("#newsRefresh")?.addEventListener("click",loadNews);
 function configurePage(){
  const adminAllowed=!$("#adminPanel").hidden;$("#adminPanel").hidden=true;
- const ids=["homeSection","homeOverview","marketSection","directionSection","cryptoGammaSection","systemSection","moversSection","movers","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection"];
+ const ids=["homeSection","homeOverview","marketSection","directionSection","cryptoGammaSection","systemSection","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection"];
  const hideAll=()=>ids.forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
  const show=(...names)=>names.forEach(id=>{const el=$("#"+id);if(el)el.hidden=false});
  if(PATH==="/"){
@@ -278,7 +264,7 @@ function configurePage(){
 
 document.addEventListener("visibilitychange",()=>{
  if(document.hidden||$("#mainContent").hidden||busy)return;
- if(marketMatch||(["direction","movers","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();
+ if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();
  else if(PATH==="/sections/history")loadHistoryPage();
  else if(PATH==="/sections/system")loadSystemStatus();
 });
@@ -304,7 +290,7 @@ async function startAuthorized(user=null){
  configurePage();
  if(marketMatch){await loadMarketStatuses();await load();}
  else if(PATH==="/"){await loadMarketStatuses();}
- else if(PATH.startsWith("/sections/") && ["direction","movers","opportunities","open-trades"].includes(PATH.split("/").pop())){await loadMarketStatuses();await load();}
+ else if(PATH.startsWith("/sections/") && ["direction","opportunities","open-trades"].includes(PATH.split("/").pop())){await loadMarketStatuses();await load();}
  else if(PATH==="/sections/history"){await loadHistoryPage();}
  else if(PATH==="/sections/system"){await loadSystemStatus();}
 }
@@ -396,4 +382,4 @@ $("#siteDrawer").addEventListener("click",e=>{
 
 tick();setInterval(tick,1000);
 initializeAccess();
-timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","movers","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();else if(PATH==="/sections/history")loadHistoryPage();else if(PATH==="/sections/system")loadSystemStatus()},30000);
+timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();else if(PATH==="/sections/history")loadHistoryPage();else if(PATH==="/sections/system")loadSystemStatus()},30000);
