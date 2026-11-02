@@ -994,19 +994,25 @@ def home_overview():
         kinds.extend(kind for kind in ("us", "saudi") if YAHOO_SYMBOLS.get(kind))
 
     def fetch_universe(kind):
-        rows = cached(kind + ":universe", 20, lambda: market_tickers(kind))
-        return kind, rank_market_assets(rows)
+        rows = rank_market_assets(cached(kind + ":universe", 20, lambda: market_tickers(kind)))
+        up = sum(1 for row in rows if row["change24h"] > 0)
+        down = sum(1 for row in rows if row["change24h"] < 0)
+        flat = len(rows) - up - down
+        direction = "BUY" if up > down else ("SELL" if down > up else "NEUTRAL")
+        return kind, rows, {"up": up, "down": down, "flat": flat, "direction": direction}
 
     def build():
         universes = {}
+        breadth = {}
         errors = {}
         with ThreadPoolExecutor(max_workers=3) as pool:
             jobs = {pool.submit(fetch_universe, kind): kind for kind in kinds}
             for job in as_completed(jobs):
                 kind = jobs[job]
                 try:
-                    _, rows = job.result()
+                    _, rows, counts = job.result()
                     universes[kind] = rows
+                    breadth[kind] = counts
                 except Exception as exc:
                     errors[kind] = str(exc)[:180]
                     app.logger.warning("Home overview unavailable for %s: %s", kind, exc)
@@ -1026,6 +1032,10 @@ def home_overview():
             market_rows.append({
                 "id": kind, "name": names.get(kind, kind), "status": status,
                 "eligible_assets": len(rows), "error": errors.get(kind),
+                "up": breadth.get(kind, {}).get("up"),
+                "down": breadth.get(kind, {}).get("down"),
+                "flat": breadth.get(kind, {}).get("flat"),
+                "direction": breadth.get(kind, {}).get("direction"),
             })
 
         movers = []
