@@ -90,10 +90,6 @@ class TradePersistenceTests(unittest.TestCase):
         self.assertEqual(row["symbol"], "TESTUSDT")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
     def test_market_scan_snapshot_persists_full_results_per_market_and_timeframe(self):
         payload = {
             "ok": True,
@@ -136,3 +132,8 @@ if __name__ == "__main__":
             self.assertTrue(response.json["scan_cached"])
             self.assertEqual(response.json["signals"][0]["symbol"], "BTCUSDT")
             self.assertGreater(response.json["seconds_until_next_scan"], 0)
+
+
+
+if __name__ == "__main__":
+    unittest.main()
