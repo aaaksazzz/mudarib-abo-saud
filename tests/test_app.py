@@ -490,3 +490,43 @@ def test_candidate_accepts_35_completed_candles_and_rejects_34(monkeypatch):
     assert rejected is None
     assert diagnostics["reason"] == "insufficient_reference_candles"
     assert diagnostics["reference_candles"] == {"4h": 34, "1d": 34}
+
+
+def test_auth_me_reports_unconfigured_as_nonfatal_public_status(monkeypatch):
+    monkeypatch.setattr(module, "AUTH_CONFIGURED", False)
+    with client.session_transaction() as session:
+        session.clear()
+    response = client.get("/api/auth/me")
+    assert response.status_code == 200
+    assert response.json["ok"] is True
+    assert response.json["configured"] is False
+    assert response.json["auth_available"] is False
+    assert response.json["user"] is None
+
+def test_open_confirmed_trade_remains_in_opportunity_cards_after_refresh(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "persistent-cards.sqlite3")
+    module.CACHE.pop("spot:universe", None)
+    module.SCAN_CURSORS.pop("spot", None)
+    monkeypatch.setattr(module, "market_tickers", lambda kind: [
+        {"symbol": "AAAUSDT", "price": 105.0, "volume": 2_000_000, "change24h": 5.0}
+    ])
+    monkeypatch.setattr(module, "analyse_candidate", lambda *args: None)
+    now = int(time.time())
+    with module.db() as connection:
+        connection.execute(
+            """INSERT INTO trades
+               (market,symbol,timeframe,side,entry,stop_loss,tp1,tp2,tp3,status,
+                created_at,updated_at,signal_candle_time)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ("spot", "AAAUSDT", "15m", "BUY", 100.0, 98.0, 102.0, 104.0,
+             106.0, "OPEN", now - 300, now - 300, now - 900)
+        )
+    response = client.get("/api/market/spot?timeframe=15m")
+    assert response.status_code == 200
+    assert len(response.json["signals"]) == 1
+    card = response.json["signals"][0]
+    assert card["symbol"] == "AAAUSDT"
+    assert card["persisted"] is True
+    assert card["entry"] == 100.0
+    assert card["stop_loss"] == 98.0
+    assert card["tp3"] == 106.0
