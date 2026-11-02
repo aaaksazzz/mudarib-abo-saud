@@ -11,6 +11,7 @@ def trend_rows(direction="up", count=45):
         rows.append({"open": close - 0.05 if direction == "up" else close + 0.05,
                      "high": close + 0.10, "low": close - 0.10,
                      "close": close, "volume": 1000})
+    rows[-1]["volume"] = 1300
     return rows
 
 
