@@ -420,6 +420,16 @@ async function logout(){
 }
 $("#authLogout").addEventListener("click",logout);
 $("#topLogout").addEventListener("click",logout);
+async function loadUserSectionAccess(){
+ try{
+  const d=await get("/api/access/sections",7000),sections=d.sections||{};
+  document.querySelectorAll("[data-market]").forEach(el=>{el.hidden=sections[el.dataset.market]===false});
+  const links={"/sections/direction":"direction","/sections/opportunities":"opportunities","/sections/open-trades":"open-trades","/sections/history":"history","/news":"news","/blog":"blog"};
+  Object.entries(links).forEach(([href,key])=>{const el=document.querySelector('#siteDrawer a[href="'+href+'"]');if(el)el.hidden=sections[key]===false});
+  const page=PATH.startsWith("/sections/")?PATH.split("/").pop():(PATH==="/blog"?"blog":PATH==="/news"?"news":"");
+  if(page&&sections[page]===false){$("#health").textContent="هذا القسم مغلق من الإدارة";$("#health").className="bad";}
+ }catch(e){console.warn("Section permissions unavailable",e)}
+}
 async function loadAdminUsers(){
  try{
   const d=await get("/api/admin/users",10000);
