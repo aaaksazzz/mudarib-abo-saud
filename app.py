@@ -639,7 +639,7 @@ def protect_admin_api_only():
 @app.get("/api/auth/me")
 def auth_me():
     if not auth_setup_ready():
-        return jsonify({"ok": False, "configured": False, "message": "يلزم إعداد بيانات الأدمن ومفتاح الجلسة على الخادم."}), 503
+        return jsonify({"ok": True, "configured": False, "user": None, "auth_available": False, "message": "المشاهدة العامة متاحة؛ يلزم إعداد بيانات الأدمن لتفعيل تسجيل الدخول."}), 200
     user = current_user()
     return jsonify({"ok": True, "configured": True, "user": public_user(user) if user else None})
 
@@ -1086,7 +1086,7 @@ def market(kind):
                 "priority_candidates": priority_candidates,
                 "scan_cycle_complete": bool(assets) and next_scan_offset <= scan_offset,
                 "candles_ready": sum(1 for item in diagnostic_rows if item.get("candles_ready") is True),
-                "candles_required": 50,
+                "candles_required": 35,
                 "accepted_before_top3": rejection_counts.get("accepted", 0),
                 "rejected_by_reason": {key: value for key, value in rejection_counts.items() if key != "accepted"},
             },
