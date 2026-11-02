@@ -1,5 +1,7 @@
 const $=s=>document.querySelector(s);
+const MARKET_IDS=["spot","futures","coinm","alpha","saudi","us","contracts","forex"];
 const MARKET_NAMES={spot:"Binance Spot",futures:"Binance USD-M Futures",coinm:"Binance COIN-M Futures",alpha:"Binance Alpha",saudi:"السوق السعودي",us:"الأسهم الأمريكية",contracts:"العقود الأمريكية",forex:"الفوركس والذهب"};
+function marketName(id){const i=MARKET_IDS.indexOf(id);return i<0?(MARKET_NAMES[id]||id):(MARKET_TRANSLATIONS[currentLanguage]||MARKET_TRANSLATIONS.ar)[i]}
 const PATH=location.pathname.replace(/\/+$/,"")||"/";
 const marketMatch=PATH.match(/^\/markets\/([a-z]+)$/);
 let market=marketMatch?marketMatch[1]:"spot",busy=false,pending=false,timer=null;
@@ -13,6 +15,71 @@ const fmt=n=>Number(n).toLocaleString("en-US",{maximumFractionDigits:8});
 const compact=n=>{n=Number(n)||0;if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return fmt(n)};
 const pct=n=>(Number(n)>=0?"+":"")+Number(n).toFixed(2)+"%";
 const safe=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+const LANG_KEYS=["menu","close","home","markets","marketIndependent","direction","marketTrend","scanned","up","down","neutral","opportunities","sameFrame","timeframe","min15","hour","hour4","daily","weekly","monthly","openTrades","tracking","noOpenTrades","language","auto","night","day","manualExecution","marketHomeTitle","marketPageDescription","selectMarket","independentSources","rankingTop3","dataSource","buy","sell","entry","stopLoss","target1","target2","target3","noTrade","live"];
+const LANG_TEXT={
+ar:["القائمة","إغلاق","الرئيسية","الأسواق المستقلة","صفحة مستقلة","توجه السوق","الاتجاه العام","أصل مفحوص","صاعد","هابط","محايد","فرص التداول","التحليل على الفريم نفسه","فريم التحليل","15 دقيقة","ساعة","4 ساعات","يومي","أسبوعي","شهري","متابعة الصفقات","متابعة تلقائية للصفقات","لا توجد صفقات مفتوحة محفوظة لهذا السوق.","اللغة","تلقائي","وضع ليلي","وضع نهاري","تحليل آلي · تنفيذ يدوي فقط","الأسواق الذكية","بيانات واتجاهات وفرص هذا السوق فقط.","اختر السوق","مصادر مستقلة لكل سوق","أفضل 3 فرص","مصدر البيانات","شراء","بيع","الدخول","وقف الخسارة","الهدف الأول","الهدف الثاني","الهدف الثالث","لا توجد صفقة مؤكدة الآن. ننتظر اكتمال شروط الدخول والوقف والأهداف.","مباشر"],
+en:["Menu","Close","Home","Markets","Independent page","Market direction","Overall trend","Assets scanned","Bullish","Bearish","Neutral","Trading opportunities","Analysis on the same timeframe","Timeframe","15 minutes","1 hour","4 hours","Daily","Weekly","Monthly","Trade tracker","Automatic trade tracking","No open trades saved for this market.","Language","Auto","Dark mode","Light mode","Automated analysis · Manual execution only","Smart Markets","Market data, direction and opportunities only.","Select market","Independent data sources","Top 3 opportunities","Data source","Buy","Sell","Entry","Stop loss","Target 1","Target 2","Target 3","No confirmed trade now. Waiting for valid entry, stop and targets.","Live"],
+es:["Menú","Cerrar","Inicio","Mercados","Página independiente","Dirección del mercado","Tendencia general","Activos analizados","Alcista","Bajista","Neutral","Oportunidades","Análisis en el mismo marco temporal","Marco temporal","15 minutos","1 hora","4 horas","Diario","Semanal","Mensual","Seguimiento de operaciones","Seguimiento automático","No hay operaciones abiertas guardadas para este mercado.","Idioma","Automático","Modo oscuro","Modo claro","Análisis automático · Ejecución manual","Mercados inteligentes","Solo datos, dirección y oportunidades de este mercado.","Elegir mercado","Fuentes independientes","Mejores 3 oportunidades","Fuente de datos","Comprar","Vender","Entrada","Stop loss","Objetivo 1","Objetivo 2","Objetivo 3","No hay operaciones confirmadas. Esperando condiciones válidas.","En vivo"],
+de:["Menü","Schließen","Startseite","Märkte","Eigene Marktseite","Marktrichtung","Gesamttrend","Geprüfte Assets","Aufwärts","Abwärts","Neutral","Handelschancen","Analyse im selben Zeitrahmen","Zeitrahmen","15 Minuten","1 Stunde","4 Stunden","Täglich","Wöchentlich","Monatlich","Trade-Überwachung","Automatische Trade-Überwachung","Keine offenen Trades für diesen Markt gespeichert.","Sprache","Automatisch","Dunkelmodus","Hellmodus","Automatische Analyse · Manuelle Ausführung","Intelligente Märkte","Nur Daten, Richtung und Chancen dieses Marktes.","Markt wählen","Unabhängige Datenquellen","Top 3 Chancen","Datenquelle","Kaufen","Verkaufen","Einstieg","Stop-Loss","Ziel 1","Ziel 2","Ziel 3","Kein bestätigter Trade. Warte auf gültige Bedingungen.","Live"],
+id:["Menu","Tutup","Beranda","Pasar","Halaman terpisah","Arah pasar","Tren keseluruhan","Aset dipindai","Naik","Turun","Netral","Peluang trading","Analisis pada kerangka waktu yang sama","Kerangka waktu","15 menit","1 jam","4 jam","Harian","Mingguan","Bulanan","Pemantauan posisi","Pemantauan otomatis","Tidak ada posisi terbuka tersimpan untuk pasar ini.","Bahasa","Otomatis","Mode gelap","Mode terang","Analisis otomatis · Eksekusi manual","Pasar Cerdas","Hanya data, arah, dan peluang pasar ini.","Pilih pasar","Sumber data independen","3 peluang teratas","Sumber data","Beli","Jual","Entry","Stop loss","Target 1","Target 2","Target 3","Belum ada transaksi terkonfirmasi. Menunggu kondisi valid.","Live"],
+"pt-BR":["Menu","Fechar","Início","Mercados","Página independente","Direção do mercado","Tendência geral","Ativos analisados","Alta","Baixa","Neutro","Oportunidades","Análise no mesmo período","Período","15 minutos","1 hora","4 horas","Diário","Semanal","Mensal","Acompanhamento de operações","Acompanhamento automático","Não há operações abertas salvas para este mercado.","Idioma","Automático","Modo escuro","Modo claro","Análise automática · Execução manual","Mercados inteligentes","Somente dados, direção e oportunidades deste mercado.","Selecionar mercado","Fontes de dados independentes","3 melhores oportunidades","Fonte de dados","Comprar","Vender","Entrada","Stop loss","Alvo 1","Alvo 2","Alvo 3","Nenhuma operação confirmada. Aguardando condições válidas.","Ao vivo"],
+tr:["Menü","Kapat","Ana sayfa","Piyasalar","Bağımsız sayfa","Piyasa yönü","Genel eğilim","Taranan varlıklar","Yükseliş","Düşüş","Nötr","İşlem fırsatları","Aynı zaman diliminde analiz","Zaman dilimi","15 dakika","1 saat","4 saat","Günlük","Haftalık","Aylık","İşlem takibi","Otomatik işlem takibi","Bu piyasa için kayıtlı açık işlem yok.","Dil","Otomatik","Koyu mod","Açık mod","Otomatik analiz · Manuel işlem","Akıllı Piyasalar","Yalnızca bu piyasanın verileri, yönü ve fırsatları.","Piyasa seç","Bağımsız veri kaynakları","En iyi 3 fırsat","Veri kaynağı","Al","Sat","Giriş","Zarar durdur","Hedef 1","Hedef 2","Hedef 3","Onaylanmış işlem yok. Geçerli koşullar bekleniyor.","Canlı"],
+fr:["Menu","Fermer","Accueil","Marchés","Page indépendante","Direction du marché","Tendance générale","Actifs analysés","Hausse","Baisse","Neutre","Opportunités","Analyse sur la même unité de temps","Unité de temps","15 minutes","1 heure","4 heures","Quotidien","Hebdomadaire","Mensuel","Suivi des trades","Suivi automatique","Aucun trade ouvert enregistré pour ce marché.","Langue","Automatique","Mode sombre","Mode clair","Analyse automatique · Exécution manuelle","Marchés intelligents","Données, direction et opportunités de ce marché uniquement.","Choisir un marché","Sources de données indépendantes","Top 3 opportunités","Source des données","Acheter","Vendre","Entrée","Stop loss","Objectif 1","Objectif 2","Objectif 3","Aucun trade confirmé. En attente de conditions valides.","En direct"],
+hi:["मेनू","बंद करें","होम","बाज़ार","अलग पृष्ठ","बाज़ार की दिशा","समग्र रुझान","स्कैन की गई संपत्तियाँ","तेज़ी","मंदी","तटस्थ","ट्रेडिंग अवसर","उसी समय-सीमा पर विश्लेषण","समय-सीमा","15 मिनट","1 घंटा","4 घंटे","दैनिक","साप्ताहिक","मासिक","ट्रेड निगरानी","स्वचालित निगरानी","इस बाज़ार के लिए कोई खुला ट्रेड सहेजा नहीं गया है।","भाषा","स्वचालित","डार्क मोड","लाइट मोड","स्वचालित विश्लेषण · मैन्युअल निष्पादन","स्मार्ट मार्केट","केवल इस बाज़ार का डेटा, दिशा और अवसर।","बाज़ार चुनें","स्वतंत्र डेटा स्रोत","शीर्ष 3 अवसर","डेटा स्रोत","खरीदें","बेचें","प्रवेश","स्टॉप लॉस","लक्ष्य 1","लक्ष्य 2","लक्ष्य 3","अभी कोई पुष्ट ट्रेड नहीं। वैध शर्तों की प्रतीक्षा है।","लाइव"]
+};
+const MARKET_TRANSLATIONS={
+ar:["Binance Spot","Binance USD-M Futures","Binance COIN-M Futures","Binance Alpha","السوق السعودي","الأسهم الأمريكية","العقود الأمريكية","الفوركس والذهب"],
+en:["Binance Spot","Binance USD-M Futures","Binance COIN-M Futures","Binance Alpha","Saudi Market","U.S. Stocks","U.S. Contracts","Forex & Gold"],
+es:["Binance Spot","Futuros Binance USD-M","Futuros Binance COIN-M","Binance Alpha","Mercado saudí","Acciones de EE. UU.","Contratos de EE. UU.","Forex y oro"],
+de:["Binance Spot","Binance USD-M Futures","Binance COIN-M Futures","Binance Alpha","Saudi-Arabischer Markt","US-Aktien","US-Kontrakte","Forex & Gold"],
+id:["Binance Spot","Binance USD-M Futures","Binance COIN-M Futures","Binance Alpha","Pasar Saudi","Saham AS","Kontrak AS","Forex & Emas"],
+"pt-BR":["Binance Spot","Futuros Binance USD-M","Futuros Binance COIN-M","Binance Alpha","Mercado saudita","Ações dos EUA","Contratos dos EUA","Forex e ouro"],
+tr:["Binance Spot","Binance USD-M Vadeli","Binance COIN-M Vadeli","Binance Alpha","Suudi Piyasası","ABD Hisseleri","ABD Kontratları","Forex ve Altın"],
+fr:["Binance Spot","Futures Binance USD-M","Futures Binance COIN-M","Binance Alpha","Marché saoudien","Actions américaines","Contrats américains","Forex et or"],
+hi:["Binance Spot","Binance USD-M Futures","Binance COIN-M Futures","Binance Alpha","सऊदी बाज़ार","अमेरिकी शेयर","अमेरिकी कॉन्ट्रैक्ट","फॉरेक्स और सोना"]
+};
+const LANG_INDEX=Object.fromEntries(LANG_KEYS.map((key,i)=>[key,i]));
+let currentLanguage="ar";
+function tr(key){const i=LANG_INDEX[key];return i===undefined?key:(LANG_TEXT[currentLanguage]||LANG_TEXT.ar)[i]}
+function effectiveLanguage(choice){
+ if(choice!=="auto")return LANG_TEXT[choice]?choice:"ar";
+ const browser=(navigator.language||"ar").toLowerCase();
+ if(browser.startsWith("pt"))return "pt-BR";
+ const match=["ar","en","es","de","id","tr","fr","hi"].find(code=>browser.startsWith(code));
+ return match||"ar";
+}
+function applyLanguage(choice){
+ const lang=effectiveLanguage(choice);currentLanguage=lang;
+ document.documentElement.lang=lang;document.documentElement.dir=lang==="ar"?"rtl":"ltr";
+ const set=(selector,key)=>{const el=$(selector);if(el)el.textContent=tr(key)};
+ set("#menuOpen span","menu");set(".drawer-head b","markets");set('#siteDrawer a[href="/"]',"home");
+ const groups=document.querySelectorAll("#siteDrawer .drawer-group");if(groups[0])groups[0].textContent=tr("markets");if(groups[1])groups[1].textContent=tr("direction");if(groups[2])groups[2].textContent="Content";
+ const navKeys=["direction","opportunities","openTrades"];const navLinks=[...document.querySelectorAll("#siteDrawer a")];
+ const navMap={"/sections/direction":"direction","/sections/opportunities":"opportunities","/sections/open-trades":"openTrades"};
+ navLinks.forEach(a=>{const key=navMap[a.getAttribute("href")];if(key)a.textContent=tr(key)});
+ const markets=Object.keys(MARKET_NAMES);document.querySelectorAll("[data-market] b").forEach((el,i)=>{const index=markets.indexOf(el.closest("[data-market]")?.dataset.market);if(index>=0)el.textContent=(MARKET_TRANSLATIONS[lang]||MARKET_TRANSLATIONS.ar)[index]});
+ set(".switcher-heading > span","selectMarket");set(".switcher-heading small","independentSources");
+ set("#directionSection .panel-top h2","direction");set("#directionSection .direction-main small","marketTrend");set("#directionSection .breadth-total small","scanned");
+ set("#opportunitiesSection h2","opportunities");set("#opportunitiesSection p","sameFrame");set(".timeframe-label","timeframe");
+ const tfKeys=["min15","hour","hour4","daily","weekly","monthly"];document.querySelectorAll("[data-timeframe]").forEach((el,i)=>{if(tfKeys[i])el.textContent=tr(tfKeys[i])});
+ set("#openSection h2","openTrades");set("#openSection p","tracking");set("#footerLanguageLabel","language");
+ const select=$("#languageSelect");if(select&&select.value!==choice)select.value=choice;
+ const theme=$("#themeToggle");if(theme)theme.textContent=(document.documentElement.dataset.theme==="light"?"🌙 "+tr("night"):"☀️ "+tr("day"));
+}
+function applyTheme(theme){
+ const value=theme==="light"?"light":"dark";document.documentElement.dataset.theme=value;
+ const button=$("#themeToggle");if(button)button.textContent=(value==="light"?"🌙 "+tr("night"):"☀️ "+tr("day"));
+ try{localStorage.setItem("stp-theme",value)}catch{}
+}
+function initPreferences(){
+ let language="auto",theme="dark";
+ try{language=localStorage.getItem("stp-language")||"auto";theme=localStorage.getItem("stp-theme")||"dark"}catch{}
+ const select=$("#languageSelect");if(select){select.value=language;select.addEventListener("change",()=>{try{localStorage.setItem("stp-language",select.value)}catch{}applyLanguage(select.value)})}
+ $("#themeToggle")?.addEventListener("click",()=>applyTheme(document.documentElement.dataset.theme==="light"?"dark":"light"));
+ applyTheme(theme);applyLanguage(language);
+}
+
 async function get(url,timeout=18000){
  const controller=new AbortController(),id=setTimeout(()=>controller.abort(),timeout);
  try{
