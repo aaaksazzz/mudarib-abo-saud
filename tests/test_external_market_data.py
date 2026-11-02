@@ -5,7 +5,7 @@ import external_market_data as providers
 
 def test_aggregate_builds_closed_ohlcv_bars():
     width = 4 * 60 * 60 * 1000
-    start = int(time.time() * 1000) - 10 * width
+    start = (int(time.time() * 1000) // width - 10) * width
     rows = [
         {"time": start + i * 60 * 60 * 1000, "open": 10 + i, "high": 12 + i,
          "low": 9 + i, "close": 11 + i, "volume": 100 + i}
