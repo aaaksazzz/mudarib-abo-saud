@@ -495,10 +495,7 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
         # calculate risk levels only after the market-specific rule confirms.
         market_context = {}
         if kind in ("futures", "coinm"):
-            market_context = cached(
-                f"{kind}:premium-index-context", 30,
-                lambda: perpetual_market_context(kind),
-            ).get(item["symbol"], {})
+            market_context = perpetual_market_context(kind).get(item["symbol"], {})
         strategy_result = evaluate_market_strategy(kind, entry_rows, item.get("price"), market_context)
         if diagnostics is not None:
             diagnostics["market_strategy"] = strategy_result.get("strategy")
