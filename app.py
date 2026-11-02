@@ -665,7 +665,7 @@ def verify_trc20_transfer(txid,expected):
         x=e.get("result") or {}
         if e.get("event_name")=="Transfer" and e.get("contract_address")==USDT_TRC20_CONTRACT and x.get("to")==PAYMENT_WALLETS["trc20"]["address"]:
             amount=int(x.get("value","0"))/1e6
-            if amount>=expected:return {"confirmed":True,"amount":amount}
+            if amount>=expected:return {"confirmed":True,"amount":amount,"timestamp":int(e.get("block_timestamp",0)/1000)}
     return {"confirmed":False,"reason":"لم نعثر على تحويل USDT مؤكّد إلى محفظتك."}
 
 def verify_solana_transfer(signature,expected):
@@ -685,7 +685,7 @@ def verify_solana_transfer(signature,expected):
         p=item.get("parsed") or {};i=p.get("info") or {}
         if p.get("type") not in ("transfer","transferChecked") or i.get("mint")!=USDT_SOLANA_MINT or i.get("destination") not in dests:continue
         t=i.get("tokenAmount") or {};amount=float(t.get("uiAmountString") or int(i.get("amount",0))/(10**int(t.get("decimals",6))))
-        if amount>=expected:return {"confirmed":True,"amount":amount}
+        if amount>=expected:return {"confirmed":True,"amount":amount,"timestamp":int(tx.get("blockTime") or 0)}
     return {"confirmed":False,"reason":"لم نعثر على تحويل USDT مؤكّد إلى محفظتك."}
 
 
@@ -833,6 +833,21 @@ def create_payment_order():
         oid=cur.lastrowid
     return jsonify({"ok":True,"order":{"id":oid,"months":months,"amount_usdt":amount},"payment":{**PAYMENT_WALLETS[network],"automatic_verification":network in ("trc20","solana")}}),201
 
+@app.post("/api/payments/reference")
+@require_login
+def submit_binance_pay_reference():
+    d=request.get_json(silent=True) or {}
+    try:oid=int(d.get("order_id"))
+    except (TypeError,ValueError):return jsonify({"ok":False,"message":"طلب غير صحيح."}),400
+    reference=str(d.get("reference","")).strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{5,120}",reference):return jsonify({"ok":False,"message":"أدخل رقم مرجع التحويل الصحيح."}),400
+    user=current_user()
+    with db() as c:
+        cur=c.execute("UPDATE payment_orders SET note=? WHERE id=? AND user_id=? AND network='binance_pay' AND status='pending'",("مرجع Binance Pay: "+reference,oid,user["id"]))
+    if cur.rowcount!=1:return jsonify({"ok":False,"message":"طلب Binance Pay غير موجود أو تمت معالجته."}),404
+    return jsonify({"ok":True,"message":"تم إرسال مرجع التحويل للمراجعة داخل المنصة."})
+
+
 @app.post("/api/payments/verify")
 @require_login
 def verify_payment():
@@ -850,6 +865,8 @@ def verify_payment():
     except (requests.RequestException,ValueError,KeyError,TypeError) as exc:
         app.logger.warning("Payment verification error: %s",exc);return jsonify({"ok":False,"message":"تعذر التحقق من الشبكة. حاول لاحقاً."}),503
     if not result.get("confirmed"):return jsonify({"ok":False,"message":result.get("reason","لم يتم تأكيد التحويل.")}),422
+    if not result.get("timestamp") or int(result["timestamp"]) < int(order["created_at"]):
+        return jsonify({"ok":False,"message":"المعاملة أقدم من طلب الدفع أو وقتها غير متاح؛ أنشئ طلباً جديداً وحوّل بعده."}),422
     now=int(time.time())
     try:
         with db() as c:
