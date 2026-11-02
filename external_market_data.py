@@ -189,7 +189,7 @@ def _alpaca_credentials():
 
 
 def _alpaca_feed():
-    feed = os.environ.get("ALPACA_DATA_FEED", "iex").strip().lower()
+    feed = os.environ.get("ALPACA_DATA_FEED", "delayed_sip").strip().lower()
     if feed not in ("iex", "sip", "delayed_sip"):
         raise requests.RequestException("ALPACA_DATA_FEED must be iex, sip, or delayed_sip")
     return feed
@@ -240,7 +240,7 @@ def alpaca_market_tickers():
                     low = float(daily.get("l") or price)
                 except (TypeError, ValueError):
                     continue
-                if price <= 0 or previous_close <= 0:
+                if price <= 0 or previous_close <= 0 or volume * price < 1_000_000:
                     continue
                 output.append({
                     "symbol": symbol, "price": price, "volume": volume * price,
@@ -312,7 +312,7 @@ def provider_status():
             "configured": bool(os.environ.get("ALPACA_API_KEY", "").strip()
                                and os.environ.get("ALPACA_SECRET_KEY", "").strip()),
             "provider": "Alpaca Market Data",
-            "feed": os.environ.get("ALPACA_DATA_FEED", "iex").strip().lower(),
-            "coverage": "active tradable US equities; IEX feed unless SIP entitlement is configured",
+            "feed": os.environ.get("ALPACA_DATA_FEED", "delayed_sip").strip().lower(),
+            "coverage": "active tradable US equities; delayed_sip gives consolidated 15-minute delayed coverage, iex is IEX-only, sip requires entitlement",
         },
     }
