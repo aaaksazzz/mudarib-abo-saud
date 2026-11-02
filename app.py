@@ -532,8 +532,10 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             -8 if flow.get("status") == "opposing" else 0
         )
         liquidity_score = float(levels.get("quality_score") or 0)
+        strategy_score = float(strategy_result.get("quality_score") or direction_score)
         quality_score = max(0.0, min(95.0,
-            liquidity_score * 0.60 + direction_score * 0.40 + flow_adjustment
+            liquidity_score * 0.45 + direction_score * 0.25
+            + strategy_score * 0.30 + flow_adjustment
         ))
         state_ar = {
             "BUY": "شراء", "STRONG_BUY": "شراء قوي",
