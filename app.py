@@ -415,7 +415,7 @@ def candles(kind, symbol, interval):
     return rows
 
 def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timeframe="15m"):
-    """Analyse direction, liquidity and entry exclusively from completed 15m candles."""
+    """Confirm direction on 4h + daily, then validate liquidity and entry on completed 15m candles."""
     def reject(reason):
         if diagnostics is not None:
             diagnostics["reason"] = reason
@@ -427,6 +427,41 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
     try:
         from timeframe_strategy import assess_timeframe
 
+        # Higher-timeframe agreement controls BUY/SELL. The 15m chart is used
+        # for the actual liquidity trigger and ranking, never to reverse the
+        # confirmed 4h + daily direction.
+        reference_rows = {
+            "4h": candles(kind, item["symbol"], "4h"),
+            "1d": candles(kind, item["symbol"], "1d"),
+        }
+        reference = {}
+        for interval, rows in reference_rows.items():
+            if len(rows) < 35:
+                if diagnostics is not None:
+                    diagnostics["candles_" + interval] = len(rows)
+                    diagnostics["candles_required"] = 35
+                return reject("insufficient_" + interval + "_candles")
+            reference[interval] = assess_timeframe(rows)
+
+        states = {interval: result.get("state") for interval, result in reference.items()}
+        buy_states = {"BUY", "STRONG_BUY"}
+        sell_states = {"SELL", "STRONG_SELL"}
+        if all(state in buy_states for state in states.values()):
+            side = "BUY"
+        elif all(state in sell_states for state in states.values()):
+            side = "SELL"
+        else:
+            if diagnostics is not None:
+                diagnostics["reference_directions"] = states
+            return reject("higher_timeframe_conflict")
+
+        reference_score = sum(float(result.get("score") or 0) for result in reference.values()) / 2
+        if reference_score < 55:
+            if diagnostics is not None:
+                diagnostics["reference_score"] = round(reference_score, 1)
+                diagnostics["reference_directions"] = states
+            return reject("weak_higher_timeframe_direction")
+
         entry_rows = candles(kind, item["symbol"], "15m")
         if len(entry_rows) < 35:
             if diagnostics is not None:
@@ -435,26 +470,7 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             return reject("insufficient_candles")
         if diagnostics is not None:
             diagnostics["candles_ready"] = True
-
-        # Direction, momentum, liquidity and entry are all decided from 15m.
-        direction = assess_timeframe(entry_rows)
-        state = direction.get("state")
-        buy_states = {"BUY", "STRONG_BUY"}
-        sell_states = {"SELL", "STRONG_SELL"}
-        if state in buy_states:
-            side = "BUY"
-        elif state in sell_states:
-            side = "SELL"
-        else:
-            if diagnostics is not None:
-                diagnostics["direction_15m"] = state
-            return reject("no_clear_15m_direction")
-
-        direction_score = float(direction.get("score") or 0)
-        if direction_score < 55:
-            if diagnostics is not None:
-                diagnostics["direction_score"] = direction_score
-            return reject("weak_15m_direction")
+            diagnostics["reference_directions"] = states
 
         entry_price = float(item.get("price") or entry_rows[-1]["close"])
         entry_diagnostics = {}
@@ -475,14 +491,14 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
                 lambda: fetch_json(url, params)
             ),
         )
-        # A live order-book snapshot is soft confirmation, never a claim about
-        # hidden institutional orders and never a hard dependency for other markets.
+        # Public order-book data is only a soft confirmation, not a claim
+        # about hidden institutional activity.
         flow_adjustment = 4 if flow.get("status") == "supportive" else (
             -8 if flow.get("status") == "opposing" else 0
         )
         liquidity_score = float(levels.get("quality_score") or 0)
         quality_score = max(0.0, min(95.0,
-            liquidity_score * 0.60 + direction_score * 0.40 + flow_adjustment
+            liquidity_score * 0.60 + reference_score * 0.40 + flow_adjustment
         ))
         state_ar = {
             "BUY": "شراء", "STRONG_BUY": "شراء قوي",
@@ -500,32 +516,33 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             "fast_mover_rank": item.get("fast_mover_rank"),
             "timeframe": "15m",
             "signal_candle_time": int(entry_rows[-1]["time"]),
-            "strategy": "15m direction + liquidity sweep/absorption + momentum/volume",
-            "signal_state": state,
-            "signal_state_ar": state_ar.get(state, "محايد"),
+            "strategy": "4h + daily direction agreement · 15m liquidity entry",
+            "signal_state": side,
+            "signal_state_ar": state_ar[side],
             "quality_score": round(quality_score, 1),
             "ranking_score": round(
                 quality_score * 0.65 + float(item.get("fast_mover_score", 0) or 0) * 0.35, 1
             ),
             "entry_analysis": {
-                "direction_score_15m": direction_score,
+                "direction_score_4h": float(reference["4h"].get("score") or 0),
+                "direction_score_daily": float(reference["1d"].get("score") or 0),
                 "liquidity_event": levels.get("liquidity_event"),
                 "volume_ratio": levels.get("volume_ratio"),
                 "flow_pressure": levels.get("flow_pressure"),
                 "risk_percent": levels.get("risk_percent"),
             },
-            "reference_analysis": {"15m": direction},
+            "reference_analysis": reference,
             "institutional_flow": flow,
             "orderbook_context": flow.get("status", "unavailable"),
             "orderbook_adjustment": flow_adjustment,
-            "analysis_scope": "single_timeframe_15m",
+            "analysis_scope": "4h_daily_direction_15m_entry",
             "quality_label": "درجة توافق الشروط من 100 وليست احتمال نجاح",
-            "analysis_note": "الاتجاه والزخم والسيولة وتأكيد الدخول كلها محسوبة من شموع 15 دقيقة المكتملة.",
+            "analysis_note": "اتجاه 4 ساعات واليومي يجب أن يتفقا؛ تأكيد السيولة والدخول والترتيب من شموع 15 دقيقة المكتملة.",
         }
         if diagnostics is not None:
             diagnostics["reason"] = "accepted"
-            diagnostics["direction_15m"] = state
-            diagnostics["direction_score"] = direction_score
+            diagnostics["reference_directions"] = states
+            diagnostics["reference_score"] = round(reference_score, 1)
         return signal
     except requests.RequestException:
         return reject("provider_error")
@@ -1481,7 +1498,7 @@ def market(kind):
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": timeframe,
             "market_direction_basis": "24h_breadth_display_only",
-            "trade_direction_basis": "per_asset_15m_direction_and_liquidity",
+            "trade_direction_basis": "4h_and_daily_agreement_then_15m_liquidity_entry",
             "movers": movers, "fast_movers": fast_movers,
             "fast_mover_method": "50% زخم 24س + 30% نطاق الحركة + 20% السيولة النسبية؛ أوزان الحقول المتاحة فقط",
             "signals": signals, "open_trades": active,
@@ -1493,16 +1510,16 @@ def market(kind):
                 "scan_cycle_complete": bool(assets) and next_scan_offset <= scan_offset,
                 "candles_ready": sum(1 for item in diagnostic_rows if item.get("candles_ready") is True),
                 "candles_required": 35,
-                "market_direction_gate": False,
-                "trade_side_rule": "BUY or SELL only from this asset 15m direction and confirmed liquidity setup",
+                "market_direction_gate": "4h_and_daily_must_agree",
+                "trade_side_rule": "BUY only when 4h and daily both BUY; SELL only when both SELL; 15m confirms liquidity entry",
                 "accepted_before_top3": rejection_counts.get("accepted", 0),
                 "rejected_by_reason": {key: value for key, value in rejection_counts.items() if key != "accepted"},
             },
             "updated": snapshot_updated, "snapshot_stale": False,
-            "source": source_label, "strategy": "15m direction + liquidity + momentum · 15m entry",
+            "source": source_label, "strategy": "4h + daily direction agreement · 15m liquidity entry",
             "gamma_status": "خيارات/GEX غير متاحة من مزود موثوق لكل الأسواق؛ لا يتم اختلاق قيم Gamma.",
             "analysis_mode": "سيولة سعرية وحجم شموع؛ ضغط تقديري وليس تدفق صفقات منفذة",
-            "score_note": "الاتجاه والسيولة والزخم والدخول كلها من شموع 15 دقيقة المكتملة. درجة الجودة من 100 وليست احتمال نجاح."
+            "score_note": "اتجاه 4 ساعات واليومي متفقان؛ السيولة والدخول والترتيب من شموع 15 دقيقة. درجة الجودة من 100 وليست احتمال نجاح."
         }
         scan_saved_at = save_market_scan_snapshot(kind, timeframe, response_payload)
         save_market_scan_cursor(kind, timeframe, next_scan_offset)
