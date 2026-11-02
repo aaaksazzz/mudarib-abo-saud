@@ -665,7 +665,7 @@ def tron_address_hex(address):
     for char in address:
         number=number*58+alphabet.index(char)
     raw=number.to_bytes((number.bit_length()+7)//8,"big")
-    raw=(b"\\x00"*(len(address)-len(address.lstrip("1"))))+raw
+    raw=(b"\x00"*(len(address)-len(address.lstrip("1"))))+raw
     if len(raw)!=25:raise ValueError("عنوان TRON غير صحيح.")
     import hashlib
     checksum=hashlib.sha256(hashlib.sha256(raw[:21]).digest()).digest()[:4]
