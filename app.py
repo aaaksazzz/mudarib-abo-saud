@@ -438,6 +438,17 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
                 diagnostics["reference_states"] = {"4h": states[0], "1d": states[1]}
             return reject("reference_timeframes_not_aligned")
 
+        # Market-wide direction is a hard trade-side gate, not a ranking hint:
+        # bullish breadth permits BUY only; bearish breadth permits SELL only.
+        # Neutral/unknown breadth blocks all new trades.
+        if market_direction not in ("BUY", "SELL"):
+            return reject("market_direction_neutral_no_new_trades")
+        if side != market_direction:
+            if diagnostics is not None:
+                diagnostics["market_direction"] = market_direction
+                diagnostics["candidate_side"] = side
+            return reject("candidate_side_conflicts_with_market_direction")
+
         entry_rows = candles(kind, item["symbol"], timeframe)
         if len(entry_rows) < 35:
             if diagnostics is not None:
@@ -1117,6 +1128,9 @@ def market(kind):
                    ORDER BY created_at DESC LIMIT 100""",
                 (kind, timeframe)
             ).fetchall()]
+        # Never show an opposite-side open trade as a current opportunity
+        # when the latest market breadth has flipped direction.
+        active = [trade for trade in active if trade.get("side") == direction]
         for trade in active:
             trade["current_price"] = prices.get(trade["symbol"])
             trade["live_pnl_percent"] = (
@@ -1182,6 +1196,10 @@ def market(kind):
             snapshot = load_market_snapshot(kind)
             if snapshot:
                 saved_signals, saved_open = load_saved_market_trades(kind, timeframe)
+                # On provider outage, preserve only saved trades aligned with
+                # the last persisted market direction.
+                saved_signals = [trade for trade in saved_signals if trade.get("side") == snapshot["direction"]]
+                saved_open = [trade for trade in saved_open if trade.get("side") == snapshot["direction"]]
                 return jsonify({
                     "ok": True, "market": kind, "direction": snapshot["direction"],
                     "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[snapshot["direction"]],
