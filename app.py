@@ -1463,6 +1463,7 @@ def market(kind):
                     "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[snapshot["direction"]],
                     "up": snapshot["up"], "down": snapshot["down"], "flat": snapshot["flat"],
                     "total": snapshot["total"], "timeframe": timeframe,
+                    "strategy_version": "hawk-quant-v2",
                     "signals": saved_signals, "open_trades": saved_open,
                     "movers": [], "fast_movers": [],
                     "scan_diagnostics": {"universe_size": snapshot["total"], "candidates_scanned": 0, "rejected_by_reason": {}},
