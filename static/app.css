@@ -640,3 +640,72 @@ body{font-feature-settings:"tnum" 1,"ss01" 1}
  .home-mover-row{grid-template-columns:20px minmax(0,1fr) auto auto;gap:6px;padding:8px 6px}
  .home-mover-name b{font-size:11px}.home-mover-price b,.home-mover-change{font-size:10px}
 }
+
+
+/* Header layout repair: prevent brand/status/menu collisions on compact screens */
+@media (max-width: 900px) {
+  .topbar {
+    height: auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "menu brand"
+      "status status";
+    align-items: center;
+    column-gap: 12px;
+    row-gap: 10px;
+    padding: 12px 16px;
+  }
+  .topbar > .menu-open { grid-area: menu; justify-self: start; min-width: max-content; }
+  .topbar > .brand {
+    grid-area: brand;
+    justify-self: end;
+    margin: 0;
+    min-width: 0;
+    max-width: 100%;
+    gap: 9px;
+  }
+  .topbar > .brand .logo { flex: 0 0 38px; width: 38px; height: 38px; }
+  .topbar > .brand .brand-copy { min-width: 0; }
+  .topbar > .brand .brand-copy b {
+    white-space: normal;
+    line-height: 1.25;
+    font-size: clamp(10px, 2vw, 13px);
+    letter-spacing: .04em;
+  }
+  .topbar > .brand .brand-copy small {
+    white-space: normal;
+    line-height: 1.35;
+    font-size: 9px;
+  }
+  .topbar > .top-status {
+    grid-area: status;
+    justify-self: center;
+    width: 100%;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    padding-top: 9px;
+    border-top: 1px solid var(--line);
+    white-space: normal;
+    font-size: 10px;
+  }
+  .top-status .theme-toggle { order: 0; }
+  .top-status .top-logout { order: 1; }
+  .top-status .live-dot { order: 2; }
+  .top-status #health { order: 3; }
+  .top-status .top-divider { order: 4; }
+  .top-status #clock { order: 5; }
+}
+@media (max-width: 420px) {
+  .topbar { padding: 10px 11px; column-gap: 8px; row-gap: 8px; }
+  .topbar > .menu-open { padding: 7px 9px; font-size: 10px; }
+  .topbar > .brand { gap: 7px; }
+  .topbar > .brand .logo { flex-basis: 34px; width: 34px; height: 34px; }
+  .topbar > .brand .brand-copy b { font-size: 10px; }
+  .topbar > .brand .brand-copy small { font-size: 8px; }
+  .topbar > .top-status { gap: 7px; font-size: 9px; }
+}
