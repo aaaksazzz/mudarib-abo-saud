@@ -407,7 +407,11 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
     try:
         from timeframe_strategy import assess_reversal, make_trade
         entry_rows=candles(kind,item["symbol"],timeframe)
-        if len(entry_rows)<60: return reject("insufficient_candles")
+        if len(entry_rows)<50:
+            if diagnostics is not None:
+                diagnostics["candles_received"] = len(entry_rows)
+                diagnostics["candles_required"] = 50
+            return reject("insufficient_candles")
         if diagnostics is not None: diagnostics["candles_ready"]=True
         assessment=assess_reversal(entry_rows)
         if not assessment["confirmed"]: return reject("no_reversal_signal")
@@ -973,6 +977,7 @@ def market(kind):
                 "scan_offset": scan_offset, "next_scan_offset": next_scan_offset,
                 "scan_cycle_complete": bool(assets) and next_scan_offset <= scan_offset,
                 "candles_ready": sum(1 for item in diagnostic_rows if item.get("candles_ready") is True),
+                "candles_required": 50,
                 "accepted_before_top3": rejection_counts.get("accepted", 0),
                 "rejected_by_reason": {key: value for key, value in rejection_counts.items() if key != "accepted"},
             },
