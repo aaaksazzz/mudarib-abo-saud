@@ -2,7 +2,7 @@
 
 
 def select_scan_batch(rows, offset=0, batch_size=40):
-    """Return (batch, next_offset, actual_offset), wrapping without duplicating rows."""
+    """Return (batch, next_offset, actual_offset) without repeating rows in a cycle."""
     items = list(rows or [])
     if not items:
         return [], 0, 0
@@ -11,6 +11,7 @@ def select_scan_batch(rows, offset=0, batch_size=40):
         start = int(offset or 0) % len(items)
     except (TypeError, ValueError, OverflowError):
         size, start = 40, 0
-    count = min(size, len(items))
-    batch = [items[(start + index) % len(items)] for index in range(count)]
-    return batch, (start + count) % len(items), start
+    end = min(start + size, len(items))
+    batch = items[start:end]
+    next_offset = 0 if end >= len(items) else end
+    return batch, next_offset, start
