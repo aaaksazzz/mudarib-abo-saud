@@ -483,6 +483,10 @@ def test_coinm_uses_contract_status_field(monkeypatch):
 
 def test_candidate_uses_only_15m_for_direction_and_entry(monkeypatch):
     import timeframe_strategy
+    monkeypatch.setattr(module, "evaluate_market_strategy", lambda kind, rows, price=None: {
+        "confirmed": True, "side": "SELL", "strategy": "test_market_strategy",
+        "reason": "test_setup", "quality_score": 75.0,
+    })
     bars = [{"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5,
              "volume": 1000.0, "time": i * 900000} for i in range(35)]
     candle_calls = []
