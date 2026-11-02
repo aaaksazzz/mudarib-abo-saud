@@ -521,3 +521,67 @@ body{font-feature-settings:"tnum" 1,"ss01" 1}
 
 /* The HTML hidden attribute must win over the component display rule. */
 .timeframe-switcher[hidden]{display:none!important}
+
+
+/* User-selectable light theme; dark remains the default. */
+:root[data-theme="light"]{
+ color-scheme:light;
+ --bg:#eef3f8;--surface:#fff;--panel:#fff;--panel2:#e7eef5;
+ --line:#d6e0e9;--line2:#c5d3df;--text:#17283a;--muted:#60758a;
+ --soft:#40576d;--blue:#246fae;--cyan:#168f9a;--green:#087d58;
+ --red:#c63e54;--gold:#93680d;
+}
+:root[data-theme="light"] body{background:linear-gradient(135deg,#f4f7fb,#eaf0f6);color:var(--text)}
+:root[data-theme="light"] .topbar{background:rgba(248,251,254,.94);border-bottom-color:#d5e0e9}
+:root[data-theme="light"] .welcome{background:linear-gradient(115deg,#e2edf6,#f5f8fb);border-color:#cbdce9}
+:root[data-theme="light"] .welcome h1 span{color:#286e9d}
+:root[data-theme="light"] .welcome p{color:#526a80}
+:root[data-theme="light"] .market-switcher,
+:root[data-theme="light"] .panel,
+:root[data-theme="light"] .trade,
+:root[data-theme="light"] .pro-trade-card,
+:root[data-theme="light"] .home-feature,
+:root[data-theme="light"] .mover{background:linear-gradient(145deg,#fff,#f3f7fa);border-color:#d6e0e9;box-shadow:0 8px 22px rgba(28,56,82,.07)}
+:root[data-theme="light"] .market-tab,
+:root[data-theme="light"] .open-row,
+:root[data-theme="light"] .history-row,
+:root[data-theme="light"] .tracked-trade-card{background:#f7fafc;border-color:#d6e0e9;color:#20354a}
+:root[data-theme="light"] .market-tab b,
+:root[data-theme="light"] .trade-title b,
+:root[data-theme="light"] .section-heading h2,
+:root[data-theme="light"] .panel-top h2{color:#20354a}
+:root[data-theme="light"] .market-tab.active{background:#e0eef8;border-color:#79a9c9}
+:root[data-theme="light"] .entry,
+:root[data-theme="light"] .levels>div,
+:root[data-theme="light"] .trade-stat,
+:root[data-theme="light"] .tracked-live-grid>div,
+:root[data-theme="light"] .tracked-level{background:#edf3f8;border-color:#d6e0e9}
+:root[data-theme="light"] .timeframe-switcher{background:#f7fafc;border-color:#d6e0e9}
+:root[data-theme="light"] .tf-button{background:#edf3f8;color:#40576d;border-color:#cbd8e3}
+:root[data-theme="light"] .tf-button.active{background:#dcecf8;color:#174e77;border-color:#72a8cc}
+:root[data-theme="light"] .site-drawer{background:linear-gradient(180deg,#f7fafc,#e8eff5);border-color:#cbd8e3}
+:root[data-theme="light"] .site-drawer>a{color:#304a61}
+:root[data-theme="light"] .site-drawer>a:hover,
+:root[data-theme="light"] .site-drawer>a.active{background:#dceaf5;color:#174e77}
+:root[data-theme="light"] .drawer-head b{color:#20354a}
+:root[data-theme="light"] .drawer-head button,
+:root[data-theme="light"] .menu-open,
+:root[data-theme="light"] .theme-toggle{background:#edf3f8;color:#304a61;border-color:#cbd8e3}
+:root[data-theme="light"] .empty{background:#f7fafc;border-color:#cbd8e3;color:#60758a}
+:root[data-theme="light"] .footer{border-color:#d6e0e9;color:#60758a}
+:root[data-theme="light"] .footer-controls select{background:#fff;color:#20354a;border-color:#cbd8e3}
+.theme-toggle{white-space:nowrap;padding:6px 9px;border:1px solid var(--line2);border-radius:9px;background:#101d2b;color:var(--text);font:inherit;font-size:10px;font-weight:750;cursor:pointer}
+.footer-controls{display:flex;align-items:center;gap:7px}
+.footer-controls label{font-size:10px;color:var(--muted)}
+.footer-controls select{min-width:118px;padding:6px 8px;border:1px solid var(--line2);border-radius:8px;background:#101d2b;color:var(--text);font:inherit;font-size:10px}
+@media(max-width:760px){.theme-toggle{font-size:9px;padding:6px 7px}.footer-controls{width:100%;justify-content:flex-start}.footer-controls select{flex:1;max-width:220px}}
+/* Market pages intentionally contain only direction, timeframe and trade cards/tracking. */
+.market-page .welcome{min-height:0;margin:0 0 10px;padding:8px 0;border:0;background:transparent;box-shadow:none}
+.market-page .welcome:before,.market-page .welcome:after{display:none}
+.market-page .welcome p,.market-page .opportunity-heading p,.market-page .ranking-note{display:none}
+.market-page .welcome h1{font-size:clamp(22px,3vw,30px);margin:0}
+.market-page .overview-grid{grid-template-columns:1fr;margin-top:8px}
+.market-page .direction-panel{padding:14px 16px}
+.market-page .section-heading{margin:13px 0 8px}
+.market-page .opportunity-heading{align-items:center}
+.market-page .timeframe-switcher[hidden]{display:none!important}
