@@ -883,6 +883,13 @@ def admin_payment_action():
         else:c.execute("UPDATE payment_orders SET status='rejected' WHERE id=?",(oid,))
     return jsonify({"ok":True})
 
+@app.get("/api/access/sections")
+@require_paid_access
+def access_sections():
+    with db() as c: rows=c.execute("SELECT section,enabled FROM section_settings").fetchall()
+    return jsonify({"sections":{x["section"]:bool(x["enabled"]) for x in rows}})
+
+
 @app.get("/api/admin/sections")
 @require_admin
 def admin_sections():
@@ -1051,7 +1058,11 @@ def editorial_page():
     return send_from_directory("static", "index.html")
 
 @app.get("/api/news")
+@require_paid_access
 def latest_news():
+    if current_user()["role"]!="admin" and not section_enabled("news"):
+        return jsonify({"ok":False,"error":"section_locked","message":"قسم الأخبار مغلق من الإدارة."}),403
+
     def load_news():
         url = "https://news.google.com/rss/search?q=markets+crypto+stocks+forex&hl=ar&gl=SA&ceid=SA:ar"
         response = requests.get(url, timeout=(3.5, 7), headers={"User-Agent": "SmartTradingPro/2.0"})
@@ -1218,8 +1229,9 @@ def home_overview():
 @app.get("/api/market/<kind>")
 @require_paid_access
 def market(kind):
-    if kind in ("spot","futures","coinm","alpha","saudi","us","contracts","forex") and current_user()["role"]!="admin" and not section_enabled(kind):
-        return jsonify({"ok":False,"error":"section_locked","message":"هذا السوق مغلق من الإدارة."}),403
+    section=request.args.get("section") or kind
+    if section in SECTION_NAMES and current_user()["role"]!="admin" and not section_enabled(section):
+        return jsonify({"ok":False,"error":"section_locked","message":"هذا القسم مغلق من الإدارة."}),403
 
     if kind not in BASES and kind not in ("alpha", "forex", "saudi", "us"):
         return jsonify({"ok": False, "status": "provider_required", "message": "مزود البيانات لهذا السوق غير مربوط؛ لن نعرض بيانات غير موثوقة.", "signals": []}), 503
@@ -1399,7 +1411,8 @@ def crypto_gamma():
 @app.get("/api/trades")
 @require_paid_access
 def trades():
-
+    if current_user()["role"]!="admin" and not section_enabled("history"):
+        return jsonify({"ok":False,"error":"section_locked","message":"سجل الصفقات مغلق من الإدارة."}),403
     market_id = request.args.get("market", "")
     with db() as connection:
         if market_id:
