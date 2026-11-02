@@ -1074,6 +1074,37 @@ def market(kind):
                 round(((trade["current_price"] / trade["entry"] - 1) * (1 if trade["side"] == "BUY" else -1)) * 100, 2)
                 if trade["current_price"] is not None and trade["entry"] else None
             )
+
+        # Keep confirmed opportunities visible across refreshes. A signal is
+        # inserted only once per completed candle; returning only newly inserted
+        # rows made its card disappear on the next refresh even while OPEN.
+        display_by_key = {
+            (row["symbol"], row["timeframe"]): dict(row)
+            for row in signals
+        }
+        ticker_by_symbol = {row["symbol"]: row for row in assets}
+        for trade in active:
+            if trade["timeframe"] != timeframe:
+                continue
+            key = (trade["symbol"], trade["timeframe"])
+            if key in display_by_key:
+                continue
+            quote = ticker_by_symbol.get(trade["symbol"], {})
+            entry = float(trade["entry"] or 0)
+            stop = float(trade["stop_loss"] or 0)
+            display_by_key[key] = {
+                **trade,
+                "price": trade.get("current_price"),
+                "risk_percent": round(abs(entry - stop) / entry * 100, 3) if entry > 0 else None,
+                "quality_score": None,
+                "signal_state_ar": "صفقة مؤكدة محفوظة ومفتوحة",
+                "fast_mover_score": quote.get("fast_mover_score", 0),
+                "change24h": quote.get("change24h", 0),
+                "change_timeframe": 0,
+                "institutional_flow": {"status": "unavailable"},
+                "persisted": True,
+            }
+        signals = list(display_by_key.values())[:3]
         return jsonify({
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": timeframe,
