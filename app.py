@@ -571,6 +571,22 @@ def require_admin(fn):
     return wrapped
 
 
+@app.before_request
+def require_member_for_private_api():
+    path = request.path
+    public_api = path.startswith("/api/auth/") or path in ("/api/health", "/api/news")
+    if path.startswith("/api/") and not public_api:
+        if not auth_setup_ready():
+            return jsonify({"ok": False, "error": "auth_setup_required",
+                            "message": "نظام الاشتراكات غير مهيأ على الخادم."}), 503
+        user = current_user()
+        if user is None:
+            return jsonify({"ok": False, "error": "login_required", "message": "سجل الدخول أولاً."}), 401
+        if user["role"] != "admin" and (not user["subscription_expires_at"] or int(user["subscription_expires_at"]) <= int(time.time())):
+            return jsonify({"ok": False, "error": "subscription_required",
+                            "message": "الوصول للمشتركين فقط. فعّل اشتراكك من الإدارة."}), 403
+
+
 @app.get("/api/auth/me")
 def auth_me():
     if not auth_setup_ready():
@@ -764,7 +780,7 @@ def market_page(market_id):
 
 @app.get("/sections/<section_id>")
 def section_page(section_id):
-    allowed = {"direction", "movers", "opportunities", "open-trades", "history", "system"}
+    allowed = {"direction", "movers", "opportunities", "open-trades", "history"}
     if section_id not in allowed:
         return send_from_directory("static", "index.html"), 404
     return send_from_directory("static", "index.html")
