@@ -10,6 +10,7 @@ def sample_signal():
     return {
         "symbol": "TESTUSDT",
         "timeframe": "15m",
+        "signal_candle_time": 1_800_000_000_000,
         "side": "BUY",
         "entry": 100.0,
         "stop_loss": 98.0,
@@ -45,14 +46,25 @@ class TradePersistenceTests(unittest.TestCase):
             ).fetchone()[0]
         self.assertEqual(count, 1)
 
-    def test_closed_trade_is_not_reissued_within_24_hours(self):
+    def test_same_completed_candle_is_not_issued_twice(self):
         self.assertEqual(len(app_module.save_new_trades("spot", [sample_signal()])), 1)
         with app_module.db() as connection:
             connection.execute(
                 "UPDATE trades SET status='TP3', closed_at=created_at WHERE market='spot' AND symbol='TESTUSDT'"
             )
-
         self.assertEqual(app_module.save_new_trades("spot", [sample_signal()]), [])
+
+    def test_new_completed_candle_can_issue_another_trade(self):
+        self.assertEqual(len(app_module.save_new_trades("spot", [sample_signal()])), 1)
+        next_candle = sample_signal()
+        next_candle["signal_candle_time"] += 15 * 60 * 1000
+        self.assertEqual(len(app_module.save_new_trades("spot", [next_candle])), 1)
+
+    def test_same_candle_on_another_timeframe_is_independent(self):
+        self.assertEqual(len(app_module.save_new_trades("spot", [sample_signal()])), 1)
+        other_timeframe = sample_signal()
+        other_timeframe["timeframe"] = "1h"
+        self.assertEqual(len(app_module.save_new_trades("spot", [other_timeframe])), 1)
 
     def test_same_symbol_on_another_timeframe_is_independent(self):
         self.assertEqual(len(app_module.save_new_trades("spot", [sample_signal()])), 1)
