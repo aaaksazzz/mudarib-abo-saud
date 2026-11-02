@@ -447,16 +447,9 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
                 diagnostics["reference_states"] = {"4h": states[0], "1d": states[1]}
             return reject("reference_timeframes_not_aligned")
 
-        # Market-wide direction is a hard trade-side gate, not a ranking hint:
-        # bullish breadth permits BUY only; bearish breadth permits SELL only.
-        # Neutral/unknown breadth blocks all new trades.
-        if market_direction not in ("BUY", "SELL"):
-            return reject("market_direction_neutral_no_new_trades")
-        if side != market_direction:
-            if diagnostics is not None:
-                diagnostics["market_direction"] = market_direction
-                diagnostics["candidate_side"] = side
-            return reject("candidate_side_conflicts_with_market_direction")
+        # 24h market breadth is display context only. Trade side is determined
+        # by this asset's own aligned 4h + daily structure, never inverted or
+        # blocked by a separate market-wide 24h count.
 
         entry_rows = candles(kind, item["symbol"], timeframe)
         if len(entry_rows) < 35:
@@ -1410,9 +1403,8 @@ def market(kind):
                    ORDER BY created_at DESC LIMIT 100""",
                 (kind, timeframe)
             ).fetchall()]
-        # Never show an opposite-side open trade as a current opportunity
-        # when the latest market breadth has flipped direction.
-        active = [trade for trade in active if trade.get("side") == direction]
+        # Keep all still-open trades visible. A change in 24h breadth must not
+        # hide a trade whose original setup was confirmed by 4h + daily.
         for trade in active:
             trade["current_price"] = prices.get(trade["symbol"])
             trade["live_pnl_percent"] = (
@@ -1453,6 +1445,8 @@ def market(kind):
         response_payload = {
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": timeframe,
+            "market_direction_basis": "24h_breadth_display_only",
+            "trade_direction_basis": "per_asset_4h_daily_alignment",
             "movers": movers, "fast_movers": fast_movers,
             "fast_mover_method": "50% زخم 24س + 30% نطاق الحركة + 20% السيولة النسبية؛ أوزان الحقول المتاحة فقط",
             "signals": signals, "open_trades": active,
@@ -1463,6 +1457,8 @@ def market(kind):
                 "scan_cycle_complete": bool(assets) and next_scan_offset <= scan_offset,
                 "candles_ready": sum(1 for item in diagnostic_rows if item.get("candles_ready") is True),
                 "candles_required": 35,
+                "market_direction_gate": False,
+                "trade_side_rule": "BUY when this asset 4h and daily are BUY; SELL when both are SELL",
                 "accepted_before_top3": rejection_counts.get("accepted", 0),
                 "rejected_by_reason": {key: value for key, value in rejection_counts.items() if key != "accepted"},
             },
@@ -1495,10 +1491,8 @@ def market(kind):
             snapshot = load_market_snapshot(kind)
             if snapshot:
                 saved_signals, saved_open = load_saved_market_trades(kind, timeframe)
-                # On provider outage, preserve only saved trades aligned with
-                # the last persisted market direction.
-                saved_signals = [trade for trade in saved_signals if trade.get("side") == snapshot["direction"]]
-                saved_open = [trade for trade in saved_open if trade.get("side") == snapshot["direction"]]
+                # Restore all saved trades during provider outages; 24h breadth
+                # is not a valid filter for per-asset 4h + daily trade setups.
                 return jsonify({
                     "ok": True, "market": kind, "direction": snapshot["direction"],
                     "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[snapshot["direction"]],
