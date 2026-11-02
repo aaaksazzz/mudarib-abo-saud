@@ -28,7 +28,7 @@ def test_health_and_home():
     assert health.json["database"] == "ok"
     assert set(health.json["live_markets"]) == {"spot", "futures", "coinm", "alpha", "forex"}
 
-def test_market_api_accepts_monthly_and_rejects_unsupported_timeframes(tmp_path, monkeypatch):
+def test_market_api_accepts_only_15m_strategy_timeframe(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "timeframe-support.sqlite3")
     admin_session(monkeypatch)
     module.CACHE.pop("spot:universe", None)
@@ -36,11 +36,11 @@ def test_market_api_accepts_monthly_and_rejects_unsupported_timeframes(tmp_path,
         {"symbol": "AAAUSDT", "price": 2.0, "volume": 2_000_000, "change24h": 1.0}
     ])
     monkeypatch.setattr(module, "analyse_candidate", lambda *args: None)
-    unsupported = client.get("/api/market/spot?timeframe=5m")
-    assert unsupported.status_code == 400
-    monthly = client.get("/api/market/spot?timeframe=1M")
-    assert monthly.status_code == 200
-    assert monthly.json["timeframe"] == "1M"
+    accepted = client.get("/api/market/spot?timeframe=15m")
+    assert accepted.status_code == 200
+    assert accepted.json["timeframe"] == "15m"
+    for timeframe in ("5m", "1h", "4h", "1d", "1w", "1M"):
+        assert client.get("/api/market/spot?timeframe=" + timeframe).status_code == 400
     assert module.SCAN_INTERVAL == "15m"
 
 def test_unconfigured_markets_are_not_fabricated(tmp_path, monkeypatch):
@@ -477,11 +477,12 @@ def test_coinm_uses_contract_status_field(monkeypatch):
     monkeypatch.setattr(module, "fetch_first_json", lambda urls: payload)
     assert module.binance_active_symbols("coinm") == {"BTCUSD_PERP"}
 
-def test_candidate_accepts_35_completed_candles_and_rejects_34(monkeypatch):
+def test_candidate_uses_only_15m_for_direction_and_entry(monkeypatch):
     import timeframe_strategy
     bars = [{"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5,
              "volume": 1000.0, "time": i * 900000} for i in range(35)]
-    monkeypatch.setattr(module, "candles", lambda *args: bars)
+    candle_calls = []
+    monkeypatch.setattr(module, "candles", lambda kind, symbol, interval: (candle_calls.append(interval) or bars))
     monkeypatch.setattr(timeframe_strategy, "assess_timeframe", lambda rows, side=None: {
         "state": "STRONG_SELL", "score": 75.0,
         "analysis": {"candles_used": len(rows)}
@@ -496,20 +497,25 @@ def test_candidate_accepts_35_completed_candles_and_rejects_34(monkeypatch):
     accepted = module.analyse_candidate("spot", candidate, timeframe="15m")
     assert accepted is not None
     assert accepted["side"] == "SELL"
-    # 24h breadth is not allowed to override the asset's confirmed 4h + daily side.
+    assert accepted["timeframe"] == "15m"
+    assert accepted["analysis_scope"] == "single_timeframe_15m"
+    assert accepted["reference_analysis"]["15m"]["state"] == "STRONG_SELL"
+    assert candle_calls == ["15m"]
+
+    candle_calls.clear()
     accepted_with_bullish_breadth = module.analyse_candidate(
         "spot", candidate, market_direction="BUY", timeframe="15m"
     )
     assert accepted_with_bullish_breadth is not None
     assert accepted_with_bullish_breadth["side"] == "SELL"
+    assert candle_calls == ["15m"]
 
-    monkeypatch.setattr(module, "candles", lambda *args: bars[:34])
+    monkeypatch.setattr(module, "candles", lambda kind, symbol, interval: bars[:34])
     diagnostics = {}
     rejected = module.analyse_candidate("spot", candidate, diagnostics=diagnostics, timeframe="15m")
     assert rejected is None
-    assert diagnostics["reason"] == "insufficient_reference_candles"
-    assert diagnostics["reference_candles"] == {"4h": 34, "1d": 34}
-
+    assert diagnostics["reason"] == "insufficient_candles"
+    assert diagnostics["candles_received"] == 34
 
 def test_auth_me_reports_unconfigured_as_nonfatal_public_status(monkeypatch):
     monkeypatch.setattr(module, "AUTH_CONFIGURED", False)
