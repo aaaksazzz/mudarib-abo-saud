@@ -705,13 +705,8 @@ def update_open_trades(kind, prices):
     with db() as connection:
         rows = connection.execute("SELECT * FROM trades WHERE market=? AND status='OPEN'", (kind,)).fetchall()
         for trade in rows:
-            # Keep active trade tracking bounded: expire setups after 24 hours.
-            if now - int(trade["created_at"]) >= 24 * 60 * 60:
-                connection.execute(
-                    "UPDATE trades SET status='EXPIRED',updated_at=?,closed_at=? WHERE id=?",
-                    (now, now, trade["id"])
-                )
-                continue
+            # A trade remains OPEN across refreshes and timeframe changes until
+            # its stop-loss or TP3 is reached. Missing prices never expire it.
             price = prices.get(trade["symbol"])
             if price is None:
                 continue
