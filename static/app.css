@@ -508,3 +508,13 @@ body{font-feature-settings:"tnum" 1,"ss01" 1}
 .pro-card-top .card-live-state{font-weight:800}
 .pro-trade-card{overflow:hidden}
 @media(max-width:420px){.rank{width:38px;height:38px;flex-basis:38px}.rank-medal{font-size:13px}.pro-card-top{gap:7px}.pro-card-top .card-live-state{font-size:8px;padding:5px 7px}}
+/* Live trade level feedback: glow only, without checkmarks or hit labels. */
+.tracked-level.level-lit{animation:levelPulse 1.8s ease-in-out infinite;border-width:1px}
+.tracked-level.target-lit.level-lit{border-color:rgba(48,225,157,.95);background:linear-gradient(145deg,rgba(22,130,88,.38),rgba(12,43,36,.88));box-shadow:0 0 0 1px rgba(48,225,157,.16),0 0 18px rgba(48,225,157,.28),inset 0 0 14px rgba(48,225,157,.12)}
+.tracked-level.target-lit.level-lit b{color:#78f2bd;text-shadow:0 0 10px rgba(48,225,157,.65)}
+.tracked-level.stop-lit.level-lit{border-color:rgba(255,91,111,.95);background:linear-gradient(145deg,rgba(135,35,52,.4),rgba(48,17,28,.9));box-shadow:0 0 0 1px rgba(255,91,111,.16),0 0 18px rgba(255,91,111,.28),inset 0 0 14px rgba(255,91,111,.12)}
+.tracked-level.stop-lit.level-lit b{color:#ff8796;text-shadow:0 0 10px rgba(255,91,111,.65)}
+.history-status.history-lit-target{box-shadow:0 0 14px rgba(48,225,157,.35);border-color:rgba(48,225,157,.8)}
+.history-status.history-lit-stop{box-shadow:0 0 14px rgba(255,91,111,.3);border-color:rgba(255,91,111,.8)}
+@keyframes levelPulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.35)}}
+@media(prefers-reduced-motion:reduce){.tracked-level.level-lit{animation:none}}
