@@ -5,8 +5,8 @@
 <meta name="theme-color" content="#070b12"><title>SMART TRADING PRO | التداول الذكي</title>
 <meta name="description" content="منصة احترافية لمراقبة الأسواق والاتجاهات والفرص الفنية ببيانات عامة ومصادر واضحة.">
 <link rel="preconnect" href="https://api.binance.com"><link rel="preconnect" href="https://fapi.binance.com">
-<link rel="stylesheet" href="/static/app.css?v=20261102.reliability1">
-<script src="/static/app.js?v=20261102.reliability1" defer></script>
+<link rel="stylesheet" href="/static/app.css?v=20261102.direction-trades">
+<script src="/static/app.js?v=20261102.direction-trades" defer></script>
 </head>
 <body>
 <div class="app-shell">
@@ -80,21 +80,12 @@
    <div class="breadth-legend"><span><i class="legend-up"></i> صاعد <b id="up">—</b></span><span><i class="legend-down"></i> هابط <b id="down">—</b></span><span><i class="legend-flat"></i> محايد <b id="flat">—</b></span></div>
    <p class="panel-note">الاتجاه محسوب من عدد الأصول الرابحة والخاسرة خلال 24 ساعة.</p>
   </article>
-  <article class="panel scan-panel">
-   <div class="panel-top"><div><span class="kicker">SCAN CONFIGURATION</span><h2>إعداد الفحص</h2></div><span class="scan-symbol">⌁</span></div>
-   <div class="scan-row"><span>نظام الفحص</span><b>SMART QUANT PRO · توافق الفريمات</b></div>
-   <div class="scan-row"><span>آخر تحديث</span><b id="updated">—</b></div>
-   <div class="scan-row"><span>مصدر البيانات</span><b id="sourceShort">Binance Public</b></div>
-   <div class="scan-row"><span>حالة الفحص</span><b id="scanState" class="state-good">جاهز</b></div>
-  </article>
  </section>
  <section class="panel gamma-panel" id="cryptoGammaSection" hidden>
   <div class="section-heading tracker-heading"><div><span class="kicker">LOCAL MARKET LIQUIDITY · NO API KEYS</span><h2>محرك السيولة المحلي</h2><p>تحليل السعر والحجم وسحب السيولة والامتصاص من بيانات الشموع العامة، دون مفاتيح خارجية.</p></div><button id="gammaRefresh" class="refresh-btn" type="button">تحديث طريقة التحليل</button></div>
   <div id="gammaCards" class="gamma-grid"><div class="empty">يعتمد على بيانات OHLCV العامة ولا يتطلب أي مفتاح API.</div></div>
   <p id="gammaNote" class="panel-note">لا يعرض Gamma Flip أو Net GEX أو جدران الخيارات؛ هذه تحتاج بيانات خيارات موثوقة. تحليل السوق الأساسي يعمل دونها.</p>
  </section>
- <section class="section-heading" id="moversSection"><div><span class="kicker">MARKET MOVERS</span><h2>الأصول الأسرع حركة أولًا</h2></div><span class="section-caption">زخم 24س · نطاق الحركة · السيولة النسبية</span></section>
- <section id="movers" class="movers-grid"><div class="empty">جارٍ تحميل حركة الأصول...</div></section>
  <section class="section-heading opportunity-heading" id="opportunitiesSection"><div><span class="kicker">SMART REVERSAL PRO · SAME TIMEFRAME</span><h2>فرص التداول</h2><p>بيع يتحول إلى شراء، وشراء يتحول إلى بيع؛ التحليل والدخول والوقف والأهداف على الفريم المختار نفسه.</p></div><span class="ranking-note">TOP 3 · أعلى تغير أولًا</span></section>
  <section class="timeframe-switcher" aria-label="اختيار فريم التحليل">
   <span class="timeframe-label">فريم التحليل</span>
