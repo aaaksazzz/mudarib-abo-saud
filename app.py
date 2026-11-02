@@ -406,12 +406,12 @@ def candles(kind, symbol, interval):
     return rows
 
 def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timeframe="15m"):
-    """Analyse and reverse the signal using completed candles from the selected timeframe only."""
+    """Analyse and trade the detected direction using completed candles from the selected timeframe."""
     def reject(reason):
         if diagnostics is not None: diagnostics["reason"]=reason
         return None
     try:
-        from timeframe_strategy import assess_reversal, make_trade
+        from timeframe_strategy import assess_signal, make_trade
         entry_rows=candles(kind,item["symbol"],timeframe)
         if len(entry_rows)<50:
             if diagnostics is not None:
@@ -419,8 +419,8 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
                 diagnostics["candles_required"] = 50
             return reject("insufficient_candles")
         if diagnostics is not None: diagnostics["candles_ready"]=True
-        assessment=assess_reversal(entry_rows)
-        if not assessment["confirmed"]: return reject("no_reversal_signal")
+        assessment=assess_signal(entry_rows)
+        if not assessment["confirmed"]: return reject("no_signal")
         side=assessment["side"]
         levels=make_trade(entry_rows,side,timeframe)
         if not levels: return reject("invalid_risk_levels")
@@ -432,16 +432,14 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             "change_timeframe":round(change_tf,4),"volume":item["volume"],
             "fast_mover_score":item.get("fast_mover_score",0),
             "fast_mover_rank":item.get("fast_mover_rank"),
-            "timeframe":timeframe,"strategy":"SMART REVERSAL PRO · Same-Timeframe",
-            "source_state":assessment["source_state"],
-            "source_state_ar":state_ar.get(assessment["source_state"],"محايد"),
-            "reversal_state":assessment["trade_state"],
-            "reversal_state_ar":state_ar.get(assessment["trade_state"],"محايد"),
+            "timeframe":timeframe,"strategy":"SMART SIGNAL PRO · Same-Timeframe",
+            "signal_state":assessment["state"],
+            "signal_state_ar":state_ar.get(assessment["state"],"محايد"),
             "quality_score":assessment["quality_score"],
             "entry_analysis":assessment["analysis"],
             "analysis_scope":"same_timeframe_only",
             "quality_label":"قوة الشروط الفنية من 100 وليست احتمال نجاح",
-            "analysis_note":"تم عكس إشارة الاتجاه على الفريم نفسه؛ الدخول والوقف والأهداف محسوبة من شموع الفريم المحدد"}
+            "analysis_note":"تم اعتماد اتجاه الإشارة كما هو على الفريم نفسه؛ الدخول والوقف والأهداف محسوبة من شموع الفريم المحدد"}
         flow=analyse_orderbook_flow(kind,item["symbol"],side,lambda url,params:cached(
             f"orderbook:{kind}:{item['symbol']}",5,lambda:fetch_json(url,params)))
         signal["institutional_flow"]=flow
