@@ -659,13 +659,37 @@ def require_paid_access(fn):
         return fn(*args,**kwargs)
     return wrapped
 
+def tron_address_hex(address):
+    alphabet="123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    number=0
+    for char in address:
+        number=number*58+alphabet.index(char)
+    raw=number.to_bytes((number.bit_length()+7)//8,"big")
+    raw=(b"\\x00"*(len(address)-len(address.lstrip("1"))))+raw
+    if len(raw)!=25:raise ValueError("عنوان TRON غير صحيح.")
+    import hashlib
+    checksum=hashlib.sha256(hashlib.sha256(raw[:21]).digest()).digest()[:4]
+    if checksum!=raw[21:]:raise ValueError("تعذر التحقق من عنوان TRON.")
+    return raw[1:21].hex()
+
+
 def verify_trc20_transfer(txid,expected):
-    r=requests.get(f"https://api.trongrid.io/v1/transactions/{txid}/events",params={"only_confirmed":"true","limit":200},timeout=(4,12));r.raise_for_status()
-    for e in r.json().get("data",[]):
-        x=e.get("result") or {}
-        if e.get("event_name")=="Transfer" and e.get("contract_address")==USDT_TRC20_CONTRACT and x.get("to")==PAYMENT_WALLETS["trc20"]["address"]:
-            amount=int(x.get("value","0"))/1e6
-            if amount>=expected:return {"confirmed":True,"amount":amount,"timestamp":int(e.get("block_timestamp",0)/1000)}
+    response=requests.post("https://api.trongrid.io/wallet/gettransactioninfobyid",
+                           json={"value":txid},timeout=(4,12))
+    response.raise_for_status()
+    info=response.json()
+    if not info or info.get("id","").lower()!=txid.lower() or (info.get("receipt") or {}).get("result")!="SUCCESS":
+        return {"confirmed":False,"reason":"معاملة TRON غير مؤكدة أو فاشلة."}
+    receiver=tron_address_hex(PAYMENT_WALLETS["trc20"]["address"])
+    contract=tron_address_hex(USDT_TRC20_CONTRACT)
+    transfer_topic="ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
+    for log in info.get("log",[]):
+        topics=[str(x).lower().removeprefix("0x") for x in log.get("topics",[])]
+        if len(topics)<3 or topics[0]!=transfer_topic:continue
+        if str(log.get("address","")).lower().removeprefix("0x")[-40:]!=contract:continue
+        if topics[2][-40:]!=receiver:continue
+        amount=int(str(log.get("data","0")).removeprefix("0x"),16)/1_000_000
+        if amount>=expected:return {"confirmed":True,"amount":amount,"timestamp":int(info.get("blockTimeStamp",0)/1000)}
     return {"confirmed":False,"reason":"لم نعثر على تحويل USDT مؤكّد إلى محفظتك."}
 
 def verify_solana_transfer(signature,expected):
