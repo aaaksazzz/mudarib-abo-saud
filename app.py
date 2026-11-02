@@ -7,7 +7,6 @@ from datetime import datetime
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from functools import wraps
 import re
 import xml.etree.ElementTree as ET
 
@@ -21,18 +20,9 @@ try:
     import yfinance as yf
 except ImportError:
     yf = None
-from flask import Flask, jsonify, request, send_from_directory, session
-from werkzeug.security import generate_password_hash, check_password_hash
+from flask import Flask, jsonify, request, send_from_directory
 
 app = Flask(__name__, static_folder="static")
-SECRET_KEY = os.environ.get("SECRET_KEY", "")
-ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
-AUTH_CONFIGURED = bool(len(SECRET_KEY) >= 32 and ADMIN_EMAIL and len(ADMIN_PASSWORD) >= 12)
-app.secret_key = SECRET_KEY or os.urandom(32)
-app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
-                  SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "1") == "1",
-                  PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30)
 BASES = {"spot": "https://api.binance.com", "futures": "https://fapi.binance.com", "coinm": "https://dapi.binance.com"}
 SPOT_BASES = ["https://api.binance.com", "https://api-gcp.binance.com", "https://api1.binance.com", "https://api2.binance.com", "https://api3.binance.com", "https://api4.binance.com", "https://data-api.binance.vision"]
 ALPHA_BASE = "https://www.binance.com"
@@ -63,13 +53,6 @@ except OSError as exc:
     ) from exc
 DB_INIT_LOCK = threading.Lock()
 SAVE_NEW_TRADES_LOCK = threading.Lock() 
-SUBSCRIPTION_PRICES={1:30,2:60,3:90,6:180,12:360}
-PAYMENT_WALLETS={"solana":{"label":"Solana","address":"8mUuMV7WFNTsFEmGsw3t5EpTWGUzw5618Mjgh1svugaH"},"trc20":{"label":"TRC20","address":"TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6"},"binance_pay":{"label":"Binance Pay","address":"28191866"}}
-USDT_SOLANA_MINT="Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
-USDT_TRC20_CONTRACT="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
-SECTION_NAMES={"spot":"Binance Spot","futures":"Binance Futures","coinm":"COIN-M","alpha":"Binance Alpha","saudi":"السوق السعودي","us":"الأسهم الأمريكية","contracts":"العقود الأمريكية","forex":"الفوركس والذهب","direction":"توجه السوق","opportunities":"فرص التداول","open-trades":"متابعة الصفقات","history":"سجل الصفقات","news":"الأخبار","blog":"المدونة"}
-
-
 MARKETS = [
     {"id": "spot", "name": "Binance Spot", "provider": "Binance", "status": "live"},
     {"id": "futures", "name": "Binance USD-M Futures", "provider": "Binance", "status": "live"},
@@ -100,7 +83,7 @@ def cached(key, ttl, loader):
         return value
 
 def fetch_json(url, params=None):
-    response = requests.get(url, params=params, timeout=(3.5, 7), headers={"User-Agent": "SmartTradingPro/2.0"})
+    response = requests.get(url, params=params, timeout=(2.5, 5), headers={"User-Agent": "SmartTradingPro/2.0"})
     response.raise_for_status()
     return response.json()
 
@@ -568,42 +551,6 @@ def db():
             market TEXT NOT NULL, timeframe TEXT NOT NULL, next_offset INTEGER NOT NULL DEFAULT 0,
             updated_at INTEGER NOT NULL, PRIMARY KEY(market,timeframe)
         )""")
-        connection.execute("""CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user',
-            subscription_expires_at INTEGER, created_at INTEGER NOT NULL
-        )""") 
-        connection.execute("""CREATE TABLE IF NOT EXISTS payment_orders (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,months INTEGER NOT NULL,
-            amount_usdt REAL NOT NULL,network TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'pending',
-            tx_hash TEXT UNIQUE,created_at INTEGER NOT NULL,verified_at INTEGER,note TEXT)""")
-        connection.execute("""CREATE TABLE IF NOT EXISTS section_settings (
-            section TEXT PRIMARY KEY,enabled INTEGER NOT NULL DEFAULT 1,updated_at INTEGER NOT NULL)""")
-        if not connection.execute("SELECT 1 FROM section_settings LIMIT 1").fetchone():
-            for section in SECTION_NAMES:
-                connection.execute("INSERT OR IGNORE INTO section_settings(section,enabled,updated_at) VALUES(?,1,?)",(section,int(time.time())))
-
-        if AUTH_CONFIGURED:
-            admin = connection.execute(
-                "SELECT id, password_hash, role FROM users WHERE email=?", (ADMIN_EMAIL,)
-            ).fetchone()
-            if not admin:
-                connection.execute(
-                    "INSERT INTO users(email,password_hash,role,created_at) VALUES(?,?,?,?)",
-                    (ADMIN_EMAIL, generate_password_hash(ADMIN_PASSWORD), "admin", int(time.time()))
-                )
-            else:
-                # Northflank incident response: the configured bootstrap password is
-                # authoritative. Changing ADMIN_PASSWORD rotates the stored admin
-                # credential on the next request without deleting users/subscriptions.
-                password_matches = check_password_hash(admin["password_hash"], ADMIN_PASSWORD)
-                if not password_matches:
-                    connection.execute(
-                        "UPDATE users SET password_hash=?, role='admin' WHERE id=?",
-                        (generate_password_hash(ADMIN_PASSWORD), admin["id"])
-                    )
-                elif admin["role"] != "admin":
-                    connection.execute("UPDATE users SET role='admin' WHERE id=?", (admin["id"],))
         connection.commit()
         yield connection
         connection.commit()
@@ -702,368 +649,6 @@ def load_saved_market_trades(market, timeframe):
     signals = [dict(row) for row in open_trades if row["timeframe"] == timeframe][:3]
     return signals, open_trades
 
-def auth_setup_ready():
-    return AUTH_CONFIGURED
- 
-def subscription_active(user):
-    return bool(user and (user["role"]=="admin" or (user["subscription_expires_at"] and int(user["subscription_expires_at"])>int(time.time()))))
-
-def section_enabled(section):
-    with db() as c: row=c.execute("SELECT enabled FROM section_settings WHERE section=?",(section,)).fetchone()
-    return bool(row["enabled"]) if row else True
-
-def require_paid_access(fn):
-    @wraps(fn)
-    def wrapped(*args,**kwargs):
-        if not auth_setup_ready(): return jsonify({"ok":False,"message":"تسجيل الدخول غير مهيأ."}),503
-        user=current_user()
-        if not user:return jsonify({"ok":False,"error":"login_required","message":"سجل الدخول أولاً."}),401
-        if not subscription_active(user):return jsonify({"ok":False,"error":"subscription_required","message":"يلزم اشتراك نشط."}),403
-        return fn(*args,**kwargs)
-    return wrapped
-
-def tron_address_hex(address):
-    alphabet="123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-    number=0
-    for char in address:
-        number=number*58+alphabet.index(char)
-    raw=number.to_bytes((number.bit_length()+7)//8,"big")
-    raw=(b"\x00"*(len(address)-len(address.lstrip("1"))))+raw
-    if len(raw)!=25:raise ValueError("عنوان TRON غير صحيح.")
-    import hashlib
-    checksum=hashlib.sha256(hashlib.sha256(raw[:21]).digest()).digest()[:4]
-    if checksum!=raw[21:]:raise ValueError("تعذر التحقق من عنوان TRON.")
-    return raw[1:21].hex()
-
-
-def verify_trc20_transfer(txid,expected):
-    response=requests.post("https://api.trongrid.io/walletsolidity/gettransactioninfobyid",
-                           json={"value":txid},timeout=(4,12))
-    response.raise_for_status()
-    info=response.json()
-    if not info or info.get("id","").lower()!=txid.lower() or (info.get("receipt") or {}).get("result")!="SUCCESS":
-        return {"confirmed":False,"reason":"معاملة TRON غير مؤكدة أو فاشلة."}
-    receiver=tron_address_hex(PAYMENT_WALLETS["trc20"]["address"])
-    contract=tron_address_hex(USDT_TRC20_CONTRACT)
-    transfer_topic="ddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
-    for log in info.get("log",[]):
-        topics=[str(x).lower().removeprefix("0x") for x in log.get("topics",[])]
-        if len(topics)<3 or topics[0]!=transfer_topic:continue
-        if str(log.get("address","")).lower().removeprefix("0x")[-40:]!=contract:continue
-        if topics[2][-40:]!=receiver:continue
-        amount=int(str(log.get("data","0")).removeprefix("0x"),16)/1_000_000
-        if amount>=expected:return {"confirmed":True,"amount":amount,"timestamp":int(info.get("blockTimeStamp",0)/1000)}
-    return {"confirmed":False,"reason":"لم نعثر على تحويل USDT مؤكّد إلى محفظتك."}
-
-def verify_solana_transfer(signature,expected):
-    rpc="https://api.mainnet-beta.solana.com"
-    def call(method,params):
-        r=requests.post(rpc,json={"jsonrpc":"2.0","id":1,"method":method,"params":params},timeout=(4,15));r.raise_for_status();d=r.json()
-        if d.get("error") or "result" not in d:raise ValueError("تعذر قراءة معاملة Solana.")
-        return d["result"]
-    wallet=PAYMENT_WALLETS["solana"]["address"]
-    a=call("getTokenAccountsByOwner",[wallet,{"mint":USDT_SOLANA_MINT},{"encoding":"jsonParsed","commitment":"finalized"}])
-    dests={x["pubkey"] for x in a.get("value",[])}
-    tx=call("getTransaction",[signature,{"encoding":"jsonParsed","commitment":"finalized","maxSupportedTransactionVersion":0}])
-    if not tx or (tx.get("meta") or {}).get("err") is not None:return {"confirmed":False,"reason":"المعاملة غير مؤكدة أو فاشلة."}
-    msg=(tx.get("transaction") or {}).get("message") or {};ins=list(msg.get("instructions",[]))
-    for group in (tx.get("meta") or {}).get("innerInstructions",[]):ins.extend(group.get("instructions",[]))
-    for item in ins:
-        p=item.get("parsed") or {};i=p.get("info") or {}
-        if p.get("type") not in ("transfer","transferChecked") or i.get("destination") not in dests:continue
-        if i.get("mint") and i.get("mint")!=USDT_SOLANA_MINT:continue
-        t=i.get("tokenAmount") or {};amount=float(t.get("uiAmountString") or int(i.get("amount",0))/(10**int(t.get("decimals",6))))
-        if amount>=expected:return {"confirmed":True,"amount":amount,"timestamp":int(tx.get("blockTime") or 0)}
-    return {"confirmed":False,"reason":"لم نعثر على تحويل USDT مؤكّد إلى محفظتك."}
-
-
-def public_user(row):
-    now = int(time.time())
-    is_admin = row["role"] == "admin"
-    expiry = row["subscription_expires_at"]
-    active = is_admin or bool(expiry and int(expiry) > now)
-    return {"id": row["id"], "email": row["email"], "role": row["role"],
-            "is_admin": is_admin, "subscribed": active,
-            "subscription_expires_at": expiry}
-
-
-def current_user():
-    user_id = session.get("user_id")
-    if not user_id:
-        return None
-    with db() as connection:
-        return connection.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
-
-
-def require_login(fn):
-    @wraps(fn)
-    def wrapped(*args, **kwargs):
-        if not auth_setup_ready():
-            return jsonify({"ok": False, "error": "auth_setup_required",
-                            "message": "يلزم ضبط SECRET_KEY وبيانات الأدمن في إعدادات الخادم."}), 503
-        if current_user() is None:
-            return jsonify({"ok": False, "error": "login_required", "message": "سجل الدخول أولاً."}), 401
-        return fn(*args, **kwargs)
-    return wrapped
-
-
-def require_subscription(fn):
-    @wraps(fn)
-    def wrapped(*args, **kwargs):
-        if not auth_setup_ready():
-            return jsonify({"ok": False, "error": "auth_setup_required",
-                            "message": "نظام الاشتراكات يحتاج إعداد الخادم أولاً."}), 503
-        user = current_user()
-        if user is None:
-            return jsonify({"ok": False, "error": "login_required", "message": "سجل الدخول أولاً."}), 401
-        if user["role"] != "admin" and (not user["subscription_expires_at"] or int(user["subscription_expires_at"]) <= int(time.time())):
-            return jsonify({"ok": False, "error": "subscription_required",
-                            "message": "حسابك غير مشترك أو انتهى اشتراكك. تواصل مع الإدارة لتفعيل الوصول."}), 403
-        return fn(*args, **kwargs)
-    return wrapped
-
-
-def require_admin(fn):
-    @wraps(fn)
-    @require_login
-    def wrapped(*args, **kwargs):
-        user = current_user()
-        if not user or user["role"] != "admin":
-            return jsonify({"ok": False, "error": "admin_required", "message": "هذه الصفحة للأدمن فقط."}), 403
-        return fn(*args, **kwargs)
-    return wrapped
-
-
-@app.before_request
-def protect_admin_api_only():
-    # Market data and analysis are read-only public endpoints. Account and
-    # subscription management remains protected by require_admin decorators.
-    # Never apply a subscription gate to every /api route.
-    return None
-
-
-@app.get("/api/auth/me")
-def auth_me():
-    if not auth_setup_ready():
-        return jsonify({"ok": True, "configured": False, "user": None, "auth_available": False, "message": "المشاهدة العامة متاحة؛ يلزم إعداد بيانات الأدمن لتفعيل تسجيل الدخول."}), 200
-    user = current_user()
-    return jsonify({"ok": True, "configured": True, "user": public_user(user) if user else None})
-
-
-@app.post("/api/auth/register")
-def auth_register():
-    if not auth_setup_ready():
-        return jsonify({"ok": False, "error": "auth_setup_required", "message": "نظام التسجيل غير مهيأ على الخادم."}), 503
-    data = request.get_json(silent=True) or {}
-    email = str(data.get("email", "")).strip().lower()
-    password = str(data.get("password", ""))
-    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email) or len(email) > 190:
-        return jsonify({"ok": False, "message": "أدخل بريدًا إلكترونيًا صحيحًا."}), 400
-    if len(password) < 10 or len(password) > 200:
-        return jsonify({"ok": False, "message": "كلمة المرور يجب أن تكون 10 أحرف على الأقل."}), 400
-    try:
-        with db() as connection:
-            cursor = connection.execute(
-                "INSERT INTO users(email,password_hash,role,created_at) VALUES(?,?,?,?)",
-                (email, generate_password_hash(password), "user", int(time.time()))
-            )
-            user_id = cursor.lastrowid
-    except sqlite3.IntegrityError:
-        return jsonify({"ok": False, "message": "هذا البريد مسجل مسبقًا."}), 409
-    session.clear()
-    session["user_id"] = user_id
-    session.permanent = True
-    with db() as connection:
-        row = connection.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
-    return jsonify({"ok": True, "user": public_user(row)}), 201
-
-
-@app.post("/api/auth/login")
-def auth_login():
-    if not auth_setup_ready():
-        return jsonify({"ok": False, "error": "auth_setup_required", "message": "نظام الدخول غير مهيأ على الخادم."}), 503
-    data = request.get_json(silent=True) or {}
-    email = str(data.get("email", "")).strip().lower()
-    password = str(data.get("password", ""))
-    with db() as connection:
-        row = connection.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
-    if not row or not check_password_hash(row["password_hash"], password):
-        return jsonify({"ok": False, "message": "البريد أو كلمة المرور غير صحيحة."}), 401
-    session.clear()
-    session["user_id"] = row["id"]
-    session.permanent = True
-    return jsonify({"ok": True, "user": public_user(row)})
-
-
-@app.post("/api/auth/logout")
-def auth_logout():
-    session.clear()
-    return jsonify({"ok": True})
- 
-@app.get("/api/payments/options")
-@require_login
-def payment_options():
-    return jsonify({"prices":SUBSCRIPTION_PRICES,"networks":{k:{"label":v["label"],"address":v["address"]} for k,v in PAYMENT_WALLETS.items()}})
-
-@app.post("/api/payments/orders")
-@require_login
-def create_payment_order():
-    d=request.get_json(silent=True) or {}
-    try:months=int(d.get("months"))
-    except (TypeError,ValueError):return jsonify({"ok":False,"message":"اختر مدة صحيحة."}),400
-    network=str(d.get("network","")).lower()
-    if months not in SUBSCRIPTION_PRICES or network not in PAYMENT_WALLETS:return jsonify({"ok":False,"message":"الباقة أو الشبكة غير مدعومة."}),400
-    user=current_user()
-    if user["role"]=="admin":return jsonify({"ok":False,"message":"حساب الإدارة لا يحتاج اشتراكاً."}),400
-    amount=SUBSCRIPTION_PRICES[months]
-    with db() as c:
-        cur=c.execute("INSERT INTO payment_orders(user_id,months,amount_usdt,network,created_at) VALUES(?,?,?,?,?)",(user["id"],months,amount,network,int(time.time())))
-        oid=cur.lastrowid
-    return jsonify({"ok":True,"order":{"id":oid,"months":months,"amount_usdt":amount},"payment":{**PAYMENT_WALLETS[network],"automatic_verification":network in ("trc20","solana")}}),201
-
-@app.post("/api/payments/reference")
-@require_login
-def submit_binance_pay_reference():
-    d=request.get_json(silent=True) or {}
-    try:oid=int(d.get("order_id"))
-    except (TypeError,ValueError):return jsonify({"ok":False,"message":"طلب غير صحيح."}),400
-    reference=str(d.get("reference","")).strip()
-    if not re.fullmatch(r"[A-Za-z0-9_-]{5,120}",reference):return jsonify({"ok":False,"message":"أدخل رقم مرجع التحويل الصحيح."}),400
-    user=current_user()
-    with db() as c:
-        cur=c.execute("UPDATE payment_orders SET note=? WHERE id=? AND user_id=? AND network='binance_pay' AND status='pending'",("مرجع Binance Pay: "+reference,oid,user["id"]))
-    if cur.rowcount!=1:return jsonify({"ok":False,"message":"طلب Binance Pay غير موجود أو تمت معالجته."}),404
-    return jsonify({"ok":True,"message":"تم إرسال مرجع التحويل للمراجعة داخل المنصة."})
-
-
-@app.post("/api/payments/verify")
-@require_login
-def verify_payment():
-    d=request.get_json(silent=True) or {}
-    try:oid=int(d.get("order_id"))
-    except (TypeError,ValueError):return jsonify({"ok":False,"message":"طلب غير صحيح."}),400
-    txid=str(d.get("tx_hash","")).strip()
-    if not re.fullmatch(r"[A-Za-z0-9]{32,100}",txid):return jsonify({"ok":False,"message":"رقم المعاملة غير صحيح."}),400
-    user=current_user()
-    with db() as c:order=c.execute("SELECT * FROM payment_orders WHERE id=? AND user_id=?",(oid,user["id"])).fetchone()
-    if not order:return jsonify({"ok":False,"message":"الطلب غير موجود."}),404
-    if order["status"]=="paid":return jsonify({"ok":True,"message":"الاشتراك مفعّل مسبقاً."})
-    if order["network"]=="binance_pay":return jsonify({"ok":False,"message":"Binance Pay يحتاج مراجعة الإدارة؛ لا يمكن التحقق آلياً من المعرّف وحده."}),409
-    try:result=verify_trc20_transfer(txid,order["amount_usdt"]) if order["network"]=="trc20" else verify_solana_transfer(txid,order["amount_usdt"])
-    except (requests.RequestException,ValueError,KeyError,TypeError) as exc:
-        app.logger.warning("Payment verification error: %s",exc);return jsonify({"ok":False,"message":"تعذر التحقق من الشبكة. حاول لاحقاً."}),503
-    if not result.get("confirmed"):return jsonify({"ok":False,"message":result.get("reason","لم يتم تأكيد التحويل.")}),422
-    if not result.get("timestamp") or int(result["timestamp"]) <= int(order["created_at"]):
-        return jsonify({"ok":False,"message":"المعاملة أقدم من طلب الدفع أو وقتها غير متاح؛ أنشئ طلباً جديداً وحوّل بعده."}),422
-    now=int(time.time())
-    try:
-        with db() as c:
-            cur=c.execute("UPDATE payment_orders SET status='paid',tx_hash=?,verified_at=? WHERE id=? AND user_id=? AND status='pending'",(txid,now,oid,user["id"]))
-            if cur.rowcount!=1:return jsonify({"ok":False,"message":"تمت معالجة الطلب مسبقاً."}),409
-            row=c.execute("SELECT subscription_expires_at FROM users WHERE id=?",(user["id"],)).fetchone()
-            expiry=max(now,int(row["subscription_expires_at"] or 0))+int(order["months"])*30*86400
-            c.execute("UPDATE users SET subscription_expires_at=? WHERE id=?",(expiry,user["id"]))
-    except sqlite3.IntegrityError:return jsonify({"ok":False,"message":"رقم المعاملة مستخدم سابقاً."}),409
-    return jsonify({"ok":True,"message":"تم تأكيد التحويل وتفعيل الاشتراك.","subscription_expires_at":expiry})
-
-@app.get("/api/admin/payments")
-@require_admin
-def admin_payments():
-    with db() as c:rows=c.execute("SELECT p.*,u.email FROM payment_orders p JOIN users u ON u.id=p.user_id ORDER BY p.created_at DESC LIMIT 100").fetchall()
-    return jsonify({"payments":[dict(x) for x in rows]})
-
-@app.post("/api/admin/payments/action")
-@require_admin
-def admin_payment_action():
-    d=request.get_json(silent=True) or {}
-    try:oid=int(d.get("order_id",0))
-    except (TypeError,ValueError):return jsonify({"ok":False,"message":"رقم الطلب غير صحيح."}),400
-    action=d.get("action")
-    if action not in ("approve","reject"):return jsonify({"ok":False,"message":"إجراء غير صحيح."}),400
-    with db() as c:
-        p=c.execute("SELECT * FROM payment_orders WHERE id=?",(oid,)).fetchone()
-        if not p or p["network"]!="binance_pay" or p["status"]!="pending":return jsonify({"ok":False,"message":"طلب Binance Pay المعلق غير موجود."}),404
-        if action=="approve":
-            now=int(time.time());u=c.execute("SELECT subscription_expires_at FROM users WHERE id=?",(p["user_id"],)).fetchone()
-            expiry=max(now,int(u["subscription_expires_at"] or 0))+p["months"]*30*86400
-            c.execute("UPDATE users SET subscription_expires_at=? WHERE id=?",(expiry,p["user_id"]))
-            c.execute("UPDATE payment_orders SET status='paid',verified_at=? WHERE id=?",(now,oid))
-        else:c.execute("UPDATE payment_orders SET status='rejected' WHERE id=?",(oid,))
-    return jsonify({"ok":True})
-
-@app.get("/api/access/sections")
-@require_paid_access
-def access_sections():
-    with db() as c: rows=c.execute("SELECT section,enabled FROM section_settings").fetchall()
-    return jsonify({"sections":{x["section"]:bool(x["enabled"]) for x in rows}})
-
-
-@app.get("/api/admin/sections")
-@require_admin
-def admin_sections():
-    with db() as c:rows=c.execute("SELECT section,enabled FROM section_settings ORDER BY section").fetchall()
-    return jsonify({"sections":[{"id":x["section"],"name":SECTION_NAMES[x["section"]],"enabled":bool(x["enabled"])} for x in rows]})
-
-@app.post("/api/admin/sections")
-@require_admin
-def update_admin_section():
-    d=request.get_json(silent=True) or {};key=str(d.get("section",""))
-    if key not in SECTION_NAMES:return jsonify({"ok":False,"message":"القسم غير معروف."}),400
-    enabled=1 if d.get("enabled") is True else 0
-    with db() as c:c.execute("UPDATE section_settings SET enabled=?,updated_at=? WHERE section=?",(enabled,int(time.time()),key))
-    return jsonify({"ok":True,"enabled":bool(enabled)})
-
-
-@app.get("/api/admin/users")
-@require_admin
-def admin_users():
-    with db() as connection:
-        rows = connection.execute(
-            "SELECT id,email,role,subscription_expires_at,created_at FROM users ORDER BY created_at DESC"
-        ).fetchall()
-    now = int(time.time())
-    users = []
-    for row in rows:
-        item = dict(row)
-        item["subscribed"] = item["role"] == "admin" or bool(item["subscription_expires_at"] and item["subscription_expires_at"] > now)
-        users.append(item)
-    return jsonify({"ok": True, "users": users})
-
-
-@app.post("/api/admin/subscription")
-@require_admin
-def admin_subscription():
-    data = request.get_json(silent=True) or {}
-    try:
-        user_id = int(data.get("user_id"))
-    except (TypeError, ValueError):
-        return jsonify({"ok": False, "message": "معرّف الحساب غير صحيح."}), 400
-    action = str(data.get("action", "grant")).lower()
-    with db() as connection:
-        target = connection.execute("SELECT id,role,subscription_expires_at FROM users WHERE id=?", (user_id,)).fetchone()
-        if not target:
-            return jsonify({"ok": False, "message": "الحساب غير موجود."}), 404
-        if target["role"] == "admin":
-            return jsonify({"ok": False, "message": "لا يمكن تعديل اشتراك حساب الأدمن."}), 400
-        if action == "revoke":
-            connection.execute("UPDATE users SET subscription_expires_at=NULL WHERE id=?", (user_id,))
-            expiry = None
-        elif action == "grant":
-            try:
-                days = int(data.get("days", 30))
-            except (TypeError, ValueError):
-                return jsonify({"ok": False, "message": "عدد الأيام غير صحيح."}), 400
-            if days < 1 or days > 3650:
-                return jsonify({"ok": False, "message": "مدة الاشتراك من يوم إلى 3650 يوم."}), 400
-            now = int(time.time())
-            start = max(now, int(target["subscription_expires_at"] or 0))
-            expiry = start + days * 86400
-            connection.execute("UPDATE users SET subscription_expires_at=? WHERE id=?", (expiry, user_id))
-        else:
-            return jsonify({"ok": False, "message": "الإجراء غير معروف."}), 400
-    return jsonify({"ok": True, "subscription_expires_at": expiry})
-
-
 def save_new_trades(kind, signals):
     """Save at most one trade per symbol/timeframe/completed candle.
 
@@ -1154,43 +739,10 @@ def market_page(market_id):
 
 @app.get("/sections/<section_id>")
 def section_page(section_id):
-    allowed = {"direction", "movers", "opportunities", "open-trades", "history", "system"}
+    allowed = {"direction", "opportunities", "open-trades", "history"}
     if section_id not in allowed:
         return send_from_directory("static", "index.html"), 404
     return send_from_directory("static", "index.html")
-
-@app.get("/blog")
-@app.get("/news")
-@app.get("/admin")
-def editorial_page():
-    return send_from_directory("static", "index.html")
-
-@app.get("/api/news")
-@require_paid_access
-def latest_news():
-    if current_user()["role"]!="admin" and not section_enabled("news"):
-        return jsonify({"ok":False,"error":"section_locked","message":"قسم الأخبار مغلق من الإدارة."}),403
-
-    def load_news():
-        url = "https://news.google.com/rss/search?q=markets+crypto+stocks+forex&hl=ar&gl=SA&ceid=SA:ar"
-        response = requests.get(url, timeout=(3.5, 7), headers={"User-Agent": "SmartTradingPro/2.0"})
-        response.raise_for_status()
-        root = ET.fromstring(response.content)
-        items = []
-        for node in root.findall("./channel/item")[:20]:
-            title = (node.findtext("title") or "").strip()
-            link = (node.findtext("link") or "").strip()
-            source = (node.findtext("source") or "Google News").strip()
-            published = (node.findtext("pubDate") or "").strip()
-            if title and link.startswith(("https://", "http://")):
-                items.append({"title": title, "url": link, "source": source, "published": published})
-        return items
-    try:
-        items = cached("editorial:news:ar", 300, load_news)
-        return jsonify({"items": items, "source": "Google News RSS", "updated": int(time.time())})
-    except (requests.RequestException, ET.ParseError):
-        app.logger.exception("News feed unavailable")
-        return jsonify({"items": [], "source": "Google News RSS", "error": "تعذر جلب الأخبار حاليًا؛ حاول التحديث لاحقًا."}), 502
 
 @app.get("/health")
 @app.get("/api/health")
@@ -1272,7 +824,7 @@ def home_overview():
         universes = {}
         breadth = {}
         errors = {}
-        with ThreadPoolExecutor(max_workers=3) as pool:
+        with ThreadPoolExecutor(max_workers=2) as pool:
             jobs = {pool.submit(fetch_universe, kind): kind for kind in kinds}
             for job in as_completed(jobs):
                 kind = jobs[job]
@@ -1335,8 +887,7 @@ def home_overview():
 
 @app.get("/api/market/<kind>")
 def market(kind):
-    # Public market data and scans stay available without membership or login.
-    # Paid access remains reserved for account, payment and administration routes.
+    # Every market endpoint is public read-only data; no account or exchange credentials are used.
 
     if kind not in BASES and kind not in ("alpha", "forex", "saudi", "us"):
         return jsonify({"ok": False, "status": "provider_required", "message": "مزود البيانات لهذا السوق غير مربوط؛ لن نعرض بيانات غير موثوقة.", "signals": []}), 503
@@ -1399,7 +950,7 @@ def market(kind):
         # Signal eligibility is determined by the selected asset's two reference
         # timeframes, not by aggregate 24h market breadth. A neutral market-wide
         # count must not suppress individually aligned setups.
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=2) as pool:
             jobs = {
                 pool.submit(analyse_candidate, kind, row, direction, diagnostic_rows[index], timeframe): index
                 for index, row in enumerate(candidates)
@@ -1555,7 +1106,7 @@ def market(kind):
 
 @app.get("/api/analysis/method")
 @app.get("/api/gamma/crypto")
-@require_paid_access
+
 def crypto_gamma():
     """No-key local OHLCV analysis method; the legacy route remains compatible."""
     return jsonify({
@@ -1569,10 +1120,8 @@ def crypto_gamma():
     })
 
 @app.get("/api/trades")
-@require_paid_access
+
 def trades():
-    if current_user()["role"]!="admin" and not section_enabled("history"):
-        return jsonify({"ok":False,"error":"section_locked","message":"سجل الصفقات مغلق من الإدارة."}),403
     market_id = request.args.get("market", "")
     with db() as connection:
         if market_id:
