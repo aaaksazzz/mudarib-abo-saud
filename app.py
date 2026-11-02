@@ -1,4 +1,5 @@
 import os
+import json
 import sqlite3
 import threading
 import time
@@ -42,12 +43,14 @@ YAHOO_SYMBOLS = {
     "saudi": [x.strip().upper() for x in os.environ.get("YAHOO_SAUDI_SYMBOLS", "").split(",") if x.strip()],
 }
 SCAN_INTERVAL = "15m"
+SCAN_INTERVAL_SECONDS = 15 * 60
 STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "EUR"}
 CACHE = {}
 CACHE_LOCK = threading.Lock()
 CACHE_KEY_LOCKS = {}
 SCAN_CURSORS = {}
 SCAN_CURSOR_LOCK = threading.Lock()
+SCAN_RUN_LOCKS = {}
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data")).expanduser()
 DB_PATH = Path(os.environ.get("DB_PATH", str(DATA_DIR / "trades.sqlite3"))).expanduser()
 try:
@@ -553,6 +556,10 @@ def db():
             down INTEGER NOT NULL, flat INTEGER NOT NULL, total INTEGER NOT NULL,
             source TEXT NOT NULL, updated_at INTEGER NOT NULL
         )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS market_scan_snapshots (
+            market TEXT NOT NULL, timeframe TEXT NOT NULL, payload_json TEXT NOT NULL,
+            updated_at INTEGER NOT NULL, PRIMARY KEY(market,timeframe)
+        )""")
         connection.execute("""CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user',
@@ -619,6 +626,34 @@ def load_market_snapshot(market):
     with db() as connection:
         row = connection.execute("SELECT * FROM market_snapshots WHERE market=?", (market,)).fetchone()
     return dict(row) if row else None
+
+
+def save_market_scan_snapshot(market, timeframe, payload):
+    now = int(time.time())
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    with db() as connection:
+        connection.execute(
+            """INSERT INTO market_scan_snapshots(market,timeframe,payload_json,updated_at)
+               VALUES(?,?,?,?) ON CONFLICT(market,timeframe) DO UPDATE SET
+               payload_json=excluded.payload_json,updated_at=excluded.updated_at""",
+            (market, timeframe, encoded, now),
+        )
+    return now
+
+
+def load_market_scan_snapshot(market, timeframe):
+    with db() as connection:
+        row = connection.execute(
+            "SELECT payload_json,updated_at FROM market_scan_snapshots WHERE market=? AND timeframe=?",
+            (market, timeframe),
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        payload = json.loads(row["payload_json"])
+    except (TypeError, ValueError):
+        return None
+    return {"payload": payload, "updated_at": int(row["updated_at"])}
 
 
 def load_saved_market_trades(market, timeframe):
@@ -1288,7 +1323,31 @@ def market(kind):
     timeframe=request.args.get("timeframe","15m").strip()
     if timeframe not in ("15m","1h","4h","1d","1w","1M"):
         return jsonify({"ok":False,"error":"فريم التحليل غير مدعوم"}),400
+    with SCAN_CURSOR_LOCK:
+        scan_lock = SCAN_RUN_LOCKS.setdefault(f"{kind}:{timeframe}", threading.Lock())
+    if not scan_lock.acquire(blocking=False):
+        try:
+            running_snapshot = load_market_scan_snapshot(kind, timeframe)
+            if running_snapshot:
+                payload = dict(running_snapshot["payload"])
+                payload.update({"scan_cached": True, "scan_in_progress": True,
+                                "scan_updated_at": running_snapshot["updated_at"]})
+                return jsonify(payload)
+        except sqlite3.Error:
+            app.logger.exception("Could not read scan snapshot while scan is running: %s %s", kind, timeframe)
+        return jsonify({"ok":False,"error":"الفحص جارٍ الآن؛ أعد المحاولة بعد لحظات.","scan_in_progress":True}),202
     try:
+        saved_scan = load_market_scan_snapshot(kind, timeframe)
+        if saved_scan and int(time.time()) - saved_scan["updated_at"] < SCAN_INTERVAL_SECONDS:
+            payload = dict(saved_scan["payload"])
+            payload.update({
+                "scan_cached": True,
+                "scan_in_progress": False,
+                "scan_updated_at": saved_scan["updated_at"],
+                "next_scan_at": saved_scan["updated_at"] + SCAN_INTERVAL_SECONDS,
+                "seconds_until_next_scan": max(0, SCAN_INTERVAL_SECONDS - (int(time.time()) - saved_scan["updated_at"])),
+            })
+            return jsonify(payload)
         assets = cached(kind + ":universe", 20, lambda: market_tickers(kind))
         assets = rank_market_assets(assets)
         up = sum(1 for row in assets if row["change24h"] > 0)
@@ -1391,7 +1450,7 @@ def market(kind):
                 "persisted": True,
             }
         signals = list(display_by_key.values())[:3]
-        return jsonify({
+        response_payload = {
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": timeframe,
             "movers": movers, "fast_movers": fast_movers,
@@ -1411,11 +1470,28 @@ def market(kind):
             "source": source_label, "strategy": "4H + Daily confirmation · selected-timeframe entry",
             "gamma_status": "خيارات/GEX غير متاحة من مزود موثوق لكل الأسواق؛ لا يتم اختلاق قيم Gamma.",
             "analysis_mode": "سيولة سعرية وحجم شموع؛ ضغط تقديري وليس تدفق صفقات منفذة",
-            "score_note": "اتجاه 4 ساعات واليومي من بنية OHLCV والزخم والحجم؛ الدخول من سحب السيولة أو الامتصاص وتأكيد الشمعة على الفريم المحدد. درجة الجودة من 100 وليست احتمال نجاح."
+            "score_note": "اتجاه 4 ساعات واليومي من بنية OHLCV والزخم والحجم؛ الدخول من سحب سيولة أو الامتصاص وتأكيد الشمعة على الفريم المحدد. درجة الجودة من 100 وليست احتمال نجاح."
+        }
+        scan_saved_at = save_market_scan_snapshot(kind, timeframe, response_payload)
+        response_payload.update({
+            "scan_cached": False, "scan_in_progress": False,
+            "scan_updated_at": scan_saved_at,
+            "next_scan_at": scan_saved_at + SCAN_INTERVAL_SECONDS,
+            "seconds_until_next_scan": SCAN_INTERVAL_SECONDS,
         })
+        return jsonify(response_payload)
     except requests.RequestException:
         app.logger.exception("Market provider request failed: %s", kind)
         try:
+            previous_scan = load_market_scan_snapshot(kind, timeframe)
+            if previous_scan:
+                payload = dict(previous_scan["payload"])
+                payload.update({
+                    "snapshot_stale": True, "scan_cached": True,
+                    "scan_updated_at": previous_scan["updated_at"],
+                    "message": "تعذر تحديث المصدر؛ نعرض آخر نتائج الفحص المحفوظة."
+                })
+                return jsonify(payload)
             snapshot = load_market_snapshot(kind)
             if snapshot:
                 saved_signals, saved_open = load_saved_market_trades(kind, timeframe)
@@ -1441,6 +1517,8 @@ def market(kind):
     except sqlite3.Error:
         app.logger.exception("Trade database failure: %s", kind)
         return jsonify({"ok": False, "error": "تعذر الوصول إلى سجل الصفقات. تحقق من وحدة التخزين الدائمة.", "market": kind}), 503
+    finally:
+        scan_lock.release()
 
 @app.get("/api/analysis/method")
 @app.get("/api/gamma/crypto")
