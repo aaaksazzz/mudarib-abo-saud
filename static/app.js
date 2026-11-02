@@ -237,7 +237,7 @@ async function load(){
     $("#source").textContent="مصدر البيانات: "+d.source+" · "+d.strategy;
     
   renderSignals(d.signals,d.scan_diagnostics||{});renderOpen(d.open_trades);
-  const strategyLabel={"15m":"اتجاه 4 ساعات واليومي · تأكيد السيولة والدخول 15 دقيقة"};
+  const strategyLabel={"15m":"اتجاه 4 ساعات + يومي · دخول سيولة 15 دقيقة · ترتيب تغير 15 دقيقة"};
   const label=$("#activeStrategy");if(label)label.textContent=strategyLabel[analysisTimeframe]||analysisTimeframe;
   const minutes=Math.max(0,Math.ceil(Number(d.seconds_until_next_scan||0)/60));
   $("#health").textContent=d.snapshot_stale?"آخر نتائج محفوظة · المصدر متوقف مؤقتاً":d.scan_cached?"نتائج محفوظة · الفحص القادم بعد "+minutes+" د":"اكتمل الفحص وحُفظت النتائج";
