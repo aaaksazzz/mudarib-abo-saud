@@ -571,7 +571,7 @@ def test_market_api_restores_last_direction_when_provider_is_unavailable(tmp_pat
     module.save_market_snapshot("spot", "SELL", 2, 9, 1, 12, "test-feed")
 
     def unavailable(_kind):
-        raise requests.RequestException("simulated provider outage")
+        raise module.requests.RequestException("simulated provider outage")
 
     monkeypatch.setattr(module, "market_tickers", unavailable)
     response = client.get("/api/market/spot?timeframe=15m")
