@@ -21,7 +21,7 @@
 - اتجاه السوق محسوب من عدد الأصول الصاعدة والهابطة والمحايدة خلال 24 ساعة.
 - ترتيب الأصول الأسرع حركة أولاً بدرجة نسبية تعتمد على زخم 24 ساعة ونطاق الحركة والسيولة، ثم فحص أول 40 أصلاً في الترتيب. الدرجة ترتيب فحص وليست احتمال ربح.
 - التحقق من أن رموز Binance Spot وUSD-M وCOIN-M نشطة وقابلة للتداول عبر exchangeInfo قبل إدراجها.
-- أفضل ثلاث فرص فنية من فحص ثابت على 15 دقيقة، دون أزرار لتغيير الأطر، مع حد أقصى لأربع عمليات تحليل متوازية لتخفيف الضغط على الخادم.
+- فريمات التحليل القابلة للاختيار: 15m و1h و4h و1d و1w و1M؛ كل طلب يفحص الفريم المختار فقط، دون تأكيد من فريمات أخرى، مع حد أقصى لأربع عمليات تحليل متوازية.
 - عرض الدخول والأهداف الثلاثة والوقف ومؤشرات المخاطرة وجودة الشروط.
 - سجل الصفقات المفتوحة والصفقات المغلقة.
 - تحديث تلقائي كل 30 ثانية، مع منع تداخل الطلبات ومهلة اتصال.
@@ -78,5 +78,5 @@ The first administrator account is created automatically in the persistent SQLit
 
 ## Fast-mover ranking
 - ترتيب نسبي داخل كل سوق: 50% absolute 24h change, 30% 24h high-low range, 20% quote turnover/liquidity. A feature with no variation is omitted and remaining weights are normalized.
-- The scanner analyses up to the first 40 ranked assets, keeps the existing 15m liquidity event and 1h/4h/1d HAWK confirmations, and displays up to three qualifying trades.
+- The scanner analyses up to the first 40 ranked assets on the selected timeframe only, reverses the detected BUY/SELL strength, and displays up to three qualifying trades.
 - No ranking score is a win probability. Markets without valid price/candle providers remain unavailable rather than being populated with guessed tickers.
