@@ -227,7 +227,8 @@ async function load(){
    $("#health").className="bad";
    return;
   }
-  const d=await get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(requestedTimeframe),60000);
+  const section=PATH.startsWith("/sections/")?PATH.split("/").pop():requestedMarket;
+  const d=await get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(requestedTimeframe)+"&section="+encodeURIComponent(section),60000);
   if(requestedMarket!==market||requestedTimeframe!==analysisTimeframe){pending=true;return}
   $("#direction").textContent=d.direction==="BUY"?tr("up"):d.direction==="SELL"?tr("down"):tr("neutral");$("#direction").className="direction-value "+(d.direction==="BUY"?"up":d.direction==="SELL"?"down":"neutral");
   $("#up").textContent=d.up;$("#down").textContent=d.down;$("#flat").textContent=d.flat??0;$("#total").textContent=d.total;
@@ -366,6 +367,7 @@ async function startAuthorized(user=null){
  $("#drawerAdmin").hidden=!(user&&user.is_admin);
  if(user&&user.is_admin){await loadAdminUsers();await loadAdminPayments();await loadAdminSections();}
  configurePage();
+ if(user&&!user.is_admin)await loadUserSectionAccess();
  if(marketMatch){await loadMarketStatuses();await load();}
  else if(PATH==="/"){await loadMarketStatuses();await loadHomeOverview();}
  else if(PATH.startsWith("/sections/") && ["direction","opportunities","open-trades"].includes(PATH.split("/").pop())){await loadMarketStatuses();await load();}
@@ -411,6 +413,17 @@ async function logout(){
 }
 $("#authLogout").addEventListener("click",logout);
 $("#topLogout").addEventListener("click",logout);
+
+
+async function loadUserSectionAccess(){
+ try{
+  const d=await get("/api/access/sections",7000),sections=d.sections||{};
+  const marketKeys=["spot","futures","coinm","alpha","saudi","us","contracts","forex"];
+  document.querySelectorAll("[data-market]").forEach(el=>{el.hidden=sections[el.dataset.market]===false});
+  const links={"/sections/direction":"direction","/sections/opportunities":"opportunities","/sections/open-trades":"open-trades","/sections/history":"history","/news":"news","/blog":"blog"};
+  Object.entries(links).forEach(([href,key])=>{const el=document.querySelector('#siteDrawer a[href="'+href+'"]');if(el)el.hidden=sections[key]===false});
+ }catch(e){console.warn("Section permissions unavailable",e)}
+}
 
 async function loadPaymentOptions(){
  try{
