@@ -547,3 +547,17 @@ def test_market_cache_evicts_old_entries_when_capacity_is_reached(monkeypatch):
         module.CACHE.clear()
         module.CACHE_MAX_ENTRIES = original_capacity
         module.CACHE_MAX_AGE_SECONDS = original_age
+
+def test_frontend_dashboard_history_and_optional_refresh_markup():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "static" / "index.html").read_text(encoding="utf-8")
+    js = (root / "static" / "app.js").read_text(encoding="utf-8")
+    for element_id in (
+        "homeOverview", "homeAssetCount", "homeMarketCount", "homeMoverCount",
+        "homeCoverage", "homeMovers", "historySection", "historySummary",
+        "historyCount", "closedTrades",
+    ):
+        assert f'id="{element_id}"' in html
+    assert 'const refreshButton=$("#refresh");if(refreshButton)refreshButton.hidden=true;' in js
+    assert 'history:["historySection"]' in js
