@@ -518,3 +518,6 @@ body{font-feature-settings:"tnum" 1,"ss01" 1}
 .history-status.history-lit-stop{box-shadow:0 0 14px rgba(255,91,111,.3);border-color:rgba(255,91,111,.8)}
 @keyframes levelPulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.35)}}
 @media(prefers-reduced-motion:reduce){.tracked-level.level-lit{animation:none}}
+
+/* The HTML hidden attribute must win over the component display rule. */
+.timeframe-switcher[hidden]{display:none!important}
