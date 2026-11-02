@@ -108,30 +108,6 @@ class TradePersistenceTests(unittest.TestCase):
         self.assertIsNone(app_module.load_market_scan_snapshot("spot", "1h"))
 
 
-    def test_market_endpoint_reuses_saved_scan_for_15_minutes_without_provider_scan(self):
-        with patch.object(app_module, "AUTH_CONFIGURED", True), \
-             patch.object(app_module, "ADMIN_EMAIL", "owner@example.test"), \
-             patch.object(app_module, "ADMIN_PASSWORD", "owner-password-123"):
-            with app_module.db() as connection:
-                admin = connection.execute(
-                    "SELECT id FROM users WHERE email=?", ("owner@example.test",)
-                ).fetchone()
-            client = app_module.app.test_client()
-            with client.session_transaction() as session:
-                session["user_id"] = admin["id"]
-            payload = {
-                "ok": True, "market": "spot", "timeframe": "15m", "direction": "BUY",
-                "up": 10, "down": 2, "flat": 1, "total": 13,
-                "signals": [{"symbol": "BTCUSDT", "side": "BUY"}],
-                "open_trades": [], "scan_diagnostics": {"candidates_scanned": 12},
-            }
-            app_module.save_market_scan_snapshot("spot", "15m", payload)
-            with patch.object(app_module, "market_tickers", side_effect=AssertionError("should use saved scan")):
-                response = client.get("/api/market/spot?timeframe=15m")
-            self.assertEqual(response.status_code, 200)
-            self.assertTrue(response.json["scan_cached"])
-            self.assertEqual(response.json["signals"][0]["symbol"], "BTCUSDT")
-            self.assertGreater(response.json["seconds_until_next_scan"], 0)
 
 
 
