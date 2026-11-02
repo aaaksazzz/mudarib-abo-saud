@@ -419,9 +419,10 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             "4h": candles(kind, item["symbol"], "4h"),
             "1d": candles(kind, item["symbol"], "1d"),
         }
-        if any(len(rows) < 50 for rows in reference_rows.values()):
+        if any(len(rows) < 35 for rows in reference_rows.values()):
             if diagnostics is not None:
                 diagnostics["reference_candles"] = {key: len(rows) for key, rows in reference_rows.items()}
+                diagnostics["candles_required"] = 35
             return reject("insufficient_reference_candles")
 
         reference = {key: assess_timeframe(rows) for key, rows in reference_rows.items()}
@@ -438,10 +439,10 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             return reject("reference_timeframes_not_aligned")
 
         entry_rows = candles(kind, item["symbol"], timeframe)
-        if len(entry_rows) < 50:
+        if len(entry_rows) < 35:
             if diagnostics is not None:
                 diagnostics["candles_received"] = len(entry_rows)
-                diagnostics["candles_required"] = 50
+                diagnostics["candles_required"] = 35
             return reject("insufficient_candles")
         if diagnostics is not None:
             diagnostics["candles_ready"] = True
