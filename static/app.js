@@ -430,6 +430,15 @@ async function loadUserSectionAccess(){
   if(page&&sections[page]===false){$("#health").textContent="هذا القسم مغلق من الإدارة";$("#health").className="bad";}
  }catch(e){console.warn("Section permissions unavailable",e)}
 }
+
+async function loadPaymentOptions(){try{let d=await get("/api/payments/options");$("#planMonths").innerHTML=Object.entries(d.prices).map(([m,p])=>'<option value="'+m+'">'+m+' شهر · '+p+' USDT</option>').join("");$("#paymentNetwork").innerHTML=Object.entries(d.networks).map(([k,n])=>'<option value="'+k+'">'+safe(n.label)+'</option>').join("");updatePlanAmount()}catch(e){$("#paymentNotice").textContent=e.message}}
+function updatePlanAmount(){let p={1:30,2:60,3:90,6:180,12:360};$("#planAmount").textContent=(p[$("#planMonths").value]||30)+" USDT"}
+$("#planMonths").addEventListener("change",updatePlanAmount);
+$("#createPaymentOrder").addEventListener("click",async()=>{try{let r=await fetch("/api/payments/orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({months:+$("#planMonths").value,network:$("#paymentNetwork").value})}),d=await r.json();if(!r.ok)throw Error(d.message);$("#activeOrderId").value=d.order.id;$("#paymentAddress").textContent=d.payment.address;$("#paymentAddressWrap").hidden=false;$("#txHashWrap").hidden=!d.payment.automatic_verification;$("#binancePayNote").hidden=d.payment.automatic_verification;$("#paymentNotice").textContent="طلب #"+d.order.id+" · "+d.order.amount_usdt+" USDT"}catch(e){$("#paymentNotice").textContent=e.message}});
+$("#copyPaymentAddress").addEventListener("click",()=>navigator.clipboard.writeText($("#paymentAddress").textContent).then(()=>$("#paymentNotice").textContent="تم النسخ").catch(()=>$("#paymentNotice").textContent="انسخ العنوان يدوياً"));
+$("#submitBinanceReference").addEventListener("click",async()=>{try{let r=await fetch("/api/payments/reference",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_id:+$("#activeOrderId").value,reference:$("#binancePayReference").value.trim()})}),d=await r.json();if(!r.ok)throw Error(d.message);$("#paymentNotice").textContent=d.message}catch(e){$("#paymentNotice").textContent=e.message}});
+$("#verifyPayment").addEventListener("click",async()=>{try{let r=await fetch("/api/payments/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_id:+$("#activeOrderId").value,tx_hash:$("#txHash").value.trim()})}),d=await r.json();if(!r.ok)throw Error(d.message);$("#paymentNotice").textContent=d.message;setTimeout(()=>location.reload(),700)}catch(e){$("#paymentNotice").textContent=e.message}});
+
 async function loadAdminUsers(){
  try{
   const d=await get("/api/admin/users",10000);
