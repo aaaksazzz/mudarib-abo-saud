@@ -227,7 +227,8 @@ async function load(){
    $("#health").className="bad";
    return;
   }
-  const d=await get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(requestedTimeframe),60000);
+  const section=PATH.startsWith("/sections/")?PATH.split("/").pop():requestedMarket;
+  const d=await get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(requestedTimeframe)+"&section="+encodeURIComponent(section),60000);
   if(requestedMarket!==market||requestedTimeframe!==analysisTimeframe){pending=true;return}
   $("#direction").textContent=d.direction==="BUY"?tr("up"):d.direction==="SELL"?tr("down"):tr("neutral");$("#direction").className="direction-value "+(d.direction==="BUY"?"up":d.direction==="SELL"?"down":"neutral");
   $("#up").textContent=d.up;$("#down").textContent=d.down;$("#flat").textContent=d.flat??0;$("#total").textContent=d.total;
@@ -238,7 +239,8 @@ async function load(){
   renderSignals(d.signals,d.scan_diagnostics||{});renderOpen(d.open_trades);
   const strategyLabel={"15m":"تأكيد 4 ساعات + يومي · دخول 15 دقيقة","1h":"تأكيد 4 ساعات + يومي · دخول ساعة","4h":"تأكيد 4 ساعات + يومي · دخول 4 ساعات","1d":"تأكيد 4 ساعات + يومي · دخول يومي","1w":"تأكيد 4 ساعات + يومي · دخول أسبوعي","1M":"تأكيد 4 ساعات + يومي · دخول شهري"};
   const label=$("#activeStrategy");if(label)label.textContent=strategyLabel[analysisTimeframe]||analysisTimeframe;
-  $("#health").textContent=d.snapshot_stale?"آخر اتجاه محفوظ · المصدر متوقف مؤقتاً":"متصل";
+  const minutes=Math.max(0,Math.ceil(Number(d.seconds_until_next_scan||0)/60));
+  $("#health").textContent=d.snapshot_stale?"آخر نتائج محفوظة · المصدر متوقف مؤقتاً":d.scan_cached?"نتائج محفوظة · الفحص القادم بعد "+minutes+" د":"اكتمل الفحص وحُفظت النتائج";
   $("#health").className=d.snapshot_stale?"bad":"ok";
   if(d.snapshot_stale&&d.message)$("#source").textContent+=" · "+d.message;
  }catch(e){
@@ -360,7 +362,8 @@ async function showAccess(message, user=null){
  $("#authToggle").hidden=!!user;
  $("#authForm").hidden=!!user;
  $("#accessTitle").textContent=user?"الاشتراك غير مفعل":"تسجيل الدخول";
- $("#accessMessage").textContent=user?"حسابك مسجل، لكن لا يوجد اشتراك نشط. تواصل مع الإدارة لتفعيل الوصول إلى الأسواق.":"أنشئ حسابًا أو سجل دخولك. الوصول إلى الأسواق للمشتركين فقط.";
+ $("#accessMessage").textContent=user?"حسابك مسجل. اختر مدة الاشتراك وطريقة الدفع لتفعيل الوصول.":"أنشئ حساباً أو سجل دخولك للوصول إلى المنصة.";
+ $("#subscriptionPanel").hidden=!user;
 }
 async function startAuthorized(user=null){
  $("#accessGate").hidden=true;
@@ -368,24 +371,23 @@ async function startAuthorized(user=null){
  $("#topLogout").hidden=!user;
  $("#adminPanel").hidden=!(user&&user.is_admin);
  $("#drawerAdmin").hidden=!(user&&user.is_admin);
- if(user&&user.is_admin) await loadAdminUsers();
+ if(user&&user.is_admin){await loadAdminUsers();await loadAdminPayments();await loadAdminSections();}
  configurePage();
+ if(user&&!user.is_admin)await loadUserSectionAccess();
  if(marketMatch){await loadMarketStatuses();await load();}
  else if(PATH==="/"){await loadMarketStatuses();await loadHomeOverview();}
  else if(PATH.startsWith("/sections/") && ["direction","opportunities","open-trades"].includes(PATH.split("/").pop())){await loadMarketStatuses();await load();}
  else if(PATH==="/sections/history"){await loadHistoryPage();}
 }
 async function initializeAccess(){
- // Public, read-only market browsing is available without a paid subscription.
- // Keep account sign-in optional; admin tools remain protected server-side.
  let user=null;
  try{
   const d=await get("/api/auth/me",7000);
   user=d?.user||null;
- }catch(e){
-  console.warn("Optional account status unavailable; opening public market view.",e);
- }
- await startAuthorized(user);
+  if(user&&(user.is_admin||user.subscribed)){await startAuthorized(user);return;}
+  await showAccess(user?"حسابك جاهز. اختر مدة الاشتراك وأكمل الدفع لتفعيل المنصة.":"سجل الدخول أو أنشئ حساباً جديداً للبدء.",user);
+  if(user)await loadPaymentOptions();
+ }catch(e){await showAccess("تعذر التحقق من الحساب. حدّث الصفحة أو حاول تسجيل الدخول.");}
 }
 let creatingAccount=false;
 $("#authToggle").addEventListener("click",()=>{
@@ -408,7 +410,7 @@ $("#authForm").addEventListener("submit",async e=>{
   const d=await response.json();
   if(!response.ok)throw Error(d.message||"تعذر إكمال الطلب.");
   if(d.user?.is_admin || d.user?.subscribed) await startAuthorized(d.user);
-  else await showAccess("تم إنشاء الحساب بنجاح. الاشتراك يحتاج موافقة الأدمن.",d.user);
+  else {await showAccess("تم إنشاء الحساب. اختر مدة الاشتراك وأكمل الدفع.",d.user);await loadPaymentOptions();}
  }catch(err){$("#authNotice").textContent=err.message}
  finally{button.disabled=false}
 });
@@ -465,4 +467,4 @@ $("#siteDrawer").addEventListener("click",e=>{
 tick();setInterval(tick,1000);
 initPreferences();
 initializeAccess();
-timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load()}else if(PATH==="/")loadHomeOverview()},60000);
+timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load()}else if(PATH==="/")loadHomeOverview()},900000);
