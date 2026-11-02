@@ -422,6 +422,12 @@ async function loadUserSectionAccess(){
   document.querySelectorAll("[data-market]").forEach(el=>{el.hidden=sections[el.dataset.market]===false});
   const links={"/sections/direction":"direction","/sections/opportunities":"opportunities","/sections/open-trades":"open-trades","/sections/history":"history","/news":"news","/blog":"blog"};
   Object.entries(links).forEach(([href,key])=>{const el=document.querySelector('#siteDrawer a[href="'+href+'"]');if(el)el.hidden=sections[key]===false});
+  const page=PATH.startsWith("/sections/")?PATH.split("/").pop():(PATH==="/blog"?"blog":PATH==="/news"?"news":"");
+  if(page&&sections[page]===false){
+   const ids={direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["opportunitiesSection","cards","openSection"],history:["historySection"],blog:["blogSection"],news:["newsSection"]};
+   (ids[page]||[]).forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
+   $("#homeSection p").textContent="هذا القسم مغلق حالياً من إدارة المنصة.";
+  }
  }catch(e){console.warn("Section permissions unavailable",e)}
 }
 
