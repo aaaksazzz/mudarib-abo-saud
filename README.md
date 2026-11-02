@@ -80,15 +80,15 @@ The first administrator account is created automatically in the persistent SQLit
 
 Each market uses a separate OHLCV rule family after completed 15m candles are fetched:
 - Spot: long-only trend breakout with relative volume.
-- USD-M Futures: two-sided trend continuation with structure, momentum and relative volume.
-- COIN-M: two-sided liquidity-sweep reversal.
+- USD-M Futures: two-sided trend continuation with structure, momentum and relative volume, filtered by live mark/index basis and latest funding.
+- COIN-M: two-sided liquidity-sweep reversal, filtered by live mark/index basis and latest funding.
 - Binance Alpha: stricter momentum/volume breakout.
 - Saudi equities: long-only compression/expansion breakout (only for configured Yahoo watchlists).
 - US equities: long-only trend recovery with relative volume (only for configured Yahoo watchlists).
 - Forex/metals: two-sided range-expansion breakout using the provider's tick-volume proxy.
 - US listed contracts: no strategy signals until a verified options/contracts market-data provider is integrated.
 
-The shared liquidity engine calculates entry risk levels only after the relevant market-specific gate confirms. Strategy quality scores are rule-confluence scores, not win probabilities. These are research candidates and are **not backtested or proven profitable**. The endpoint `/api/strategies` exposes each strategy and its provider/validation status. No provider-dependent market is populated with guessed data.
+The shared liquidity engine calculates entry risk levels only after the relevant market-specific gate confirms. Strategy quality scores are rule-confluence scores, not win probabilities. The basis/funding crowding thresholds are provisional research filters, not calibrated return predictors. These are research candidates and are **not backtested or proven profitable**. The endpoint `/api/strategies` exposes each strategy and its provider/validation status. No provider-dependent market is populated with guessed data.
 
 ## Fast-mover ranking
 - ترتيب نسبي داخل كل سوق: 50% absolute 24h change, 30% 24h high-low range, 20% quote turnover/liquidity. A feature with no variation is omitted and remaining weights are normalized.
