@@ -15,7 +15,7 @@ import requests
 from gamma_engine import analyse_liquidity_candidate
 from market_ranking import rank_market_assets
 from institutional_flow import analyse_orderbook_flow
-from scan_rotation import select_scan_batch
+from scan_rotation import select_priority_scan_batch
 
 try:
     import yfinance as yf
@@ -1391,8 +1391,9 @@ def market(kind):
             if cursor_key not in SCAN_CURSORS:
                 SCAN_CURSORS[cursor_key] = load_market_scan_cursor(kind, timeframe)
             scan_offset = SCAN_CURSORS[cursor_key]
-            candidates, next_scan_offset, scan_offset = select_scan_batch(assets, scan_offset, 20)
-        priority_candidates = 0
+            candidates, next_scan_offset, scan_offset, priority_candidates = select_priority_scan_batch(
+                assets, scan_offset, batch_size=20, priority_size=10
+            )
         signals = []
         diagnostic_rows = [{} for _ in candidates]
         # Signal eligibility is determined by the selected asset's two reference
