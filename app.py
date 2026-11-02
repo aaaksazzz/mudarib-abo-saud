@@ -48,12 +48,19 @@ CACHE_LOCK = threading.Lock()
 CACHE_KEY_LOCKS = {}
 SCAN_CURSORS = {}
 SCAN_CURSOR_LOCK = threading.Lock()
-DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
+DATA_DIR = Path(os.environ.get("DATA_DIR", "/data")).expanduser()
+DB_PATH = Path(os.environ.get("DB_PATH", str(DATA_DIR / "trades.sqlite3"))).expanduser()
 try:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-except OSError:
-    DATA_DIR = Path("/tmp")
-DB_PATH = Path(os.environ.get("DB_PATH", str(DATA_DIR / "trades.sqlite3")))
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+except OSError as exc:
+    # Never silently fall back to ephemeral storage: that would make trade
+    # history appear to vanish after a container restart.
+    raise RuntimeError(
+        f"Persistent trade database directory is unavailable: {DB_PATH.parent}"
+    ) from exc
+DB_INIT_LOCK = threading.Lock()
+SAVE_NEW_TRADES_LOCK = threading.Lock()
 
 MARKETS = [
     {"id": "spot", "name": "Binance Spot", "provider": "Binance", "status": "live"},
@@ -452,6 +459,10 @@ def db():
     connection = sqlite3.connect(DB_PATH, timeout=8)
     connection.row_factory = sqlite3.Row
     try:
+        connection.execute("PRAGMA busy_timeout=8000")
+        connection.execute("PRAGMA synchronous=FULL")
+        with DB_INIT_LOCK:
+            connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("""CREATE TABLE IF NOT EXISTS trades (
             id INTEGER PRIMARY KEY AUTOINCREMENT, market TEXT NOT NULL, symbol TEXT NOT NULL,
             timeframe TEXT NOT NULL, side TEXT NOT NULL, entry REAL NOT NULL, stop_loss REAL NOT NULL,
@@ -670,35 +681,49 @@ def admin_subscription():
 
 
 def save_new_trades(kind, signals):
+    """Persist fresh opportunities once; return only rows actually inserted.
+
+    A symbol/timeframe is not re-issued for 24 hours, even if its prior trade
+    closed during that window. Existing positions remain visible in open_trades.
+    """
     now = int(time.time())
-    with db() as connection:
-        for signal in signals:
-            required = ("symbol", "timeframe", "side", "entry", "stop_loss", "tp1", "tp2", "tp3")
-            if any(key not in signal or signal[key] is None for key in required):
-                continue
-            try:
-                entry, stop, tp1, tp2, tp3 = (float(signal[key]) for key in ("entry", "stop_loss", "tp1", "tp2", "tp3"))
-            except (TypeError, ValueError):
-                continue
-            if not all(value > 0 for value in (entry, stop, tp1, tp2, tp3)):
-                continue
-            if signal["side"] == "BUY" and not (stop < entry < tp1 < tp2 < tp3):
-                continue
-            if signal["side"] == "SELL" and not (stop > entry > tp1 > tp2 > tp3):
-                continue
-            if signal["side"] not in ("BUY", "SELL"):
-                continue
-            exists = connection.execute(
-                "SELECT id FROM trades WHERE market=? AND symbol=? AND timeframe=? AND status='OPEN'",
-                (kind, signal["symbol"], signal["timeframe"])
-            ).fetchone()
-            if not exists:
+    inserted = []
+    with SAVE_NEW_TRADES_LOCK:
+        with db() as connection:
+            for signal in signals:
+                required = ("symbol", "timeframe", "side", "entry", "stop_loss", "tp1", "tp2", "tp3")
+                if any(key not in signal or signal[key] is None for key in required):
+                    continue
+                try:
+                    entry, stop, tp1, tp2, tp3 = (
+                        float(signal[key]) for key in ("entry", "stop_loss", "tp1", "tp2", "tp3")
+                    )
+                except (TypeError, ValueError):
+                    continue
+                if not all(value > 0 for value in (entry, stop, tp1, tp2, tp3)):
+                    continue
+                if signal["side"] == "BUY" and not (stop < entry < tp1 < tp2 < tp3):
+                    continue
+                if signal["side"] == "SELL" and not (stop > entry > tp1 > tp2 > tp3):
+                    continue
+                if signal["side"] not in ("BUY", "SELL"):
+                    continue
+                recent = connection.execute(
+                    """SELECT id FROM trades
+                       WHERE market=? AND symbol=? AND timeframe=? AND created_at>=?
+                       ORDER BY created_at DESC LIMIT 1""",
+                    (kind, signal["symbol"], signal["timeframe"], now - 24 * 60 * 60)
+                ).fetchone()
+                if recent:
+                    continue
                 connection.execute("""INSERT INTO trades
                     (market,symbol,timeframe,side,entry,stop_loss,tp1,tp2,tp3,created_at,updated_at)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
-                    (kind, signal["symbol"], signal["timeframe"], signal["side"], signal["entry"],
-                     signal["stop_loss"], signal["tp1"], signal["tp2"], signal["tp3"], now, now))
-        connection.commit()
+                    (kind, signal["symbol"], signal["timeframe"], signal["side"], entry,
+                     stop, tp1, tp2, tp3, now, now))
+                inserted.append(signal)
+            connection.commit()
+    return inserted
 
 def update_open_trades(kind, prices):
     now = int(time.time())
@@ -950,7 +975,9 @@ def market(kind):
             row["ranking_score"], row["quality_score"], abs(row.get("change_timeframe", 0))
         ), reverse=True)
         signals = signals[:3]
-        save_new_trades(kind, signals)
+        # Only show opportunities that were actually saved. Repeated scans of
+        # the same symbol/timeframe stay in the position tracker, not as fresh cards.
+        signals = save_new_trades(kind, signals)
         with db() as connection:
             active = [dict(row) for row in connection.execute(
                 "SELECT * FROM trades WHERE market=? AND status='OPEN' ORDER BY created_at DESC LIMIT 100", (kind,)
