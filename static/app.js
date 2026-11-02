@@ -270,7 +270,7 @@ async function loadNews(){
  try{
   const d=await get("/api/news",10000);
   if(!d.items?.length){root.innerHTML='<div class="empty">'+safe(d.error||"لا توجد عناوين متاحة الآن.")+'</div>';return}
-  root.innerHTML=d.items.map(x=>'<article class="news-item"><div><small>'+safe(x.source||"مصدر خارجي")+' · '+safe(x.published||"")+'</small><h3><a href="'+safe(x.url)+'" target="_blank" rel="noopener noreferrer">'+safe(x.title)+'</a></h3></div><span class="news-arrow">↗</span></article>').join("");
+  root.innerHTML=d.items.map(x=>'<article class="news-item"><div><small>'+safe(x.source||"مصدر خارجي")+' · '+safe(x.published||"")+'</small><h3>'+safe(x.title)+'</h3></div><span class="news-arrow" aria-label="خبر داخل المنصة">•</span></article>').join("");
  }catch(e){root.innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
 }
 $("#newsRefresh")?.addEventListener("click",loadNews);
@@ -285,11 +285,13 @@ async function loadHomeOverview(){
   $("#homeMoverCount").textContent=(data.fast_movers||[]).length;
   $("#homeUpdated").textContent="آخر فحص · "+new Date((data.updated||Date.now()/1000)*1000).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
   const movers=data.fast_movers||[];
-  moversRoot.innerHTML=movers.length?movers.map((x,i)=>'<div class="home-mover-row"><span class="home-mover-rank">'+(i+1)+'</span><div class="home-mover-name"><b>'+safe(x.symbol)+'</b><small>'+safe(x.market_name)+'</small></div><div class="home-mover-price"><b>'+fmt(x.price)+'</b><small>حجم 24س '+(Number(x.volume)>0?compact(x.volume):"غير متاح")+'</small></div><b class="home-mover-change '+(Number(x.change24h)>=0?"up":"down")+'">'+pct(x.change24h)+'</b></div>').join(""):'<div class="empty">لا توجد بيانات حركة مؤكدة من المصادر المتاحة حاليًا.</div>';
+  moversRoot.innerHTML=movers.length?movers.map((x,i)=>'<div class="home-mover-row"><span class="home-mover-rank">'+(i+1)+'</span><div class="home-mover-name"><b>'+safe(x.symbol)+'</b><small>'+safe(x.market_name)+'</small></div><b class="home-mover-change '+(Number(x.change24h)>=0?"up":"down")+'">'+pct(x.change24h)+'</b></div>').join(""):'<div class="empty">لا توجد بيانات حركة مؤكدة من المصادر المتاحة حاليًا.</div>';
   coverageRoot.innerHTML=(data.markets||[]).map(x=>{
    const ready=x.status==="live"||x.status==="watchlist";
    const state=x.status==="watchlist"?"قائمة محددة":ready?"متاح":x.status==="provider_required"?"المصدر غير مربوط":"تعذر التحديث";
-   return '<a class="home-coverage-row" href="/markets/'+encodeURIComponent(x.id)+'"><span class="home-coverage-dot '+(ready?"ready":"")+'"></span><span class="home-coverage-name">'+safe(x.name)+'</span><b>'+ (ready?compact(x.eligible_assets)+" أصل · "+state:state)+'</b><span class="home-coverage-arrow">←</span></a>';
+   const direction=x.direction==="BUY"?"صاعد":x.direction==="SELL"?"هابط":x.direction==="NEUTRAL"?"محايد":"—";
+   const breadth=ready&&x.up!=null?" · "+direction+" ("+x.up+"/"+x.down+")":"";
+   return '<a class="home-coverage-row" href="/markets/'+encodeURIComponent(x.id)+'"><span class="home-coverage-dot '+(ready?"ready":"")+'"></span><span class="home-coverage-name">'+safe(x.name)+'</span><b>'+ (ready?compact(x.eligible_assets)+" أصل · "+state+breadth:state)+'</b><span class="home-coverage-arrow">←</span></a>';
   }).join("");
  }catch(e){
   moversRoot.innerHTML='<div class="empty">'+safe(e.message)+'</div>';
@@ -302,11 +304,11 @@ function configurePage(){
  document.body.classList.toggle("market-page",!!marketMatch);
  const timeframeSwitcher=$("#marketTimeframeSwitcher");if(timeframeSwitcher)timeframeSwitcher.hidden=!marketMatch;
  const adminAllowed=!$("#adminPanel").hidden;$("#adminPanel").hidden=true;
- const ids=["homeSection","marketSection","directionSection","opportunitiesSection","cards","openSection","blogSection","newsSection"];
+ const ids=["homeSection","homeOverview","marketSection","directionSection","opportunitiesSection","cards","openSection","blogSection","newsSection"];
  const hideAll=()=>ids.forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
  const show=(...names)=>names.forEach(id=>{const el=$("#"+id);if(el)el.hidden=false});
  if(PATH==="/"){
-  hideAll();show("homeSection","marketSection");
+  hideAll();show("homeSection","homeOverview","marketSection");
   $("#homeSection h1").innerHTML='<span>'+tr("marketHomeTitle")+'</span>';
   $("#homeSection p").textContent=tr("marketPageDescription");
  }else if(marketMatch){
@@ -369,7 +371,7 @@ async function startAuthorized(user=null){
  if(user&&user.is_admin) await loadAdminUsers();
  configurePage();
  if(marketMatch){await loadMarketStatuses();await load();}
- else if(PATH==="/"){await loadMarketStatuses();}
+ else if(PATH==="/"){await loadMarketStatuses();await loadHomeOverview();}
  else if(PATH.startsWith("/sections/") && ["direction","opportunities","open-trades"].includes(PATH.split("/").pop())){await loadMarketStatuses();await load();}
  else if(PATH==="/sections/history"){await loadHistoryPage();}
 }
