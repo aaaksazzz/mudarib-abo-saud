@@ -564,3 +564,19 @@ def test_market_direction_and_open_trades_are_persisted(tmp_path, monkeypatch):
     assert len(opened) == 1
     assert signals[0]["symbol"] == "AAAUSDT"
     assert signals[0]["persisted"] is True
+
+def test_market_api_restores_last_direction_when_provider_is_unavailable(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "stale-market-state.sqlite3")
+    module.CACHE.pop("spot:universe", None)
+    module.save_market_snapshot("spot", "SELL", 2, 9, 1, 12, "test-feed")
+
+    def unavailable(_kind):
+        raise requests.RequestException("simulated provider outage")
+
+    monkeypatch.setattr(module, "market_tickers", unavailable)
+    response = client.get("/api/market/spot?timeframe=15m")
+    assert response.status_code == 200
+    assert response.json["snapshot_stale"] is True
+    assert response.json["direction"] == "SELL"
+    assert response.json["up"] == 2
+    assert response.json["down"] == 9
