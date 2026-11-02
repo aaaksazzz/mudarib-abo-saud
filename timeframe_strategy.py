@@ -157,26 +157,20 @@ def assess_timeframe(rows, side=None):
     }
 
 
-def assess_reversal(rows):
-    """Reverse the detected direction while preserving signal strength."""
+def assess_signal(rows):
+    """Use the detected direction as-is while preserving signal strength."""
     analysis = assess_timeframe(rows)
     source_state = analysis.get("state")
-    reverse = {
-        "BUY": ("SELL", "SELL"),
-        "STRONG_BUY": ("SELL", "STRONG_SELL"),
-        "SELL": ("BUY", "BUY"),
-        "STRONG_SELL": ("BUY", "STRONG_BUY"),
-    }
-    if source_state not in reverse:
+    if source_state not in BUY_STATES and source_state not in SELL_STATES:
         return {
             "confirmed": False, "reason": analysis.get("reason", "no_clear_direction"),
-            "source_state": source_state, "analysis": analysis,
+            "state": source_state, "analysis": analysis,
         }
-    trade_side, trade_state = reverse[source_state]
+    side = "BUY" if source_state in BUY_STATES else "SELL"
     return {
-        "confirmed": True, "source_state": source_state, "side": trade_side,
-        "trade_state": trade_state, "quality_score": analysis["score"],
-        "analysis": analysis, "reason": "same_timeframe_reversal",
+        "confirmed": True, "state": source_state, "side": side,
+        "quality_score": analysis["score"], "analysis": analysis,
+        "reason": "same_timeframe_signal",
     }
 
 
