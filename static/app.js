@@ -7,8 +7,8 @@ let marketStatuses=new Map();
 let analysisTimeframe=new URLSearchParams(location.search).get("timeframe")||"15m";
 const VALID_TFS=["15m","1h","4h","1d","1w","1M"];
 if(!VALID_TFS.includes(analysisTimeframe))analysisTimeframe="15m";
-const timeframeSelect=$("#analysisTimeframe");
-if(timeframeSelect)timeframeSelect.value=analysisTimeframe;
+function syncTimeframeButtons(){document.querySelectorAll("[data-timeframe]").forEach(button=>{const active=button.dataset.timeframe===analysisTimeframe;button.classList.toggle("active",active);button.setAttribute("aria-pressed",active?"true":"false")})}
+syncTimeframeButtons();
 const fmt=n=>Number(n).toLocaleString("en-US",{maximumFractionDigits:8});
 const compact=n=>{n=Number(n)||0;if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return fmt(n)};
 const pct=n=>(Number(n)>=0?"+":"")+Number(n).toFixed(2)+"%";
@@ -209,12 +209,12 @@ async function load(){
 
 
 $("#refresh").addEventListener("click",()=>{if(PATH==="/sections/history")loadHistoryPage();else load()});
-$("#analysisTimeframe")?.addEventListener("change",e=>{
- const next=e.target.value;if(!VALID_TFS.includes(next))return;
- analysisTimeframe=next;
+document.querySelectorAll("[data-timeframe]").forEach(button=>button.addEventListener("click",()=>{
+ const next=button.dataset.timeframe;if(!VALID_TFS.includes(next)||next===analysisTimeframe)return;
+ analysisTimeframe=next;syncTimeframeButtons();
  const url=new URL(location.href);url.searchParams.set("timeframe",next);history.replaceState({}, "", url);
  load();
-});
+}));
 async function loadNews(){
  const root=$("#newsFeed");if(!root)return;
  root.innerHTML='<div class="empty">جارٍ جلب آخر العناوين...</div>';
