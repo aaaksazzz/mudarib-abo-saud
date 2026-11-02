@@ -415,6 +415,40 @@ def candles(kind, symbol, interval):
     rows.sort(key=lambda row: row["time"])
     return rows
 
+def perpetual_market_context(kind):
+    """Read Binance mark/index premium and latest funding for active perpetuals."""
+    if kind not in ("futures", "coinm"):
+        return {}
+    path = "/fapi/v1/premiumIndex" if kind == "futures" else "/dapi/v1/premiumIndex"
+    payload = cached(
+        f"{kind}:premium-index-context", 30,
+        lambda: fetch_json(BASES[kind] + path)
+    )
+    rows = payload if isinstance(payload, list) else [payload]
+    now_ms = int(time.time() * 1000)
+    output = {}
+    for row in rows:
+        if not isinstance(row, dict) or not row.get("symbol"):
+            continue
+        try:
+            mark = float(row.get("markPrice") or 0)
+            index = float(row.get("indexPrice") or 0)
+            funding = float(row.get("lastFundingRate"))
+            stamp = int(row.get("time") or now_ms)
+            if mark <= 0 or index <= 0 or now_ms - stamp > 120_000:
+                continue
+            output[row["symbol"]] = {
+                "basis_percent": (mark / index - 1.0) * 100,
+                "funding_rate": funding,
+                "time": stamp,
+            }
+        except (TypeError, ValueError, OverflowError, ZeroDivisionError):
+            continue
+    if not output:
+        raise requests.RequestException("Binance returned no fresh mark/index/funding context")
+    return output
+
+
 def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timeframe="15m"):
     """Analyse direction, liquidity and entry exclusively from completed 15m candles."""
     def reject(reason):
@@ -459,7 +493,13 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
 
         # Each market now has its own setup gate. A shared liquidity engine may
         # calculate risk levels only after the market-specific rule confirms.
-        strategy_result = evaluate_market_strategy(kind, entry_rows, item.get("price"))
+        market_context = {}
+        if kind in ("futures", "coinm"):
+            market_context = cached(
+                f"{kind}:premium-index-context", 30,
+                lambda: perpetual_market_context(kind),
+            ).get(item["symbol"], {})
+        strategy_result = evaluate_market_strategy(kind, entry_rows, item.get("price"), market_context)
         if diagnostics is not None:
             diagnostics["market_strategy"] = strategy_result.get("strategy")
             diagnostics["market_strategy_reason"] = strategy_result.get("reason")
@@ -517,7 +557,7 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             "strategy": strategy_result.get("strategy"),
             "strategy_label": {"spot": "اختراق اتجاه صاعد بحجم نسبي", "futures": "استمرار الاتجاه والزخم", "coinm": "انعكاس بعد سحب السيولة", "alpha": "اختراق زخم وحجم مشدد", "saudi": "اختراق الانضغاط السعري", "us": "استعادة الاتجاه مع الحجم", "forex": "اختراق نطاق الحركة", "contracts": "غير متاح لغياب مزود البيانات"}.get(kind, strategy_result.get("strategy")),
             "strategy_reason": strategy_result.get("reason"),
-            "strategy_metrics": {key: strategy_result.get(key) for key in ("volume_ratio", "momentum_percent", "structure")},
+            "strategy_metrics": {key: strategy_result.get(key) for key in ("volume_ratio", "momentum_percent", "structure", "basis_percent", "funding_rate")},
             "signal_state": state,
             "signal_state_ar": state_ar.get(state, "محايد"),
             "quality_score": round(quality_score, 1),
