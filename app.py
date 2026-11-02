@@ -1012,7 +1012,7 @@ def market(kind):
         # Scan a bounded rotating batch so large universes are covered over successive refreshes.
         with SCAN_CURSOR_LOCK:
             scan_offset = SCAN_CURSORS.get(kind, 0)
-            candidates, next_scan_offset, scan_offset, priority_candidates = select_priority_scan_batch(assets, scan_offset, 40, 10)
+            candidates, next_scan_offset, scan_offset, priority_candidates = select_priority_scan_batch(assets, scan_offset, 12, 6)
             SCAN_CURSORS[kind] = next_scan_offset
         signals = []
         diagnostic_rows = [{} for _ in candidates]
