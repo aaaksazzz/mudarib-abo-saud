@@ -530,3 +530,34 @@ def test_open_confirmed_trade_remains_in_opportunity_cards_after_refresh(tmp_pat
     assert card["entry"] == 100.0
     assert card["stop_loss"] == 98.0
     assert card["tp3"] == 106.0
+
+def test_market_cache_evicts_old_entries_when_capacity_is_reached(monkeypatch):
+    original_capacity = module.CACHE_MAX_ENTRIES
+    original_age = module.CACHE_MAX_AGE_SECONDS
+    try:
+        module.CACHE.clear()
+        monkeypatch.setattr(module, "CACHE_MAX_ENTRIES", 3)
+        monkeypatch.setattr(module, "CACHE_MAX_AGE_SECONDS", 10_000)
+        for index in range(4):
+            module.cached(f"capacity-test-{index}", 60, lambda index=index: index)
+        assert len(module.CACHE) == 3
+        assert "capacity-test-0" not in module.CACHE
+        assert module.CACHE["capacity-test-3"][1] == 3
+    finally:
+        module.CACHE.clear()
+        module.CACHE_MAX_ENTRIES = original_capacity
+        module.CACHE_MAX_AGE_SECONDS = original_age
+
+def test_frontend_dashboard_history_and_optional_refresh_markup():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    html = (root / "static" / "index.html").read_text(encoding="utf-8")
+    js = (root / "static" / "app.js").read_text(encoding="utf-8")
+    for element_id in (
+        "homeOverview", "homeAssetCount", "homeMarketCount", "homeMoverCount",
+        "homeCoverage", "homeMovers", "historySection", "historySummary",
+        "historyCount", "closedTrades",
+    ):
+        assert f'id="{element_id}"' in html
+    assert 'const refreshButton=$("#refresh");if(refreshButton)refreshButton.hidden=true;' in js
+    assert 'history:["historySection"]' in js

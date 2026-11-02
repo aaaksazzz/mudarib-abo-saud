@@ -44,6 +44,8 @@ YAHOO_SYMBOLS = {
 SCAN_INTERVAL = "15m"
 STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "EUR"}
 CACHE = {}
+CACHE_MAX_ENTRIES = 1200
+CACHE_MAX_AGE_SECONDS = 900
 CACHE_LOCK = threading.Lock()
 CACHE_KEY_LOCKS = {}
 SCAN_CURSORS = {}
@@ -87,7 +89,19 @@ def cached(key, ttl, loader):
                 return item[1]
         value = loader()
         with CACHE_LOCK:
-            CACHE[key] = (time.time(), value)
+            stored_at = time.time()
+            # Remove expired snapshots before inserting new market/candle keys.
+            # This keeps the small Northflank container bounded during long scans.
+            expired = [
+                cache_key for cache_key, (stamp, _) in CACHE.items()
+                if stored_at - stamp > CACHE_MAX_AGE_SECONDS
+            ]
+            for cache_key in expired:
+                CACHE.pop(cache_key, None)
+            while len(CACHE) >= CACHE_MAX_ENTRIES:
+                oldest_key = min(CACHE, key=lambda cache_key: CACHE[cache_key][0])
+                CACHE.pop(oldest_key, None)
+            CACHE[key] = (stored_at, value)
         return value
 
 def fetch_json(url, params=None):
@@ -878,11 +892,19 @@ def health():
             connection.execute("SELECT 1").fetchone()
     except sqlite3.Error:
         database = "error"
+    with CACHE_LOCK:
+        cache_entries = len(CACHE)
+        cache_key_locks = len(CACHE_KEY_LOCKS)
     return jsonify({
         "ok": database == "ok",
         "service": "smart-trading-pro",
         "status": "healthy" if database == "ok" else "degraded",
         "database": database,
+        "cache": {
+            "entries": cache_entries,
+            "capacity": CACHE_MAX_ENTRIES,
+            "key_locks": cache_key_locks,
+        },
         "live_markets": [item["id"] for item in MARKETS if item["status"] == "live"],
     }), (200 if database == "ok" else 503)
 

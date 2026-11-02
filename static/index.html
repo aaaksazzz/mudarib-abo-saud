@@ -5,8 +5,8 @@
 <meta name="theme-color" content="#070b12"><title>SMART TRADING PRO | التداول الذكي</title>
 <meta name="description" content="منصة احترافية لمراقبة الأسواق والاتجاهات والفرص الفنية ببيانات عامة ومصادر واضحة.">
 <link rel="preconnect" href="https://api.binance.com"><link rel="preconnect" href="https://fapi.binance.com">
-<link rel="stylesheet" href="/static/app.css?v=20261102.market-terminal-v4">
-<script src="/static/app.js?v=20261102.auth-strategy-fix1" defer></script>
+<link rel="stylesheet" href="/static/app.css?v=20261102.pro-dashboard-v1">
+<script src="/static/app.js?v=20261102.pro-dashboard-v2" defer></script>
 </head>
 <body>
 <div class="app-shell">
@@ -41,7 +41,7 @@
    <a href="/markets/spot">توصيات Binance Spot</a><a href="/markets/futures">توصيات Binance USD-M</a><a href="/markets/coinm">توصيات Binance COIN-M</a><a href="/markets/alpha">توصيات Binance Alpha</a>
    <a href="/markets/saudi">توصيات السوق السعودي</a><a href="/markets/us">توصيات الأسهم الأمريكية</a><a href="/markets/contracts">توصيات العقود الأمريكية</a><a href="/markets/forex">توصيات الفوركس والذهب</a>
    <div class="drawer-group">الاتجاه والصفقات</div>
-   <a href="/sections/direction">توجه السوق</a><a href="/sections/opportunities">فرص التداول</a><a href="/sections/open-trades">متابعة الصفقات</a>
+   <a href="/sections/direction">توجه السوق</a><a href="/sections/opportunities">فرص التداول</a><a href="/sections/open-trades">متابعة الصفقات</a><a href="/sections/history">سجل الصفقات</a>
    <div class="drawer-group">المحتوى</div><a href="/blog">المدونة التعليمية</a><a href="/news">أخبار الأسواق</a>
    <a href="/admin" id="drawerAdmin" hidden>إدارة المشتركين</a>
   </nav>
@@ -64,6 +64,24 @@
    <a data-market="us" href="/markets/us" class="market-tab"><span class="market-icon usa">$</span><span><b>الأسهم الأمريكية</b><small>صفحة مستقلة</small></span></a>
    <a data-market="contracts" href="/markets/contracts" class="market-tab"><span class="market-icon contracts">⌁</span><span><b>العقود الأمريكية</b><small>صفحة مستقلة</small></span></a>
    <a data-market="forex" href="/markets/forex" class="market-tab"><span class="market-icon forex">FX</span><span><b>الفوركس والذهب</b><small>صفحة مستقلة</small></span></a>
+  </div>
+ </section>
+ <section id="homeOverview" class="home-dashboard" aria-label="ملخص الأسواق">
+  <div class="home-metrics">
+   <article class="home-metric"><small>الأصول المتاحة للفحص</small><b id="homeAssetCount">—</b><span>من مصادر البيانات المتاحة</span></article>
+   <article class="home-metric"><small>الأسواق المتصلة</small><b id="homeMarketCount">—</b><span>من إجمالي الأسواق</span></article>
+   <article class="home-metric"><small>الأصول الأسرع حركة</small><b id="homeMoverCount">—</b><span>ترتيب نسبي وليس إشارة دخول</span></article>
+  </div>
+  <div class="home-dashboard-grid">
+   <article class="home-dashboard-panel">
+    <div class="home-panel-heading"><div><span class="kicker">MARKET COVERAGE</span><h2>حالة الأسواق</h2></div><span id="homeUpdated" class="home-updated">جارٍ الفحص</span></div>
+    <div id="homeCoverage" class="home-coverage"><div class="empty">جارٍ فحص مصادر الأسواق...</div></div>
+   </article>
+   <article class="home-dashboard-panel">
+    <div class="home-panel-heading"><div><span class="kicker">FAST MOVERS</span><h2>الأصول الأسرع حركة</h2></div><span class="home-updated">24 ساعة</span></div>
+    <div id="homeMovers" class="home-movers"><div class="empty">جارٍ ترتيب الأصول...</div></div>
+    <p class="home-footnote">الترتيب يعتمد على الزخم اليومي ونطاق الحركة والسيولة المتاحة، ولا يمثل توصية شراء أو بيع.</p>
+   </article>
   </div>
  </section>
  <section class="overview-grid" id="directionSection">
@@ -93,6 +111,14 @@
  <section class="panel tracker-panel" id="openSection">
   <div class="section-heading tracker-heading"><div><span class="kicker">POSITION MONITOR</span><h2>متابعة الصفقات</h2><p>تتبع تلقائي لمستويات الأهداف ووقف الخسارة عند تحديث السوق.</p></div><span id="openCount" class="count-pill">0 مفتوحة</span></div>
   <div id="openTrades" class="trade-list"><div class="empty">لا توجد صفقات مفتوحة محفوظة لهذا السوق.</div></div>
+ </section>
+ <section id="historySection" class="panel history-panel" hidden>
+  <div class="section-heading tracker-heading">
+   <div><span class="kicker">TRADE HISTORY</span><h2>سجل الصفقات</h2><p>نتائج الصفقات المسجلة في جميع الأسواق، مع فصل الأهداف ووقف الخسارة وانتهاء الصلاحية.</p></div>
+   <span id="historyCount" class="count-pill">0 مغلقة</span>
+  </div>
+  <div id="historySummary" class="result-summary"></div>
+  <div id="closedTrades" class="trade-list"><div class="empty">جارٍ تحميل سجل الصفقات...</div></div>
  </section>
   </section>
 <section id="blogSection" class="editorial-section" hidden>
