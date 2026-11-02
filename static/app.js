@@ -299,7 +299,7 @@ function configurePage(){
  document.body.classList.toggle("market-page",!!marketMatch);
  const timeframeSwitcher=$("#marketTimeframeSwitcher");if(timeframeSwitcher)timeframeSwitcher.hidden=!marketMatch;
  const adminAllowed=!$("#adminPanel").hidden;$("#adminPanel").hidden=true;
- const ids=["homeSection","marketSection","homeOverview","directionSection","opportunitiesSection","cards","openSection","blogSection","newsSection"];
+ const ids=["homeSection","marketSection","homeOverview","directionSection","opportunitiesSection","cards","openSection","historySection","blogSection","newsSection"];
  const hideAll=()=>ids.forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
  const show=(...names)=>names.forEach(id=>{const el=$("#"+id);if(el)el.hidden=false});
  if(PATH==="/"){
@@ -313,9 +313,9 @@ function configurePage(){
   $("#homeSection p").textContent="اتجاه السوق والفرص والصفقات الخاصة بهذا السوق فقط.";
  }else if(PATH.startsWith("/sections/")){
   const section=PATH.split("/").pop();
-  const map={direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["opportunitiesSection","cards","openSection"]};
+  const map={direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["opportunitiesSection","cards","openSection"],history:["historySection"]};
   hideAll();show("homeSection",...(map[section]||[]));
-  const titles={direction:"توجه السوق",opportunities:"فرص التداول","open-trades":"متابعة الصفقات"};
+  const titles={direction:"توجه السوق",opportunities:"فرص التداول","open-trades":"متابعة الصفقات",history:"سجل الصفقات"};
   $("#homeSection h1").innerHTML='<span>'+safe(titles[section]||"القسم")+'</span>';
   $("#homeSection p").textContent="قسم مستقل عن الصفحة الرئيسية.";
  }else if(PATH==="/blog"){
@@ -329,7 +329,7 @@ function configurePage(){
   loadNews();
  }else{hideAll();show("homeSection","marketSection")}
  $("#marketSection").hidden=PATH!=="/";
- $("#refresh").hidden=true;
+ const refreshButton=$("#refresh");if(refreshButton)refreshButton.hidden=true;
  if(PATH==="/admin"){
   if(!adminAllowed){location.replace("/");return}
   hideAll();show("homeSection","adminPanel");$("#adminPanel").hidden=false;
