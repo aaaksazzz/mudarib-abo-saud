@@ -430,6 +430,63 @@ async function loadUserSectionAccess(){
   if(page&&sections[page]===false){$("#health").textContent="هذا القسم مغلق من الإدارة";$("#health").className="bad";}
  }catch(e){console.warn("Section permissions unavailable",e)}
 }
+
+async function loadPaymentOptions(){try{let d=await get("/api/payments/options");$("#planMonths").innerHTML=Object.entries(d.prices).map(([m,p])=>'<option value="'+m+'">'+m+' شهر · 
+ try{
+  const d=await get("/api/admin/users",10000);
+  const root=$("#adminUsers");
+  if(!d.users.length){root.innerHTML='<div class="empty">لا توجد حسابات بعد.</div>';return}
+  root.innerHTML=d.users.map(u=>{
+   const expiry=u.subscription_expires_at?new Date(u.subscription_expires_at*1000).toLocaleDateString("ar-SA"):"—";
+   const status=u.role==="admin"?"أدمن":u.subscribed?"مشترك حتى "+expiry:"غير مشترك";
+   const actions=u.role==="admin"?"":'<div class="admin-actions"><button data-admin-action="grant" data-days="30" data-user="'+u.id+'">شهر</button><button data-admin-action="grant" data-days="60" data-user="'+u.id+'">شهرين</button><button data-admin-action="grant" data-days="90" data-user="'+u.id+'">3 أشهر</button><button data-admin-action="grant" data-days="180" data-user="'+u.id+'">6 أشهر</button><button data-admin-action="grant" data-days="365" data-user="'+u.id+'">سنة</button><button class="revoke" data-admin-action="revoke" data-user="'+u.id+'">إلغاء</button></div>';
+   return '<article class="admin-user"><div><b>'+safe(u.email)+'</b><small>رقم الحساب: '+u.id+' · '+status+'</small></div>'+actions+'</article>';
+  }).join("");
+ }catch(e){$("#adminUsers").innerHTML='<div class="empty">'+safe(e.message)+'</div>'}
+}
+$("#adminRefresh").addEventListener("click",loadAdminUsers);
+$("#adminUsers").addEventListener("click",async e=>{
+ const b=e.target.closest("[data-admin-action]");if(!b)return;
+ b.disabled=true;
+ try{
+  const response=await fetch("/api/admin/subscription",{
+   method:"POST",headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({user_id:Number(b.dataset.user),action:b.dataset.adminAction,days:Number(b.dataset.days||0)})
+  });
+  const d=await response.json();if(!response.ok)throw Error(d.message||"تعذر تعديل الاشتراك.");
+  await loadAdminUsers();
+ }catch(err){alert(err.message);b.disabled=false}
+});
+
+function closeDrawer(){
+ const drawer=$("#siteDrawer"),backdrop=$("#drawerBackdrop"),open=$("#menuOpen");
+ drawer.classList.remove("open");drawer.setAttribute("aria-hidden","true");
+ backdrop.hidden=true;open.setAttribute("aria-expanded","false");
+}
+$("#menuOpen").addEventListener("click",()=>{
+ const drawer=$("#siteDrawer"),backdrop=$("#drawerBackdrop"),open=$("#menuOpen");
+ drawer.classList.add("open");drawer.setAttribute("aria-hidden","false");
+ backdrop.hidden=false;open.setAttribute("aria-expanded","true");
+});
+$("#menuClose").addEventListener("click",closeDrawer);
+$("#drawerBackdrop").addEventListener("click",closeDrawer);
+$("#siteDrawer").addEventListener("click",e=>{
+ const link=e.target.closest("a");if(!link)return;
+ closeDrawer();
+});
+
+tick();setInterval(tick,1000);
+initPreferences();
+initializeAccess();
+timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/"))){load()}else if(PATH==="/")loadHomeOverview()},900000);
++p+'</option>').join("");$("#paymentNetwork").innerHTML=Object.entries(d.networks).map(([k,n])=>'<option value="'+k+'">'+safe(n.label)+'</option>').join("");updatePlanAmount()}catch(e){$("#paymentNotice").textContent=e.message}}
+function updatePlanAmount(){let p={1:30,2:60,3:90,6:180,12:360};$("#planAmount").textContent="$"+(p[$("#planMonths").value]||30)+" USDT"}
+$("#planMonths").addEventListener("change",updatePlanAmount);
+$("#createPaymentOrder").addEventListener("click",async()=>{try{let r=await fetch("/api/payments/orders",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({months:+$("#planMonths").value,network:$("#paymentNetwork").value})}),d=await r.json();if(!r.ok)throw Error(d.message);$("#activeOrderId").value=d.order.id;$("#paymentAddress").textContent=d.payment.address;$("#paymentAddressWrap").hidden=false;$("#txHashWrap").hidden=!d.payment.automatic_verification;$("#binancePayNote").hidden=d.payment.automatic_verification;$("#paymentNotice").textContent="طلب #"+d.order.id+" · $"+d.order.amount_usdt+" USDT"}catch(e){$("#paymentNotice").textContent=e.message}});
+$("#copyPaymentAddress").addEventListener("click",()=>navigator.clipboard.writeText($("#paymentAddress").textContent).then(()=>$("#paymentNotice").textContent="تم النسخ").catch(()=>$("#paymentNotice").textContent="انسخ العنوان يدوياً"));
+$("#submitBinanceReference").addEventListener("click",async()=>{try{let r=await fetch("/api/payments/reference",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_id:+$("#activeOrderId").value,reference:$("#binancePayReference").value.trim()})}),d=await r.json();if(!r.ok)throw Error(d.message);$("#paymentNotice").textContent=d.message}catch(e){$("#paymentNotice").textContent=e.message}});
+$("#verifyPayment").addEventListener("click",async()=>{try{let r=await fetch("/api/payments/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order_id:+$("#activeOrderId").value,tx_hash:$("#txHash").value.trim()})}),d=await r.json();if(!r.ok)throw Error(d.message);$("#paymentNotice").textContent=d.message;setTimeout(()=>location.reload(),700)}catch(e){$("#paymentNotice").textContent=e.message}});
+
 async function loadAdminUsers(){
  try{
   const d=await get("/api/admin/users",10000);
