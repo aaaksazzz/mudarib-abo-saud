@@ -36,7 +36,7 @@ function renderSignals(rows,diagnostics={}){
  const root=$("#cards");
  if(!rows||!rows.length){
   const reasons=diagnostics.rejected_by_reason||{};
-  const names={insufficient_candles:"شموع غير كافية",provider_error:"تعذر جلب بيانات المصدر",analysis_error:"خطأ في التحليل",no_sweep_or_absorption:"لم يظهر سحب سيولة أو امتصاص ضمن نطاق الحركة القريب",volume_below_threshold:"حجم التداول دون الشرط",candle_not_confirmed:"شمعة الدخول غير مؤكدة",risk_above_4_5pct:"مخاطرة أعلى من الحد",entry_beyond_stop:"السعر تجاوز الوقف",missing_volume:"بيانات الحجم ناقصة",no_reversal_signal:"إشارة الفريم غير واضحة أو لا تحقق شروط العكس",reference_timeframes_not_aligned:"الفريمات المرجعية غير متوافقة",invalid_atr:"مدى الحركة غير صالح",malformed_candles:"بيانات شموع غير سليمة",invalid_ohlc:"بيانات سعر غير سليمة",timeframe_conflict:"تعارض الأطر الزمنية أو عدم تأكيد الساعة"};
+  const names={insufficient_candles:"شموع غير كافية",provider_error:"تعذر جلب بيانات المصدر",analysis_error:"خطأ في التحليل",no_sweep_or_absorption:"لم يظهر سحب سيولة أو امتصاص ضمن نطاق الحركة القريب",volume_below_threshold:"حجم التداول دون الشرط",candle_not_confirmed:"شمعة الدخول غير مؤكدة",risk_above_4_5pct:"مخاطرة أعلى من الحد",invalid_risk_levels:"وقف الخسارة أو مستويات المخاطرة غير صالحة",entry_beyond_stop:"السعر تجاوز الوقف",missing_volume:"بيانات الحجم ناقصة",no_reversal_signal:"إشارة الفريم غير واضحة أو لا تحقق شروط العكس",reference_timeframes_not_aligned:"الفريمات المرجعية غير متوافقة",invalid_atr:"مدى الحركة غير صالح",malformed_candles:"بيانات شموع غير سليمة",invalid_ohlc:"بيانات سعر غير سليمة",timeframe_conflict:"تعارض الأطر الزمنية أو عدم تأكيد الساعة"};
   const top=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,3);
   root.innerHTML='<article class="scan-diagnostic"><div class="scan-diagnostic-head"><div><span class="kicker">LIVE MARKET SCAN</span><h3>لا توجد صفقة مؤكدة الآن</h3><p>لا نعرض صفقة إلا بعد تحقق شروط الدخول والوقف والأهداف.</p></div><span class="scan-wait">بانتظار فرصة</span></div><div class="scan-metrics"><div><small>الأصول المتاحة</small><b>'+Number(diagnostics.universe_size||0)+'</b></div><div><small>تم فحصها</small><b>'+Number(diagnostics.candidates_scanned||0)+'</b></div><div><small>شموع جاهزة</small><b>'+Number(diagnostics.candles_ready||0)+'</b></div><div><small>فرص مقبولة</small><b>'+Number(diagnostics.accepted_before_top3||0)+'</b></div></div><div class="scan-reasons"><b>أكثر أسباب الاستبعاد</b>'+(top.length?top.map(([k,v])=>'<div><span>'+safe(names[k]||k)+'</span><strong>'+v+'</strong></div>').join(""):'<div><span>لا توجد تفاصيل رفض متاحة بعد</span><strong>—</strong></div>')+'</div></article>';
   return;
@@ -183,7 +183,7 @@ async function load(){
    $("#health").className="bad";
    return;
   }
-  const d=await get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(analysisTimeframe),30000);
+  const d=await get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(analysisTimeframe),60000);
   if(requestedMarket!==market){pending=true;return}
   $("#direction").textContent=d.direction_ar;$("#direction").className="direction-value "+(d.direction==="BUY"?"up":d.direction==="SELL"?"down":"neutral");
   $("#up").textContent=d.up;$("#down").textContent=d.down;$("#flat").textContent=d.flat??0;$("#total").textContent=d.total;
@@ -198,6 +198,11 @@ async function load(){
   const label=$("#activeStrategy");if(label)label.textContent=strategyLabel[analysisTimeframe]||analysisTimeframe;
   $("#health").textContent="متصل";$("#health").className="ok";
  }catch(e){
+  $("#direction").textContent="غير متاح";$("#direction").className="direction-value neutral";
+  ["#up","#down","#flat","#total"].forEach(id=>$(id).textContent="—");
+  $("#updated").textContent="—";$("#sourceShort").textContent="غير متاح";
+  $("#movers").innerHTML='<div class="empty">تعذر تحديث بيانات الحركة؛ لا نعرض بيانات قديمة على أنها مباشرة.</div>';
+  $("#openTrades").innerHTML='<div class="empty">تعذر تحديث متابعة الصفقات؛ أعد المحاولة عند عودة المصدر.</div>';
   $("#cards").innerHTML='<div class="empty">'+safe(e.message)+'</div>';
   $("#scanState").textContent="تعذر الفحص";$("#scanState").className="down";
   $("#health").textContent="غير متصل";$("#health").className="bad";
@@ -269,7 +274,7 @@ function configurePage(){
 }
 
 document.addEventListener("visibilitychange",()=>{
- if(document.hidden||$("#mainContent").hidden)return;
+ if(document.hidden||$("#mainContent").hidden||busy)return;
  if(marketMatch||(["direction","movers","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();
  else if(PATH==="/sections/history")loadHistoryPage();
  else if(PATH==="/sections/system")loadSystemStatus();
@@ -388,4 +393,4 @@ $("#siteDrawer").addEventListener("click",e=>{
 
 tick();setInterval(tick,1000);
 initializeAccess();
-timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden)return;if(marketMatch||(["direction","movers","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();else if(PATH==="/sections/history")loadHistoryPage();else if(PATH==="/sections/system")loadSystemStatus()},30000);
+timer=setInterval(()=>{if(document.hidden||$("#mainContent").hidden||busy)return;if(marketMatch||(["direction","movers","opportunities","open-trades"].includes(PATH.split("/").pop())&&PATH.startsWith("/sections/")))load();else if(PATH==="/sections/history")loadHistoryPage();else if(PATH==="/sections/system")loadSystemStatus()},30000);
