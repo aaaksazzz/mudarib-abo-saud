@@ -16,6 +16,7 @@ from gamma_engine import analyse_liquidity_candidate
 from market_ranking import rank_market_assets
 from institutional_flow import analyse_orderbook_flow
 from scan_rotation import select_priority_scan_batch
+from market_strategy_engine import evaluate_market_strategy
 
 try:
     import yfinance as yf
@@ -456,6 +457,19 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
                 diagnostics["direction_score"] = direction_score
             return reject("weak_15m_direction")
 
+        # Each market now has its own setup gate. A shared liquidity engine may
+        # calculate risk levels only after the market-specific rule confirms.
+        strategy_result = evaluate_market_strategy(kind, entry_rows, item.get("price"))
+        if diagnostics is not None:
+            diagnostics["market_strategy"] = strategy_result.get("strategy")
+            diagnostics["market_strategy_reason"] = strategy_result.get("reason")
+        if not strategy_result.get("confirmed"):
+            return reject(strategy_result.get("reason", "market_strategy_not_confirmed"))
+        side = strategy_result.get("side")
+        expected_side = "BUY" if state in buy_states else "SELL"
+        if side != expected_side:
+            return reject("market_strategy_direction_conflict")
+
         entry_price = float(item.get("price") or entry_rows[-1]["close"])
         entry_diagnostics = {}
         levels = analyse_liquidity_candidate(
@@ -500,7 +514,9 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             "fast_mover_rank": item.get("fast_mover_rank"),
             "timeframe": "15m",
             "signal_candle_time": int(entry_rows[-1]["time"]),
-            "strategy": "15m direction + liquidity sweep/absorption + momentum/volume",
+            "strategy": strategy_result.get("strategy"),
+            "strategy_reason": strategy_result.get("reason"),
+            "strategy_metrics": {key: strategy_result.get(key) for key in ("volume_ratio", "momentum_percent", "structure")},
             "signal_state": state,
             "signal_state_ar": state_ar.get(state, "محايد"),
             "quality_score": round(quality_score, 1),
@@ -509,6 +525,8 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             ),
             "entry_analysis": {
                 "direction_score_15m": direction_score,
+                "market_strategy_score": strategy_result.get("quality_score"),
+                "market_strategy_reason": strategy_result.get("reason"),
                 "liquidity_event": levels.get("liquidity_event"),
                 "volume_ratio": levels.get("volume_ratio"),
                 "flow_pressure": levels.get("flow_pressure"),
@@ -520,7 +538,7 @@ def analyse_candidate(kind, item, market_direction=None, diagnostics=None, timef
             "orderbook_adjustment": flow_adjustment,
             "analysis_scope": "single_timeframe_15m",
             "quality_label": "درجة توافق الشروط من 100 وليست احتمال نجاح",
-            "analysis_note": "الاتجاه والزخم والسيولة وتأكيد الدخول كلها محسوبة من شموع 15 دقيقة المكتملة.",
+            "analysis_note": "تُطبق قاعدة دخول مستقلة لكل سوق على شموع 15 دقيقة المكتملة، ثم يؤكد محرك السيولة مستويات المخاطرة. الدرجة ليست احتمال ربح.",
         }
         if diagnostics is not None:
             diagnostics["reason"] = "accepted"
