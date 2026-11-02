@@ -481,45 +481,50 @@ def test_coinm_uses_contract_status_field(monkeypatch):
     monkeypatch.setattr(module, "fetch_first_json", lambda urls: payload)
     assert module.binance_active_symbols("coinm") == {"BTCUSD_PERP"}
 
-def test_candidate_uses_only_15m_for_direction_and_entry(monkeypatch):
-    import timeframe_strategy
-    bars = [{"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5,
-             "volume": 1000.0, "time": i * 900000} for i in range(35)]
+def test_candidate_uses_4h_daily_direction_and_15m_entry(monkeypatch):
+    import strategy_engine
+
+    bars = [{"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5 + i * 0.01,
+             "volume": 1000.0, "time": i * 900000} for i in range(40)]
     candle_calls = []
-    monkeypatch.setattr(module, "candles", lambda kind, symbol, interval: (candle_calls.append(interval) or bars))
-    monkeypatch.setattr(timeframe_strategy, "assess_timeframe", lambda rows, side=None: {
-        "state": "STRONG_SELL", "score": 75.0,
-        "analysis": {"candles_used": len(rows)}
+    monkeypatch.setattr(module, "candles", lambda kind, symbol, interval: (
+        candle_calls.append(interval) or bars
+    ))
+    monkeypatch.setattr(strategy_engine, "assess_timeframe", lambda rows: {
+        "state": "STRONG_BUY", "score": 80.0,
     })
     monkeypatch.setattr(module, "analyse_liquidity_candidate", lambda *args, **kwargs: {
-        "entry": 100.5, "stop_loss": 102.0, "tp1": 99.0, "tp2": 97.5,
-        "tp3": 96.0, "risk_percent": 1.49, "quality_score": 75.0,
-        "liquidity_event": "test_sweep", "volume_ratio": 1.3, "flow_pressure": -0.5,
+        "entry": 100.5, "stop_loss": 99.0, "tp1": 102.0, "tp2": 103.0,
+        "tp3": 104.0, "risk_percent": 1.49, "quality_score": 80.0,
+        "liquidity_event": "test_sweep", "volume_ratio": 1.3, "flow_pressure": 0.5,
     })
-    monkeypatch.setattr(module, "analyse_orderbook_flow", lambda *args, **kwargs: {"status": "unavailable"})
+    monkeypatch.setattr(module, "analyse_orderbook_flow", lambda *args, **kwargs: {
+        "status": "unavailable"
+    })
     candidate = {"symbol": "AAAUSDT", "price": 100.5, "change24h": 1.0, "volume": 2_000_000}
-    accepted = module.analyse_candidate("spot", candidate, timeframe="15m")
+
+    accepted = module.analyse_candidate("spot", candidate, market_direction="BUY", timeframe="15m")
     assert accepted is not None
-    assert accepted["side"] == "SELL"
+    assert accepted["side"] == "BUY"
     assert accepted["timeframe"] == "15m"
-    assert accepted["analysis_scope"] == "single_timeframe_15m"
-    assert accepted["reference_analysis"]["15m"]["state"] == "STRONG_SELL"
-    assert candle_calls == ["15m"]
+    assert accepted["strategy_version"] == "hawk-quant-v2"
+    assert accepted["analysis_scope"] == "4h_daily_direction_15m_entry"
+    assert candle_calls == ["4h", "1d", "15m"]
 
     candle_calls.clear()
-    accepted_with_bullish_breadth = module.analyse_candidate(
-        "spot", candidate, market_direction="BUY", timeframe="15m"
-    )
-    assert accepted_with_bullish_breadth is not None
-    assert accepted_with_bullish_breadth["side"] == "SELL"
-    assert candle_calls == ["15m"]
+    rejected = module.analyse_candidate("spot", candidate, market_direction="SELL", timeframe="15m")
+    assert rejected is None
+    assert candle_calls == ["4h", "1d"]
 
     monkeypatch.setattr(module, "candles", lambda kind, symbol, interval: bars[:34])
     diagnostics = {}
-    rejected = module.analyse_candidate("spot", candidate, diagnostics=diagnostics, timeframe="15m")
+    rejected = module.analyse_candidate(
+        "spot", candidate, market_direction="BUY", diagnostics=diagnostics, timeframe="15m"
+    )
     assert rejected is None
-    assert diagnostics["reason"] == "insufficient_candles"
-    assert diagnostics["candles_received"] == 34
+    assert diagnostics["reason"] == "insufficient_4h_candles"
+    assert diagnostics["candles_4h"] == 34
+
 
 def test_auth_me_reports_unconfigured_as_nonfatal_public_status(monkeypatch):
     monkeypatch.setattr(module, "AUTH_CONFIGURED", False)
