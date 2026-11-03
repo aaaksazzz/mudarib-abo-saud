@@ -6,7 +6,7 @@ import requests
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import func, text
+from sqlalchemy import func, text, inspect
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -467,7 +467,7 @@ def limited(_): return json_error("طلبات كثيرة؛ حاول بعد قل�
 with app.app_context():
     db.create_all()
     # Forward-only schema migration for existing production databases.
-    trade_columns={column["name"] for column in db.inspect(db.engine).get_columns(Trade.__tablename__)}
+    trade_columns={column["name"] for column in inspect(db.engine).get_columns(Trade.__tablename__)}
     if "change_15m_pct" not in trade_columns:
         with db.engine.begin() as connection:
             connection.execute(text(f"ALTER TABLE {Trade.__tablename__} ADD COLUMN change_15m_pct FLOAT"))
