@@ -47,12 +47,12 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(response.get_json()["signals"], [])
         scan.assert_not_called()
 
-    def test_unintegrated_market_never_returns_fabricated_data(self):
-        snapshot = self.client.get("/api/markets/saudi/snapshot").get_json()
+    def test_external_market_failure_never_returns_fabricated_data(self):
+        with patch.object(platform.market_adapters, "market_tickers", side_effect=RuntimeError("provider unavailable")):
+            response = self.client.get("/api/markets/saudi/snapshot")
+        self.assertEqual(response.status_code, 502)
+        self.assertFalse(response.get_json()["ok"])
         signals = self.client.get("/api/markets/saudi/signals").get_json()
-        self.assertFalse(snapshot["ready"])
-        self.assertEqual(snapshot["assets"], [])
-        self.assertIsNone(snapshot["up"])
         self.assertEqual(signals["signals"], [])
         self.assertFalse(signals["scan_ready"])
 
