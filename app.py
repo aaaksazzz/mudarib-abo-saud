@@ -441,7 +441,8 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(Trade.score.desc(),func.abs(Trade.change_15m_pct).desc()).limit(3 if market=="futures" else 10).all()
+                order=(Trade.score.desc(),func.abs(Trade.change_15m_pct).desc()) if market=="futures" else (func.abs(Trade.change_15m_pct).desc(),Trade.score.desc())
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(*order).limit(3 if market=="futures" else 10).all()
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True,"scan_universe":None}
         except (ValueError,TypeError):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
@@ -487,9 +488,10 @@ def run_market_scan(market,force=False):
     if not universe_row:
         universe_row=Setting(key="scan-universe:"+market,value=str(len(universe))); db.session.add(universe_row)
     else:
-        universe_row.value=str(len(universe))
+        universe_row.value=str(len(movers))
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(Trade.score.desc(),func.abs(Trade.change_15m_pct).desc()).limit(3 if market=="futures" else 10).all()
+    order=(Trade.score.desc(),func.abs(Trade.change_15m_pct).desc()) if market=="futures" else (func.abs(Trade.change_15m_pct).desc(),Trade.score.desc())
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(*order).limit(3 if market=="futures" else 10).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(movers),"analysis_completed":completed,"analysis_failed":failed}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
