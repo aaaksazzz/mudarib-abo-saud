@@ -465,13 +465,15 @@ def signals(market):
         row=db.session.get(Setting,"scan:"+market)
         active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow()).order_by(func.abs(Trade.change_15m_pct).desc(),Trade.score.desc()).limit(10).all()
         updated=row.value if row else None
+        universe_row=db.session.get(Setting,"scan-universe:"+market)
+        scan_universe=int(universe_row.value) if universe_row and universe_row.value.isdigit() else None
         stale=True
         if updated:
             try:
                 stale=aware(datetime.fromisoformat(updated))<utcnow()-timedelta(minutes=20)
             except (ValueError,TypeError):
                 stale=True
-        return jsonify({"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":updated,"cached":True,"stale":stale,"scan_ready":bool(updated)})
+        return jsonify({"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":updated,"cached":True,"stale":stale,"scan_ready":bool(updated),"scan_universe":scan_universe})
     except Exception:
         app.logger.exception("signal retrieval failed")
         return json_error("تعذر قراءة نتائج الفحص المحفوظة حالياً",503)
