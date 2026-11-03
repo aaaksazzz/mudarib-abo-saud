@@ -148,7 +148,7 @@ def health():
 
 @app.get("/ready")
 def readiness():
-    checks={"database":False,"persistent_database":False,"market_scheduler":False}
+    checks={"database":False,"persistent_database":False,"persistent_secret":bool(os.environ.get("SECRET_KEY")),"market_scheduler":False}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -238,6 +238,7 @@ def market_tickers(market):
         if t.get("symbol") not in valid: continue
         try:
             vol=float(t.get("quoteVolume",0)); change=float(t.get("priceChangePercent",0)); price=float(t.get("lastPrice",0))
+            if not all(math.isfinite(value) for value in (vol,change,price)): continue
             if vol<1_000_000 or price<=0: continue
             out.append({"symbol":t["symbol"],"price":price,"change_pct":change,"quote_volume":vol})
         except (ValueError,TypeError): continue
@@ -271,7 +272,10 @@ def build_signal(market,item):
     closed15,closed4,closed_daily=k15[:-1],k4[:-1],kd[:-1]
     c15=[float(x[4]) for x in closed15]; h15=[float(x[2]) for x in closed15]; l15=[float(x[3]) for x in closed15]
     c4=[float(x[4]) for x in closed4]; daily=[float(x[4]) for x in closed_daily]
-    if len(c15)<50 or len(c4)<20 or len(daily)<20 or min(c15[-5:]+c4[-2:]+daily[-2:])<=0:
+    if len(c15)<50 or len(c4)<20 or len(daily)<20:
+        return None
+    numeric_values=c15+h15+l15+c4+daily
+    if not all(math.isfinite(value) and value>0 for value in numeric_values):
         return None
     trend4,trend_daily=ema(c4,20),ema(daily,20)
     if trend4 is None or trend_daily is None:
