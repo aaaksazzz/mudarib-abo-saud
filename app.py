@@ -60,6 +60,7 @@ class Trade(db.Model):
     created_at=db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
     expires_at=db.Column(db.DateTime, nullable=False)
     result_pct=db.Column(db.Float)
+    change_15m_pct=db.Column(db.Float)
 
 class Article(db.Model):
     id=db.Column(db.Integer, primary_key=True)
@@ -304,7 +305,7 @@ def run_market_scan(market):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
-                active=Trade.query.filter_by(market=market,status="active").filter(Trade.expires_at>now).order_by(Trade.score.desc()).limit(10).all()
+                active=Trade.query.filter_by(market=market,status="active").filter(Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc(),Trade.score.desc()).limit(10).all()
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True,"scan_universe":None}
         except (ValueError,TypeError):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
@@ -333,13 +334,13 @@ def run_market_scan(market):
             continue
         if exists:
             exists.status="superseded"
-        db.session.add(Trade(market=market,symbol=signal["symbol"],side=signal["side"],entry=signal["entry"],stop=signal["stop"],tp1=signal["tp1"],tp2=signal["tp2"],tp3=signal["tp3"],score=signal["score"],timeframe="15m",reason=signal["reason"],expires_at=now+timedelta(hours=24)))
+        db.session.add(Trade(market=market,symbol=signal["symbol"],side=signal["side"],entry=signal["entry"],stop=signal["stop"],tp1=signal["tp1"],tp2=signal["tp2"],tp3=signal["tp3"],score=signal["score"],change_15m_pct=signal["change_15m_pct"],timeframe="15m",reason=signal["reason"],expires_at=now+timedelta(hours=24)))
     if not scan_row:
         scan_row=Setting(key=scan_key,value=iso(now)); db.session.add(scan_row)
     else:
         scan_row.value=iso(now)
     db.session.commit()
-    active=Trade.query.filter_by(market=market,status="active").filter(Trade.expires_at>now).order_by(Trade.score.desc()).limit(10).all()
+    active=Trade.query.filter_by(market=market,status="active").filter(Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc(),Trade.score.desc()).limit(10).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(movers),"analysis_completed":completed,"analysis_failed":failed}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
@@ -354,7 +355,7 @@ def signals(market):
         # Keep web requests fast: the scheduler owns scans; page loads only read the latest committed result.
         expire_stale_trades(market)
         row=db.session.get(Setting,"scan:"+market)
-        active=Trade.query.filter_by(market=market,status="active").filter(Trade.expires_at>utcnow()).order_by(Trade.score.desc()).limit(10).all()
+        active=Trade.query.filter_by(market=market,status="active").filter(Trade.expires_at>utcnow()).order_by(func.abs(Trade.change_15m_pct).desc(),Trade.score.desc()).limit(10).all()
         updated=row.value if row else None
         stale=True
         if updated:
@@ -367,7 +368,7 @@ def signals(market):
         app.logger.exception("signal retrieval failed")
         return json_error("تعذر قراءة نتائج الفحص المحفوظة حالياً",503)
 def trade_json(t):
-    return {"id":t.id,"market":t.market,"symbol":t.symbol,"side":t.side,"entry":t.entry,"stop":t.stop,"tp1":t.tp1,"tp2":t.tp2,"tp3":t.tp3,"score":t.score,"timeframe":t.timeframe,"reason":t.reason,"status":t.status,"created_at":iso(t.created_at),"expires_at":iso(t.expires_at)}
+    return {"id":t.id,"market":t.market,"symbol":t.symbol,"side":t.side,"entry":t.entry,"stop":t.stop,"tp1":t.tp1,"tp2":t.tp2,"tp3":t.tp3,"score":t.score,"change_15m_pct":t.change_15m_pct,"timeframe":t.timeframe,"reason":t.reason,"status":t.status,"result_pct":t.result_pct,"created_at":iso(t.created_at),"expires_at":iso(t.expires_at)}
 @app.get("/api/trades")
 def trade_history():
     expire_stale_trades()
@@ -465,6 +466,11 @@ def too_large(_): return json_error("حجم الطلب أكبر من المسم�
 def limited(_): return json_error("طلبات كثيرة؛ حاول بعد قليل",429)
 with app.app_context():
     db.create_all()
+    # Forward-only schema migration for existing production databases.
+    trade_columns={column["name"] for column in db.inspect(db.engine).get_columns(Trade.__tablename__)}
+    if "change_15m_pct" not in trade_columns:
+        with db.engine.begin() as connection:
+            connection.execute(text(f"ALTER TABLE {Trade.__tablename__} ADD COLUMN change_15m_pct FLOAT"))
     # Optional first administrator provisioning from deployment secrets.
     admin_email=os.environ.get("ADMIN_EMAIL","").strip().lower(); admin_password=os.environ.get("ADMIN_PASSWORD","")
     if admin_email and admin_password and not User.query.filter_by(role="admin").first():
