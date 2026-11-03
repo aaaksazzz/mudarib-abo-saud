@@ -1,0 +1,34 @@
+name: Platform CI
+on:
+  push:
+    branches: [main, "rebuild/**"]
+  pull_request:
+    branches: [main]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile backend
+        run: python -m compileall -q app.py
+      - name: Smoke test application
+        env:
+          SECRET_KEY: ci-test-secret-key-not-for-production
+          COOKIE_SECURE: "false"
+          ENABLE_AUTO_SCAN: "false"
+        run: |
+          python - <<'PY'
+          from app import app
+          client = app.test_client()
+          response = client.get("/health")
+          assert response.status_code == 200, response.data
+          assert response.get_json()["ok"] is True
+          response = client.get("/api/bootstrap")
+          assert response.status_code == 200, response.data
+          print("health and bootstrap smoke tests passed")
+          PY
