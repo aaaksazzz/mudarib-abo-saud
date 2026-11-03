@@ -274,7 +274,6 @@ def run_market_scan(market):
     active=Trade.query.filter_by(market=market,status="active").filter(Trade.expires_at>now).order_by(Trade.score.desc()).limit(10).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(movers)}
 @app.get("/api/markets/<market>/signals")
-@subscriber_required
 def signals(market):
     if market not in MARKETS: return json_error("السوق غير معروف",404)
     blocked=gate_section(market)
@@ -287,7 +286,6 @@ def signals(market):
 def trade_json(t):
     return {"id":t.id,"market":t.market,"symbol":t.symbol,"side":t.side,"entry":t.entry,"stop":t.stop,"tp1":t.tp1,"tp2":t.tp2,"tp3":t.tp3,"score":t.score,"timeframe":t.timeframe,"reason":t.reason,"status":t.status,"created_at":iso(t.created_at),"expires_at":iso(t.expires_at)}
 @app.get("/api/trades")
-@subscriber_required
 def trade_history():
     q=Trade.query.order_by(Trade.created_at.desc()).limit(200)
     return jsonify({"ok":True,"trades":[trade_json(x) for x in q.all()]})
