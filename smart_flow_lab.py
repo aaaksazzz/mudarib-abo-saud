@@ -46,8 +46,8 @@ def analyze_symbol(symbol):
         lower_wick = min(o, c) - l
         upper_wick = h - max(o, c)
         # Require a sweep beyond a recent 20-candle extreme and a close back inside.
-        long_sweep = l < low and c > low and c > o and lower_wick / candle_range >= 0.28
-        short_sweep = h > high and c < high and c < o and upper_wick / candle_range >= 0.28
+        long_sweep = l < low and c > low and lower_wick / candle_range >= 0.20
+        short_sweep = h > high and c < high and upper_wick / candle_range >= 0.20
         if not long_sweep and not short_sweep:
             return None
         side = "BUY" if long_sweep else "SELL"
@@ -55,6 +55,10 @@ def analyze_symbol(symbol):
         bids = sum(finite(x[1]) for x in depth.get("bids", []))
         asks = sum(finite(x[1]) for x in depth.get("asks", []))
         imbalance = bids / (bids + asks) if bids + asks else 0.5
+        # Keep a sweep only when at least one live flow measure agrees with its direction.
+        flow_agrees = (taker_ratio >= 0.50 or imbalance >= 0.50) if side == "BUY" else (taker_ratio <= 0.50 or imbalance <= 0.50)
+        if not flow_agrees:
+            return None
         oi_now = finite(api("/fapi/v1/openInterest", {"symbol": symbol}).get("openInterest"))
         oi_change = 0.0
         try:
@@ -135,9 +139,10 @@ def scan():
             [x for x in tickers if x.get("symbol") in eligible and finite(x.get("quoteVolume")) >= 1_000_000],
             key=lambda x: finite(x.get("quoteVolume")), reverse=True
         )
-        candidates = universe[:90]
+        # Scan every eligible USDT perpetual contract, not only the top 90.
+        candidates = universe
         found = []
-        with ThreadPoolExecutor(max_workers=12) as pool:
+        with ThreadPoolExecutor(max_workers=16) as pool:
             futures = [pool.submit(analyze_symbol, item["symbol"]) for item in candidates]
             for future in as_completed(futures):
                 item = future.result()
@@ -149,7 +154,7 @@ def scan():
             "timeframe": "15m", "universe_count": len(universe),
             "scanned_count": len(candidates), "signals": found[:3],
             "checked_at": int(time.time()), "cached_seconds": 45,
-            "note": "الفحص يغطي أعلى 90 عقداً مؤهلاً حسب حجم التداول اليومي؛ لا توجد مفاتيح حساب مطلوبة."
+            "note": "الفحص يغطي جميع العقود المؤهلة التي يتجاوز حجمها اليومي 1 مليون USDT؛ يشترط توافق سحب السيولة مع ضغط السوق أو دفتر الأوامر."
         }
         with LOCK:
             CACHE.update({"at": time.time(), "payload": payload})
