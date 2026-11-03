@@ -333,14 +333,14 @@ def update_trade_outcomes(market,tickers):
         db.session.commit()
     return changed
 
-def run_market_scan(market):
+def run_market_scan(market,force=False):
     if market not in ("spot","futures"):
         raise ValueError("No verified market adapter for "+str(market))
     now=utcnow()
     expire_stale_trades(market)
     scan_key="scan:"+market
     scan_row=db.session.get(Setting,scan_key)
-    if scan_row:
+    if scan_row and not force:
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
@@ -365,8 +365,9 @@ def run_market_scan(market):
             except Exception:
                 failed+=1
                 app.logger.exception("Signal analysis failed for %s",market)
-    if completed==0:
-        raise RuntimeError("All candle-analysis requests failed; scan timestamp was not advanced")
+    minimum_success=max(1,math.ceil(len(movers)*0.8))
+    if completed<minimum_success:
+        raise RuntimeError(f"Insufficient candle data: {completed}/{len(movers)} analyses completed; scan timestamp was not advanced")
     # Fastest verified 15m movers rank first; strength is the tie-breaker, not 24h noise.
     found.sort(key=lambda x:(abs(x["change_15m_pct"]),x["score"],x["quote_volume"]),reverse=True)
     for signal in found[:10]:
@@ -523,7 +524,7 @@ def scheduled_market_scan():
         expire_stale_trades()
         for market in ("spot","futures"):
             try:
-                result=run_market_scan(market)
+                result=run_market_scan(market,force=True)
                 app.logger.info("scheduled scan completed: market=%s signals=%s universe=%s failures=%s",market,len(result.get("signals",[])),result.get("scan_universe"),result.get("analysis_failed",0))
             except Exception:
                 db.session.rollback()
