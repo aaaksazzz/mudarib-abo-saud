@@ -29,6 +29,7 @@
         <button class="nav-item" data-page="us-contracts"><span class="nav-icon">⌗</span><span data-i18n="usContracts">العقود الأمريكية</span></button>
         <button class="nav-item" data-page="saudi"><span class="nav-icon">◉</span><span data-i18n="saudi">السوق السعودي</span></button>
         <button class="nav-item" data-page="forex"><span class="nav-icon">⇄</span><span data-i18n="forex">الفوركس والذهب</span></button>
+        <button class="nav-item" data-page="plans"><span class="nav-icon">◈</span><span>الاشتراكات والدفع</span></button>
         <div class="side-label" data-i18n="discover">اكتشف</div>
         <button class="nav-item" data-page="strategies"><span class="nav-icon">⌘</span><span data-i18n="strategies">الاستراتيجيات</span></button>
         <button class="nav-item" data-page="journal"><span class="nav-icon">▤</span><span data-i18n="journal">سجل الصفقات</span></button>
@@ -49,6 +50,7 @@
         <div class="top-actions">
           <span class="market-clock"><i></i><span data-i18n="marketMonitor">مراقبة الأسواق</span></span>
           <button class="icon-btn" id="themeToggle" aria-label="تغيير الوضع">☼</button>
+          <a class="icon-btn admin-contact" id="adminContact" href="#" target="_blank" rel="noopener" aria-label="تواصل مع الإدارة" title="تواصل مع الإدارة" hidden>✓</a>
           <select id="languageSelect" class="language-select" aria-label="Language"><option value="ar">العربية</option><option value="en">English</option></select>
           <span id="accountStatus" class="account-status">زائر</span><button class="login-btn" id="loginBtn" data-i18n="login">دخول / حساب جديد</button>
         </div>
@@ -64,7 +66,7 @@
   </div>
   <div class="mobile-scrim" id="scrim"></div>
   <div class="toast" id="toast" role="status"></div>
-  <div class="auth-modal" id="authModal" hidden><div class="auth-card"><button class="auth-close" id="authClose" aria-label="إغلاق">×</button><span class="section-kicker">SECURE ACCOUNT</span><h2>حساب SMART TRADING PRO</h2><p>أنشئ حسابك أو سجّل الدخول للوصول إلى الخدمات.</p><input id="authEmail" type="email" autocomplete="email" placeholder="البريد الإلكتروني"><input id="authPassword" type="password" autocomplete="current-password" placeholder="كلمة المرور — 12 خانة على الأقل"><button class="login-btn" id="authSubmit" data-mode="login">تسجيل الدخول</button><button class="auth-switch" id="authMode">مستخدم جديد؟ إنشاء حساب</button><small>استخدم كلمة مرور قوية وفريدة. لا تشارك بيانات الدخول.</small></div></div>
+  <div class="auth-modal" id="authModal" hidden><div class="auth-card"><button class="auth-close" id="authClose" aria-label="إغلاق">×</button><span class="section-kicker">SECURE ACCOUNT</span><h2>حساب SMART TRADING PRO</h2><p>أنشئ حسابك أو سجّل الدخول للوصول إلى الخدمات.</p><input id="authEmail" type="text" autocomplete="username" placeholder="البريد الإلكتروني أو اسم المستخدم"><input id="authPassword" type="password" autocomplete="current-password" placeholder="كلمة المرور — 12 خانة على الأقل"><button class="login-btn" id="authSubmit" data-mode="login">تسجيل الدخول</button><button class="auth-switch" id="authMode">مستخدم جديد؟ إنشاء حساب</button><small>استخدم كلمة مرور قوية وفريدة. لا تشارك بيانات الدخول.</small></div></div>
   <script src="platform.js"></script>
 </body>
 </html>

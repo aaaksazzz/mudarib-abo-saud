@@ -136,6 +136,64 @@ class MarketEngineTests(unittest.TestCase):
             rows = platform.market_tickers("spot")
         self.assertEqual(rows, [])
 
+    def test_public_subscription_plans_and_payment_methods(self):
+        response = self.client.get("/api/plans")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual([plan["total_usd"] for plan in data["plans"]], [30.0, 171.0, 324.0])
+        self.assertEqual(data["plans"][1]["discount_pct"], 5)
+        self.assertEqual(data["plans"][2]["discount_pct"], 10)
+        self.assertEqual(data["payment_methods"]["binance_uid"]["value"], "28191866")
+
+    def test_admin_can_grant_lifetime_access_by_email(self):
+        with platform.app.app_context():
+            admin = platform.User(email="owner@example.com",
+                                  password_hash=platform.generate_password_hash("NewSecurePass123!"),
+                                  role="admin", active=True, subscription_plan="admin")
+            target = platform.User(email="member@example.com",
+                                   password_hash=platform.generate_password_hash("MemberPass123!"),
+                                   role="user", active=True, subscription_plan="free")
+            platform.db.session.add_all([admin, target])
+            platform.db.session.commit()
+        bootstrap = self.client.get("/api/bootstrap").get_json()
+        login = self.client.post("/api/auth/login",
+            json={"email":"owner@example.com","password":"NewSecurePass123!"},
+            headers={"X-CSRF-Token":bootstrap["csrf"]},
+        )
+        self.assertEqual(login.status_code, 200)
+        grant = self.client.post("/api/admin/users/subscription-by-email",
+            json={"email":"member@example.com","lifetime":True},
+            headers={"X-CSRF-Token":login.get_json()["csrf"]},
+        )
+        self.assertEqual(grant.status_code, 200)
+        self.assertTrue(grant.get_json()["user"]["lifetime"])
+        self.assertTrue(grant.get_json()["user"]["subscribed"])
+
+    def test_admin_username_alias_authenticates_admin(self):
+        with platform.app.app_context():
+            admin = platform.User(email="owner@example.com",
+                                  password_hash=platform.generate_password_hash("NewSecurePass123!"),
+                                  role="admin", active=True, subscription_plan="admin")
+            platform.db.session.add(admin)
+            platform.db.session.commit()
+        bootstrap = self.client.get("/api/bootstrap").get_json()
+        with patch.dict(os.environ, {"ADMIN_USERNAME":"aaaksazzz"}):
+            response = self.client.post("/api/auth/login",
+                json={"email":"aaaksazzz","password":"NewSecurePass123!"},
+                headers={"X-CSRF-Token":bootstrap["csrf"]},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["user"]["role"], "admin")
+
+    def test_lifetime_subscription_is_active_without_expiry(self):
+        with platform.app.app_context():
+            user = platform.User(email="lifetime@example.com", password_hash="not-used",
+                                 role="user", active=True, subscription_plan="lifetime",
+                                 subscription_until=None)
+            self.assertTrue(platform.subscription_is_active(user))
+            user.subscription_plan = "free"
+            self.assertFalse(platform.subscription_is_active(user))
+
     def test_futures_universe_excludes_stablecoin_bases(self):
         exchange_info = {
             "symbols": [
