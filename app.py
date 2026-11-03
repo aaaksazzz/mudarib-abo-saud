@@ -400,12 +400,12 @@ def run_market_scan(market,force=False):
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True}
         except (ValueError,TypeError):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
-    # Retire legacy-strategy open trades so old signals never leak into the new strategy feed.
-    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),~Trade.reason.like("تقاطع EMA 9/14%")).update({"status":"superseded"},synchronize_session=False)
-    db.session.commit()
     universe=market_tickers(market)
     if not universe:
         raise RuntimeError("Market provider returned an empty eligible universe")
+    # Retire legacy-strategy open trades so old signals never leak into the new strategy feed.
+    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),~Trade.reason.like("تقاطع EMA 9/14%")).update({"status":"superseded"},synchronize_session=False)
+    db.session.commit()
     update_trade_outcomes(market,universe)
     # Scan a broad, liquid candidate set independently on every requested timeframe.
     candidates=sorted(universe,key=lambda x:x["quote_volume"],reverse=True)[:30]
