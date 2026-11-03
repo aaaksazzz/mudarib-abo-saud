@@ -145,6 +145,21 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(data["plans"][2]["discount_pct"], 10)
         self.assertEqual(data["payment_methods"]["binance_uid"]["value"], "28191866")
 
+    def test_admin_username_alias_authenticates_admin(self):
+        with platform.app.app_context():
+            admin = platform.User(email="owner@example.com",
+                                  password_hash=platform.generate_password_hash("NewSecurePass123!"),
+                                  role="admin", active=True, subscription_plan="admin")
+            platform.db.session.add(admin)
+            platform.db.session.commit()
+        bootstrap = self.client.get("/api/bootstrap").get_json()
+        response = self.client.post("/api/auth/login",
+            json={"email":"aaaksazzz","password":"NewSecurePass123!"},
+            headers={"X-CSRF-Token":bootstrap["csrf"]},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["user"]["role"], "admin")
+
     def test_lifetime_subscription_is_active_without_expiry(self):
         with platform.app.app_context():
             user = platform.User(email="lifetime@example.com", password_hash="not-used",
