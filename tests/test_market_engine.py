@@ -153,10 +153,11 @@ class MarketEngineTests(unittest.TestCase):
             platform.db.session.add(admin)
             platform.db.session.commit()
         bootstrap = self.client.get("/api/bootstrap").get_json()
-        response = self.client.post("/api/auth/login",
-            json={"email":"aaaksazzz","password":"NewSecurePass123!"},
-            headers={"X-CSRF-Token":bootstrap["csrf"]},
-        )
+        with patch.dict(os.environ, {"ADMIN_USERNAME":"aaaksazzz"}):
+            response = self.client.post("/api/auth/login",
+                json={"email":"aaaksazzz","password":"NewSecurePass123!"},
+                headers={"X-CSRF-Token":bootstrap["csrf"]},
+            )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["user"]["role"], "admin")
 
