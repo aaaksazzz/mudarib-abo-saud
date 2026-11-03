@@ -37,6 +37,7 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(ready.status_code, 503)
         self.assertTrue(ready.get_json()["checks"]["database"])
         self.assertFalse(ready.get_json()["checks"]["persistent_database"])
+        self.assertTrue(ready.get_json()["checks"]["persistent_secret"])
         self.assertFalse(ready.get_json()["checks"]["market_scheduler"])
 
     def test_public_signal_read_does_not_start_synchronous_scan(self):
@@ -118,6 +119,22 @@ class MarketEngineTests(unittest.TestCase):
             self.assertEqual(trade.status, "tp2_hit")
             platform.update_trade_outcomes("spot", [{"symbol": "BTCUSDT", "price": 96}])
             self.assertEqual(trade.status, "stopped_after_tp2")
+
+    def test_ticker_filter_rejects_nan_and_infinite_values(self):
+        exchange_info = {
+            "symbols": [
+                {"symbol": "BTCUSDT", "status": "TRADING", "quoteAsset": "USDT", "isSpotTradingAllowed": True, "baseAsset": "BTC"},
+                {"symbol": "ETHUSDT", "status": "TRADING", "quoteAsset": "USDT", "isSpotTradingAllowed": True, "baseAsset": "ETH"},
+            ]
+        }
+        tickers = [
+            {"symbol": "BTCUSDT", "quoteVolume": "NaN", "priceChangePercent": "2", "lastPrice": "60000"},
+            {"symbol": "ETHUSDT", "quoteVolume": "5000000", "priceChangePercent": "Infinity", "lastPrice": "3000"},
+        ]
+        with patch.object(platform, "fetch_json", side_effect=[exchange_info, tickers]):
+            platform.market_symbols.cache_clear()
+            rows = platform.market_tickers("spot")
+        self.assertEqual(rows, [])
 
     def test_futures_universe_excludes_stablecoin_bases(self):
         exchange_info = {
