@@ -7,6 +7,7 @@ from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import func
+from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__, static_folder=".", static_url_path="")
 app.config.update(
@@ -221,6 +222,38 @@ def build_signal(market,item):
     sign=1 if side=="BUY" else -1
     score=min(95,60+abs(momentum)*3+min(item["quote_volume"]/20_000_000,10))
     return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":stop,"tp1":entry+sign*risk,"tp2":entry+sign*risk*2,"tp3":entry+sign*risk*3,"score":round(score,1),"timeframe":"15m","reason":"اتجاه 4س واليومي متوافق، مع تأكيد EMA20/50 وزخم 15 دقيقة وحجم تداول.","status":"active","change_pct":item["change_pct"],"quote_volume":item["quote_volume"]}
+def run_market_scan(market):
+    now=utcnow()
+    scan_key="scan:"+market
+    scan_row=db.session.get(Setting,scan_key)
+    if scan_row:
+        try:
+            last=datetime.fromisoformat(scan_row.value)
+            if aware(last)>now-timedelta(minutes=15):
+                active=Trade.query.filter_by(market=market,status="active").filter(Trade.expires_at>now).order_by(Trade.score.desc()).limit(10).all()
+                return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True}
+        except ValueError: pass
+    movers=sorted(market_tickers(market),key=lambda x:abs(x["change_pct"]),reverse=True)[:18]
+    found=[]
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        jobs=[pool.submit(build_signal,market,x) for x in movers]
+        for job in as_completed(jobs):
+            try:
+                signal=job.result()
+                if signal: found.append(signal)
+            except Exception: continue
+    found.sort(key=lambda x:(x["score"],abs(x["change_pct"])),reverse=True)
+    Trade.query.filter(Trade.market==market,Trade.status=="active",Trade.created_at<now-timedelta(hours=24)).update({"status":"expired"})
+    for signal in found[:10]:
+        exists=Trade.query.filter_by(market=market,symbol=signal["symbol"],status="active").first()
+        if exists and aware(exists.created_at)>now-timedelta(minutes=15): continue
+        if exists: exists.status="superseded"
+        db.session.add(Trade(market=market,symbol=signal["symbol"],side=signal["side"],entry=signal["entry"],stop=signal["stop"],tp1=signal["tp1"],tp2=signal["tp2"],tp3=signal["tp3"],score=signal["score"],timeframe="15m",reason=signal["reason"],expires_at=now+timedelta(hours=24)))
+    if not scan_row: scan_row=Setting(key=scan_key,value=iso(now)); db.session.add(scan_row)
+    else: scan_row.value=iso(now)
+    db.session.commit()
+    active=Trade.query.filter_by(market=market,status="active").filter(Trade.expires_at>now).order_by(Trade.score.desc()).limit(10).all()
+    return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(movers)}
 @app.get("/api/markets/<market>/signals")
 @subscriber_required
 def signals(market):
@@ -228,46 +261,10 @@ def signals(market):
     blocked=gate_section(market)
     if blocked: return blocked
     if market not in ("spot","futures"): return jsonify({"ok":True,"market":market,"signals":[],"message":"مصدر بيانات هذا السوق غير مربوط بعد."})
-    try:
-        # Cache each market scan for 15 minutes to avoid hammering providers.
-        now=utcnow()
-        scan_key="scan:"+market
-        scan_row=db.session.get(Setting,scan_key)
-        if scan_row:
-            try:
-                last=datetime.fromisoformat(scan_row.value)
-                if aware(last)>now-timedelta(minutes=15):
-                    active=Trade.query.filter_by(market=market,status="active").filter(Trade.expires_at>now).order_by(Trade.score.desc()).limit(10).all()
-                    return jsonify({"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True})
-            except ValueError: pass
-        # Each scan examines a bounded, liquid universe; results are never fabricated.
-        movers=sorted(market_tickers(market),key=lambda x:abs(x["change_pct"]),reverse=True)[:18]
-        found=[]
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            jobs=[pool.submit(build_signal,market,x) for x in movers]
-            for job in as_completed(jobs):
-                try:
-                    s=job.result()
-                    if s: found.append(s)
-                except Exception: continue
-        found.sort(key=lambda x:(x["score"],abs(x["change_pct"])),reverse=True)
-        now=utcnow()
-        # Refresh current scan snapshot; expire older active opportunities after 24h.
-        Trade.query.filter(Trade.market==market,Trade.status=="active",Trade.created_at<now-timedelta(hours=24)).update({"status":"expired"})
-        for s in found[:10]:
-            exists=Trade.query.filter_by(market=market,symbol=s["symbol"],status="active").first()
-            if exists and exists.created_at>now-timedelta(minutes=15): continue
-            if exists: exists.status="superseded"
-            t=Trade(market=market,symbol=s["symbol"],side=s["side"],entry=s["entry"],stop=s["stop"],tp1=s["tp1"],tp2=s["tp2"],tp3=s["tp3"],score=s["score"],timeframe="15m",reason=s["reason"],expires_at=now+timedelta(hours=24))
-            db.session.add(t)
-        scan_row=db.session.get(Setting,scan_key)
-        if not scan_row: scan_row=Setting(key=scan_key,value=iso(now)); db.session.add(scan_row)
-        else: scan_row.value=iso(now)
-        db.session.commit()
-        active=Trade.query.filter_by(market=market,status="active").filter(Trade.expires_at>now).order_by(Trade.score.desc()).limit(10).all()
-        return jsonify({"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(movers)})
+    try: return jsonify(run_market_scan(market))
     except Exception:
-        app.logger.exception("signal scan failed"); return json_error("تعذر إكمال الفحص حالياً؛ حاول لاحقاً",502)
+        app.logger.exception("signal scan failed")
+        return json_error("تعذر إكمال الفحص حالياً؛ تحقق من مصدر البيانات وحاول لاحقاً",502)
 def trade_json(t):
     return {"id":t.id,"market":t.market,"symbol":t.symbol,"side":t.side,"entry":t.entry,"stop":t.stop,"tp1":t.tp1,"tp2":t.tp2,"tp3":t.tp3,"score":t.score,"timeframe":t.timeframe,"reason":t.reason,"status":t.status,"created_at":iso(t.created_at),"expires_at":iso(t.expires_at)}
 @app.get("/api/trades")
@@ -369,6 +366,20 @@ with app.app_context():
     if admin_email and admin_password and not User.query.filter_by(role="admin").first():
         if len(admin_password)>=14 and re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",admin_email):
             db.session.add(User(email=admin_email,password_hash=generate_password_hash(admin_password),role="admin",subscription_plan="admin")); db.session.commit()
+
+def scheduled_market_scan():
+    with app.app_context():
+        for market in ("spot","futures"):
+            try:
+                run_market_scan(market)
+                app.logger.info("scheduled scan completed: %s",market)
+            except Exception:
+                app.logger.exception("scheduled scan failed: %s",market)
+
+if os.environ.get("ENABLE_AUTO_SCAN","true").lower()=="true":
+    scheduler=BackgroundScheduler(timezone="UTC")
+    scheduler.add_job(scheduled_market_scan,"interval",minutes=15,id="market-scan-15m",max_instances=1,coalesce=True,next_run_time=utcnow()+timedelta(seconds=30))
+    scheduler.start()
 
 if __name__=="__main__":
     app.run(host="0.0.0.0",port=int(os.environ.get("PORT","8080")))
