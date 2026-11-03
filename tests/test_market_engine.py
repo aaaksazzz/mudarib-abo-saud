@@ -36,6 +36,7 @@ class MarketEngineTests(unittest.TestCase):
         self.assertTrue(health.get_json()["ok"])
         self.assertEqual(ready.status_code, 503)
         self.assertTrue(ready.get_json()["checks"]["database"])
+        self.assertFalse(ready.get_json()["checks"]["persistent_database"])
         self.assertFalse(ready.get_json()["checks"]["market_scheduler"])
 
     def test_public_signal_read_does_not_start_synchronous_scan(self):
