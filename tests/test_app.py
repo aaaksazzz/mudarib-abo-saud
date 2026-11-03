@@ -567,7 +567,7 @@ def test_auth_me_reports_unconfigured_as_nonfatal_public_status(monkeypatch):
     assert response.json["auth_available"] is False
     assert response.json["user"] is None
 
-def test_open_confirmed_trade_remains_in_opportunity_cards_after_refresh(tmp_path, monkeypatch):
+def test_old_open_trade_stays_in_tracker_not_fresh_opportunity_cards(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "DB_PATH", tmp_path / "persistent-cards.sqlite3")
     module.CACHE.pop("spot:universe", None)
     module.SCAN_CURSORS.pop("spot", None)
@@ -587,10 +587,11 @@ def test_open_confirmed_trade_remains_in_opportunity_cards_after_refresh(tmp_pat
         )
     response = client.get("/api/market/spot?timeframe=15m")
     assert response.status_code == 200
-    assert len(response.json["signals"]) == 1
-    card = response.json["signals"][0]
+    assert response.json["signals"] == []
+    assert len(response.json["open_trades"]) == 1
+    card = response.json["open_trades"][0]
     assert card["symbol"] == "AAAUSDT"
-    assert card["persisted"] is True
+    assert card["status"] == "OPEN"
     assert card["entry"] == 100.0
     assert card["stop_loss"] == 98.0
     assert card["tp3"] == 106.0
@@ -645,6 +646,36 @@ def test_market_api_restores_last_direction_when_provider_is_unavailable(tmp_pat
     assert response.json["up"] == 2
     assert response.json["down"] == 9
 
+
+
+def test_stale_provider_snapshot_never_returns_old_opportunity_cards(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "stale-opportunities.sqlite3")
+    module.CACHE.pop("spot:universe", None)
+    now = int(time.time())
+    with module.db() as connection:
+        connection.execute(
+            """INSERT INTO trades
+               (market,symbol,timeframe,side,entry,stop_loss,tp1,tp2,tp3,status,
+                created_at,updated_at,signal_candle_time)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ("spot", "YESTERDAYUSDT", "15m", "BUY", 100.0, 98.0, 102.0,
+             104.0, 106.0, "OPEN", now - 3600, now - 3600, now - 3600)
+        )
+    module.save_market_snapshot("spot", "BUY", 8, 2, 0, 10, "test-feed")
+    module.save_market_scan_snapshot("spot", "15m", {
+        "ok": True, "market": "spot", "direction": "BUY",
+        "signals": [{"symbol": "YESTERDAYUSDT"}],
+        "open_trades": [{"symbol": "YESTERDAYUSDT"}],
+        "timeframe": "15m"
+    })
+    def unavailable(_kind):
+        raise module.requests.RequestException("simulated provider outage")
+    monkeypatch.setattr(module, "market_tickers", unavailable)
+    response = client.get("/api/market/spot?timeframe=15m")
+    assert response.status_code == 200
+    assert response.json["snapshot_stale"] is True
+    assert response.json["signals"] == []
+    assert response.json["open_trades"][0]["symbol"] == "YESTERDAYUSDT"
 
 def test_home_page_shows_market_radar_and_keeps_news_inside_the_site():
     root = Path(__file__).resolve().parents[1]
