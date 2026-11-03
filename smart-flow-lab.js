@@ -9,9 +9,10 @@ function pct(entry,level,side,isStop=false){
 }
 function levelMarkup(label,value,s,kind){
   const isStop=kind==="stop";
-  const raw=pct(s.entry,value,s.side,isStop);
-  const leveraged=(parseFloat(raw.replace("%",""))*LEVERAGE);
-  const lev=(isStop?"-":leveraged>=0?"+":"")+Math.abs(leveraged).toFixed(2)+"%";
+  if(kind==="entry") return '<div class="level entry"><span>'+label+'</span><b>'+money(value)+'</b><small>سعر أساس حساب النسب</small></div>';
+  const raw=pct(s.entry,value,s.side,s.side==="BUY" ? isStop : isStop);
+  const leveraged=Math.abs(parseFloat(raw.replace("%","")))*LEVERAGE;
+  const lev=(isStop?"-":"+")+leveraged.toFixed(2)+"%";
   const cls=isStop?"loss":"profit";
   return '<div class="level '+cls+'"><span>'+label+'</span><b>'+money(value)+'</b><small>'+raw+' حركة السعر · '+lev+' تقديري مع رافعة 3x</small></div>';
 }
