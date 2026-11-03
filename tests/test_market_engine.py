@@ -85,6 +85,24 @@ class MarketEngineTests(unittest.TestCase):
         self.assertLess(signal["stop"], signal["entry"])
         self.assertGreater(signal["tp3"], signal["tp2"])
 
+    def test_trade_lifecycle_tracks_targets_and_stop(self):
+        with platform.app.app_context():
+            trade = platform.Trade(
+                market="spot", symbol="BTCUSDT", side="BUY", entry=100,
+                stop=97, tp1=103, tp2=106, tp3=109, score=70,
+                timeframe="15m", reason="test",
+                expires_at=platform.utcnow() + timedelta(hours=1),
+            )
+            platform.db.session.add(trade)
+            platform.db.session.commit()
+            platform.update_trade_outcomes("spot", [{"symbol": "BTCUSDT", "price": 104}])
+            self.assertEqual(trade.status, "tp1_hit")
+            self.assertGreater(trade.result_pct, 0)
+            platform.update_trade_outcomes("spot", [{"symbol": "BTCUSDT", "price": 107}])
+            self.assertEqual(trade.status, "tp2_hit")
+            platform.update_trade_outcomes("spot", [{"symbol": "BTCUSDT", "price": 96}])
+            self.assertEqual(trade.status, "stopped_after_tp2")
+
     def test_futures_universe_excludes_stablecoin_bases(self):
         exchange_info = {
             "symbols": [
