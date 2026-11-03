@@ -8,7 +8,7 @@ const pct=(entry,target,side)=>{const v=(target/entry-1)*100*(side==="BUY"?1:-1)
 function toast(s){const t=$("#toast");t.textContent=s;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2800)}
 async function api(path,opts={}){const method=(opts.method||"GET").toUpperCase();const headers={"Content-Type":"application/json",...(opts.headers||{})};if(method!=="GET"&&csrf)headers["X-CSRF-Token"]=csrf;const r=await fetch(path,{...opts,headers,credentials:"same-origin"});let d={};try{d=await r.json()}catch{}if(!r.ok)throw Error(d.error||"تعذر تنفيذ الطلب");return d}
 async function init(){try{const b=await api("/api/bootstrap");boot=b;csrf=b.csrf;currentUser=b.user;renderUser();}catch(e){toast(e.message)}renderPage("overview")}
-function renderUser(){$("#loginBtn").textContent=currentUser?currentUser.email.split("@")[0]:"دخول / حساب جديد";$("#accountStatus").textContent=currentUser?(currentUser.role==="admin"?"مدير النظام":currentUser.subscribed?"مشترك":"حساب مجاني"):"زائر";$("#adminNav").hidden=!(currentUser&&currentUser.role==="admin")}
+function renderUser(){$("#loginBtn").textContent=currentUser?currentUser.email.split("@")[0]:(document.documentElement.lang==="en"?"Sign in / Register":"دخول / حساب جديد");$("#accountStatus").textContent=currentUser?(currentUser.role==="admin"?"مدير النظام":currentUser.subscribed?"مشترك":"حساب مجاني"):"زائر";$("#adminNav").hidden=!(currentUser&&currentUser.role==="admin")}
 function authModal(){const modal=$("#authModal");modal.hidden=false;$("#authEmail").focus()}
 function closeAuth(){$("#authModal").hidden=true}
 $("#loginBtn").addEventListener("click",()=>currentUser?accountMenu():authModal());
