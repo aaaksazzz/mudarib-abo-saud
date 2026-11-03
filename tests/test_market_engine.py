@@ -86,6 +86,21 @@ class MarketEngineTests(unittest.TestCase):
         self.assertLess(signal["stop"], signal["entry"])
         self.assertGreater(signal["tp3"], signal["tp2"])
 
+    def test_scheduler_can_force_a_new_scan_inside_cache_window(self):
+        with platform.app.app_context():
+            row = platform.Setting(key="scan:spot", value=platform.iso(platform.utcnow()))
+            platform.db.session.add(row)
+            platform.db.session.commit()
+            with patch.object(platform, "market_tickers", return_value=[
+                {"symbol": "BTCUSDT", "price": 60000, "change_pct": 2, "quote_volume": 5000000}
+            ]) as ticker_source, patch.object(platform, "build_signal", return_value=None):
+                cached = platform.run_market_scan("spot")
+                self.assertTrue(cached["cached"])
+                ticker_source.assert_not_called()
+                forced = platform.run_market_scan("spot", force=True)
+                self.assertFalse(forced.get("cached", False))
+                ticker_source.assert_called_once()
+
     def test_trade_lifecycle_tracks_targets_and_stop(self):
         with platform.app.app_context():
             trade = platform.Trade(
