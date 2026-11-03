@@ -136,6 +136,27 @@ class MarketEngineTests(unittest.TestCase):
             rows = platform.market_tickers("spot")
         self.assertEqual(rows, [])
 
+    def test_registration_accepts_unicode_letters_and_digits(self):
+        bootstrap = self.client.get("/api/bootstrap").get_json()
+        response = self.client.post("/api/auth/register",
+            json={"email":"arabic-pass@example.com","password":"كلمةمرورقوية123"},
+            headers={"X-CSRF-Token":bootstrap["csrf"]},
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.get_json()["user"]["active"])
+
+    def test_existing_admin_password_is_synchronized_from_environment(self):
+        with platform.app.app_context():
+            admin = platform.User(email="old-admin@example.com",
+                                  password_hash=platform.generate_password_hash("OldPassword123!"),
+                                  role="admin", active=True, subscription_plan="admin")
+            platform.db.session.add(admin)
+            platform.db.session.commit()
+            with patch.dict(os.environ, {"ADMIN_EMAIL":"new-admin@example.com","ADMIN_PASSWORD":"NewAdminPassword123!"}):
+                platform.provision_admin_from_env()
+            self.assertEqual(admin.email, "new-admin@example.com")
+            self.assertTrue(platform.check_password_hash(admin.password_hash, "NewAdminPassword123!"))
+
     def test_public_subscription_plans_and_payment_methods(self):
         response = self.client.get("/api/plans")
         self.assertEqual(response.status_code, 200)
