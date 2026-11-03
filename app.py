@@ -8,8 +8,10 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import func
 from apscheduler.schedulers.background import BackgroundScheduler
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
-app = Flask(__name__, static_folder=".", static_url_path="")
+app = Flask(__name__, static_folder=None)
 app.config.update(
     SECRET_KEY=os.environ.get("SECRET_KEY") or secrets.token_hex(32),
     SQLALCHEMY_DATABASE_URI=os.environ.get("DATABASE_URL", "sqlite:///smart_trading_pro.db").replace("postgres://", "postgresql+psycopg://", 1).replace("postgresql://", "postgresql+psycopg://", 1),
@@ -20,6 +22,7 @@ app.config.update(
     MAX_CONTENT_LENGTH=2 * 1024 * 1024,
 )
 db=SQLAlchemy(app)
+limiter=Limiter(get_remote_address,app=app,default_limits=["300 per hour"],storage_uri=os.environ.get("RATE_LIMIT_STORAGE_URI","memory://"))
 MARKETS=("spot","futures","alpha","us-stocks","us-contracts","saudi","forex")
 SECTION_DEFAULTS={k:True for k in ("overview",)+MARKETS+("strategies","journal","blog","news")}
 BINANCE_SPOT="https://api.binance.com"
@@ -123,12 +126,17 @@ def public_article(a):
     return {"id":a.id,"kind":a.kind,"title":a.title,"slug":a.slug,"summary":a.summary,"body":a.body,"created_at":iso(a.created_at)}
 @app.get("/")
 def home(): return send_from_directory(".", "index.html")
+@app.get("/styles.css")
+def styles(): return send_from_directory(".", "styles.css")
+@app.get("/platform.js")
+def platform_script(): return send_from_directory(".", "platform.js")
 @app.get("/health")
 def health(): return jsonify({"ok":True,"service":"SMART TRADING PRO","time":iso(utcnow())})
 @app.get("/api/bootstrap")
 def bootstrap():
     return jsonify({"ok":True,"csrf":csrf_token(),"user":user_json(g.user) if g.user else None,"sections":{k:section_enabled(k) for k in SECTION_DEFAULTS},"markets":MARKETS})
 @app.post("/api/auth/register")
+@limiter.limit("5 per minute")
 def register():
     data=request.get_json(silent=True) or {}; email=str(data.get("email","")).strip().lower(); password=str(data.get("password",""))
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",email): return json_error("البريد الإلكتروني غير صحيح")
@@ -138,6 +146,7 @@ def register():
     db.session.add(u); db.session.commit(); session.clear(); session["uid"]=u.id; session.permanent=True; csrf_token()
     return jsonify({"ok":True,"user":user_json(u),"csrf":session["csrf"]}),201
 @app.post("/api/auth/login")
+@limiter.limit("5 per minute")
 def login():
     data=request.get_json(silent=True) or {}; email=str(data.get("email","")).strip().lower(); password=str(data.get("password",""))
     u=User.query.filter_by(email=email).first()
@@ -283,6 +292,7 @@ def content_list(kind):
     rows=Article.query.filter_by(kind=kind,published=True).order_by(Article.created_at.desc()).limit(50).all()
     return jsonify({"ok":True,"items":[public_article(x) for x in rows]})
 @app.post("/api/admin/login-bootstrap")
+@limiter.limit("3 per hour")
 def admin_bootstrap():
     # One-time bootstrap protected by an out-of-band secret; disabled after first admin exists.
     secret=os.environ.get("ADMIN_BOOTSTRAP_TOKEN","")
