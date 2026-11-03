@@ -43,7 +43,7 @@ YAHOO_SYMBOLS = {
     "saudi": [x.strip().upper() for x in os.environ.get("YAHOO_SAUDI_SYMBOLS", "").split(",") if x.strip()],
 }
 SCAN_INTERVAL = "15m"
-SCAN_INTERVAL_SECONDS = 5 * 60
+SCAN_INTERVAL_SECONDS = 15 * 60
 STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "EUR"}
 CACHE = {}
 CACHE_LOCK = threading.Lock()
@@ -1487,7 +1487,7 @@ def market(kind):
             "signals": signals, "open_trades": active,
             "scan_diagnostics": {
                 "universe_size": len(assets), "candidates_scanned": len(candidates),
-                "batch_size": 8, "batch_start": scan_offset,
+                "batch_size": 16, "batch_start": scan_offset,
                 "scan_offset": scan_offset, "next_scan_offset": next_scan_offset,
                 "priority_candidates": priority_candidates,
                 "scan_cycle_complete": bool(assets) and next_scan_offset <= scan_offset,
