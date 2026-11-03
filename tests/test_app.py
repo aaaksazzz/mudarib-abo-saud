@@ -18,6 +18,41 @@ def admin_session(monkeypatch):
         session.clear()
         session["user_id"] = row["id"]
 
+
+def test_market_read_endpoints_are_public_without_auth_or_subscription(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "DB_PATH", tmp_path / "public-read.sqlite3")
+    monkeypatch.setattr(module, "AUTH_CONFIGURED", False)
+    module.app.config["SESSION_COOKIE_SECURE"] = False
+    with client.session_transaction() as session:
+        session.clear()
+
+    # Initialize the isolated database and save a real read-only trade record.
+    signal = {"symbol": "PUBLICUSDT", "timeframe": "15m", "side": "BUY",
+              "entry": 100, "stop_loss": 98, "tp1": 102, "tp2": 104, "tp3": 106}
+    module.save_new_trades("spot", [signal])
+
+    trades_response = client.get("/api/trades?market=spot")
+    assert trades_response.status_code == 200
+    assert trades_response.json["items"][0]["symbol"] == "PUBLICUSDT"
+
+    sections_response = client.get("/api/access/sections")
+    assert sections_response.status_code == 200
+    assert "sections" in sections_response.json
+
+    analysis_response = client.get("/api/analysis/method")
+    assert analysis_response.status_code == 200
+    assert analysis_response.json["status"] == "local_analysis"
+
+
+def test_news_endpoint_is_public_when_auth_is_not_configured(monkeypatch):
+    monkeypatch.setattr(module, "AUTH_CONFIGURED", False)
+    monkeypatch.setattr(module, "cached", lambda key, ttl, loader: [])
+    with client.session_transaction() as session:
+        session.clear()
+    response = client.get("/api/news")
+    assert response.status_code == 200
+    assert response.json["items"] == []
+
 def test_health_and_home():
     assert client.get("/health").json["ok"] is True
     response = client.get("/")
