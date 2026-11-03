@@ -1518,6 +1518,9 @@ def market(kind):
     except requests.RequestException:
         app.logger.exception("Market provider request failed: %s", kind)
         try:
+            # Expire positions older than 24h even during a quote-provider outage.
+            # This does not update P/L without a live quote.
+            update_open_trades(kind, {})
             previous_scan = load_market_scan_snapshot(kind, timeframe)
             if previous_scan:
                 payload = dict(previous_scan["payload"])
