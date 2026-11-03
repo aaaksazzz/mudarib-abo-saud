@@ -313,7 +313,7 @@ def ema(values,period):
     k=2/(period+1); v=sum(values[:period])/period
     for x in values[period:]: v=x*k+v*(1-k)
     return v
-def build_signal(market,item):
+def build_futures_signal(market,item):
     """Fast 15m-only scanner; uses closed Binance candles and no higher-timeframe calls."""
     symbol=item["symbol"]
     rows=klines(market,symbol,"15m",90)
@@ -355,6 +355,42 @@ def build_signal(market,item):
     body_ratio=abs(last-opn[-1])/max(high[-1]-low[-1],entry*0.00001)
     score=min(96,58+min(trend_gap*180,12)+min(vol_ratio*5,12)+min(body_ratio*8,8)+(6 if sweep else 0))
     return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":entry-sign*risk,"tp1":entry+sign*risk,"tp2":entry+sign*risk*1.8,"tp3":entry+sign*risk*2.7,"score":round(score,1),"timeframe":"15m","reason":"اتجاه وزخم EMA20/EMA50 على 15 دقيقة مغلقة؛ فحص حجم التداول وATR، مع رصد اختياري لسحب السيولة.","status":"active","change_pct":item["change_pct"],"change_15m_pct":round(change_15m,4),"quote_volume":item["quote_volume"]}
+def build_spot_signal(market,item):
+    symbol=item["symbol"]
+    k15=klines(market,symbol,"15m",100); k4=klines(market,symbol,"4h",80); kd=klines(market,symbol,"1d",60)
+    if not all(isinstance(rows,list) and len(rows)>=22 for rows in (k15,k4,kd)):
+        return None
+    closed15,closed4,closed_daily=k15[:-1],k4[:-1],kd[:-1]
+    c15=[float(x[4]) for x in closed15]; h15=[float(x[2]) for x in closed15]; l15=[float(x[3]) for x in closed15]
+    c4=[float(x[4]) for x in closed4]; daily=[float(x[4]) for x in closed_daily]
+    if len(c15)<50 or len(c4)<20 or len(daily)<20:
+        return None
+    numeric_values=c15+h15+l15+c4+daily
+    if not all(math.isfinite(value) and value>0 for value in numeric_values):
+        return None
+    trend4,trend_daily=ema(c4,20),ema(daily,20)
+    if trend4 is None or trend_daily is None:
+        return None
+    side="BUY" if c4[-1]>trend4 and daily[-1]>trend_daily else "SELL" if c4[-1]<trend4 and daily[-1]<trend_daily else None
+    if not side:
+        return None
+    change_15m=(c15[-1]/c15[-2]-1)*100
+    change_1h=(c15[-1]/c15[-5]-1)*100
+    if (side=="BUY" and change_15m<=0) or (side=="SELL" and change_15m>=0):
+        return None
+    true_ranges=[]
+    for i in range(1,len(c15)):
+        true_ranges.append(max(h15[i]-l15[i],abs(h15[i]-c15[i-1]),abs(l15[i]-c15[i-1])))
+    atr=sum(true_ranges[-14:])/14 if len(true_ranges)>=14 else 0
+    entry=c15[-1]
+    risk=max(atr*1.5,entry*0.003)
+    stop=entry-risk if side=="BUY" else entry+risk
+    sign=1 if side=="BUY" else -1
+    volume_score=min(max(math.log10(max(item["quote_volume"],1)/1_000_000),0)*2,10)
+    score=min(95,55+min(abs(change_15m)*10,20)+min(abs(change_1h)*2,10)+volume_score)
+    return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":stop,"tp1":entry+sign*risk,"tp2":entry+sign*risk*2,"tp3":entry+sign*risk*3,"score":round(score,1),"timeframe":"15m","reason":"اتجاه 4 ساعات واليومي متوافق؛ تأكيد الدخول من شمعة 15 دقيقة مغلقة، والوقف والأهداف محسوبة على ATR.","status":"active","change_pct":item["change_pct"],"change_15m_pct":round(change_15m,4),"quote_volume":item["quote_volume"]}
+def build_signal(market,item):
+    return build_futures_signal(market,item) if market=="futures" else build_spot_signal(market,item)
 def expire_stale_trades(market=None):
     now=utcnow()
     query=Trade.query.filter(Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at<=now)
@@ -405,7 +441,7 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(Trade.score.desc(),func.abs(Trade.change_15m_pct).desc()).limit(3).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(Trade.score.desc(),func.abs(Trade.change_15m_pct).desc()).limit(max_signals).all()
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True,"scan_universe":None}
         except (ValueError,TypeError):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
@@ -413,9 +449,11 @@ def run_market_scan(market,force=False):
     if not universe:
         raise RuntimeError("Market provider returned an empty eligible universe")
     update_trade_outcomes(market,universe)
-    movers=universe
+    movers=universe if market=="futures" else sorted(universe,key=lambda x:abs(x["change_pct"]),reverse=True)[:18]
+    max_workers=16 if market=="futures" else 4
+    max_signals=3 if market=="futures" else 10
     found=[]; completed=0; failed=0
-    with ThreadPoolExecutor(max_workers=16) as pool:
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
         jobs=[pool.submit(build_signal,market,item) for item in movers]
         for job in as_completed(jobs):
             try:
@@ -426,12 +464,15 @@ def run_market_scan(market,force=False):
             except Exception:
                 failed+=1
                 app.logger.exception("Signal analysis failed for %s",market)
-    minimum_success=max(1,math.ceil(len(movers)*0.65))
+    minimum_success=max(1,math.ceil(len(movers)*(0.65 if market=="futures" else 0.8)))
     if completed<minimum_success:
         raise RuntimeError(f"Insufficient candle data: {completed}/{len(movers)} analyses completed; scan timestamp was not advanced")
-    # Fastest verified 15m movers rank first; strength is the tie-breaker, not 24h noise.
-    found.sort(key=lambda x:(x["score"],abs(x["change_15m_pct"]),x["quote_volume"]),reverse=True)
-    for signal in found[:3]:
+    # Futures rank by 15m signal quality; preserve the existing Spot ranking.
+    if market=="futures":
+        found.sort(key=lambda x:(x["score"],abs(x["change_15m_pct"]),x["quote_volume"]),reverse=True)
+    else:
+        found.sort(key=lambda x:(abs(x["change_15m_pct"]),x["score"],x["quote_volume"]),reverse=True)
+    for signal in found[:max_signals]:
         exists=Trade.query.filter(Trade.market==market,Trade.symbol==signal["symbol"],Trade.status.in_(OPEN_TRADE_STATUSES)).first()
         if exists and aware(exists.created_at)>now-timedelta(minutes=15):
             continue
@@ -448,8 +489,8 @@ def run_market_scan(market,force=False):
     else:
         universe_row.value=str(len(universe))
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(Trade.score.desc(),func.abs(Trade.change_15m_pct).desc()).limit(3).all()
-    return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(universe),"analysis_completed":completed,"analysis_failed":failed}
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(Trade.score.desc(),func.abs(Trade.change_15m_pct).desc()).limit(3 if market=="futures" else 10).all()
+    return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(movers),"analysis_completed":completed,"analysis_failed":failed}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
     if market not in MARKETS:
@@ -463,7 +504,7 @@ def signals(market):
         # Keep web requests fast: the scheduler owns scans; page loads only read the latest committed result.
         expire_stale_trades(market)
         row=db.session.get(Setting,"scan:"+market)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow()).order_by(func.abs(Trade.change_15m_pct).desc(),Trade.score.desc()).limit(10).all()
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow()).order_by(Trade.score.desc(),func.abs(Trade.change_15m_pct).desc()).limit(3 if market=="futures" else 10).all()
         updated=row.value if row else None
         universe_row=db.session.get(Setting,"scan-universe:"+market)
         scan_universe=int(universe_row.value) if universe_row and universe_row.value.isdigit() else None
