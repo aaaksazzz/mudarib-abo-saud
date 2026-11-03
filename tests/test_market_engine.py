@@ -148,7 +148,7 @@ class MarketEngineTests(unittest.TestCase):
     def test_lifetime_subscription_is_active_without_expiry(self):
         with platform.app.app_context():
             user = platform.User(email="lifetime@example.com", password_hash="not-used",
-                                 role="user", subscription_plan="lifetime",
+                                 role="user", active=True, subscription_plan="lifetime",
                                  subscription_until=None)
             self.assertTrue(platform.subscription_is_active(user))
             user.subscription_plan = "free"
