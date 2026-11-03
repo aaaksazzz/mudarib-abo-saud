@@ -104,6 +104,10 @@ def security_headers(response):
     response.headers["Referrer-Policy"]="strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"]="camera=(), microphone=(), geolocation=()"
     response.headers["Content-Security-Policy"]="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    if request.path.startswith("/api/"):
+        response.headers["Cache-Control"]="no-store, private, max-age=0"
+        response.headers["Pragma"]="no-cache"
+        response.headers["Vary"]="Cookie"
     return response
 @app.before_request
 def security_and_identity():
@@ -184,7 +188,7 @@ def bootstrap():
 def register():
     data=request.get_json(silent=True) or {}; email=str(data.get("email","")).strip().lower(); password=str(data.get("password",""))
     if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",email): return json_error("البريد الإلكتروني غير صحيح")
-    if len(password)<12 or not re.search(r"[A-Za-z]",password) or not re.search(r"\d",password): return json_error("كلمة المرور يجب أن تكون 12 خانة على الأقل وتحتوي حروفاً وأرقاماً")
+    if len(password)<12 or not any(char.isalpha() for char in password) or not any(char.isdigit() for char in password): return json_error("كلمة المرور يجب أن تكون 12 خانة على الأقل وتحتوي حروفاً وأرقاماً")
     if User.query.filter_by(email=email).first(): return json_error("البريد مسجل مسبقاً",409)
     u=User(email=email,password_hash=generate_password_hash(password),role="user")
     db.session.add(u); db.session.commit(); session.clear(); session["uid"]=u.id; session.permanent=True; csrf_token()
@@ -194,8 +198,10 @@ def register():
 def login():
     data=request.get_json(silent=True) or {}; login_id=str(data.get("email",data.get("username",""))).strip().lower(); password=str(data.get("password",""))
     u=User.query.filter_by(email=login_id).first()
-    admin_username=os.environ.get("ADMIN_USERNAME","").strip().lower()
-    if not u and admin_username and hmac.compare_digest(login_id,admin_username):
+    admin_username=os.environ.get("ADMIN_USERNAME","").strip().casefold()
+    configured_admin_email=os.environ.get("ADMIN_EMAIL","").strip().casefold()
+    admin_aliases={value for value in (admin_username, configured_admin_email.partition("@")[0] if "@" in configured_admin_email else "") if value}
+    if not u and any(hmac.compare_digest(login_id,alias) for alias in admin_aliases):
         u=User.query.filter_by(role="admin").first()
     if not u or not check_password_hash(u.password_hash,password) or not u.active: return json_error("بيانات الدخول غير صحيحة",401)
     session.clear(); session["uid"]=u.id; session.permanent=True; csrf_token()
@@ -578,6 +584,35 @@ def providers(): return jsonify({"ok":True,"providers":{m:provider_status(m) for
 def too_large(_): return json_error("حجم الطلب أكبر من المسموح",413)
 @app.errorhandler(429)
 def limited(_): return json_error("طلبات كثيرة؛ حاول بعد قليل",429)
+def provision_admin_from_env():
+    """Create the first admin or synchronize configured admin credentials on restart."""
+    admin_email=os.environ.get("ADMIN_EMAIL","").strip().lower()
+    admin_password=os.environ.get("ADMIN_PASSWORD","")
+    if not admin_email or not admin_password:
+        return
+    if len(admin_password)<14 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",admin_email):
+        app.logger.error("ADMIN_EMAIL/ADMIN_PASSWORD are invalid; admin credentials were not changed")
+        return
+    admin=User.query.filter_by(role="admin").order_by(User.id.asc()).first()
+    email_owner=User.query.filter_by(email=admin_email).first()
+    if admin is None:
+        if email_owner is not None:
+            app.logger.error("Configured ADMIN_EMAIL belongs to a non-admin account; refusing automatic role escalation")
+            return
+        db.session.add(User(email=admin_email,password_hash=generate_password_hash(admin_password),role="admin",subscription_plan="admin"))
+        db.session.commit()
+        app.logger.info("Initial administrator provisioned from deployment environment")
+        return
+    if email_owner is not None and email_owner.id!=admin.id:
+        app.logger.error("Configured ADMIN_EMAIL is already used by another account; admin email was not changed")
+    else:
+        admin.email=admin_email
+    admin.password_hash=generate_password_hash(admin_password)
+    admin.active=True
+    admin.subscription_plan="admin"
+    db.session.commit()
+    app.logger.info("Existing administrator credentials synchronized from deployment environment")
+
 with app.app_context():
     db.create_all()
     # Forward-only schema migration for existing production databases.
@@ -585,11 +620,7 @@ with app.app_context():
     if "change_15m_pct" not in trade_columns:
         with db.engine.begin() as connection:
             connection.execute(text(f"ALTER TABLE {Trade.__tablename__} ADD COLUMN change_15m_pct FLOAT"))
-    # Optional first administrator provisioning from deployment secrets.
-    admin_email=os.environ.get("ADMIN_EMAIL","").strip().lower(); admin_password=os.environ.get("ADMIN_PASSWORD","")
-    if admin_email and admin_password and not User.query.filter_by(role="admin").first():
-        if len(admin_password)>=14 and re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",admin_email):
-            db.session.add(User(email=admin_email,password_hash=generate_password_hash(admin_password),role="admin",subscription_plan="admin")); db.session.commit()
+    provision_admin_from_env()
 
 def scheduled_market_scan():
     with app.app_context():
