@@ -622,6 +622,9 @@ with app.app_context():
             connection.execute(text(f"ALTER TABLE {Trade.__tablename__} ADD COLUMN change_15m_pct FLOAT"))
     provision_admin_from_env()
 
+from smart_flow_lab import register_smart_flow_lab
+register_smart_flow_lab(app)
+
 def scheduled_market_scan():
     with app.app_context():
         expire_stale_trades()
