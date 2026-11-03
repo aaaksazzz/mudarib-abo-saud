@@ -204,9 +204,30 @@ def logout():
 @app.get("/api/me")
 @login_required
 def me(): return jsonify({"ok":True,"user":user_json(g.user)})
+def admin_contact_url():
+    row=db.session.get(Setting,"admin_contact_url")
+    return (row.value if row else os.environ.get("ADMIN_CONTACT_URL","")).strip()
+
 @app.get("/api/plans")
 def public_plans():
-    return jsonify({"ok":True,"currency":"USD","plans":PAYMENT_PLANS,"payment_methods":PAYMENT_METHODS,"contact_url":os.environ.get("ADMIN_CONTACT_URL","").strip(),"contact_label":"تواصل مع الإدارة"})
+    return jsonify({"ok":True,"currency":"USD","plans":PAYMENT_PLANS,"payment_methods":PAYMENT_METHODS,"contact_url":admin_contact_url(),"contact_label":"تواصل مع الإدارة"})
+
+@app.put("/api/admin/contact")
+@login_required
+@admin_required
+def update_admin_contact():
+    url=str((request.get_json(silent=True) or {}).get("url","")).strip()
+    if url and (not url.startswith("https://") or len(url)>500):
+        return json_error("رابط التواصل يجب أن يبدأ بـ https://")
+    row=db.session.get(Setting,"admin_contact_url")
+    if not row:
+        row=Setting(key="admin_contact_url",value=url)
+        db.session.add(row)
+    else:
+        row.value=url
+    audit("admin_contact_updated","configured" if url else "cleared")
+    db.session.commit()
+    return jsonify({"ok":True,"contact_url":admin_contact_url()})
 
 @app.get("/api/markets")
 def market_list():
