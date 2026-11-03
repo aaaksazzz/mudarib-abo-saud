@@ -341,10 +341,11 @@ def run_market_scan(market):
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True,"scan_universe":None}
         except (ValueError,TypeError):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
-    movers=sorted(market_tickers(market),key=lambda x:abs(x["change_pct"]),reverse=True)[:18]
-    if not movers:
+    universe=market_tickers(market)
+    if not universe:
         raise RuntimeError("Market provider returned an empty eligible universe")
-    update_trade_outcomes(market,movers)
+    update_trade_outcomes(market,universe)
+    movers=sorted(universe,key=lambda x:abs(x["change_pct"]),reverse=True)[:18]
     found=[]; completed=0; failed=0
     with ThreadPoolExecutor(max_workers=4) as pool:
         jobs=[pool.submit(build_signal,market,item) for item in movers]
