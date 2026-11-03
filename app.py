@@ -148,10 +148,11 @@ def health():
 
 @app.get("/ready")
 def readiness():
-    checks={"database":False,"market_scheduler":False}
+    checks={"database":False,"persistent_database":False,"market_scheduler":False}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
+        checks["persistent_database"]=db.engine.dialect.name=="postgresql"
     except Exception:
         db.session.rollback()
         app.logger.exception("readiness database check failed")
