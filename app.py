@@ -6,7 +6,7 @@ import requests
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import func, text, inspect
+from sqlalchemy import func, text, inspect, or_
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -420,7 +420,7 @@ def run_market_scan(market,force=False):
     if not universe:
         raise RuntimeError("Market provider returned an empty eligible universe")
     # Retire legacy-strategy open trades so old signals never leak into the new strategy feed.
-    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),db.or_(Trade.timeframe!="15m",~Trade.reason.like("تقاطع EMA 9/14%"))).update({"status":"superseded"},synchronize_session=False)
+    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),or_(Trade.timeframe!="15m",~Trade.reason.like("تقاطع EMA 9/14%"))).update({"status":"superseded"},synchronize_session=False)
     db.session.commit()
     update_trade_outcomes(market,universe)
     # Scan a broad, liquid candidate set independently on every requested timeframe.
