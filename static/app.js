@@ -69,7 +69,7 @@ function applyLanguage(choice){
  const set=(selector,key)=>{const el=$(selector);if(el)el.textContent=tr(key)};
  set("#menuOpen span","menu");set(".drawer-head b","sections");$("#menuOpen")?.setAttribute("aria-label",tr("menu"));set('#siteDrawer a[href="/"]',"home");
  const groups=document.querySelectorAll("#siteDrawer .drawer-group");if(groups[0])groups[0].textContent=tr("markets");if(groups[1])groups[1].textContent=tr("sections");if(groups[2])groups[2].textContent=tr("content");
- const navKeys=["direction","opportunities","openTrades"];const navLinks=[...document.querySelectorAll("#siteDrawer a")];
+ const navKeys=["direction","opportunities"];const navLinks=[...document.querySelectorAll("#siteDrawer a")];
  const navMap={"/sections/direction":"direction","/sections/opportunities":"opportunities","/sections/open-trades":"openTrades"};
  navLinks.forEach(a=>{const key=navMap[a.getAttribute("href")];if(key)a.textContent=tr(key)});
  const markets=Object.keys(MARKET_NAMES);document.querySelectorAll("[data-market] b").forEach(el=>{const index=markets.indexOf(el.closest("[data-market]")?.dataset.market);if(index>=0)el.textContent=(MARKET_TRANSLATIONS[lang]||MARKET_TRANSLATIONS.ar)[index]});document.querySelectorAll("[data-market] small").forEach(el=>el.textContent=tr("marketIndependent"));
@@ -236,7 +236,7 @@ async function load(){
   $("#upBar").style.width=(d.up/total*100)+"%";$("#downBar").style.width=(d.down/total*100)+"%";$("#flatBar").style.width=((d.flat||0)/total*100)+"%";
     $("#source").textContent="مصدر البيانات: "+d.source+" · "+d.strategy;
     
-  renderSignals(d.signals,d.scan_diagnostics||{});renderOpen(d.open_trades);
+  renderSignals(d.signals,d.scan_diagnostics||{});
   const strategyLabel={"15m":"اتجاه 4 ساعات واليومي · تأكيد السيولة والدخول 15 دقيقة"};
   const label=$("#activeStrategy");if(label)label.textContent=strategyLabel[analysisTimeframe]||analysisTimeframe;
   const minutes=Math.max(0,Math.ceil(Number(d.seconds_until_next_scan||0)/60));
@@ -304,27 +304,27 @@ async function loadHomeOverview(){
 function configurePage(){
  document.body.classList.toggle("home-page",PATH==="/");
  document.body.classList.toggle("market-page",!!marketMatch);
- const timeframeSwitcher=$("#marketTimeframeSwitcher");if(timeframeSwitcher)timeframeSwitcher.hidden=!marketMatch;
+ const timeframeSwitcher=$("#marketTimeframeSwitcher");if(timeframeSwitcher)timeframeSwitcher.hidden=true;
  const adminAllowed=!$("#adminPanel").hidden;$("#adminPanel").hidden=true;
- const ids=["homeSection","homeOverview","marketSection","directionSection","opportunitiesSection","cards","openSection","blogSection","newsSection"];
+ const ids=["homeSection","homeOverview","marketSection","directionSection","opportunitiesSection","cards","openSection","blogSection","newsSection","scanConfigSection","moversSection","historySection","tradeHistorySection"];
  const hideAll=()=>ids.forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
  const show=(...names)=>names.forEach(id=>{const el=$("#"+id);if(el)el.hidden=false});
  if(PATH==="/"){
-  hideAll();show("homeSection","homeOverview","marketSection");
+  hideAll();show("homeSection","marketSection");
   $("#homeSection h1").innerHTML='<span>'+tr("marketHomeTitle")+'</span>';
   $("#homeSection p").textContent=tr("marketPageDescription");
  }else if(marketMatch){
   if(!MARKET_NAMES[market]){location.replace("/");return}
-  hideAll();show("homeSection","directionSection","opportunitiesSection","cards","openSection");
+  hideAll();show("homeSection","directionSection","opportunitiesSection","cards");
   $("#homeSection h1").innerHTML='<span>'+safe(marketName(market))+'</span>';
-  $("#homeSection p").textContent="اتجاه السوق والفرص والصفقات الخاصة بهذا السوق فقط.";
+  $("#homeSection p").textContent="اتجاه السوق والصفقات فقط.";
  }else if(PATH.startsWith("/sections/")){
   const section=PATH.split("/").pop();
-  const map={direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["opportunitiesSection","cards","openSection"]};
+  const map={direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["opportunitiesSection","cards"]};
   hideAll();show("homeSection",...(map[section]||[]));
-  const titles={direction:"توجه السوق",opportunities:"فرص التداول","open-trades":"متابعة الصفقات"};
+  const titles={direction:"توجه السوق",opportunities:"الصفقات","open-trades":"الصفقات"};
   $("#homeSection h1").innerHTML='<span>'+safe(titles[section]||"القسم")+'</span>';
-  $("#homeSection p").textContent="قسم مستقل عن الصفحة الرئيسية.";
+  $("#homeSection p").textContent="اتجاه السوق والصفقات فقط.";
  }else if(PATH==="/blog"){
   hideAll();show("homeSection","blogSection");
   $("#homeSection h1").innerHTML='المدونة <span>التعليمية</span>';
