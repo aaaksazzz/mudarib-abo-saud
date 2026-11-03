@@ -147,13 +147,15 @@ def health():
 
 @app.get("/ready")
 def readiness():
-    checks={"database":False,"market_scheduler":os.environ.get("ENABLE_AUTO_SCAN","true").lower()=="true"}
+    checks={"database":False,"market_scheduler":False}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
     except Exception:
         db.session.rollback()
         app.logger.exception("readiness database check failed")
+    active_scheduler=globals().get("scheduler")
+    checks["market_scheduler"]=bool(active_scheduler and active_scheduler.running)
     ready=all(checks.values())
     return jsonify({"ok":ready,"checks":checks,"time":iso(utcnow())}),200 if ready else 503
 @app.get("/api/bootstrap")
