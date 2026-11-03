@@ -25,6 +25,18 @@ from flask import Flask, jsonify, request, send_from_directory, session
 from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__, static_folder="static")
+
+@app.after_request
+def prevent_stale_app_shell(response):
+    """Keep the app shell and versioned assets from pinning old client code."""
+    path = request.path
+    if path == "/" or path.startswith(("/markets/", "/sections/", "/blog", "/news", "/admin")):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    elif path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache, must-revalidate, max-age=0"
+    return response
 SECRET_KEY = os.environ.get("SECRET_KEY", "")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
