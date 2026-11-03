@@ -18,7 +18,7 @@
 
 ## Health checks
 - `GET /health`: process liveness.
-- `GET /ready`: database connectivity and actual scheduler-running state. A 503 response means the service is not ready to serve production market data.
+- `GET /ready`: database connectivity, PostgreSQL persistence, a configured persistent secret and actual scheduler-running state. A 503 response means the service is not ready to serve production market data.
 - GitHub Actions runs regression tests and smoke checks on each pull request.
 
 ## Operational safeguards
