@@ -313,43 +313,40 @@ def ema(values,period):
     k=2/(period+1); v=sum(values[:period])/period
     for x in values[period:]: v=x*k+v*(1-k)
     return v
-def build_signal(market,item):
+TIMEFRAMES=("15m","1h","4h","1d","1w","1M")
+BINANCE_INTERVALS={"15m":"15m","1h":"1h","4h":"4h","1d":"1d","1w":"1w","1M":"1M"}
+def build_signal(market,item,timeframe):
     symbol=item["symbol"]
-    k15=klines(market,symbol,"15m",100); k4=klines(market,symbol,"4h",80); kd=klines(market,symbol,"1d",60)
-    if not all(isinstance(rows,list) and len(rows)>=22 for rows in (k15,k4,kd)):
+    rows=klines(market,symbol,BINANCE_INTERVALS[timeframe],100)
+    if not isinstance(rows,list) or len(rows)<52:
         return None
-    # Binance returns the currently-forming candle last; exclude it so signals use closed candles only.
-    closed15,closed4,closed_daily=k15[:-1],k4[:-1],kd[:-1]
-    c15=[float(x[4]) for x in closed15]; h15=[float(x[2]) for x in closed15]; l15=[float(x[3]) for x in closed15]
-    c4=[float(x[4]) for x in closed4]; daily=[float(x[4]) for x in closed_daily]
-    if len(c15)<50 or len(c4)<20 or len(daily)<20:
+    # Only fully closed candles participate in the signal.
+    closed=rows[:-1]
+    closes=[float(x[4]) for x in closed]
+    if len(closes)<51 or not all(math.isfinite(v) and v>0 for v in closes):
         return None
-    numeric_values=c15+h15+l15+c4+daily
-    if not all(math.isfinite(value) and value>0 for value in numeric_values):
+    ma9_now,ma14_now,ma50_now=ema(closes,9),ema(closes,14),ema(closes,50)
+    ma9_prev,ma14_prev=ema(closes[:-1],9),ema(closes[:-1],14)
+    entry=closes[-1]
+    if None in (ma9_now,ma14_now,ma50_now,ma9_prev,ma14_prev):
         return None
-    trend4,trend_daily=ema(c4,20),ema(daily,20)
-    if trend4 is None or trend_daily is None:
+    bullish=ma9_prev<=ma14_prev and ma9_now>ma14_now and entry>ma50_now
+    bearish=ma9_prev>=ma14_prev and ma9_now<ma14_now and entry<ma50_now
+    if not bullish and not bearish:
         return None
-    # Higher-timeframe agreement determines direction; 15m candles are only the entry/timing confirmation.
-    side="BUY" if c4[-1]>trend4 and daily[-1]>trend_daily else "SELL" if c4[-1]<trend4 and daily[-1]<trend_daily else None
-    if not side:
+    side="BUY" if bullish else "SELL"
+    stop=ma50_now
+    risk=(entry-stop) if bullish else (stop-entry)
+    if not math.isfinite(risk) or risk<=0:
         return None
-    change_15m=(c15[-1]/c15[-2]-1)*100
-    change_1h=(c15[-1]/c15[-5]-1)*100
-    if (side=="BUY" and change_15m<=0) or (side=="SELL" and change_15m>=0):
-        return None
-    true_ranges=[]
-    for i in range(1,len(c15)):
-        true_ranges.append(max(h15[i]-l15[i],abs(h15[i]-c15[i-1]),abs(l15[i]-c15[i-1])))
-    atr=sum(true_ranges[-14:])/14 if len(true_ranges)>=14 else 0
-    entry=c15[-1]
-    risk=max(atr*1.5,entry*0.003)
-    stop=entry-risk if side=="BUY" else entry+risk
-    sign=1 if side=="BUY" else -1
-    volume_score=min(max(math.log10(max(item["quote_volume"],1)/1_000_000),0)*2,10)
-    score=min(95,55+min(abs(change_15m)*10,20)+min(abs(change_1h)*2,10)+volume_score)
-    return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":stop,"tp1":entry+sign*risk,"tp2":entry+sign*risk*2,"tp3":entry+sign*risk*3,"score":round(score,1),"timeframe":"15m","reason":"اتجاه 4 ساعات واليومي متوافق؛ تأكيد الدخول من شمعة 15 دقيقة مغلقة، والوقف والأهداف محسوبة على ATR.","status":"active","change_pct":item["change_pct"],"change_15m_pct":round(change_15m,4),"quote_volume":item["quote_volume"]}
-def expire_stale_trades(market=None):
+    sign=1 if bullish else -1
+    change_pct=(entry/closes[-2]-1)*100 if closes[-2] else 0.0
+    return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":stop,
+        "tp1":entry+sign*risk,"tp2":entry+sign*risk*2,"tp3":entry+sign*risk*3,
+        "score":0.0,"timeframe":timeframe,"reason":"تقاطع EMA 9/14 على شمعة مغلقة مع تموضع السعر فوق/تحت EMA 50؛ وقف الخسارة عند EMA 50 وأهداف 1R/2R/3R.",
+        "status":"active","change_pct":round(change_pct,6),"change_15m_pct":round(change_pct,6),
+        "quote_volume":item["quote_volume"]}
+def expire_stale_tradesdef expire_stale_trades(market=None):
     now=utcnow()
     query=Trade.query.filter(Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at<=now)
     if market:
@@ -399,47 +396,51 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc(),Trade.score.desc()).limit(10).all()
-                return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True,"scan_universe":None}
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
+                return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True}
         except (ValueError,TypeError):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
     universe=market_tickers(market)
     if not universe:
         raise RuntimeError("Market provider returned an empty eligible universe")
     update_trade_outcomes(market,universe)
-    movers=sorted(universe,key=lambda x:abs(x["change_pct"]),reverse=True)[:18]
-    found=[]; completed=0; failed=0
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        jobs=[pool.submit(build_signal,market,item) for item in movers]
-        for job in as_completed(jobs):
+    # Scan a broad, liquid candidate set independently on every requested timeframe.
+    candidates=sorted(universe,key=lambda x:x["quote_volume"],reverse=True)[:60]
+    jobs=[]
+    found=[]
+    completed=0
+    failed=0
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures=[pool.submit(build_signal,market,item,frame) for item in candidates for frame in TIMEFRAMES]
+        for future in as_completed(futures):
             try:
-                signal=job.result()
+                signal=future.result()
                 completed+=1
                 if signal:
                     found.append(signal)
             except Exception:
                 failed+=1
-                app.logger.exception("Signal analysis failed for %s",market)
-    minimum_success=max(1,math.ceil(len(movers)*0.8))
-    if completed<minimum_success:
-        raise RuntimeError(f"Insufficient candle data: {completed}/{len(movers)} analyses completed; scan timestamp was not advanced")
-    # Fastest verified 15m movers rank first; strength is the tie-breaker, not 24h noise.
-    found.sort(key=lambda x:(abs(x["change_15m_pct"]),x["score"],x["quote_volume"]),reverse=True)
-    for signal in found[:10]:
-        exists=Trade.query.filter(Trade.market==market,Trade.symbol==signal["symbol"],Trade.status.in_(OPEN_TRADE_STATUSES)).first()
-        if exists and aware(exists.created_at)>now-timedelta(minutes=15):
-            continue
-        if exists:
-            exists.status="superseded"
-        db.session.add(Trade(market=market,symbol=signal["symbol"],side=signal["side"],entry=signal["entry"],stop=signal["stop"],tp1=signal["tp1"],tp2=signal["tp2"],tp3=signal["tp3"],score=signal["score"],change_15m_pct=signal["change_15m_pct"],timeframe="15m",reason=signal["reason"],expires_at=now+timedelta(hours=24)))
+                app.logger.exception("Multi-timeframe signal analysis failed for %s",market)
+    if completed<max(1,math.ceil(len(futures)*0.8)):
+        raise RuntimeError(f"Insufficient candle data: {completed}/{len(futures)} analyses completed")
+    # Ranking is strictly by absolute price change inside each same timeframe.
+    for frame in TIMEFRAMES:
+        frame_signals=sorted((x for x in found if x["timeframe"]==frame),key=lambda x:abs(x["change_pct"]),reverse=True)
+        for signal in frame_signals[:10]:
+            exists=Trade.query.filter(Trade.market==market,Trade.symbol==signal["symbol"],Trade.timeframe==frame,Trade.status.in_(OPEN_TRADE_STATUSES)).first()
+            if exists and aware(exists.created_at)>now-timedelta(minutes=15):
+                continue
+            if exists:
+                exists.status="superseded"
+            db.session.add(Trade(market=market,symbol=signal["symbol"],side=signal["side"],entry=signal["entry"],stop=signal["stop"],tp1=signal["tp1"],tp2=signal["tp2"],tp3=signal["tp3"],score=0.0,change_15m_pct=signal["change_pct"],timeframe=frame,reason=signal["reason"],expires_at=now+timedelta(hours=24)))
     if not scan_row:
         scan_row=Setting(key=scan_key,value=iso(now)); db.session.add(scan_row)
     else:
         scan_row.value=iso(now)
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc(),Trade.score.desc()).limit(10).all()
-    return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(movers),"analysis_completed":completed,"analysis_failed":failed}
-@app.get("/api/markets/<market>/signals")
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
+    return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(candidates),"analysis_completed":completed,"analysis_failed":failed,"timeframes":list(TIMEFRAMES)}
+@app.get("/api/markets/<market>/signals")@app.get("/api/markets/<market>/signals")
 def signals(market):
     if market not in MARKETS:
         return json_error("السوق غير معروف",404)
@@ -447,12 +448,12 @@ def signals(market):
     if blocked:
         return blocked
     if market not in ("spot","futures"):
-        return jsonify({"ok":True,"market":market,"signals":[],"scan_ready":False,"message":"مصدر البيانات لهذا السوق غير مربوط أو غير معتمد بعد؛ لن نعرض صفقات تقديرية."})
+        return jsonify({"ok":True,"market":market,"signals":[],"scan_ready":False,"message":"مصدر البيانات لهذا السوق غير مربوط؛ لن نعرض صفقات تقديرية."})
     try:
         # Keep web requests fast: the scheduler owns scans; page loads only read the latest committed result.
         expire_stale_trades(market)
         row=db.session.get(Setting,"scan:"+market)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow()).order_by(func.abs(Trade.change_15m_pct).desc(),Trade.score.desc()).limit(10).all()
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow()).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
         updated=row.value if row else None
         stale=True
         if updated:
@@ -465,7 +466,7 @@ def signals(market):
         app.logger.exception("signal retrieval failed")
         return json_error("تعذر قراءة نتائج الفحص المحفوظة حالياً",503)
 def trade_json(t):
-    return {"id":t.id,"market":t.market,"symbol":t.symbol,"side":t.side,"entry":t.entry,"stop":t.stop,"tp1":t.tp1,"tp2":t.tp2,"tp3":t.tp3,"score":t.score,"change_15m_pct":t.change_15m_pct,"timeframe":t.timeframe,"reason":t.reason,"status":t.status,"result_pct":t.result_pct,"created_at":iso(t.created_at),"expires_at":iso(t.expires_at)}
+    return {"id":t.id,"market":t.market,"symbol":t.symbol,"side":t.side,"entry":t.entry,"stop":t.stop,"tp1":t.tp1,"tp2":t.tp2,"tp3":t.tp3,"score":t.score,"change_15m_pct":t.change_15m_pct,"change_pct":t.change_15m_pct,"timeframe":t.timeframe,"reason":t.reason,"status":t.status,"result_pct":t.result_pct,"created_at":iso(t.created_at),"expires_at":iso(t.expires_at)}
 @app.get("/api/trades")
 def trade_history():
     expire_stale_trades()
@@ -474,7 +475,7 @@ def trade_history():
 @app.get("/api/strategies")
 def strategies():
     if not section_enabled("strategies"): return json_error("قسم الاستراتيجيات متوقف",404)
-    return jsonify({"ok":True,"strategies":[{"id":"trend-momentum-v1","name":"اتجاه متعدد الأطر + زخم","markets":["spot","futures"],"frames":["15m","4h","1d"],"rules":["اتجاه 4 ساعات واليومي متوافق يحدد BUY أو SELL فقط","ترتيب الفرص حسب التغير الفعلي لشمعة 15 دقيقة المغلقة","تأكيد الدخول من زخم 15 دقيقة في اتجاه الإطارين الأعلى","وقف مبني على ATR وأهداف 1R/2R/3R"],"status":"active","note":"نسخة أولية قابلة للاختبار؛ لا يوجد ادعاء بنسبة نجاح قبل اختبار تاريخي مستقل."}]})
+    return jsonify({"ok":True,"strategies":[{"id":"ema-9-14-50-independent-v2","name":"تقاطع EMA 9/14/50","markets":["spot","futures"],"frames":list(TIMEFRAMES),"rules":["كل إطار زمني مستقل ولا يعتمد على تأكيد إطار آخر","شراء: السعر فوق EMA 50 مع تقاطع EMA 9 أعلى EMA 14","بيع: السعر تحت EMA 50 مع تقاطع EMA 9 أسفل EMA 14","وقف الخسارة عند EMA 50 وأهداف 1R/2R/3R","ترتيب الفرص حسب مقدار تغير السعر داخل الإطار نفسه"],"status":"active","note":"الإشارات مبنية على الشموع المغلقة؛ لا يوجد ضمان للربح."}]})
 @app.get("/api/content/<kind>")
 def content_list(kind):
     if kind not in ("blog","news"): return json_error("نوع المحتوى غير معروف",404)
