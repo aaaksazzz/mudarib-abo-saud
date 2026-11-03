@@ -11,7 +11,7 @@ from sqlalchemy import func
 app = Flask(__name__, static_folder=".", static_url_path="")
 app.config.update(
     SECRET_KEY=os.environ.get("SECRET_KEY") or secrets.token_hex(32),
-    SQLALCHEMY_DATABASE_URI=os.environ.get("DATABASE_URL", "sqlite:///smart_trading_pro.db").replace("postgres://", "postgresql://", 1),
+    SQLALCHEMY_DATABASE_URI=os.environ.get("DATABASE_URL", "sqlite:///smart_trading_pro.db").replace("postgres://", "postgresql+psycopg://", 1).replace("postgresql://", "postgresql+psycopg://", 1),
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
     SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "true").lower() == "true",
@@ -76,6 +76,7 @@ class Audit(db.Model):
 
 def utcnow(): return datetime.now(timezone.utc)
 def iso(dt): return dt.isoformat() if dt else None
+def aware(dt): return dt.replace(tzinfo=timezone.utc) if dt and dt.tzinfo is None else dt
 def json_error(message, code=400): return jsonify({"ok":False,"error":message}),code
 def csrf_token():
     if "csrf" not in session: session["csrf"]=secrets.token_urlsafe(32)
@@ -91,7 +92,14 @@ def login_required(fn):
     @wraps(fn)
     def inner(*a,**kw):
         if not g.user or not g.user.active: return json_error("تسجيل الدخول مطلوب",401)
-        if g.user.role!="admin" and g.user.subscription_until and g.user.subscription_until<=utcnow(): return json_error("انتهى الاشتراك",403)
+        if g.user.role!="admin" and (not g.user.subscription_until or aware(g.user.subscription_until)<=utcnow()): return json_error("يلزم اشتراك فعال للوصول إلى هذه الميزة",403)
+        return fn(*a,**kw)
+    return inner
+def subscriber_required(fn):
+    @wraps(fn)
+    def inner(*a,**kw):
+        if not g.user or not g.user.active: return json_error("تسجيل الدخول مطلوب",401)
+        if g.user.role!="admin" and (not g.user.subscription_until or aware(g.user.subscription_until)<=utcnow()): return json_error("يلزم اشتراك فعال للوصول إلى الصفقات",403)
         return fn(*a,**kw)
     return inner
 def admin_required(fn):
@@ -214,6 +222,7 @@ def build_signal(market,item):
     score=min(95,60+abs(momentum)*3+min(item["quote_volume"]/20_000_000,10))
     return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":stop,"tp1":entry+sign*risk,"tp2":entry+sign*risk*2,"tp3":entry+sign*risk*3,"score":round(score,1),"timeframe":"15m","reason":"اتجاه 4س واليومي متوافق، مع تأكيد EMA20/50 وزخم 15 دقيقة وحجم تداول.","status":"active","change_pct":item["change_pct"],"quote_volume":item["quote_volume"]}
 @app.get("/api/markets/<market>/signals")
+@subscriber_required
 def signals(market):
     if market not in MARKETS: return json_error("السوق غير معروف",404)
     blocked=gate_section(market)
@@ -248,7 +257,7 @@ def signals(market):
 def trade_json(t):
     return {"id":t.id,"market":t.market,"symbol":t.symbol,"side":t.side,"entry":t.entry,"stop":t.stop,"tp1":t.tp1,"tp2":t.tp2,"tp3":t.tp3,"score":t.score,"timeframe":t.timeframe,"reason":t.reason,"status":t.status,"created_at":iso(t.created_at),"expires_at":iso(t.expires_at)}
 @app.get("/api/trades")
-@login_required
+@subscriber_required
 def trade_history():
     q=Trade.query.order_by(Trade.created_at.desc()).limit(200)
     return jsonify({"ok":True,"trades":[trade_json(x) for x in q.all()]})
