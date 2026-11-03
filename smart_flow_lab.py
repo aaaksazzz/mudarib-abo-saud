@@ -135,26 +135,38 @@ def scan():
                     if x.get("status") == "TRADING" and x.get("contractType") == "PERPETUAL"
                     and x.get("quoteAsset") == "USDT"}
         tickers = api("/fapi/v1/ticker/24hr")
+        # Prioritize the fastest / most actively traded contracts first:
+        # high 24h turnover, then larger absolute 24h move. Continue down
+        # the ranked list in batches until 3 valid setups are found or all
+        # eligible contracts have been checked.
         universe = sorted(
             [x for x in tickers if x.get("symbol") in eligible and finite(x.get("quoteVolume")) >= 1_000_000],
-            key=lambda x: finite(x.get("quoteVolume")), reverse=True
+            key=lambda x: (finite(x.get("quoteVolume")), abs(finite(x.get("priceChangePercent")))),
+            reverse=True
         )
-        # Scan every eligible USDT perpetual contract, not only the top 90.
-        candidates = universe
+        batch_size = 36
         found = []
-        with ThreadPoolExecutor(max_workers=16) as pool:
-            futures = [pool.submit(analyze_symbol, item["symbol"]) for item in candidates]
-            for future in as_completed(futures):
-                item = future.result()
-                if item:
-                    found.append(item)
+        scanned_count = 0
+        for start in range(0, len(universe), batch_size):
+            batch = universe[start:start + batch_size]
+            with ThreadPoolExecutor(max_workers=12) as pool:
+                futures = [pool.submit(analyze_symbol, item["symbol"]) for item in batch]
+                for future in as_completed(futures):
+                    scanned_count += 1
+                    item = future.result()
+                    if item:
+                        found.append(item)
+            # Move to lighter-volume contracts only when fewer than 3 setups exist.
+            if len(found) >= 3:
+                break
         found.sort(key=lambda x: (x["score"], x["quote_volume"]), reverse=True)
         payload = {
             "ok": True, "source": "Binance USDⓈ-M public Futures API",
             "timeframe": "15m", "universe_count": len(universe),
-            "scanned_count": len(candidates), "signals": found[:3],
+            "scanned_count": scanned_count, "signals": found[:3],
+            "scan_batch_size": batch_size,
             "checked_at": int(time.time()), "cached_seconds": 45,
-            "note": "الفحص يغطي جميع العقود المؤهلة التي يتجاوز حجمها اليومي 1 مليون USDT؛ يشترط توافق سحب السيولة مع ضغط السوق أو دفتر الأوامر."
+            "note": "يبدأ الفحص بالعقود الأسرع والأعلى تداولاً، ثم ينتقل تدريجياً إلى العقود الأقل نشاطاً عند الحاجة حتى تظهر 3 فرص أو ينتهي السوق المؤهل. الحد الأدنى لحجم 24 ساعة: 1 مليون USDT."
         }
         with LOCK:
             CACHE.update({"at": time.time(), "payload": payload})
