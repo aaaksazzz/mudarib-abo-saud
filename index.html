@@ -35,7 +35,7 @@
         <button class="nav-item" data-page="news"><span class="nav-icon">◷</span><span data-i18n="news">الأخبار المهمة</span></button>
       </nav>
       <div class="sidebar-bottom">
-        <button class="nav-item" data-page="admin"><span class="nav-icon">⚙</span><span data-i18n="admin">لوحة الإدارة</span><span class="lock">ADMIN</span></button>
+        <button class="nav-item" id="adminNav" data-page="admin" hidden><span class="nav-icon">⚙</span><span data-i18n="admin">لوحة الإدارة</span><span class="lock">ADMIN</span></button>
         <div class="sidebar-foot"><span class="status-pip"></span><span data-i18n="systemReady">واجهة المنصة جاهزة</span></div>
       </div>
     </aside>
@@ -49,7 +49,7 @@
           <span class="market-clock"><i></i><span data-i18n="marketMonitor">مراقبة الأسواق</span></span>
           <button class="icon-btn" id="themeToggle" aria-label="تغيير الوضع">☼</button>
           <select id="languageSelect" class="language-select" aria-label="Language"><option value="ar">العربية</option><option value="en">English</option></select>
-          <button class="login-btn" id="loginBtn" data-i18n="login">دخول الحساب</button>
+          <span id="accountStatus" class="account-status">زائر</span><button class="login-btn" id="loginBtn" data-i18n="login">دخول / حساب جديد</button>
         </div>
       </header>
       <section class="page-content">
@@ -57,27 +57,13 @@
           <div><div class="eyebrow"><span class="eyebrow-line"></span><span data-i18n="intelligence">INTELLIGENCE TERMINAL</span></div><h1 id="pageTitle" data-i18n="overviewTitle">مركز الأسواق الذكي</h1><p id="pageSubtitle" data-i18n="overviewSubtitle">رؤية موحدة للأسواق والفرص — ببيانات واضحة وقرارات مبنية على التحليل.</p></div>
           <div class="date-chip"><span class="date-icon">◷</span><span id="todayLabel">—</span></div>
         </div>
-        <div class="notice-bar"><span class="notice-symbol">!</span><span data-i18n="noLiveData">مصادر البيانات ومحرك الصفقات قيد الإعداد — لن تظهر توصيات أو أسعار تجريبية على أنها بيانات حقيقية.</span><span class="notice-tag">BUILD 01</span></div>
-        <div class="section-head"><div><span class="section-kicker" data-i18n="snapshot">MARKET SNAPSHOT</span><h2 data-i18n="marketOverview">نظرة على الأسواق</h2></div><span class="muted-label" data-i18n="independentMarkets">أسواق مستقلة</span></div>
-        <div class="market-grid">
-          <article class="market-card"><div class="market-card-top"><span class="market-symbol crypto">₿</span><span class="market-type">CRYPTO · SPOT</span></div><h3>Binance Spot</h3><p data-i18n="spotDesc">العملات الرقمية — السوق الفوري</p><div class="market-card-bottom"><span class="empty-status" data-i18n="connecting">بانتظار ربط البيانات</span><span class="arrow">↙</span></div></article>
-          <article class="market-card"><div class="market-card-top"><span class="market-symbol futures">⌁</span><span class="market-type">CRYPTO · FUTURES</span></div><h3>Binance Futures</h3><p data-i18n="futuresDesc">العقود الآجلة وإدارة المخاطر</p><div class="market-card-bottom"><span class="empty-status" data-i18n="connecting">بانتظار ربط البيانات</span><span class="arrow">↙</span></div></article>
-          <article class="market-card"><div class="market-card-top"><span class="market-symbol alpha">✳</span><span class="market-type">BINANCE · ALPHA</span></div><h3>Binance Alpha</h3><p data-i18n="alphaDesc">الأصول الناشئة ومتابعة السيولة</p><div class="market-card-bottom"><span class="empty-status" data-i18n="connecting">بانتظار ربط البيانات</span><span class="arrow">↙</span></div></article>
-          <article class="market-card"><div class="market-card-top"><span class="market-symbol stocks">▥</span><span class="market-type">UNITED STATES</span></div><h3 data-i18n="usStocks">الأسهم الأمريكية</h3><p data-i18n="stocksDesc">الأسهم المدرجة ومراقبة الحركة</p><div class="market-card-bottom"><span class="empty-status" data-i18n="connecting">بانتظار ربط البيانات</span><span class="arrow">↙</span></div></article>
-          <article class="market-card"><div class="market-card-top"><span class="market-symbol contracts">⌗</span><span class="market-type">US · CONTRACTS</span></div><h3 data-i18n="usContracts">العقود الأمريكية</h3><p data-i18n="contractsDesc">متابعة العقود وأدوات السوق</p><div class="market-card-bottom"><span class="empty-status" data-i18n="connecting">بانتظار ربط البيانات</span><span class="arrow">↙</span></div></article>
-          <article class="market-card"><div class="market-card-top"><span class="market-symbol saudi">◉</span><span class="market-type">TADAWUL · TASI</span></div><h3 data-i18n="saudi">السوق السعودي</h3><p data-i18n="saudiDesc">شركات تداول السعودية</p><div class="market-card-bottom"><span class="empty-status" data-i18n="connecting">بانتظار ربط البيانات</span><span class="arrow">↙</span></div></article>
-          <article class="market-card"><div class="market-card-top"><span class="market-symbol forex">⇄</span><span class="market-type">FX · COMMODITIES</span></div><h3 data-i18n="forex">الفوركس والذهب</h3><p data-i18n="forexDesc">أزواج العملات والمعادن</p><div class="market-card-bottom"><span class="empty-status" data-i18n="connecting">بانتظار ربط البيانات</span><span class="arrow">↙</span></div></article>
-        </div>
-        <div class="lower-grid">
-          <section class="panel signal-panel"><div class="panel-head"><div><span class="section-kicker" data-i18n="signalEngine">SIGNAL ENGINE</span><h2 data-i18n="latestSignals">أحدث الصفقات</h2></div><span class="count-pill">0 <span data-i18n="active">نشطة</span></span></div><div class="empty-state"><div class="empty-orbit">⌁</div><b data-i18n="noSignals">لا توجد صفقات نشطة حالياً</b><p data-i18n="signalsExplain">ستظهر هنا الصفقات بعد ربط مصادر الأسعار والتحقق من شروط الاستراتيجية.</p></div></section>
-          <section class="panel status-panel"><div class="panel-head"><div><span class="section-kicker" data-i18n="platformStatus">PLATFORM STATUS</span><h2 data-i18n="systemComponents">مكونات المنصة</h2></div></div><div class="status-list"><div><span data-i18n="marketFeeds">مصادر بيانات الأسواق</span><b class="status-pending" data-i18n="pending">قيد الربط</b></div><div><span data-i18n="analysisEngine">محرك التحليل</span><b class="status-pending" data-i18n="pending">قيد الربط</b></div><div><span data-i18n="accounts">الحسابات والاشتراكات</span><b class="status-pending" data-i18n="pending">قيد الربط</b></div><div><span data-i18n="adminControls">صلاحيات الإدارة</span><b class="status-pending" data-i18n="pending">قيد الربط</b></div></div></section>
-        </div>
-        <footer class="footer"><span>SMART TRADING PRO</span><span data-i18n="footerNote">منصة تحليل ومتابعة الأسواق — المعلومات ليست ضماناً للربح.</span></footer>
+        <div id="dynamicContent"><div class="loading-state">جارٍ تحميل المنصة...</div></div>
       </section>
     </main>
   </div>
   <div class="mobile-scrim" id="scrim"></div>
   <div class="toast" id="toast" role="status"></div>
-  <script src="app.js"></script>
+  <div class="auth-modal" id="authModal" hidden><div class="auth-card"><button class="auth-close" id="authClose" aria-label="إغلاق">×</button><span class="section-kicker">SECURE ACCOUNT</span><h2>حساب SMART TRADING PRO</h2><p>أنشئ حسابك أو سجّل الدخول للوصول إلى الخدمات.</p><input id="authEmail" type="email" autocomplete="email" placeholder="البريد الإلكتروني"><input id="authPassword" type="password" autocomplete="current-password" placeholder="كلمة المرور — 12 خانة على الأقل"><button class="login-btn" id="authSubmit" data-mode="login">تسجيل الدخول</button><button class="auth-switch" id="authMode">مستخدم جديد؟ إنشاء حساب</button><small>استخدم كلمة مرور قوية وفريدة. لا تشارك بيانات الدخول.</small></div></div>
+  <script src="platform.js"></script>
 </body>
 </html>
