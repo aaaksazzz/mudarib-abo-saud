@@ -306,7 +306,7 @@ function configurePage(){
  document.body.classList.toggle("market-page",!!marketMatch);
  const timeframeSwitcher=$("#marketTimeframeSwitcher");if(timeframeSwitcher)timeframeSwitcher.hidden=true;
  const adminAllowed=!$("#adminPanel").hidden;$("#adminPanel").hidden=true;
- const ids=["homeSection","homeOverview","marketSection","directionSection","opportunitiesSection","cards","openSection","blogSection","newsSection","scanConfigSection","moversSection","historySection","tradeHistorySection"];
+ const ids=["homeSection","homeOverview","marketSection","directionSection","opportunitiesSection","cards","openSection","blogSection","newsSection","scanConfigSection","moversSection","historySection","tradeHistorySection","gammaSection","resultsSection","adminPanel"];
  const hideAll=()=>ids.forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
  const show=(...names)=>names.forEach(id=>{const el=$("#"+id);if(el)el.hidden=false});
  if(PATH==="/"){
@@ -315,9 +315,8 @@ function configurePage(){
   $("#homeSection p").textContent=tr("marketPageDescription");
  }else if(marketMatch){
   if(!MARKET_NAMES[market]){location.replace("/");return}
-  hideAll();show("homeSection","directionSection","opportunitiesSection","cards");
-  $("#homeSection h1").innerHTML='<span>'+safe(marketName(market))+'</span>';
-  $("#homeSection p").textContent="اتجاه السوق والصفقات فقط.";
+  hideAll();show("directionSection","opportunitiesSection","cards");
+  document.querySelectorAll(".footer,.disclaimer,.editorial-section,.home-overview,.market-switcher,.tracker-panel,.admin-panel").forEach(el=>el.hidden=true);
  }else if(PATH.startsWith("/sections/")){
   const section=PATH.split("/").pop();
   const map={direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["opportunitiesSection","cards"]};
