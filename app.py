@@ -1410,7 +1410,7 @@ def market(kind):
         fast_movers = assets[:10]
         prices = {row["symbol"]: row["price"] for row in assets}
         update_open_trades(kind, prices)
-        # Scan exactly one round-robin batch of up to 20 assets per market/timeframe.
+        # Scan a bounded batch each cycle; rescan the fastest 8 assets and rotate 8 others.
         # The cursor is stored in SQLite so a restart does not restart from asset zero.
         cursor_key = (kind, timeframe)
         with SCAN_CURSOR_LOCK:
@@ -1418,7 +1418,7 @@ def market(kind):
                 SCAN_CURSORS[cursor_key] = load_market_scan_cursor(kind, timeframe)
             scan_offset = SCAN_CURSORS[cursor_key]
             candidates, next_scan_offset, scan_offset, priority_candidates = select_priority_scan_batch(
-                assets, scan_offset, batch_size=8, priority_size=4
+                assets, scan_offset, batch_size=16, priority_size=8
             )
         signals = []
         diagnostic_rows = [{} for _ in candidates]
@@ -1473,40 +1473,10 @@ def market(kind):
                 if trade["current_price"] is not None and trade["entry"] else None
             )
 
-        # Keep confirmed opportunities visible across refreshes. A signal is
-        # inserted only once per completed candle; returning only newly inserted
-        # rows made its card disappear on the next refresh even while OPEN.
-        display_by_key = {
-            (row["symbol"], row["timeframe"]): dict(row)
-            for row in signals
-        }
-        ticker_by_symbol = {row["symbol"]: row for row in assets}
-        for trade in active:
-            if trade["timeframe"] != timeframe:
-                continue
-            # Keep opposite-side legacy positions in the tracker, but do not
-            # surface them as current opportunities against today's market bias.
-            if direction not in ("BUY", "SELL") or trade.get("side") != direction:
-                continue
-            key = (trade["symbol"], trade["timeframe"])
-            if key in display_by_key:
-                continue
-            quote = ticker_by_symbol.get(trade["symbol"], {})
-            entry = float(trade["entry"] or 0)
-            stop = float(trade["stop_loss"] or 0)
-            display_by_key[key] = {
-                **trade,
-                "price": trade.get("current_price"),
-                "risk_percent": round(abs(entry - stop) / entry * 100, 3) if entry > 0 else None,
-                "quality_score": None,
-                "signal_state_ar": "صفقة مؤكدة محفوظة ومفتوحة",
-                "fast_mover_score": quote.get("fast_mover_score", 0),
-                "change24h": quote.get("change24h", 0),
-                "change_timeframe": 0,
-                "institutional_flow": {"status": "unavailable"},
-                "persisted": True,
-            }
-        signals = list(display_by_key.values())[:3]
+        # Opportunity cards contain only trades confirmed and saved by this
+        # scan on a newly completed 15m candle. Older OPEN positions remain in
+        # the separate tracker and must never be relabelled as fresh signals.
+        signals = [dict(row) for row in signals[:3]]
         response_payload = {
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": timeframe,
@@ -1551,23 +1521,27 @@ def market(kind):
             previous_scan = load_market_scan_snapshot(kind, timeframe)
             if previous_scan:
                 payload = dict(previous_scan["payload"])
+                # A provider outage must not present yesterday's cached entries
+                # as fresh opportunities. The separate open-trade tracker is
+                # retained, but fresh-signal cards are cleared until a new scan.
+                payload["signals"] = []
                 payload.update({
                     "snapshot_stale": True, "scan_cached": True,
                     "scan_updated_at": previous_scan["updated_at"],
-                    "message": "تعذر تحديث المصدر؛ نعرض آخر نتائج الفحص المحفوظة."
+                    "message": "تعذر تحديث المصدر؛ أخفينا الفرص القديمة ونحتفظ بمتابعة الصفقات المفتوحة."
                 })
                 return jsonify(payload)
             snapshot = load_market_snapshot(kind)
             if snapshot:
-                saved_signals, saved_open = load_saved_market_trades(kind, timeframe)
-                # Restore all saved trades during provider outages; 24h breadth
-                # is not a valid filter for per-asset 4h + daily trade setups.
+                _, saved_open = load_saved_market_trades(kind, timeframe)
+                # Keep saved positions in the tracker, never in fresh-signal cards
+                # when the live provider is unavailable.
                 return jsonify({
                     "ok": True, "market": kind, "direction": snapshot["direction"],
                     "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[snapshot["direction"]],
                     "up": snapshot["up"], "down": snapshot["down"], "flat": snapshot["flat"],
                     "total": snapshot["total"], "timeframe": timeframe,
-                    "signals": saved_signals, "open_trades": saved_open,
+                    "signals": [], "open_trades": saved_open,
                     "movers": [], "fast_movers": [],
                     "scan_diagnostics": {"universe_size": snapshot["total"], "candidates_scanned": 0, "rejected_by_reason": {}},
                     "updated": snapshot["updated_at"], "snapshot_stale": True,
