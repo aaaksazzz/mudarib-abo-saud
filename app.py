@@ -485,7 +485,8 @@ def signals(market):
         app.logger.exception("signal retrieval failed")
         return json_error("تعذر قراءة نتائج الفحص المحفوظة حالياً",503)
 def trade_json(t):
-    return {"id":t.id,"market":t.market,"symbol":t.symbol,"side":t.side,"entry":t.entry,"stop":t.stop,"tp1":t.tp1,"tp2":t.tp2,"tp3":t.tp3,"score":t.score,"change_15m_pct":t.change_15m_pct,"change_pct":t.change_15m_pct,"timeframe":t.timeframe,"reason":t.reason,"status":t.status,"result_pct":t.result_pct,"created_at":iso(t.created_at),"expires_at":iso(t.expires_at)}
+    # Public trade payload contains execution levels and status only; never disclose strategy rationale.
+    return {"id":t.id,"market":t.market,"symbol":t.symbol,"side":t.side,"entry":t.entry,"stop":t.stop,"tp1":t.tp1,"tp2":t.tp2,"tp3":t.tp3,"score":t.score,"change_15m_pct":t.change_15m_pct,"change_pct":t.change_15m_pct,"timeframe":t.timeframe,"status":t.status,"result_pct":t.result_pct,"created_at":iso(t.created_at),"expires_at":iso(t.expires_at)}
 @app.get("/api/trades")
 def trade_history():
     expire_stale_trades()
@@ -493,8 +494,8 @@ def trade_history():
     return jsonify({"ok":True,"trades":[trade_json(x) for x in q.all()]})
 @app.get("/api/strategies")
 def strategies():
-    if not section_enabled("strategies"): return json_error("قسم الاستراتيجيات متوقف",404)
-    return jsonify({"ok":True,"strategies":[{"id":"ema-9-14-50-independent-v2","name":"تقاطع EMA 9/14/50","markets":["spot","futures"],"frames":list(TIMEFRAMES),"rules":["كل إطار زمني مستقل ولا يعتمد على تأكيد إطار آخر","شراء: السعر فوق EMA 50 مع تقاطع EMA 9 أعلى EMA 14","بيع: السعر تحت EMA 50 مع تقاطع EMA 9 أسفل EMA 14","وقف الشراء عند آخر قاع مؤكد ووقف البيع عند آخر قمة مؤكدة؛ الهدف 2R (ضعف مسافة الوقف)","ترتيب الفرص حسب مقدار تغير السعر داخل الإطار نفسه"],"status":"active","note":"الإشارات مبنية على الشموع المغلقة؛ لا يوجد ضمان للربح."}]})
+    # Strategy documentation is private operational logic, not a customer-facing endpoint.
+    return json_error("غير متاح",404)
 @app.get("/api/content/<kind>")
 def content_list(kind):
     if kind not in ("blog","news"): return json_error("نوع المحتوى غير معروف",404)
@@ -642,8 +643,6 @@ with app.app_context():
             connection.execute(text(f"ALTER TABLE {Trade.__tablename__} ADD COLUMN change_15m_pct FLOAT"))
     provision_admin_from_env()
 
-from smart_flow_lab import register_smart_flow_lab
-register_smart_flow_lab(app)
 
 def scheduled_market_scan():
     with app.app_context():
