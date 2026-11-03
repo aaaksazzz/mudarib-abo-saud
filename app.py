@@ -28,6 +28,7 @@ SECTION_DEFAULTS={k:True for k in ("overview",)+MARKETS+("strategies","journal",
 BINANCE_SPOT="https://api.binance.com"
 BINANCE_FUTURES="https://fapi.binance.com"
 STABLES={"USDT","USDC","BUSD","FDUSD","TUSD","USDP","DAI","USDE","USDS","USTC"}
+OPEN_TRADE_STATUSES=("active","tp1_hit","tp2_hit")
 
 class User(db.Model):
     id=db.Column(db.Integer, primary_key=True)
@@ -288,11 +289,40 @@ def build_signal(market,item):
     return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":stop,"tp1":entry+sign*risk,"tp2":entry+sign*risk*2,"tp3":entry+sign*risk*3,"score":round(score,1),"timeframe":"15m","reason":"اتجاه 4 ساعات واليومي متوافق؛ تأكيد الدخول من شمعة 15 دقيقة مغلقة، والوقف والأهداف محسوبة على ATR.","status":"active","change_pct":item["change_pct"],"change_15m_pct":round(change_15m,4),"quote_volume":item["quote_volume"]}
 def expire_stale_trades(market=None):
     now=utcnow()
-    query=Trade.query.filter(Trade.status=="active",Trade.expires_at<=now)
+    query=Trade.query.filter(Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at<=now)
     if market:
         query=query.filter(Trade.market==market)
     changed=query.update({"status":"expired"},synchronize_session=False)
     if changed:
+        db.session.commit()
+    return changed
+
+def update_trade_outcomes(market,tickers):
+    prices={item["symbol"]:float(item["price"]) for item in tickers if item.get("symbol") and float(item.get("price") or 0)>0}
+    trades=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES)).all()
+    changed=0
+    for trade in trades:
+        price=prices.get(trade.symbol)
+        if price is None or trade.entry<=0:
+            continue
+        direction=1 if trade.side=="BUY" else -1
+        trade.result_pct=round((price/trade.entry-1)*direction*100,4)
+        stop_hit=price<=trade.stop if trade.side=="BUY" else price>=trade.stop
+        tp1_hit=price>=trade.tp1 if trade.side=="BUY" else price<=trade.tp1
+        tp2_hit=price>=trade.tp2 if trade.side=="BUY" else price<=trade.tp2
+        tp3_hit=price>=trade.tp3 if trade.side=="BUY" else price<=trade.tp3
+        previous=trade.status
+        if stop_hit:
+            trade.status="stopped_after_tp2" if previous=="tp2_hit" else "stopped_after_tp1" if previous=="tp1_hit" else "stopped"
+        elif tp3_hit:
+            trade.status="tp3_hit"
+        elif tp2_hit:
+            trade.status="tp2_hit"
+        elif tp1_hit and previous=="active":
+            trade.status="tp1_hit"
+        if trade.status!=previous:
+            changed+=1
+    if trades:
         db.session.commit()
     return changed
 
@@ -307,13 +337,14 @@ def run_market_scan(market):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
-                active=Trade.query.filter_by(market=market,status="active").filter(Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc(),Trade.score.desc()).limit(10).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc(),Trade.score.desc()).limit(10).all()
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True,"scan_universe":None}
         except (ValueError,TypeError):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
     movers=sorted(market_tickers(market),key=lambda x:abs(x["change_pct"]),reverse=True)[:18]
     if not movers:
         raise RuntimeError("Market provider returned an empty eligible universe")
+    update_trade_outcomes(market,movers)
     found=[]; completed=0; failed=0
     with ThreadPoolExecutor(max_workers=4) as pool:
         jobs=[pool.submit(build_signal,market,item) for item in movers]
@@ -331,7 +362,7 @@ def run_market_scan(market):
     # Fastest verified 15m movers rank first; strength is the tie-breaker, not 24h noise.
     found.sort(key=lambda x:(abs(x["change_15m_pct"]),x["score"],x["quote_volume"]),reverse=True)
     for signal in found[:10]:
-        exists=Trade.query.filter_by(market=market,symbol=signal["symbol"],status="active").first()
+        exists=Trade.query.filter(Trade.market==market,Trade.symbol==signal["symbol"],Trade.status.in_(OPEN_TRADE_STATUSES)).first()
         if exists and aware(exists.created_at)>now-timedelta(minutes=15):
             continue
         if exists:
@@ -342,7 +373,7 @@ def run_market_scan(market):
     else:
         scan_row.value=iso(now)
     db.session.commit()
-    active=Trade.query.filter_by(market=market,status="active").filter(Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc(),Trade.score.desc()).limit(10).all()
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc(),Trade.score.desc()).limit(10).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(movers),"analysis_completed":completed,"analysis_failed":failed}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
@@ -357,7 +388,7 @@ def signals(market):
         # Keep web requests fast: the scheduler owns scans; page loads only read the latest committed result.
         expire_stale_trades(market)
         row=db.session.get(Setting,"scan:"+market)
-        active=Trade.query.filter_by(market=market,status="active").filter(Trade.expires_at>utcnow()).order_by(func.abs(Trade.change_15m_pct).desc(),Trade.score.desc()).limit(10).all()
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow()).order_by(func.abs(Trade.change_15m_pct).desc(),Trade.score.desc()).limit(10).all()
         updated=row.value if row else None
         stale=True
         if updated:
@@ -403,7 +434,7 @@ def admin_bootstrap():
 @login_required
 @admin_required
 def admin_overview():
-    return jsonify({"ok":True,"users":User.query.count(),"active_trades":Trade.query.filter_by(status="active").count(),"articles":Article.query.count(),"sections":{k:section_enabled(k) for k in SECTION_DEFAULTS},"recent_audit":[{"action":x.action,"target":x.target,"at":iso(x.created_at)} for x in Audit.query.order_by(Audit.created_at.desc()).limit(30).all()]})
+    return jsonify({"ok":True,"users":User.query.count(),"active_trades":Trade.query.filter(Trade.status.in_(OPEN_TRADE_STATUSES)).count(),"articles":Article.query.count(),"sections":{k:section_enabled(k) for k in SECTION_DEFAULTS},"recent_audit":[{"action":x.action,"target":x.target,"at":iso(x.created_at)} for x in Audit.query.order_by(Audit.created_at.desc()).limit(30).all()]})
 @app.get("/api/admin/users")
 @login_required
 @admin_required
