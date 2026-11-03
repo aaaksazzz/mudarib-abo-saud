@@ -192,8 +192,11 @@ def register():
 @app.post("/api/auth/login")
 @limiter.limit("5 per minute")
 def login():
-    data=request.get_json(silent=True) or {}; email=str(data.get("email","")).strip().lower(); password=str(data.get("password",""))
-    u=User.query.filter_by(email=email).first()
+    data=request.get_json(silent=True) or {}; login_id=str(data.get("email",data.get("username",""))).strip().lower(); password=str(data.get("password",""))
+    u=User.query.filter_by(email=login_id).first()
+    admin_username=os.environ.get("ADMIN_USERNAME","").strip().lower()
+    if not u and admin_username and hmac.compare_digest(login_id,admin_username):
+        u=User.query.filter_by(role="admin").first()
     if not u or not check_password_hash(u.password_hash,password) or not u.active: return json_error("بيانات الدخول غير صحيحة",401)
     session.clear(); session["uid"]=u.id; session.permanent=True; csrf_token()
     return jsonify({"ok":True,"user":user_json(u),"csrf":session["csrf"]})
