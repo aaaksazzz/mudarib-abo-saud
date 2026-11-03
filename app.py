@@ -494,7 +494,7 @@ def trade_history():
 @app.get("/api/strategies")
 def strategies():
     if not section_enabled("strategies"): return json_error("قسم الاستراتيجيات متوقف",404)
-    return jsonify({"ok":True,"strategies":[{"id":"ema-9-14-50-independent-v2","name":"تقاطع EMA 9/14/50","markets":["spot","futures"],"frames":list(TIMEFRAMES),"rules":["كل إطار زمني مستقل ولا يعتمد على تأكيد إطار آخر","شراء: السعر فوق EMA 50 مع تقاطع EMA 9 أعلى EMA 14","بيع: السعر تحت EMA 50 مع تقاطع EMA 9 أسفل EMA 14","وقف الشراء عند آخر قاع مؤكد ووقف البيع عند آخر قمة مؤكدة؛ الهدف 2R (ضعف مسافة الوقف))".replace("))",""),"ترتيب الفرص حسب مقدار تغير السعر داخل الإطار نفسه"],"status":"active","note":"الإشارات مبنية على الشموع المغلقة؛ لا يوجد ضمان للربح."}]})
+    return jsonify({"ok":True,"strategies":[{"id":"ema-9-14-50-independent-v2","name":"تقاطع EMA 9/14/50","markets":["spot","futures"],"frames":list(TIMEFRAMES),"rules":["كل إطار زمني مستقل ولا يعتمد على تأكيد إطار آخر","شراء: السعر فوق EMA 50 مع تقاطع EMA 9 أعلى EMA 14","بيع: السعر تحت EMA 50 مع تقاطع EMA 9 أسفل EMA 14","وقف الشراء عند آخر قاع مؤكد ووقف البيع عند آخر قمة مؤكدة؛ الهدف 2R (ضعف مسافة الوقف)","ترتيب الفرص حسب مقدار تغير السعر داخل الإطار نفسه"],"status":"active","note":"الإشارات مبنية على الشموع المغلقة؛ لا يوجد ضمان للربح."}]})
 @app.get("/api/content/<kind>")
 def content_list(kind):
     if kind not in ("blog","news"): return json_error("نوع المحتوى غير معروف",404)
