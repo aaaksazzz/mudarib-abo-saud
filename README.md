@@ -35,3 +35,11 @@ Production-oriented market intelligence terminal.
 
 ## Validation
 GitHub Actions runs JavaScript syntax validation, dependency installation, Python compilation, backend regression tests, and route/static-asset smoke checks.
+
+## Membership and manual payments
+- Public pricing: USD 30 monthly, USD 171 for six months (5% off), USD 324 yearly (10% off).
+- The public plans page shows the configured USDT TRC20, Solana and Binance account payment details.
+- Payments are currently manual: a transfer does not automatically activate a subscription. An administrator verifies the transfer and grants access from the admin panel.
+- Lifetime access is represented explicitly by `subscription_plan=lifetime` with no expiry date.
+- Configure the administrator's email and a new unique password through Northflank secrets (`ADMIN_EMAIL`, `ADMIN_PASSWORD`); optionally set `ADMIN_USERNAME` for username login. Do not reuse a password posted in chat.
+- The admin panel can save the official HTTPS contact link; the verified-style contact icon appears only after a destination is configured.
