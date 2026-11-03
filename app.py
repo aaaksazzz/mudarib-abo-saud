@@ -1022,7 +1022,6 @@ def admin_payment_action():
     return jsonify({"ok":True})
 
 @app.get("/api/access/sections")
-@require_paid_access
 def access_sections():
     with db() as c: rows=c.execute("SELECT section,enabled FROM section_settings").fetchall()
     return jsonify({"sections":{x["section"]:bool(x["enabled"]) for x in rows}})
@@ -1196,10 +1195,7 @@ def editorial_page():
     return send_from_directory("static", "index.html")
 
 @app.get("/api/news")
-@require_paid_access
 def latest_news():
-    if current_user()["role"]!="admin" and not section_enabled("news"):
-        return jsonify({"ok":False,"error":"section_locked","message":"قسم الأخبار مغلق من الإدارة."}),403
 
     def load_news():
         url = "https://news.google.com/rss/search?q=markets+crypto+stocks+forex&hl=ar&gl=SA&ceid=SA:ar"
@@ -1589,7 +1585,6 @@ def market(kind):
 
 @app.get("/api/analysis/method")
 @app.get("/api/gamma/crypto")
-@require_paid_access
 def crypto_gamma():
     """No-key local OHLCV analysis method; the legacy route remains compatible."""
     return jsonify({
@@ -1603,10 +1598,7 @@ def crypto_gamma():
     })
 
 @app.get("/api/trades")
-@require_paid_access
 def trades():
-    if current_user()["role"]!="admin" and not section_enabled("history"):
-        return jsonify({"ok":False,"error":"section_locked","message":"سجل الصفقات مغلق من الإدارة."}),403
     market_id = request.args.get("market", "")
     with db() as connection:
         if market_id:
