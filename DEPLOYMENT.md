@@ -1,24 +1,28 @@
 # Production deployment checklist
 
-## Northflank service
-1. Build using the repository Dockerfile.
+## Northflank
+1. Keep the Buildpack runtime pinned by the root `.python-version` file (Python 3.12); the root `Procfile` defines the web process.
 2. Expose HTTP port **8080**.
-3. Set a persistent PostgreSQL database and mount/configure its connection as `DATABASE_URL`.
-4. Set `SECRET_KEY` to a long random value and keep it stable between deploys.
-5. Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` before the first start. The first administrator is created only when no admin exists. Use a unique password of at least 14 characters.
-6. Keep `COOKIE_SECURE=true` when serving over HTTPS.
-7. Keep `ENABLE_AUTO_SCAN=true` for the 15-minute Spot/Futures scanner.
-8. Never paste secrets into GitHub, source files, screenshots, or chat.
+3. Configure a persistent PostgreSQL database and set `DATABASE_URL`. Do not rely on ephemeral SQLite for production accounts or trades.
+4. Set a persistent random `SECRET_KEY`; changing it on every restart invalidates user sessions.
+5. Set `COOKIE_SECURE=true` when serving over HTTPS.
+6. Set `ENABLE_AUTO_SCAN=true` to run the in-process 15-minute scanner.
+7. Keep exactly one Gunicorn worker while APScheduler is in the web process. More workers create duplicate schedulers and duplicate market scans.
+8. Configure first-admin variables only through deployment secrets. Never paste credentials into GitHub, screenshots or chat.
 
-## Current integrations
-- Binance Spot and Binance USDT-M perpetual Futures use public market endpoints; no Binance account key is needed for public market data.
-- Alpha, US equities, US contracts, Tadawul, Forex and Gold are not live integrations in this milestone. Provider keys alone do not activate them; their adapters and symbol universes must be implemented and verified first.
-- No payment processor, email delivery, verification or password-reset provider is configured. Subscription grants are manual through the admin console.
-- The background scan runs in the single Gunicorn worker configured in Docker. Do not increase worker count unless the scanner is moved to a separate scheduled worker with a distributed lock.
+## Current market adapters
+- Binance Spot and Binance USDT-M perpetual Futures use public market endpoints; Binance account API keys are not required for these public feeds.
+- The scan strategy requires 4-hour and daily trend agreement, then confirms and ranks entries using closed 15-minute candles.
+- Market-page requests read cached database results and do not perform long-running scans.
+- Binance Alpha, US equities, US contracts, Tadawul, Forex and Gold remain unavailable until complete adapters and symbol universes are implemented and validated. Provider credentials alone are not sufficient.
 
-## Smoke checks
-- `GET /health` should return HTTP 200.
-- `GET /api/bootstrap` should return the CSRF token and current account state.
-- Register a test user, verify that signals/trade history are denied without an active subscription, then grant a short test subscription from the admin console.
-- Verify that the admin can switch sections off and on.
-- Confirm database persistence by restarting the service and checking that accounts and settings remain.
+## Health checks
+- `GET /health`: process liveness.
+- `GET /ready`: database connectivity and actual scheduler-running state. A 503 response means the service is not ready to serve production market data.
+- GitHub Actions runs regression tests and smoke checks on each pull request.
+
+## Operational safeguards
+- Active trades expire after 24 hours.
+- Scan failures are logged and do not advance the successful-scan timestamp.
+- Do not advertise win rates or AI probabilities without a reproducible, fee-aware out-of-sample backtest.
+- Rotate all user-defined credentials after a security incident, including deployment secrets and credentials at their issuing providers.

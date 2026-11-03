@@ -1,12 +1,12 @@
 import os, re, secrets, hashlib, hmac, time, json, math
 from datetime import datetime, timedelta, timezone
-from functools import wraps
+from functools import wraps, lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import func
+from sqlalchemy import func, text, inspect
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -28,6 +28,7 @@ SECTION_DEFAULTS={k:True for k in ("overview",)+MARKETS+("strategies","journal",
 BINANCE_SPOT="https://api.binance.com"
 BINANCE_FUTURES="https://fapi.binance.com"
 STABLES={"USDT","USDC","BUSD","FDUSD","TUSD","USDP","DAI","USDE","USDS","USTC"}
+OPEN_TRADE_STATUSES=("active","tp1_hit","tp2_hit")
 
 class User(db.Model):
     id=db.Column(db.Integer, primary_key=True)
@@ -60,6 +61,7 @@ class Trade(db.Model):
     created_at=db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
     expires_at=db.Column(db.DateTime, nullable=False)
     result_pct=db.Column(db.Float)
+    change_15m_pct=db.Column(db.Float)
 
 class Article(db.Model):
     id=db.Column(db.Integer, primary_key=True)
@@ -141,7 +143,23 @@ def platform_script(): return send_from_directory(".", "platform.js")
 @app.get("/pro-theme.css")
 def pro_theme(): return send_from_directory(".", "pro-theme.css")
 @app.get("/health")
-def health(): return jsonify({"ok":True,"service":"SMART TRADING PRO","time":iso(utcnow())})
+def health():
+    return jsonify({"ok":True,"service":"SMART TRADING PRO","time":iso(utcnow())})
+
+@app.get("/ready")
+def readiness():
+    checks={"database":False,"persistent_database":False,"market_scheduler":False}
+    try:
+        db.session.execute(text("SELECT 1"))
+        checks["database"]=True
+        checks["persistent_database"]=db.engine.dialect.name=="postgresql"
+    except Exception:
+        db.session.rollback()
+        app.logger.exception("readiness database check failed")
+    active_scheduler=globals().get("scheduler")
+    checks["market_scheduler"]=bool(active_scheduler and active_scheduler.running)
+    ready=all(checks.values())
+    return jsonify({"ok":ready,"checks":checks,"time":iso(utcnow())}),200 if ready else 503
 @app.get("/api/bootstrap")
 def bootstrap():
     return jsonify({"ok":True,"csrf":csrf_token(),"user":user_json(g.user) if g.user else None,"sections":{k:section_enabled(k) for k in SECTION_DEFAULTS},"markets":MARKETS})
@@ -180,18 +198,41 @@ def provider_status(m):
         return {"ready":False,"configured":bool(os.environ.get(key)),"source":key,"message":"الموصل البرمجي لهذا المزود لم يكتمل بعد"}
     return {"ready":False,"source":"Alpha universe adapter not configured"}
 def fetch_json(url,params=None):
-    r=requests.get(url,params=params,timeout=12,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
-    r.raise_for_status(); return r.json()
-def market_tickers(market):
+    last_error=None
+    for attempt in range(3):
+        try:
+            response=requests.get(url,params=params,timeout=(3.05,8),headers={"User-Agent":"SMART-TRADING-PRO/1.1"})
+            if response.status_code==429 or response.status_code>=500:
+                response.raise_for_status()
+            response.raise_for_status()
+            payload=response.json()
+            if not isinstance(payload,(dict,list)):
+                raise ValueError("Unexpected market-data response")
+            return payload
+        except (requests.Timeout,requests.ConnectionError,requests.HTTPError,ValueError) as exc:
+            last_error=exc
+            status=getattr(getattr(exc,"response",None),"status_code",None)
+            if attempt==2 or (status is not None and status<500 and status!=429):
+                raise
+            time.sleep(0.25*(attempt+1))
+    raise last_error
+@lru_cache(maxsize=2)
+def market_symbols(market):
     if market=="spot":
         info=fetch_json(BINANCE_SPOT+"/api/v3/exchangeInfo")
-        tickers=fetch_json(BINANCE_SPOT+"/api/v3/ticker/24hr")
-        valid={x["symbol"] for x in info.get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("isSpotTradingAllowed",True) and x.get("baseAsset") not in STABLES}
-    elif market=="futures":
+        return {x["symbol"] for x in info.get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("isSpotTradingAllowed",True) and x.get("baseAsset") not in STABLES}
+    if market=="futures":
         info=fetch_json(BINANCE_FUTURES+"/fapi/v1/exchangeInfo")
-        tickers=fetch_json(BINANCE_FUTURES+"/fapi/v1/ticker/24hr")
-        valid={x["symbol"] for x in info.get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("contractType")=="PERPETUAL"}
-    else: return None
+        return {x["symbol"] for x in info.get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("contractType")=="PERPETUAL" and x.get("baseAsset") not in STABLES}
+    return set()
+
+def market_tickers(market):
+    if market not in ("spot","futures"):
+        return []
+    base=BINANCE_FUTURES if market=="futures" else BINANCE_SPOT
+    endpoint="/fapi/v1/ticker/24hr" if market=="futures" else "/api/v3/ticker/24hr"
+    valid=market_symbols(market)
+    tickers=fetch_json(base+endpoint)
     out=[]
     for t in tickers:
         if t.get("symbol") not in valid: continue
@@ -209,7 +250,7 @@ def snapshot(market):
     if market not in ("spot","futures"): return jsonify({"ok":True,"market":market,"ready":provider_status(market)["ready"],"provider":provider_status(market),"direction":"غير متاح","up":None,"down":None,"assets":[],"message":"مصدر البيانات غير مربوط؛ لن نعرض أرقاماً تقديرية."})
     try:
         rows=market_tickers(market); up=sum(1 for x in rows if x["change_pct"]>0); down=sum(1 for x in rows if x["change_pct"]<0)
-        return jsonify({"ok":True,"market":market,"direction":"صاعد" if up>down else "هابط" if down>up else "متعادل","up":up,"down":down,"total":len(rows),"assets":rows[:40],"updated_at":iso(utcnow())})
+        return jsonify({"ok":True,"market":market,"direction":"صاعد" if up>down else "هابط" if down>up else "متعادل","direction_basis":"تغير السعر خلال 24 ساعة","up":up,"down":down,"total":len(rows),"assets":rows[:40],"updated_at":iso(utcnow())})
     except Exception as e:
         app.logger.exception("snapshot failed"); return json_error("تعذر جلب بيانات السوق من المصدر حالياً",502)
 def klines(market,symbol,interval,limit=120):
@@ -224,75 +265,162 @@ def ema(values,period):
 def build_signal(market,item):
     symbol=item["symbol"]
     k15=klines(market,symbol,"15m",100); k4=klines(market,symbol,"4h",80); kd=klines(market,symbol,"1d",60)
-    c15=[float(x[4]) for x in k15[:-1]]; h15=[float(x[2]) for x in k15[:-1]]; l15=[float(x[3]) for x in k15[:-1]]; v15=[float(x[5]) for x in k15[:-1]]
-    c4=[float(x[4]) for x in k4[:-1]]; cd=[float(x[4]) for x in kd[:-1]]
-    e20,e50=ema(c15,20),ema(c15,50); e4=ema(c4,20); ed=ema(cd,20)
-    if not all((e20,e50,e4,ed)) or len(c15)<25: return None
-    side="BUY" if c4[-1]>e4 and cd[-1]>ed else "SELL" if c4[-1]<e4 and cd[-1]<ed else None
-    if not side: return None
-    momentum=(c15[-1]/c15[-5]-1)*100 if c15[-5] else 0
-    if (side=="BUY" and (e20<=e50 or momentum<=0)) or (side=="SELL" and (e20>=e50 or momentum>=0)): return None
-    tr=[]
+    if not all(isinstance(rows,list) and len(rows)>=22 for rows in (k15,k4,kd)):
+        return None
+    # Binance returns the currently-forming candle last; exclude it so signals use closed candles only.
+    closed15,closed4,closed_daily=k15[:-1],k4[:-1],kd[:-1]
+    c15=[float(x[4]) for x in closed15]; h15=[float(x[2]) for x in closed15]; l15=[float(x[3]) for x in closed15]
+    c4=[float(x[4]) for x in closed4]; daily=[float(x[4]) for x in closed_daily]
+    if len(c15)<50 or len(c4)<20 or len(daily)<20 or min(c15[-5:]+c4[-2:]+daily[-2:])<=0:
+        return None
+    trend4,trend_daily=ema(c4,20),ema(daily,20)
+    if trend4 is None or trend_daily is None:
+        return None
+    # Higher-timeframe agreement determines direction; 15m candles are only the entry/timing confirmation.
+    side="BUY" if c4[-1]>trend4 and daily[-1]>trend_daily else "SELL" if c4[-1]<trend4 and daily[-1]<trend_daily else None
+    if not side:
+        return None
+    change_15m=(c15[-1]/c15[-2]-1)*100
+    change_1h=(c15[-1]/c15[-5]-1)*100
+    if (side=="BUY" and change_15m<=0) or (side=="SELL" and change_15m>=0):
+        return None
+    true_ranges=[]
     for i in range(1,len(c15)):
-        tr.append(max(h15[i]-l15[i],abs(h15[i]-c15[i-1]),abs(l15[i]-c15[i-1])))
-    atr=sum(tr[-14:])/14 if len(tr)>=14 else 0
-    entry=c15[-1]; risk=max(atr*1.5,entry*0.003)
+        true_ranges.append(max(h15[i]-l15[i],abs(h15[i]-c15[i-1]),abs(l15[i]-c15[i-1])))
+    atr=sum(true_ranges[-14:])/14 if len(true_ranges)>=14 else 0
+    entry=c15[-1]
+    risk=max(atr*1.5,entry*0.003)
     stop=entry-risk if side=="BUY" else entry+risk
     sign=1 if side=="BUY" else -1
-    score=min(95,60+abs(momentum)*3+min(item["quote_volume"]/20_000_000,10))
-    return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":stop,"tp1":entry+sign*risk,"tp2":entry+sign*risk*2,"tp3":entry+sign*risk*3,"score":round(score,1),"timeframe":"15m","reason":"اتجاه 4س واليومي متوافق، مع تأكيد EMA20/50 وزخم 15 دقيقة وحجم تداول.","status":"active","change_pct":item["change_pct"],"quote_volume":item["quote_volume"]}
-def run_market_scan(market):
+    volume_score=min(max(math.log10(max(item["quote_volume"],1)/1_000_000),0)*2,10)
+    score=min(95,55+min(abs(change_15m)*10,20)+min(abs(change_1h)*2,10)+volume_score)
+    return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":stop,"tp1":entry+sign*risk,"tp2":entry+sign*risk*2,"tp3":entry+sign*risk*3,"score":round(score,1),"timeframe":"15m","reason":"اتجاه 4 ساعات واليومي متوافق؛ تأكيد الدخول من شمعة 15 دقيقة مغلقة، والوقف والأهداف محسوبة على ATR.","status":"active","change_pct":item["change_pct"],"change_15m_pct":round(change_15m,4),"quote_volume":item["quote_volume"]}
+def expire_stale_trades(market=None):
     now=utcnow()
+    query=Trade.query.filter(Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at<=now)
+    if market:
+        query=query.filter(Trade.market==market)
+    changed=query.update({"status":"expired"},synchronize_session=False)
+    if changed:
+        db.session.commit()
+    return changed
+
+def update_trade_outcomes(market,tickers):
+    prices={item["symbol"]:float(item["price"]) for item in tickers if item.get("symbol") and float(item.get("price") or 0)>0}
+    trades=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES)).all()
+    changed=0
+    for trade in trades:
+        price=prices.get(trade.symbol)
+        if price is None or trade.entry<=0:
+            continue
+        direction=1 if trade.side=="BUY" else -1
+        trade.result_pct=round((price/trade.entry-1)*direction*100,4)
+        stop_hit=price<=trade.stop if trade.side=="BUY" else price>=trade.stop
+        tp1_hit=price>=trade.tp1 if trade.side=="BUY" else price<=trade.tp1
+        tp2_hit=price>=trade.tp2 if trade.side=="BUY" else price<=trade.tp2
+        tp3_hit=price>=trade.tp3 if trade.side=="BUY" else price<=trade.tp3
+        previous=trade.status
+        if stop_hit:
+            trade.status="stopped_after_tp2" if previous=="tp2_hit" else "stopped_after_tp1" if previous=="tp1_hit" else "stopped"
+        elif tp3_hit:
+            trade.status="tp3_hit"
+        elif tp2_hit:
+            trade.status="tp2_hit"
+        elif tp1_hit and previous=="active":
+            trade.status="tp1_hit"
+        if trade.status!=previous:
+            changed+=1
+    if trades:
+        db.session.commit()
+    return changed
+
+def run_market_scan(market,force=False):
+    if market not in ("spot","futures"):
+        raise ValueError("No verified market adapter for "+str(market))
+    now=utcnow()
+    expire_stale_trades(market)
     scan_key="scan:"+market
     scan_row=db.session.get(Setting,scan_key)
-    if scan_row:
+    if scan_row and not force:
         try:
-            last=datetime.fromisoformat(scan_row.value)
-            if aware(last)>now-timedelta(minutes=15):
-                active=Trade.query.filter_by(market=market,status="active").filter(Trade.expires_at>now).order_by(Trade.score.desc()).limit(10).all()
-                return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True}
-        except ValueError: pass
-    movers=sorted(market_tickers(market),key=lambda x:abs(x["change_pct"]),reverse=True)[:18]
-    found=[]
-    with ThreadPoolExecutor(max_workers=6) as pool:
-        jobs=[pool.submit(build_signal,market,x) for x in movers]
+            last=aware(datetime.fromisoformat(scan_row.value))
+            if last>now-timedelta(minutes=15):
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc(),Trade.score.desc()).limit(10).all()
+                return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True,"scan_universe":None}
+        except (ValueError,TypeError):
+            app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
+    universe=market_tickers(market)
+    if not universe:
+        raise RuntimeError("Market provider returned an empty eligible universe")
+    update_trade_outcomes(market,universe)
+    movers=sorted(universe,key=lambda x:abs(x["change_pct"]),reverse=True)[:18]
+    found=[]; completed=0; failed=0
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        jobs=[pool.submit(build_signal,market,item) for item in movers]
         for job in as_completed(jobs):
             try:
                 signal=job.result()
-                if signal: found.append(signal)
-            except Exception: continue
-    found.sort(key=lambda x:(x["score"],abs(x["change_pct"])),reverse=True)
-    Trade.query.filter(Trade.market==market,Trade.status=="active",Trade.created_at<now-timedelta(hours=24)).update({"status":"expired"})
+                completed+=1
+                if signal:
+                    found.append(signal)
+            except Exception:
+                failed+=1
+                app.logger.exception("Signal analysis failed for %s",market)
+    minimum_success=max(1,math.ceil(len(movers)*0.8))
+    if completed<minimum_success:
+        raise RuntimeError(f"Insufficient candle data: {completed}/{len(movers)} analyses completed; scan timestamp was not advanced")
+    # Fastest verified 15m movers rank first; strength is the tie-breaker, not 24h noise.
+    found.sort(key=lambda x:(abs(x["change_15m_pct"]),x["score"],x["quote_volume"]),reverse=True)
     for signal in found[:10]:
-        exists=Trade.query.filter_by(market=market,symbol=signal["symbol"],status="active").first()
-        if exists and aware(exists.created_at)>now-timedelta(minutes=15): continue
-        if exists: exists.status="superseded"
-        db.session.add(Trade(market=market,symbol=signal["symbol"],side=signal["side"],entry=signal["entry"],stop=signal["stop"],tp1=signal["tp1"],tp2=signal["tp2"],tp3=signal["tp3"],score=signal["score"],timeframe="15m",reason=signal["reason"],expires_at=now+timedelta(hours=24)))
-    if not scan_row: scan_row=Setting(key=scan_key,value=iso(now)); db.session.add(scan_row)
-    else: scan_row.value=iso(now)
+        exists=Trade.query.filter(Trade.market==market,Trade.symbol==signal["symbol"],Trade.status.in_(OPEN_TRADE_STATUSES)).first()
+        if exists and aware(exists.created_at)>now-timedelta(minutes=15):
+            continue
+        if exists:
+            exists.status="superseded"
+        db.session.add(Trade(market=market,symbol=signal["symbol"],side=signal["side"],entry=signal["entry"],stop=signal["stop"],tp1=signal["tp1"],tp2=signal["tp2"],tp3=signal["tp3"],score=signal["score"],change_15m_pct=signal["change_15m_pct"],timeframe="15m",reason=signal["reason"],expires_at=now+timedelta(hours=24)))
+    if not scan_row:
+        scan_row=Setting(key=scan_key,value=iso(now)); db.session.add(scan_row)
+    else:
+        scan_row.value=iso(now)
     db.session.commit()
-    active=Trade.query.filter_by(market=market,status="active").filter(Trade.expires_at>now).order_by(Trade.score.desc()).limit(10).all()
-    return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(movers)}
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc(),Trade.score.desc()).limit(10).all()
+    return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(movers),"analysis_completed":completed,"analysis_failed":failed}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
-    if market not in MARKETS: return json_error("السوق غير معروف",404)
+    if market not in MARKETS:
+        return json_error("السوق غير معروف",404)
     blocked=gate_section(market)
-    if blocked: return blocked
-    if market not in ("spot","futures"): return jsonify({"ok":True,"market":market,"signals":[],"message":"مصدر بيانات هذا السوق غير مربوط بعد."})
-    try: return jsonify(run_market_scan(market))
+    if blocked:
+        return blocked
+    if market not in ("spot","futures"):
+        return jsonify({"ok":True,"market":market,"signals":[],"scan_ready":False,"message":"مصدر البيانات لهذا السوق غير مربوط أو غير معتمد بعد؛ لن نعرض صفقات تقديرية."})
+    try:
+        # Keep web requests fast: the scheduler owns scans; page loads only read the latest committed result.
+        expire_stale_trades(market)
+        row=db.session.get(Setting,"scan:"+market)
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow()).order_by(func.abs(Trade.change_15m_pct).desc(),Trade.score.desc()).limit(10).all()
+        updated=row.value if row else None
+        stale=True
+        if updated:
+            try:
+                stale=aware(datetime.fromisoformat(updated))<utcnow()-timedelta(minutes=20)
+            except (ValueError,TypeError):
+                stale=True
+        return jsonify({"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":updated,"cached":True,"stale":stale,"scan_ready":bool(updated)})
     except Exception:
-        app.logger.exception("signal scan failed")
-        return json_error("تعذر إكمال الفحص حالياً؛ تحقق من مصدر البيانات وحاول لاحقاً",502)
+        app.logger.exception("signal retrieval failed")
+        return json_error("تعذر قراءة نتائج الفحص المحفوظة حالياً",503)
 def trade_json(t):
-    return {"id":t.id,"market":t.market,"symbol":t.symbol,"side":t.side,"entry":t.entry,"stop":t.stop,"tp1":t.tp1,"tp2":t.tp2,"tp3":t.tp3,"score":t.score,"timeframe":t.timeframe,"reason":t.reason,"status":t.status,"created_at":iso(t.created_at),"expires_at":iso(t.expires_at)}
+    return {"id":t.id,"market":t.market,"symbol":t.symbol,"side":t.side,"entry":t.entry,"stop":t.stop,"tp1":t.tp1,"tp2":t.tp2,"tp3":t.tp3,"score":t.score,"change_15m_pct":t.change_15m_pct,"timeframe":t.timeframe,"reason":t.reason,"status":t.status,"result_pct":t.result_pct,"created_at":iso(t.created_at),"expires_at":iso(t.expires_at)}
 @app.get("/api/trades")
 def trade_history():
+    expire_stale_trades()
     q=Trade.query.order_by(Trade.created_at.desc()).limit(200)
     return jsonify({"ok":True,"trades":[trade_json(x) for x in q.all()]})
 @app.get("/api/strategies")
 def strategies():
     if not section_enabled("strategies"): return json_error("قسم الاستراتيجيات متوقف",404)
-    return jsonify({"ok":True,"strategies":[{"id":"trend-momentum-v1","name":"اتجاه متعدد الأطر + زخم","markets":["spot","futures"],"frames":["15m","4h","1d"],"rules":["اتجاه 4 ساعات واليومي متوافق","EMA20/EMA50 على 15 دقيقة","زخم 15 دقيقة يؤكد الاتجاه","وقف مبني على ATR وأهداف 1R/2R/3R"],"status":"active","note":"نسخة أولية قابلة للاختبار؛ لا يوجد ادعاء بنسبة نجاح قبل اختبار تاريخي مستقل."}]})
+    return jsonify({"ok":True,"strategies":[{"id":"trend-momentum-v1","name":"اتجاه متعدد الأطر + زخم","markets":["spot","futures"],"frames":["15m","4h","1d"],"rules":["اتجاه 4 ساعات واليومي متوافق يحدد BUY أو SELL فقط","ترتيب الفرص حسب التغير الفعلي لشمعة 15 دقيقة المغلقة","تأكيد الدخول من زخم 15 دقيقة في اتجاه الإطارين الأعلى","وقف مبني على ATR وأهداف 1R/2R/3R"],"status":"active","note":"نسخة أولية قابلة للاختبار؛ لا يوجد ادعاء بنسبة نجاح قبل اختبار تاريخي مستقل."}]})
 @app.get("/api/content/<kind>")
 def content_list(kind):
     if kind not in ("blog","news"): return json_error("نوع المحتوى غير معروف",404)
@@ -316,7 +444,7 @@ def admin_bootstrap():
 @login_required
 @admin_required
 def admin_overview():
-    return jsonify({"ok":True,"users":User.query.count(),"active_trades":Trade.query.filter_by(status="active").count(),"articles":Article.query.count(),"sections":{k:section_enabled(k) for k in SECTION_DEFAULTS},"recent_audit":[{"action":x.action,"target":x.target,"at":iso(x.created_at)} for x in Audit.query.order_by(Audit.created_at.desc()).limit(30).all()]})
+    return jsonify({"ok":True,"users":User.query.count(),"active_trades":Trade.query.filter(Trade.status.in_(OPEN_TRADE_STATUSES)).count(),"articles":Article.query.count(),"sections":{k:section_enabled(k) for k in SECTION_DEFAULTS},"recent_audit":[{"action":x.action,"target":x.target,"at":iso(x.created_at)} for x in Audit.query.order_by(Audit.created_at.desc()).limit(30).all()]})
 @app.get("/api/admin/users")
 @login_required
 @admin_required
@@ -381,6 +509,11 @@ def too_large(_): return json_error("حجم الطلب أكبر من المسم�
 def limited(_): return json_error("طلبات كثيرة؛ حاول بعد قليل",429)
 with app.app_context():
     db.create_all()
+    # Forward-only schema migration for existing production databases.
+    trade_columns={column["name"] for column in inspect(db.engine).get_columns(Trade.__tablename__)}
+    if "change_15m_pct" not in trade_columns:
+        with db.engine.begin() as connection:
+            connection.execute(text(f"ALTER TABLE {Trade.__tablename__} ADD COLUMN change_15m_pct FLOAT"))
     # Optional first administrator provisioning from deployment secrets.
     admin_email=os.environ.get("ADMIN_EMAIL","").strip().lower(); admin_password=os.environ.get("ADMIN_PASSWORD","")
     if admin_email and admin_password and not User.query.filter_by(role="admin").first():
@@ -389,11 +522,13 @@ with app.app_context():
 
 def scheduled_market_scan():
     with app.app_context():
+        expire_stale_trades()
         for market in ("spot","futures"):
             try:
-                run_market_scan(market)
-                app.logger.info("scheduled scan completed: %s",market)
+                result=run_market_scan(market,force=True)
+                app.logger.info("scheduled scan completed: market=%s signals=%s universe=%s failures=%s",market,len(result.get("signals",[])),result.get("scan_universe"),result.get("analysis_failed",0))
             except Exception:
+                db.session.rollback()
                 app.logger.exception("scheduled scan failed: %s",market)
 
 if os.environ.get("ENABLE_AUTO_SCAN","true").lower()=="true":

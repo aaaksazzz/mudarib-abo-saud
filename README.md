@@ -1,36 +1,37 @@
 # SMART TRADING PRO
 
-A clean rebuild of the trading intelligence platform.
+Production-oriented market intelligence terminal.
 
-## Current foundation
-- Responsive RTL-first dashboard shell.
-- Independent navigation for each requested market.
-- Dark/light theme toggle.
-- Arabic/English language toggle.
-- Explicit empty states: no fabricated prices, signals, win rates, or performance claims.
-- Mobile navigation drawer.
+## Implemented foundation
+- Responsive Arabic RTL / English LTR interface with dark and light themes.
+- Independent market sections; unintegrated markets are explicitly marked unavailable rather than filled with simulated prices or signals.
+- Server-side authentication, role checks, section controls, subscription grants and audit history.
+- Public read-only market signal pages and trade journal; administrative actions remain protected.
+- Liveness endpoint `GET /health` and readiness endpoint `GET /ready`.
 
-## Planned implementation phases
-1. **Foundation (current):** responsive shell, design system, navigation, theme and language.
-2. **Identity and access:** secure registration/login, password reset, sessions, roles, subscription plans, individual grants and expiry.
-3. **Administration:** section-level access switches, user management, subscription management, audit log and content moderation.
-4. **Market data:** isolated adapters per market, source health, rate limits, caching and stale-data expiry.
-5. **Strategy engine:** independently testable strategies, explainable scoring, risk sizing and market-specific validation.
-6. **Trade lifecycle:** entry, TP1/TP2/TP3, stop, percentage calculations, status transitions and immutable outcome history.
-7. **Editorial:** news ingestion with attribution, editorial review, categories, blog and publishing workflow.
-8. **Quality and operations:** automated tests, security review, observability, deployment checks and backups.
+## Verified market integrations
+- **Binance Spot:** USDT spot universe, active symbols only, excludes stablecoin base assets and applies the configured 24-hour quote-volume floor.
+- **Binance USDT-M Futures:** active USDT perpetual contracts, excludes stablecoin base assets and applies the configured 24-hour quote-volume floor.
+- Other market pages (Binance Alpha, US stocks, US contracts, Tadawul, Forex and Gold) remain unavailable until their provider adapter, universe, market-hours behavior and data quality are implemented and verified. Setting an API key alone does not make a market live.
 
-## Backend setup
-- Build and run with the included Dockerfile; the service listens on port 8080.
-- Set `SECRET_KEY` to a persistent random secret.
-- Set `DATABASE_URL` to a persistent PostgreSQL database. SQLite is for local smoke tests only; ephemeral container storage is not suitable for production accounts.
-- Set `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` (at least 14 characters) before first boot to provision the first administrator.
-- Binance public Spot and USDT-M perpetual Futures adapters are implemented. A 15-minute background scan checks a bounded list of the most liquid/fast-moving symbols and expires active records after 24 hours.
-- Other markets are visible in the UI but are intentionally marked unconnected until real provider adapters and credentials are configured. Do not treat them as live.
-- Manual subscription grants and section toggles are enforced by the server API. Payment checkout, email verification/password reset, and automated billing are not yet integrated.
-- News and blog publishing are admin-managed; external news ingestion and source attribution workflow still need a provider/editorial setup.
+## Signal engine
+- Direction filter: 4-hour and daily candle trend must agree.
+- Entry confirmation: closed 15-minute candles only; the still-forming candle is excluded.
+- Ranking: absolute 15-minute change first, strength score and quote volume as tie-breakers.
+- Risk: ATR-based stop and 1R / 2R / 3R targets.
+- The scheduler runs Spot and Futures scans every 15 minutes. Market-page HTTP requests only read committed results and never launch a heavy scan synchronously.
+- Active records expire after 24 hours. Expired records are also cleaned when the journal is read.
+- A score is a ranking heuristic, not an AI probability or a verified win rate. No performance claim is made without a reproducible backtest.
 
-## Important
-The current repository foundation is a front-end shell only. Authentication, subscriptions, admin enforcement, live feeds and strategy execution are **not implemented yet**. They must be backed by server-side authorization and persistent storage; hiding a menu item in the browser is not access control.
+## Production deployment
+- Python runtime is pinned by `.python-version` to 3.12.
+- Buildpack startup uses `Procfile`; Docker deployment is also supported.
+- Expose port 8080.
+- Configure a persistent PostgreSQL database through `DATABASE_URL`; SQLite is for CI/local checks only.
+- Configure a persistent random `SECRET_KEY`, `COOKIE_SECURE=true`, and `ENABLE_AUTO_SCAN=true`.
+- Keep one Gunicorn worker while APScheduler runs in-process. Do not increase workers until scanning is moved to a separate worker with a distributed lock.
+- Configure `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` (14+ characters) before first boot if first-admin provisioning is needed.
+- Never commit or share secrets. Rotate credentials after any security incident and update them at the provider and deployment environment.
 
-Never store credentials in source control. Configure secrets only in the deployment environment and rotate any exposed credentials.
+## Validation
+GitHub Actions runs JavaScript syntax validation, dependency installation, Python compilation, backend regression tests, and route/static-asset smoke checks.
