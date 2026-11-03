@@ -85,6 +85,14 @@ def json_error(message, code=400): return jsonify({"ok":False,"error":message}),
 def csrf_token():
     if "csrf" not in session: session["csrf"]=secrets.token_urlsafe(32)
     return session["csrf"]
+@app.after_request
+def security_headers(response):
+    response.headers["X-Content-Type-Options"]="nosniff"
+    response.headers["X-Frame-Options"]="DENY"
+    response.headers["Referrer-Policy"]="strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"]="camera=(), microphone=(), geolocation=()"
+    response.headers["Content-Security-Policy"]="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    return response
 @app.before_request
 def security_and_identity():
     g.user=db.session.get(User, session.get("uid")) if session.get("uid") else None
@@ -320,9 +328,11 @@ def admin_users():
 def grant_subscription(user_id):
     u=db.session.get(User,user_id)
     if not u: return json_error("المستخدم غير موجود",404)
-    data=request.get_json(silent=True) or {}; days=int(data.get("days",0))
+    data=request.get_json(silent=True) or {}
+    try: days=int(data.get("days",0))
+    except (TypeError,ValueError): return json_error("مدة الاشتراك غير صحيحة")
     if days<1 or days>3650: return json_error("مدة الاشتراك يجب أن تكون من يوم إلى 10 سنوات")
-    base=max(u.subscription_until or utcnow(),utcnow()); u.subscription_until=base+timedelta(days=days); u.subscription_plan=str(data.get("plan","pro"))[:40]; audit("subscription_granted",f"{u.email}:{days}d"); db.session.commit()
+    base=max(aware(u.subscription_until) or utcnow(),utcnow()); u.subscription_until=base+timedelta(days=days); u.subscription_plan=str(data.get("plan","pro"))[:40]; audit("subscription_granted",f"{u.email}:{days}d"); db.session.commit()
     return jsonify({"ok":True,"user":user_json(u)})
 @app.patch("/api/admin/users/<int:user_id>")
 @login_required
