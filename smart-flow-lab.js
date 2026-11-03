@@ -30,6 +30,7 @@ function render(data){
   root.innerHTML=data.signals.map((s,i)=>
     '<article class="signal"><div class="signal-head"><span class="symbol">'+(i+1)+'. '+s.symbol+'</span><span class="side '+s.side+'">'+(s.side==="BUY"?"شراء":"بيع")+'</span></div>'+
     '<div class="score">قوة التوافق '+s.score+' / 100</div>'+
+    '<div class="score">'+(s.crowd_trap?'⚡ رصد احتمال فخ ازدحام المراكز':'مراقبة ازدحام المراكز: لا يوجد تأكيد كافٍ')+'</div>'+
     '<div class="levels">'+
     levelMarkup("الدخول",s.entry,s,"entry")+
     levelMarkup("وقف الخسارة",s.stop,s,"stop")+
@@ -38,7 +39,7 @@ function render(data){
     levelMarkup("الهدف الثالث",s.tp3,s,"target")+
     '<div><span>تغير OI</span><b>'+s.oi_change_pct+'%</b></div></div>'+
     '<ul class="reasons"><li>'+s.sweep+'</li>'+s.confirmations.map(x=>'<li>'+x+'</li>').join("")+'</ul>'+
-    '<div class="meta">Taker Buy '+s.taker_buy_ratio+'% · ميزان الطلبات '+s.book_imbalance+'% · حجم 24س '+fmt(s.quote_volume)+' USDT</div></article>'
+    '<div class="meta">Taker Buy '+s.taker_buy_ratio+'% · تدفق taker '+(s.taker_flow_ratio==null?'غير متاح':s.taker_flow_ratio.toFixed(2))+' · التمويل '+(s.funding_rate_pct==null?'غير متاح':s.funding_rate_pct+'%')+' · OI '+s.oi_change_pct+'% · ميزان الطلبات '+s.book_imbalance+'% · حجم 24س '+fmt(s.quote_volume)+' USDT</div></article>'
   ).join("");
 }
 async function scan(){

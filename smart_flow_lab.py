@@ -61,6 +61,21 @@ def analyze_symbol(symbol):
             return None
         oi_now = finite(api("/fapi/v1/openInterest", {"symbol": symbol}).get("openInterest"))
         oi_change = 0.0
+        # Public derivatives positioning proxy: taker buy/sell ratio plus live funding.
+        # This is NOT private trader-wallet data or the API-key-gated top-trader feed.
+        taker_flow_ratio = None
+        funding_rate = None
+        try:
+            flow_rows = api("/futures/data/takerlongshortRatio", {"symbol": symbol, "period": "15m", "limit": 2})
+            if flow_rows:
+                taker_flow_ratio = finite(flow_rows[-1].get("buySellRatio"), 1.0)
+        except Exception:
+            pass
+        try:
+            premium = api("/fapi/v1/premiumIndex", {"symbol": symbol})
+            funding_rate = finite(premium.get("lastFundingRate"), 0.0)
+        except Exception:
+            pass
         try:
             hist = api("/futures/data/openInterestHist", {"symbol": symbol, "period": "15m", "limit": 2})
             if len(hist) >= 2:
@@ -81,6 +96,19 @@ def analyze_symbol(symbol):
             if imbalance <= 0.46: score += 12; confirmations.append("دفتر الأوامر يميل للعروض")
             if upper_wick / candle_range >= 0.42: score += 8; confirmations.append("رفض سعري أعلى النطاق")
             if oi_change > 0: score += 5; confirmations.append("ارتفاع العقود المفتوحة")
+        # Crowd-trap confirmation: extreme taker-side crowding + matching funding bias,
+        # confirmed by a sweep against the crowded side. This is a public-data proxy,
+        # not proof of whale identities or guaranteed future liquidations.
+        crowd_trap = False
+        if taker_flow_ratio is not None and funding_rate is not None:
+            if side == "BUY" and taker_flow_ratio <= 0.75 and funding_rate < 0:
+                crowd_trap = True
+                score += 10
+                confirmations.append("احتمال ضغط مراكز بيع: تدفق taker يميل للبيع والتمويل سلبي")
+            elif side == "SELL" and taker_flow_ratio >= 1.35 and funding_rate > 0:
+                crowd_trap = True
+                score += 10
+                confirmations.append("احتمال ضغط مراكز شراء: تدفق taker يميل للشراء والتمويل إيجابي")
         # Use sweep extreme as invalidation; ATR-like range from recent closed bars sets a minimum buffer.
         ranges = [max(finite(x[2])-finite(x[3]), 0) for x in closed[-14:]]
         atr = sum(ranges) / max(len(ranges), 1)
@@ -101,6 +129,9 @@ def analyze_symbol(symbol):
             "book_imbalance": round(imbalance * 100, 1),
             "oi_change_pct": round(oi_change, 3),
             "open_interest": oi_now,
+            "taker_flow_ratio": round(taker_flow_ratio, 4) if taker_flow_ratio is not None else None,
+            "funding_rate_pct": round(funding_rate * 100, 5) if funding_rate is not None else None,
+            "crowd_trap": crowd_trap,
             "quote_volume": quote_volume,
             "sweep": "سحب سيولة أسفل قاع سابق" if side == "BUY" else "سحب سيولة أعلى قمة سابقة",
             "confirmations": confirmations or ["تم رصد السحب؛ التأكيدات الإضافية محدودة"],
