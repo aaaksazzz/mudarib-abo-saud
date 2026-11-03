@@ -1,6 +1,6 @@
 import os, re, secrets, hashlib, hmac, time, json, math
 from datetime import datetime, timedelta, timezone
-from functools import wraps
+from functools import wraps, lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from flask import Flask, request, jsonify, send_from_directory, session, g
@@ -215,16 +215,23 @@ def fetch_json(url,params=None):
                 raise
             time.sleep(0.25*(attempt+1))
     raise last_error
-def market_tickers(market):
+@lru_cache(maxsize=2)
+def market_symbols(market):
     if market=="spot":
         info=fetch_json(BINANCE_SPOT+"/api/v3/exchangeInfo")
-        tickers=fetch_json(BINANCE_SPOT+"/api/v3/ticker/24hr")
-        valid={x["symbol"] for x in info.get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("isSpotTradingAllowed",True) and x.get("baseAsset") not in STABLES}
-    elif market=="futures":
+        return {x["symbol"] for x in info.get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("isSpotTradingAllowed",True) and x.get("baseAsset") not in STABLES}
+    if market=="futures":
         info=fetch_json(BINANCE_FUTURES+"/fapi/v1/exchangeInfo")
-        tickers=fetch_json(BINANCE_FUTURES+"/fapi/v1/ticker/24hr")
-        valid={x["symbol"] for x in info.get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("contractType")=="PERPETUAL" and x.get("baseAsset") not in STABLES}
-    else: return None
+        return {x["symbol"] for x in info.get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("contractType")=="PERPETUAL" and x.get("baseAsset") not in STABLES}
+    return set()
+
+def market_tickers(market):
+    if market not in ("spot","futures"):
+        return []
+    base=BINANCE_FUTURES if market=="futures" else BINANCE_SPOT
+    endpoint="/fapi/v1/ticker/24hr" if market=="futures" else "/api/v3/ticker/24hr"
+    valid=market_symbols(market)
+    tickers=fetch_json(base+endpoint)
     out=[]
     for t in tickers:
         if t.get("symbol") not in valid: continue
