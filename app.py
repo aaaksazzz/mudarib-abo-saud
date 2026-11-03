@@ -296,7 +296,7 @@ def snapshot(market):
     if market not in MARKETS: return json_error("السوق غير معروف",404)
     blocked=gate_section(market)
     if blocked: return blocked
-     try:
+    try:
         rows=market_tickers(market); up=sum(1 for x in rows if x["change_pct"]>0); down=sum(1 for x in rows if x["change_pct"]<0)
         return jsonify({"ok":True,"market":market,"direction":"صاعد" if up>down else "هابط" if down>up else "متعادل","direction_basis":"تغير السعر خلال 24 ساعة","up":up,"down":down,"total":len(rows),"assets":rows[:40],"updated_at":iso(utcnow())})
     except Exception as e:
@@ -465,7 +465,7 @@ def signals(market):
     blocked=gate_section(market)
     if blocked:
         return blocked
-     try:
+    try:
         # Keep web requests fast: the scheduler owns scans; page loads only read the latest committed result.
         expire_stale_trades(market)
         row=db.session.get(Setting,"scan:"+market)
