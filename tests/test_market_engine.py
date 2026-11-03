@@ -145,6 +145,30 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(data["plans"][2]["discount_pct"], 10)
         self.assertEqual(data["payment_methods"]["binance_uid"]["value"], "28191866")
 
+    def test_admin_can_grant_lifetime_access_by_email(self):
+        with platform.app.app_context():
+            admin = platform.User(email="owner@example.com",
+                                  password_hash=platform.generate_password_hash("NewSecurePass123!"),
+                                  role="admin", active=True, subscription_plan="admin")
+            target = platform.User(email="member@example.com",
+                                   password_hash=platform.generate_password_hash("MemberPass123!"),
+                                   role="user", active=True, subscription_plan="free")
+            platform.db.session.add_all([admin, target])
+            platform.db.session.commit()
+        bootstrap = self.client.get("/api/bootstrap").get_json()
+        login = self.client.post("/api/auth/login",
+            json={"email":"owner@example.com","password":"NewSecurePass123!"},
+            headers={"X-CSRF-Token":bootstrap["csrf"]},
+        )
+        self.assertEqual(login.status_code, 200)
+        grant = self.client.post("/api/admin/users/subscription-by-email",
+            json={"email":"member@example.com","lifetime":True},
+            headers={"X-CSRF-Token":login.get_json()["csrf"]},
+        )
+        self.assertEqual(grant.status_code, 200)
+        self.assertTrue(grant.get_json()["user"]["lifetime"])
+        self.assertTrue(grant.get_json()["user"]["subscribed"])
+
     def test_admin_username_alias_authenticates_admin(self):
         with platform.app.app_context():
             admin = platform.User(email="owner@example.com",
