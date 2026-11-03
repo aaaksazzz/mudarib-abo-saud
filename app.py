@@ -335,18 +335,34 @@ def build_signal(market,item,timeframe):
     if not bullish and not bearish:
         return None
     side="BUY" if bullish else "SELL"
-    stop=ma50_now
-    risk=(entry-stop) if bullish else (stop-entry)
+    # Use the nearest confirmed 5-candle swing (two candles on each side).
+    lows=[float(x[3]) for x in closed]
+    highs=[float(x[2]) for x in closed]
+    swing_index=None
+    first=max(2,len(closed)-32)
+    for i in range(len(closed)-3,first-1,-1):
+        if side=="BUY":
+            is_swing=lows[i]<=min(lows[i-2:i]) and lows[i]<min(lows[i+1:i+3])
+        else:
+            is_swing=highs[i]>=max(highs[i-2:i]) and highs[i]>max(highs[i+1:i+3])
+        if is_swing:
+            swing_index=i
+            break
+    if swing_index is None:
+        return None
+    stop=lows[swing_index] if side=="BUY" else highs[swing_index]
+    risk=(entry-stop) if side=="BUY" else (stop-entry)
     if not math.isfinite(risk) or risk<=0:
         return None
-    sign=1 if bullish else -1
+    sign=1 if side=="BUY" else -1
+    target=entry+sign*risk*2
     change_pct=(entry/closes[-2]-1)*100 if closes[-2] else 0.0
     return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":stop,
-        "tp1":entry+sign*risk,"tp2":entry+sign*risk*2,"tp3":entry+sign*risk*3,
-        "score":0.0,"timeframe":timeframe,"reason":"تقاطع EMA 9/14 على شمعة مغلقة مع تموضع السعر فوق/تحت EMA 50؛ وقف الخسارة عند EMA 50 وأهداف 1R/2R/3R.",
+        "tp1":target,"tp2":target,"tp3":target,
+        "score":0.0,"timeframe":timeframe,"reason":"تقاطع EMA 9/14 على شمعة مغلقة؛ الوقف عند آخر قاع/قمة مؤكدة، والهدف ضعف المخاطرة (2R).",
         "status":"active","change_pct":round(change_pct,6),"change_15m_pct":round(change_pct,6),
         "quote_volume":item["quote_volume"]}
-def expire_stale_tradesdef expire_stale_trades(market=None):
+def expire_stale_trades(market=None):
     now=utcnow()
     query=Trade.query.filter(Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at<=now)
     if market:
@@ -478,7 +494,7 @@ def trade_history():
 @app.get("/api/strategies")
 def strategies():
     if not section_enabled("strategies"): return json_error("قسم الاستراتيجيات متوقف",404)
-    return jsonify({"ok":True,"strategies":[{"id":"ema-9-14-50-independent-v2","name":"تقاطع EMA 9/14/50","markets":["spot","futures"],"frames":list(TIMEFRAMES),"rules":["كل إطار زمني مستقل ولا يعتمد على تأكيد إطار آخر","شراء: السعر فوق EMA 50 مع تقاطع EMA 9 أعلى EMA 14","بيع: السعر تحت EMA 50 مع تقاطع EMA 9 أسفل EMA 14","وقف الخسارة عند EMA 50 وأهداف 1R/2R/3R","ترتيب الفرص حسب مقدار تغير السعر داخل الإطار نفسه"],"status":"active","note":"الإشارات مبنية على الشموع المغلقة؛ لا يوجد ضمان للربح."}]})
+    return jsonify({"ok":True,"strategies":[{"id":"ema-9-14-50-independent-v2","name":"تقاطع EMA 9/14/50","markets":["spot","futures"],"frames":list(TIMEFRAMES),"rules":["كل إطار زمني مستقل ولا يعتمد على تأكيد إطار آخر","شراء: السعر فوق EMA 50 مع تقاطع EMA 9 أعلى EMA 14","بيع: السعر تحت EMA 50 مع تقاطع EMA 9 أسفل EMA 14","وقف الشراء عند آخر قاع مؤكد ووقف البيع عند آخر قمة مؤكدة؛ الهدف 2R (ضعف مسافة الوقف))".replace("))",""),"ترتيب الفرص حسب مقدار تغير السعر داخل الإطار نفسه"],"status":"active","note":"الإشارات مبنية على الشموع المغلقة؛ لا يوجد ضمان للربح."}]})
 @app.get("/api/content/<kind>")
 def content_list(kind):
     if kind not in ("blog","news"): return json_error("نوع المحتوى غير معروف",404)
