@@ -6,7 +6,7 @@
 <meta name="description" content="منصة احترافية لمراقبة الأسواق والاتجاهات والفرص الفنية ببيانات عامة ومصادر واضحة.">
 <link rel="preconnect" href="https://api.binance.com"><link rel="preconnect" href="https://fapi.binance.com">
 <link rel="stylesheet" href="/static/app.css?v=20261103.responsive-v1">
-<script src="/static/app.js?v=20261102.terminal-phase1" defer></script>
+<script src="/static/app.js?v=20261103.direction-trades-v1" defer></script>
 </head>
 <body>
 <div class="app-shell">
@@ -53,8 +53,7 @@
    <a href="/markets/spot">Binance Spot</a><a href="/markets/futures">Binance USD-M</a><a href="/markets/coinm">Binance COIN-M</a><a href="/markets/alpha">Binance Alpha</a>
    <a href="/markets/saudi">السوق السعودي</a><a href="/markets/us">الأسهم الأمريكية</a><a href="/markets/contracts">العقود الأمريكية</a><a href="/markets/forex">الفوركس والذهب</a>
    <div class="drawer-group">الاتجاه والصفقات</div>
-   <a href="/sections/direction">توجه السوق</a><a href="/sections/opportunities">فرص التداول</a><a href="/sections/open-trades">متابعة الصفقات</a>
-   <div class="drawer-group">المحتوى</div><a href="/blog">المدونة التعليمية</a><a href="/news">أخبار الأسواق</a>
+   <a href="/sections/direction">توجه السوق</a><a href="/sections/opportunities">الصفقات</a>
    <a href="/admin" id="drawerAdmin" hidden>إدارة المشتركين</a>
   </nav>
   <button id="drawerBackdrop" class="drawer-backdrop" type="button" aria-label="إغلاق القائمة" hidden></button>
@@ -82,7 +81,7 @@
    <a data-market="forex" href="/markets/forex" class="market-tab"><span class="market-icon forex">FX</span><span><b>الفوركس والذهب</b><small>صفحة مستقلة</small></span></a>
   </div>
  </section>
- <section id="homeOverview" class="home-overview" hidden>
+ <section id="homeOverview" class="home-overview" hidden aria-hidden="true">
   <div class="home-dashboard-head">
    <div><span class="kicker">GLOBAL MARKET RADAR</span><h2>نبض الأسواق</h2><p>اتجاهات الأسواق والأصول الأسرع حركة — دون توصيات تداول.</p></div>
    <span id="homeUpdated" class="home-update"><i></i> جارٍ الفحص</span>
