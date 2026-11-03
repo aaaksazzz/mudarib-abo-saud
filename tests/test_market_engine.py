@@ -70,22 +70,30 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["trades"][0]["status"], "expired")
 
-    def test_signal_uses_closed_15m_candles_and_higher_timeframe_agreement(self):
-        series = {
-            "15m": candle_rows([100 + index * 0.1 for index in range(100)]),
-            "4h": candle_rows([100 + index for index in range(80)]),
-            "1d": candle_rows([100 + index * 0.5 for index in range(60)]),
-        }
-        # The final row simulates a still-forming candle and must not affect the signal.
-        series["15m"][-1][4] = 1
-        with patch.object(platform, "klines", side_effect=lambda market, symbol, interval, limit=120: series[interval]):
-            signal = platform.build_signal("spot", {"symbol": "BTCUSDT", "change_pct": 4.0, "quote_volume": 50_000_000})
+    def test_signal_uses_closed_15m_candles_and_confirmed_swing_stop(self):
+        closes = [100] * 70 + [95, 93, 91, 90, 89, 90] + [90] * 22 + [110]
+        rows = candle_rows(closes)
+        rows.append([len(rows), 110, 111, 109, 1, 1000, len(rows) + 1, 0, 0, 0, 0, 0])
+        with patch.object(platform, "klines", return_value=rows):
+            signal = platform.build_signal("spot", {"symbol": "BTCUSDT", "change_pct": 4.0, "quote_volume": 50_000_000}, "15m")
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "BUY")
-        self.assertGreater(signal["change_15m_pct"], 0)
-        self.assertLess(signal["score"], 96)
         self.assertLess(signal["stop"], signal["entry"])
-        self.assertGreater(signal["tp3"], signal["tp2"])
+        self.assertEqual(signal["tp1"], signal["tp2"])
+        self.assertEqual(signal["tp2"], signal["tp3"])
+        self.assertAlmostEqual(signal["tp1"], signal["entry"] + 2 * (signal["entry"] - signal["stop"]))
+
+    def test_public_routes_do_not_disclose_strategy_details(self):
+        self.assertEqual(self.client.get("/api/strategies").status_code, 404)
+        self.assertEqual(self.client.get("/smart-flow-lab").status_code, 404)
+        self.assertEqual(self.client.get("/smart-flow-lab/api/scan").status_code, 404)
+        with platform.app.app_context():
+            trade = platform.Trade(market="spot", symbol="BTCUSDT", side="BUY", entry=100,
+                stop=95, tp1=110, tp2=110, tp3=110, score=0, timeframe="15m",
+                reason="PRIVATE STRATEGY DETAIL", expires_at=platform.utcnow() + timedelta(hours=1))
+            payload = platform.trade_json(trade)
+            self.assertNotIn("reason", payload)
+            self.assertNotIn("PRIVATE STRATEGY DETAIL", str(payload))
 
     def test_scheduler_can_force_a_new_scan_inside_cache_window(self):
         with platform.app.app_context():
