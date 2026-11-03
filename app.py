@@ -29,6 +29,16 @@ BINANCE_SPOT="https://api.binance.com"
 BINANCE_FUTURES="https://fapi.binance.com"
 STABLES={"USDT","USDC","BUSD","FDUSD","TUSD","USDP","DAI","USDE","USDS","USTC"}
 OPEN_TRADE_STATUSES=("active","tp1_hit","tp2_hit")
+PAYMENT_PLANS=[
+    {"id":"monthly","name":"شهري","months":1,"price_usd":30.0,"discount_pct":0,"total_usd":30.0},
+    {"id":"six_months","name":"6 أشهر","months":6,"price_usd":171.0,"discount_pct":5,"total_usd":171.0,"regular_usd":180.0},
+    {"id":"yearly","name":"سنوي","months":12,"price_usd":324.0,"discount_pct":10,"total_usd":324.0,"regular_usd":360.0},
+]
+PAYMENT_METHODS={
+    "usdt_trc20":{"label":"USDT · TRC20","address":"TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6"},
+    "sol":{"label":"Solana · SOL","address":"8mUuMV7WFNTsFEmGsw3t5EpTWGUzw5618Mjgh1svugaH"},
+    "binance_uid":{"label":"معرّف حساب Binance","value":"28191866"},
+}
 
 class User(db.Model):
     id=db.Column(db.Integer, primary_key=True)
@@ -109,11 +119,17 @@ def login_required(fn):
         
         return fn(*a,**kw)
     return inner
+def subscription_is_active(user):
+    if not user or not user.active: return False
+    if user.role=="admin": return True
+    if user.subscription_plan=="lifetime" and user.subscription_until is None: return True
+    return bool(user.subscription_until and aware(user.subscription_until)>utcnow())
+
 def subscriber_required(fn):
     @wraps(fn)
     def inner(*a,**kw):
         if not g.user or not g.user.active: return json_error("تسجيل الدخول مطلوب",401)
-        if g.user.role!="admin" and (not g.user.subscription_until or aware(g.user.subscription_until)<=utcnow()): return json_error("يلزم اشتراك فعال للوصول إلى الصفقات",403)
+        if not subscription_is_active(g.user): return json_error("يلزم اشتراك فعال للوصول إلى الصفقات",403)
         return fn(*a,**kw)
     return inner
 def admin_required(fn):
@@ -131,7 +147,7 @@ def gate_section(name):
     if not section_enabled(name): return json_error("هذا القسم متوقف حالياً",404)
     return None
 def user_json(u):
-    return {"id":u.id,"email":u.email,"role":u.role,"active":u.active,"plan":u.subscription_plan,"subscription_until":iso(u.subscription_until),"subscribed":bool(u.role=="admin" or (u.subscription_until and aware(u.subscription_until)>utcnow()))}
+    return {"id":u.id,"email":u.email,"role":u.role,"active":u.active,"plan":u.subscription_plan,"subscription_until":iso(u.subscription_until),"subscribed":subscription_is_active(u),"lifetime":bool(u.subscription_plan=="lifetime" and u.subscription_until is None)}
 def public_article(a):
     return {"id":a.id,"kind":a.kind,"title":a.title,"slug":a.slug,"summary":a.summary,"body":a.body,"created_at":iso(a.created_at)}
 @app.get("/")
@@ -188,6 +204,10 @@ def logout():
 @app.get("/api/me")
 @login_required
 def me(): return jsonify({"ok":True,"user":user_json(g.user)})
+@app.get("/api/plans")
+def public_plans():
+    return jsonify({"ok":True,"currency":"USD","plans":PAYMENT_PLANS,"payment_methods":PAYMENT_METHODS,"contact_url":os.environ.get("ADMIN_CONTACT_URL","").strip(),"contact_label":"تواصل مع الإدارة"})
+
 @app.get("/api/markets")
 def market_list():
     return jsonify({"ok":True,"markets":[{"id":m,"enabled":section_enabled(m),"provider":provider_status(m)} for m in MARKETS]})
@@ -461,10 +481,33 @@ def grant_subscription(user_id):
     u=db.session.get(User,user_id)
     if not u: return json_error("المستخدم غير موجود",404)
     data=request.get_json(silent=True) or {}
+    if data.get("lifetime") is True:
+        u.subscription_until=None
+        u.subscription_plan="lifetime"
+        audit("lifetime_subscription_granted",u.email)
+        db.session.commit()
+        return jsonify({"ok":True,"user":user_json(u)})
     try: days=int(data.get("days",0))
     except (TypeError,ValueError): return json_error("مدة الاشتراك غير صحيحة")
     if days<1 or days>3650: return json_error("مدة الاشتراك يجب أن تكون من يوم إلى 10 سنوات")
     base=max(aware(u.subscription_until) or utcnow(),utcnow()); u.subscription_until=base+timedelta(days=days); u.subscription_plan=str(data.get("plan","pro"))[:40]; audit("subscription_granted",f"{u.email}:{days}d"); db.session.commit()
+    return jsonify({"ok":True,"user":user_json(u)})
+
+@app.post("/api/admin/users/subscription-by-email")
+@login_required
+@admin_required
+def grant_subscription_by_email():
+    data=request.get_json(silent=True) or {}
+    email=str(data.get("email","")).strip().lower()
+    if not re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+",email):
+        return json_error("البريد الإلكتروني غير صحيح")
+    u=User.query.filter_by(email=email).first()
+    if not u: return json_error("الحساب غير مسجل بعد؛ يجب إنشاء الحساب أولاً",404)
+    if data.get("lifetime") is not True: return json_error("نوع الاشتراك غير صحيح")
+    u.subscription_until=None
+    u.subscription_plan="lifetime"
+    audit("lifetime_subscription_granted",u.email)
+    db.session.commit()
     return jsonify({"ok":True,"user":user_json(u)})
 @app.patch("/api/admin/users/<int:user_id>")
 @login_required
