@@ -92,7 +92,7 @@ def login_required(fn):
     @wraps(fn)
     def inner(*a,**kw):
         if not g.user or not g.user.active: return json_error("تسجيل الدخول مطلوب",401)
-        if g.user.role!="admin" and (not g.user.subscription_until or aware(g.user.subscription_until)<=utcnow()): return json_error("يلزم اشتراك فعال للوصول إلى هذه الميزة",403)
+        
         return fn(*a,**kw)
     return inner
 def subscriber_required(fn):
@@ -117,7 +117,7 @@ def gate_section(name):
     if not section_enabled(name): return json_error("هذا القسم متوقف حالياً",404)
     return None
 def user_json(u):
-    return {"id":u.id,"email":u.email,"role":u.role,"active":u.active,"plan":u.subscription_plan,"subscription_until":iso(u.subscription_until),"subscribed":bool(u.role=="admin" or (u.subscription_until and u.subscription_until>utcnow()))}
+    return {"id":u.id,"email":u.email,"role":u.role,"active":u.active,"plan":u.subscription_plan,"subscription_until":iso(u.subscription_until),"subscribed":bool(u.role=="admin" or (u.subscription_until and aware(u.subscription_until)>utcnow()))}
 def public_article(a):
     return {"id":a.id,"kind":a.kind,"title":a.title,"slug":a.slug,"summary":a.summary,"body":a.body,"created_at":iso(a.created_at)}
 @app.get("/")
@@ -157,7 +157,7 @@ def provider_status(m):
     if m in ("spot","futures"): return {"ready":True,"source":"Binance public market API"}
     if m in ("us-stocks","us-contracts","saudi","forex"):
         key={"us-stocks":"FINNHUB_API_KEY","us-contracts":"FINNHUB_API_KEY","saudi":"SAUDI_DATA_API_KEY","forex":"TWELVEDATA_API_KEY"}[m]
-        return {"ready":bool(os.environ.get(key)),"source":key}
+        return {"ready":False,"configured":bool(os.environ.get(key)),"source":key,"message":"الموصل البرمجي لهذا المزود لم يكتمل بعد"}
     return {"ready":False,"source":"Alpha universe adapter not configured"}
 def fetch_json(url,params=None):
     r=requests.get(url,params=params,timeout=12,headers={"User-Agent":"SMART-TRADING-PRO/1.0"})
@@ -229,7 +229,18 @@ def signals(market):
     if blocked: return blocked
     if market not in ("spot","futures"): return jsonify({"ok":True,"market":market,"signals":[],"message":"مصدر بيانات هذا السوق غير مربوط بعد."})
     try:
-        # Each request examines a bounded, liquid universe; results are never fabricated.
+        # Cache each market scan for 15 minutes to avoid hammering providers.
+        now=utcnow()
+        scan_key="scan:"+market
+        scan_row=db.session.get(Setting,scan_key)
+        if scan_row:
+            try:
+                last=datetime.fromisoformat(scan_row.value)
+                if aware(last)>now-timedelta(minutes=15):
+                    active=Trade.query.filter_by(market=market,status="active").filter(Trade.expires_at>now).order_by(Trade.score.desc()).limit(10).all()
+                    return jsonify({"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True})
+            except ValueError: pass
+        # Each scan examines a bounded, liquid universe; results are never fabricated.
         movers=sorted(market_tickers(market),key=lambda x:abs(x["change_pct"]),reverse=True)[:18]
         found=[]
         with ThreadPoolExecutor(max_workers=6) as pool:
@@ -249,6 +260,9 @@ def signals(market):
             if exists: exists.status="superseded"
             t=Trade(market=market,symbol=s["symbol"],side=s["side"],entry=s["entry"],stop=s["stop"],tp1=s["tp1"],tp2=s["tp2"],tp3=s["tp3"],score=s["score"],timeframe="15m",reason=s["reason"],expires_at=now+timedelta(hours=24))
             db.session.add(t)
+        scan_row=db.session.get(Setting,scan_key)
+        if not scan_row: scan_row=Setting(key=scan_key,value=iso(now)); db.session.add(scan_row)
+        else: scan_row.value=iso(now)
         db.session.commit()
         active=Trade.query.filter_by(market=market,status="active").filter(Trade.expires_at>now).order_by(Trade.score.desc()).limit(10).all()
         return jsonify({"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(movers)})
