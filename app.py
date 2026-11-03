@@ -499,7 +499,7 @@ def grant_subscription(user_id):
 def grant_subscription_by_email():
     data=request.get_json(silent=True) or {}
     email=str(data.get("email","")).strip().lower()
-    if not re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+",email):
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",email):
         return json_error("البريد الإلكتروني غير صحيح")
     u=User.query.filter_by(email=email).first()
     if not u: return json_error("الحساب غير مسجل بعد؛ يجب إنشاء الحساب أولاً",404)
