@@ -6,11 +6,7 @@ const PATH=location.pathname.replace(/\/+$/,"")||"/";
 const marketMatch=PATH.match(/^\/markets\/([a-z]+)$/);
 let market=marketMatch?marketMatch[1]:"spot",busy=false,pending=false,timer=null;
 let marketStatuses=new Map();
-let analysisTimeframe=new URLSearchParams(location.search).get("timeframe")||"15m";
-const VALID_TFS=["15m"];
-if(!VALID_TFS.includes(analysisTimeframe))analysisTimeframe="15m";
-function syncTimeframeButtons(){document.querySelectorAll("[data-timeframe]").forEach(button=>{const visible=button.dataset.timeframe==="15m";button.hidden=!visible;const active=visible&&button.dataset.timeframe===analysisTimeframe;button.classList.toggle("active",active);button.setAttribute("aria-pressed",active?"true":"false")})}
-syncTimeframeButtons();
+const analysisTimeframe="15m";
 const fmt=n=>Number(n).toLocaleString("en-US",{maximumFractionDigits:8});
 const compact=n=>{n=Number(n)||0;if(n>=1e9)return (n/1e9).toFixed(2)+"B";if(n>=1e6)return (n/1e6).toFixed(2)+"M";if(n>=1e3)return (n/1e3).toFixed(1)+"K";return fmt(n)};
 const pct=n=>(Number(n)>=0?"+":"")+Number(n).toFixed(2)+"%";
@@ -76,13 +72,12 @@ function applyLanguage(choice){
  set(".switcher-heading > span","selectMarket");set(".switcher-heading small","independentSources");
  set("#directionSection .panel-top h2","direction");set("#directionSection .direction-main small","marketTrend");set("#directionSection .breadth-total small","scanned");
  const breadthLabels=["up","down","neutral"];document.querySelectorAll("#directionSection .breadth-legend span").forEach((el,i)=>{el.childNodes.forEach(node=>{if(node.nodeType===3)node.textContent=" "+tr(breadthLabels[i]||"neutral")+" "})});
- set("#opportunitiesSection h2","opportunities");set("#opportunitiesSection p","strategyConfirm");set(".timeframe-label","timeframe");
- const tfKeys=["min15","hour","hour4","daily","weekly","monthly"];document.querySelectorAll("[data-timeframe]").forEach((el,i)=>{if(tfKeys[i])el.textContent=tr(tfKeys[i])});
+ set("#opportunitiesSection h2","opportunities");const tradeHeading=$("#opportunitiesSection h2");if(tradeHeading)tradeHeading.textContent="الصفقات";const tradeSubtitle=$("#opportunitiesSection p");if(tradeSubtitle)tradeSubtitle.hidden=true;
  set("#openSection h2","openTrades");set("#openSection p","tracking");set("#footerLanguageLabel","language");
  const select=$("#languageSelect");if(select&&select.value!==choice)select.value=choice;if(select?.options[0])select.options[0].textContent=tr("auto");
  const heading=$("#homeSection h1"),description=$("#homeSection p");
  if(heading){if(marketMatch)heading.innerHTML="<span>"+safe(marketName(market))+"</span>";else if(PATH==="/")heading.innerHTML="<span>"+tr("marketHomeTitle")+"</span>"}
- if(description){if(marketMatch||PATH==="/")description.textContent=tr("marketPageDescription")}
+ if(description){if(marketMatch)description.textContent="";else if(PATH==="/")description.textContent=tr("marketPageDescription")}
 
  const theme=$("#themeToggle");if(theme)theme.textContent=(document.documentElement.dataset.theme==="light"?"🌙 "+tr("night"):"☀️ "+tr("day"));
 }
@@ -116,15 +111,8 @@ function livePnl(side,entry,current){
 function renderSignals(rows,diagnostics={}){
  const root=$("#cards");
  if(!rows||!rows.length){
-  const reasons=diagnostics.rejected_by_reason||{};
-  const names={insufficient_candles:"شموع فريم الدخول غير كافية",insufficient_4h_candles:"شموع 4 ساعات غير كافية",insufficient_1d_candles:"شموع اليومي غير كافية",higher_timeframe_conflict:"اتجاه 4 ساعات واليومي غير متفق",weak_higher_timeframe_direction:"قوة اتجاه 4 ساعات واليومي غير كافية",strategy_15m_only:"فريم الدخول المعتمد 15 دقيقة",provider_error:"تعذر جلب بيانات المصدر",analysis_error:"خطأ في التحليل",no_confirmed_liquidity_or_momentum_setup:"لم يكتمل تأكيد سحب السيولة أو الاختراق أو الزخم",no_sweep_or_absorption:"لم يظهر سحب سيولة أو امتصاص ضمن نطاق الحركة القريب",volume_below_threshold:"حجم التداول دون الشرط",candle_not_confirmed:"شمعة الدخول غير مؤكدة",risk_above_4_5pct:"مخاطرة أعلى من الحد",invalid_risk_levels:"وقف الخسارة أو مستويات المخاطرة غير صالحة",entry_beyond_stop:"السعر تجاوز الوقف",missing_volume:"بيانات الحجم ناقصة",no_signal:"إشارة الفريم غير واضحة أو لا تحقق شروط الدخول",no_clear_15m_direction:"اتجاه 15 دقيقة غير واضح",invalid_atr:"مدى الحركة غير صالح",malformed_candles:"بيانات شموع غير سليمة",invalid_ohlc:"بيانات سعر غير سليمة",timeframe_conflict:"تعارض شروط التحليل على 15 دقيقة"};
-  const top=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,3);
-  const detail=top.map(([key,count])=>safe(names[key]||key)+' ('+count+')').join(' · ');
-  const scanned=Number(diagnostics.candidates_scanned||0);
-  root.innerHTML='<div class="empty">'+tr("noTrade")+
-   (detail?'<small>أكثر أسباب الاستبعاد: '+detail+'</small>':'')+
-   (scanned?'<small>الأصول التي فُحصت في هذه الدورة: '+scanned+'</small>':'')+'</div>';
-   return;
+  root.innerHTML='<div class="empty">'+tr("noTrade")+'</div>';
+  return;
  }
  root.innerHTML=rows.map((x,i)=>{
   const side=x.side==="BUY"?1:-1;
@@ -134,7 +122,7 @@ function renderSignals(rows,diagnostics={}){
   const liveText=live===null?"—":fmt(live);
   const rank=i===0?"gold":i===1?"silver":i===2?"bronze":"standard";const medal=i===0?"👑":i===1?"🥈":i===2?"🥉":"";const rankLabel=i===0?"المركز الأول · ذهبي":i===1?"المركز الثاني · فضي":i===2?"المركز الثالث · برونزي":"ترتيب "+(i+1);
   const flow=x.institutional_flow||{};
-  return '<article class="trade pro-trade-card"><div class="pro-card-top '+(i<3?"podium-"+rank:"")+'"><div class="trade-title"><span class="rank '+rank+'"><span class="rank-medal">'+medal+'</span><b>'+(i+1)+'</b></span><div><b>'+safe(x.symbol)+'</b><small class="card-market-label">'+safe(marketName(market))+' · '+safe(x.timeframe||"15m")+'</small></div></div><div class="card-live-state"><i></i> '+rankLabel+'</div></div><div class="pro-signal-strip"><span class="market-direction '+(x.side==="BUY"?"up":"down")+'">'+(x.side==="BUY"?"▲ "+tr("up"):"▼ "+tr("down"))+'</span><span class="tag '+(x.side==="BUY"?"buy":"sell")+'">'+(x.side==="BUY"?tr("buy"):tr("sell"))+'</span><span class="quality-chip">جودة الشروط '+Number(x.quality_score||0)+'/100</span><span class="quality-chip">الإشارة الفنية: '+safe(x.signal_state_ar||"—")+'</span></div><div class="pro-live-price"><div><small>السعر الحالي · آخر تحديث</small><b>'+liveText+'</b></div><div class="live-pnl '+(pnl>=0?"up":"down")+'"><small>العائد من الدخول</small><b>'+(pnl===null?"—":(pnl>0?"+":"")+pnl.toFixed(2)+"%")+'</b></div></div><div class="pro-entry-line"><span>الدخول المقترح</span><b>'+fmt(x.entry)+'</b><span>المخاطرة حتى الوقف</span><b class="down">'+stopPct+'</b></div><div class="pro-target-grid"><div class="target-box"><small>TP1 · '+(x.tp1_r_multiple?Number(x.tp1_r_multiple).toFixed(1)+'R':'ربح محتمل')+'</small><b>'+fmt(x.tp1)+'</b><em>'+targetPct(x.tp1)+'</em></div><div class="target-box"><small>TP2 · '+(x.tp2_r_multiple?Number(x.tp2_r_multiple).toFixed(1)+'R':'ربح محتمل')+'</small><b>'+fmt(x.tp2)+'</b><em>'+targetPct(x.tp2)+'</em></div><div class="target-box"><small>TP3 · '+(x.tp3_r_multiple?Number(x.tp3_r_multiple).toFixed(1)+'R':'ربح محتمل')+'</small><b>'+fmt(x.tp3)+'</b><em>'+targetPct(x.tp3)+'</em></div><div class="target-box stop-box"><small>وقف الخسارة</small><b>'+fmt(x.stop_loss)+'</b><em>'+stopPct+'</em></div></div><div class="pro-card-footer"><span>سرعة الحركة <b>'+Number(x.fast_mover_score||0)+'/100</b></span><span>تدفق الأوامر <b>'+safe(flow.status==="supportive"?tr("supportive"):flow.status==="opposing"?tr("opposing"):flow.status==="balanced"?tr("balanced"):tr("unavailable"))+'</b></span><span>تغير 24س <b class="'+(x.change24h>=0?"up":"down")+'">'+pct(x.change24h)+'</b></span></div><div class="pro-card-note">العائد المحتمل محسوب من الدخول إلى الهدف، وليس ضمانًا للربح.</div></article>';
+  return '<article class="trade pro-trade-card"><div class="pro-card-top '+(i<3?"podium-"+rank:"")+'"><div class="trade-title"><span class="rank '+rank+'"><span class="rank-medal">'+medal+'</span><b>'+(i+1)+'</b></span><div><b>'+safe(x.symbol)+'</b><small class="card-market-label">'+safe(marketName(market))+'</small></div></div><div class="card-live-state"><i></i> '+rankLabel+'</div></div><div class="pro-signal-strip"><span class="market-direction '+(x.side==="BUY"?"up":"down")+'">'+(x.side==="BUY"?"▲ "+tr("up"):"▼ "+tr("down"))+'</span><span class="tag '+(x.side==="BUY"?"buy":"sell")+'">'+(x.side==="BUY"?tr("buy"):tr("sell"))+'</span><span class="quality-chip">جودة الشروط '+Number(x.quality_score||0)+'/100</span><span class="quality-chip">الإشارة الفنية: '+safe(x.signal_state_ar||"—")+'</span></div><div class="pro-live-price"><div><small>السعر الحالي · آخر تحديث</small><b>'+liveText+'</b></div><div class="live-pnl '+(pnl>=0?"up":"down")+'"><small>العائد من الدخول</small><b>'+(pnl===null?"—":(pnl>0?"+":"")+pnl.toFixed(2)+"%")+'</b></div></div><div class="pro-entry-line"><span>الدخول المقترح</span><b>'+fmt(x.entry)+'</b><span>المخاطرة حتى الوقف</span><b class="down">'+stopPct+'</b></div><div class="pro-target-grid"><div class="target-box"><small>TP1 · '+(x.tp1_r_multiple?Number(x.tp1_r_multiple).toFixed(1)+'R':'ربح محتمل')+'</small><b>'+fmt(x.tp1)+'</b><em>'+targetPct(x.tp1)+'</em></div><div class="target-box"><small>TP2 · '+(x.tp2_r_multiple?Number(x.tp2_r_multiple).toFixed(1)+'R':'ربح محتمل')+'</small><b>'+fmt(x.tp2)+'</b><em>'+targetPct(x.tp2)+'</em></div><div class="target-box"><small>TP3 · '+(x.tp3_r_multiple?Number(x.tp3_r_multiple).toFixed(1)+'R':'ربح محتمل')+'</small><b>'+fmt(x.tp3)+'</b><em>'+targetPct(x.tp3)+'</em></div><div class="target-box stop-box"><small>وقف الخسارة</small><b>'+fmt(x.stop_loss)+'</b><em>'+stopPct+'</em></div></div><div class="pro-card-footer"><span>سرعة الحركة <b>'+Number(x.fast_mover_score||0)+'/100</b></span><span>تدفق الأوامر <b>'+safe(flow.status==="supportive"?tr("supportive"):flow.status==="opposing"?tr("opposing"):flow.status==="balanced"?tr("balanced"):tr("unavailable"))+'</b></span><span>تغير 24س <b class="'+(x.change24h>=0?"up":"down")+'">'+pct(x.change24h)+'</b></span></div><div class="pro-card-note">العائد المحتمل محسوب من الدخول إلى الهدف، وليس ضمانًا للربح.</div></article>';
  }).join("");
 }
 function renderOpen(rows){
@@ -144,7 +132,7 @@ function renderOpen(rows){
   const pnl=x.current_price==null?null:(x.live_pnl_percent==null?livePnl(x.side,x.entry,x.current_price):Number(x.live_pnl_percent));
   const current=x.current_price==null?"—":fmt(x.current_price);
   const target=(name,value,lit,kind)=>'<div class="tracked-level '+(lit?'level-lit '+kind:'')+'"><small>'+name+'</small><b>'+fmt(value)+'</b></div>';
-  return '<article class="tracked-trade-card"><div class="tracked-head"><div><b>'+safe(x.symbol)+'</b><small>'+safe(marketName(x.market))+' · '+(x.side==="BUY"?tr("buy"):tr("sell"))+' · '+safe(x.timeframe)+'</small></div></div><div class="tracked-live-grid"><div><small>السعر الحالي</small><b>'+current+'</b></div><div><small>العائد الحي من الدخول</small><b class="'+(pnl>=0?"up":"down")+'">'+(pnl==null?"—":(pnl>0?"+":"")+pnl.toFixed(2)+"%")+'</b></div><div><small>سعر الدخول</small><b>'+fmt(x.entry)+'</b></div></div><div class="tracked-levels">'+target("TP1",x.tp1,x.tp1_hit,"target-lit")+target("TP2",x.tp2,x.tp2_hit,"target-lit")+target("TP3",x.tp3,x.tp3_hit||x.status==="TP3","target-lit")+target(tr("stopLoss"),x.stop_loss,x.status==="SL","stop-lit")+'</div></article>';
+  return '<article class="tracked-trade-card"><div class="tracked-head"><div><b>'+safe(x.symbol)+'</b><small>'+safe(marketName(x.market))+' · '+(x.side==="BUY"?tr("buy"):tr("sell"))+'</small></div></div><div class="tracked-live-grid"><div><small>السعر الحالي</small><b>'+current+'</b></div><div><small>العائد الحي من الدخول</small><b class="'+(pnl>=0?"up":"down")+'">'+(pnl==null?"—":(pnl>0?"+":"")+pnl.toFixed(2)+"%")+'</b></div><div><small>سعر الدخول</small><b>'+fmt(x.entry)+'</b></div></div><div class="tracked-levels">'+target("TP1",x.tp1,x.tp1_hit,"target-lit")+target("TP2",x.tp2,x.tp2_hit,"target-lit")+target("TP3",x.tp3,x.tp3_hit||x.status==="TP3","target-lit")+target(tr("stopLoss"),x.stop_loss,x.status==="SL","stop-lit")+'</div></article>';
  }).join("");
 }
 function renderClosed(rows){
@@ -212,7 +200,7 @@ async function load(){
  $("#health").textContent="جارٍ التحديث";
  try{
   const requestedMarket=market;
-   const requestedTimeframe=analysisTimeframe;
+   const requestedTimeframe="15m";
   const providerState=marketStatuses.get(requestedMarket);
   if(providerState && !["live","configured_watchlist"].includes(providerState.status)){
    $("#direction").textContent="غير متاح";
@@ -228,17 +216,15 @@ async function load(){
    return;
   }
   const section=PATH.startsWith("/sections/")?PATH.split("/").pop():requestedMarket;
-  const d=await get("/api/market/"+requestedMarket+"?timeframe="+encodeURIComponent(requestedTimeframe)+"&section="+encodeURIComponent(section),60000);
+  const d=await get("/api/market/"+requestedMarket+"?timeframe=15m",60000);
   if(requestedMarket!==market||requestedTimeframe!==analysisTimeframe){pending=true;return}
   $("#direction").textContent=d.direction==="BUY"?tr("up"):d.direction==="SELL"?tr("down"):tr("neutral");$("#direction").className="direction-value "+(d.direction==="BUY"?"up":d.direction==="SELL"?"down":"neutral");
   $("#up").textContent=d.up;$("#down").textContent=d.down;$("#flat").textContent=d.flat??0;$("#total").textContent=d.total;
   const total=Math.max(1,Number(d.total)||0);
   $("#upBar").style.width=(d.up/total*100)+"%";$("#downBar").style.width=(d.down/total*100)+"%";$("#flatBar").style.width=((d.flat||0)/total*100)+"%";
-    $("#source").textContent="مصدر البيانات: "+d.source+" · "+d.strategy;
+    $("#source").textContent="مصدر البيانات: "+d.source;
     
   renderSignals(d.signals,d.scan_diagnostics||{});renderOpen(d.open_trades);
-  const strategyLabel={"15m":"اتجاه 4 ساعات واليومي · تأكيد السيولة والدخول 15 دقيقة"};
-  const label=$("#activeStrategy");if(label)label.textContent=strategyLabel[analysisTimeframe]||analysisTimeframe;
   const minutes=Math.max(0,Math.ceil(Number(d.seconds_until_next_scan||0)/60));
   $("#health").textContent=d.snapshot_stale?"آخر نتائج محفوظة · المصدر متوقف مؤقتاً":d.scan_cached?"نتائج محفوظة · الفحص القادم بعد "+minutes+" د":"اكتمل الفحص وحُفظت النتائج";
   $("#health").className=d.snapshot_stale?"bad":"ok";
@@ -260,12 +246,6 @@ async function load(){
 
 
 $("#refresh")?.addEventListener("click",()=>{if(PATH==="/sections/history")loadHistoryPage();else load()});
-document.querySelectorAll("[data-timeframe]").forEach(button=>button.addEventListener("click",()=>{
- const next=button.dataset.timeframe;if(!VALID_TFS.includes(next)||next===analysisTimeframe)return;
- analysisTimeframe=next;syncTimeframeButtons();
- const url=new URL(location.href);url.searchParams.set("timeframe",next);history.replaceState({}, "", url);
- load();
-}));
 async function loadNews(){
  const root=$("#newsFeed");if(!root)return;
  root.innerHTML='<div class="empty">جارٍ جلب آخر العناوين...</div>';
@@ -304,7 +284,7 @@ async function loadHomeOverview(){
 function configurePage(){
  document.body.classList.toggle("home-page",PATH==="/");
  document.body.classList.toggle("market-page",!!marketMatch);
- const timeframeSwitcher=$("#marketTimeframeSwitcher");if(timeframeSwitcher)timeframeSwitcher.hidden=!marketMatch;
+ const timeframeSwitcher=$("#marketTimeframeSwitcher");if(timeframeSwitcher)timeframeSwitcher.hidden=true;
  const adminAllowed=!$("#adminPanel").hidden;$("#adminPanel").hidden=true;
  const ids=["homeSection","homeOverview","marketSection","directionSection","opportunitiesSection","cards","openSection","blogSection","newsSection"];
  const hideAll=()=>ids.forEach(id=>{const el=$("#"+id);if(el)el.hidden=true});
@@ -317,7 +297,7 @@ function configurePage(){
   if(!MARKET_NAMES[market]){location.replace("/");return}
   hideAll();show("homeSection","directionSection","opportunitiesSection","cards","openSection");
   $("#homeSection h1").innerHTML='<span>'+safe(marketName(market))+'</span>';
-  $("#homeSection p").textContent="اتجاه السوق والفرص والصفقات الخاصة بهذا السوق فقط.";
+  $("#homeSection p").textContent="";
  }else if(PATH.startsWith("/sections/")){
   const section=PATH.split("/").pop();
   const map={direction:["directionSection"],opportunities:["opportunitiesSection","cards"],"open-trades":["opportunitiesSection","cards","openSection"]};

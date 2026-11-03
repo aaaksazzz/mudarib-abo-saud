@@ -1,7 +1,7 @@
 name: Clean rebuild checks
 on:
   push:
-    branches: [main]
+    branches: [main, "fix/**", "strategy/**"]
   pull_request:
     branches: [main]
 jobs:

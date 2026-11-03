@@ -5,8 +5,8 @@
 <meta name="theme-color" content="#070b12"><title>SMART TRADING PRO | التداول الذكي</title>
 <meta name="description" content="منصة احترافية لمراقبة الأسواق والاتجاهات والفرص الفنية ببيانات عامة ومصادر واضحة.">
 <link rel="preconnect" href="https://api.binance.com"><link rel="preconnect" href="https://fapi.binance.com">
-<link rel="stylesheet" href="/static/app.css?v=20261102.clean-terminal-v1">
-<script src="/static/app.js?v=20261102.terminal-phase1" defer></script>
+<link rel="stylesheet" href="/static/app.css?v=20261103.direction-trades-v2">
+<script src="/static/app.js?v=20261103.direction-trades-v2" defer></script>
 </head>
 <body>
 <div class="app-shell">
@@ -52,9 +52,6 @@
    <div class="drawer-group">الأسواق</div>
    <a href="/markets/spot">Binance Spot</a><a href="/markets/futures">Binance USD-M</a><a href="/markets/coinm">Binance COIN-M</a><a href="/markets/alpha">Binance Alpha</a>
    <a href="/markets/saudi">السوق السعودي</a><a href="/markets/us">الأسهم الأمريكية</a><a href="/markets/contracts">العقود الأمريكية</a><a href="/markets/forex">الفوركس والذهب</a>
-   <div class="drawer-group">الاتجاه والصفقات</div>
-   <a href="/sections/direction">توجه السوق</a><a href="/sections/opportunities">فرص التداول</a><a href="/sections/open-trades">متابعة الصفقات</a>
-   <div class="drawer-group">المحتوى</div><a href="/blog">المدونة التعليمية</a><a href="/news">أخبار الأسواق</a>
    <a href="/admin" id="drawerAdmin" hidden>إدارة المشتركين</a>
   </nav>
   <button id="drawerBackdrop" class="drawer-backdrop" type="button" aria-label="إغلاق القائمة" hidden></button>
@@ -99,28 +96,19 @@
  </section>
  <section class="overview-grid" id="directionSection">
   <article class="panel direction-panel">
-   <div class="panel-top"><div><span class="kicker">MARKET BREADTH · 24H</span><h2>توجه السوق</h2></div><span class="live-pill"><i></i> مباشر</span></div>
+   <div class="panel-top"><div><span class="kicker">MARKET DIRECTION</span><h2>توجه السوق</h2></div><span class="live-pill"><i></i> مباشر</span></div>
    <div class="direction-main"><div><small>الاتجاه العام</small><strong id="direction" class="direction-value">—</strong></div><div class="breadth-total"><b id="total">—</b><small>أصل مفحوص</small></div></div>
    <div class="breadth-bar"><span id="upBar"></span><span id="downBar"></span><span id="flatBar"></span></div>
    <div class="breadth-legend"><span><i class="legend-up"></i> صاعد <b id="up">—</b></span><span><i class="legend-down"></i> هابط <b id="down">—</b></span><span><i class="legend-flat"></i> محايد <b id="flat">—</b></span></div>
    <p class="panel-note">الاتجاه محسوب من عدد الأصول الرابحة والخاسرة خلال 24 ساعة.</p>
   </article>
  </section>
- </section>
- <section class="section-heading opportunity-heading" id="opportunitiesSection"><div><span class="kicker">SMART TRADING PRO · MARKET SIGNALS</span><h2>فرص التداول</h2><p>اتجاه 4 ساعات واليومي · تأكيد السيولة والدخول على 15 دقيقة.</p></div><span class="ranking-note">TOP 3 · أعلى تغير أولًا</span></section>
- <section id="marketTimeframeSwitcher" class="timeframe-switcher" aria-label="اختيار فريم التحليل" hidden>
-  <span class="timeframe-label">فريم التحليل</span>
-  <div class="timeframe-buttons" role="group" aria-label="الفريم الزمني">
-   <button type="button" class="tf-button" data-timeframe="15m" aria-pressed="true">15 دقيقة</button>
-  </div>
-  <span id="activeStrategy">اتجاه 4 ساعات واليومي · دخول 15 دقيقة</span>
- </section>
+ <section class="section-heading opportunity-heading" id="opportunitiesSection"><div><span class="kicker">SMART TRADING PRO · MARKET SIGNALS</span><h2>الصفقات</h2></div></section>
  <section id="cards" class="cards"><div class="empty">جارٍ تحليل السوق...</div></section>
  <section class="panel tracker-panel" id="openSection">
   <div class="section-heading tracker-heading"><div><span class="kicker">POSITION MONITOR</span><h2>متابعة الصفقات</h2><p>تتبع تلقائي لمستويات الأهداف ووقف الخسارة عند تحديث السوق.</p></div><span id="openCount" class="count-pill">0 مفتوحة</span></div>
   <div id="openTrades" class="trade-list"><div class="empty">لا توجد صفقات مفتوحة محفوظة لهذا السوق.</div></div>
  </section>
-  </section>
 <section id="blogSection" class="editorial-section" hidden>
   <div class="section-heading"><div><span class="kicker">SMART TRADING ACADEMY</span><h2>المدونة التعليمية</h2><p>مقالات مبسطة لفهم السوق وإدارة المخاطر.</p></div></div>
   <div class="editorial-grid">

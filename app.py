@@ -43,7 +43,7 @@ YAHOO_SYMBOLS = {
     "saudi": [x.strip().upper() for x in os.environ.get("YAHOO_SAUDI_SYMBOLS", "").split(",") if x.strip()],
 }
 SCAN_INTERVAL = "15m"
-SCAN_INTERVAL_SECONDS = 5 * 60
+SCAN_INTERVAL_SECONDS = 15 * 60
 STABLES = {"USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "EUR"}
 CACHE = {}
 CACHE_LOCK = threading.Lock()
@@ -1022,7 +1022,6 @@ def admin_payment_action():
     return jsonify({"ok":True})
 
 @app.get("/api/access/sections")
-@require_paid_access
 def access_sections():
     with db() as c: rows=c.execute("SELECT section,enabled FROM section_settings").fetchall()
     return jsonify({"sections":{x["section"]:bool(x["enabled"]) for x in rows}})
@@ -1196,10 +1195,7 @@ def editorial_page():
     return send_from_directory("static", "index.html")
 
 @app.get("/api/news")
-@require_paid_access
 def latest_news():
-    if current_user()["role"]!="admin" and not section_enabled("news"):
-        return jsonify({"ok":False,"error":"section_locked","message":"قسم الأخبار مغلق من الإدارة."}),403
 
     def load_news():
         url = "https://news.google.com/rss/search?q=markets+crypto+stocks+forex&hl=ar&gl=SA&ceid=SA:ar"
@@ -1414,7 +1410,7 @@ def market(kind):
         fast_movers = assets[:10]
         prices = {row["symbol"]: row["price"] for row in assets}
         update_open_trades(kind, prices)
-        # Scan exactly one round-robin batch of up to 20 assets per market/timeframe.
+        # Scan a bounded batch each cycle; rescan the fastest 8 assets and rotate 8 others.
         # The cursor is stored in SQLite so a restart does not restart from asset zero.
         cursor_key = (kind, timeframe)
         with SCAN_CURSOR_LOCK:
@@ -1422,7 +1418,7 @@ def market(kind):
                 SCAN_CURSORS[cursor_key] = load_market_scan_cursor(kind, timeframe)
             scan_offset = SCAN_CURSORS[cursor_key]
             candidates, next_scan_offset, scan_offset, priority_candidates = select_priority_scan_batch(
-                assets, scan_offset, batch_size=8, priority_size=4
+                assets, scan_offset, batch_size=16, priority_size=8
             )
         signals = []
         diagnostic_rows = [{} for _ in candidates]
@@ -1477,40 +1473,10 @@ def market(kind):
                 if trade["current_price"] is not None and trade["entry"] else None
             )
 
-        # Keep confirmed opportunities visible across refreshes. A signal is
-        # inserted only once per completed candle; returning only newly inserted
-        # rows made its card disappear on the next refresh even while OPEN.
-        display_by_key = {
-            (row["symbol"], row["timeframe"]): dict(row)
-            for row in signals
-        }
-        ticker_by_symbol = {row["symbol"]: row for row in assets}
-        for trade in active:
-            if trade["timeframe"] != timeframe:
-                continue
-            # Keep opposite-side legacy positions in the tracker, but do not
-            # surface them as current opportunities against today's market bias.
-            if direction not in ("BUY", "SELL") or trade.get("side") != direction:
-                continue
-            key = (trade["symbol"], trade["timeframe"])
-            if key in display_by_key:
-                continue
-            quote = ticker_by_symbol.get(trade["symbol"], {})
-            entry = float(trade["entry"] or 0)
-            stop = float(trade["stop_loss"] or 0)
-            display_by_key[key] = {
-                **trade,
-                "price": trade.get("current_price"),
-                "risk_percent": round(abs(entry - stop) / entry * 100, 3) if entry > 0 else None,
-                "quality_score": None,
-                "signal_state_ar": "صفقة مؤكدة محفوظة ومفتوحة",
-                "fast_mover_score": quote.get("fast_mover_score", 0),
-                "change24h": quote.get("change24h", 0),
-                "change_timeframe": 0,
-                "institutional_flow": {"status": "unavailable"},
-                "persisted": True,
-            }
-        signals = list(display_by_key.values())[:3]
+        # Opportunity cards contain only trades confirmed and saved by this
+        # scan on a newly completed 15m candle. Older OPEN positions remain in
+        # the separate tracker and must never be relabelled as fresh signals.
+        signals = [dict(row) for row in signals[:3]]
         response_payload = {
             "ok": True, "market": kind, "direction": direction, "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[direction],
             "up": up, "down": down, "flat": flat, "total": len(assets), "timeframe": timeframe,
@@ -1521,7 +1487,7 @@ def market(kind):
             "signals": signals, "open_trades": active,
             "scan_diagnostics": {
                 "universe_size": len(assets), "candidates_scanned": len(candidates),
-                "batch_size": 8, "batch_start": scan_offset,
+                "batch_size": 16, "batch_start": scan_offset,
                 "scan_offset": scan_offset, "next_scan_offset": next_scan_offset,
                 "priority_candidates": priority_candidates,
                 "scan_cycle_complete": bool(assets) and next_scan_offset <= scan_offset,
@@ -1552,26 +1518,33 @@ def market(kind):
     except requests.RequestException:
         app.logger.exception("Market provider request failed: %s", kind)
         try:
+            # Expire positions older than 24h even during a quote-provider outage.
+            # This does not update P/L without a live quote.
+            update_open_trades(kind, {})
             previous_scan = load_market_scan_snapshot(kind, timeframe)
             if previous_scan:
                 payload = dict(previous_scan["payload"])
+                # A provider outage must not present yesterday's cached entries
+                # as fresh opportunities. The separate open-trade tracker is
+                # retained, but fresh-signal cards are cleared until a new scan.
+                payload["signals"] = []
                 payload.update({
                     "snapshot_stale": True, "scan_cached": True,
                     "scan_updated_at": previous_scan["updated_at"],
-                    "message": "تعذر تحديث المصدر؛ نعرض آخر نتائج الفحص المحفوظة."
+                    "message": "تعذر تحديث المصدر؛ أخفينا الفرص القديمة ونحتفظ بمتابعة الصفقات المفتوحة."
                 })
                 return jsonify(payload)
             snapshot = load_market_snapshot(kind)
             if snapshot:
-                saved_signals, saved_open = load_saved_market_trades(kind, timeframe)
-                # Restore all saved trades during provider outages; 24h breadth
-                # is not a valid filter for per-asset 4h + daily trade setups.
+                _, saved_open = load_saved_market_trades(kind, timeframe)
+                # Keep saved positions in the tracker, never in fresh-signal cards
+                # when the live provider is unavailable.
                 return jsonify({
                     "ok": True, "market": kind, "direction": snapshot["direction"],
                     "direction_ar": {"BUY": "صاعد", "SELL": "هابط", "NEUTRAL": "محايد"}[snapshot["direction"]],
                     "up": snapshot["up"], "down": snapshot["down"], "flat": snapshot["flat"],
                     "total": snapshot["total"], "timeframe": timeframe,
-                    "signals": saved_signals, "open_trades": saved_open,
+                    "signals": [], "open_trades": saved_open,
                     "movers": [], "fast_movers": [],
                     "scan_diagnostics": {"universe_size": snapshot["total"], "candidates_scanned": 0, "rejected_by_reason": {}},
                     "updated": snapshot["updated_at"], "snapshot_stale": True,
@@ -1589,7 +1562,6 @@ def market(kind):
 
 @app.get("/api/analysis/method")
 @app.get("/api/gamma/crypto")
-@require_paid_access
 def crypto_gamma():
     """No-key local OHLCV analysis method; the legacy route remains compatible."""
     return jsonify({
@@ -1603,10 +1575,7 @@ def crypto_gamma():
     })
 
 @app.get("/api/trades")
-@require_paid_access
 def trades():
-    if current_user()["role"]!="admin" and not section_enabled("history"):
-        return jsonify({"ok":False,"error":"section_locked","message":"سجل الصفقات مغلق من الإدارة."}),403
     market_id = request.args.get("market", "")
     with db() as connection:
         if market_id:
