@@ -243,11 +243,8 @@ def update_admin_contact():
 def market_list():
     return jsonify({"ok":True,"markets":[{"id":m,"enabled":section_enabled(m),"provider":provider_status(m)} for m in MARKETS]})
 def provider_status(m):
-    if m in ("spot","futures"): return {"ready":True,"source":"Binance public market API"}
-    if m in ("us-stocks","us-contracts","saudi","forex"):
-        key={"us-stocks":"FINNHUB_API_KEY","us-contracts":"FINNHUB_API_KEY","saudi":"SAUDI_DATA_API_KEY","forex":"TWELVEDATA_API_KEY"}[m]
-        return {"ready":False,"configured":bool(os.environ.get(key)),"source":key,"message":"الموصل البرمجي لهذا المزود لم يكتمل بعد"}
-    return {"ready":False,"source":"Alpha universe adapter not configured"}
+    sources={"spot":"Binance Spot public API","futures":"Binance USD-M Futures public API","alpha":"Binance Alpha public market API","us-stocks":"Yahoo Finance US equity screener","us-contracts":"Yahoo Finance US futures quotes","saudi":"Yahoo Finance Saudi-listed shares screener","forex":"Yahoo Finance FX and metals quotes"}
+    return {"ready":m in sources,"source":sources.get(m,"غير معروف"),"timeframe":"15m","requires_api_key":False}
 def fetch_json(url,params=None):
     last_error=None
     for attempt in range(3):
@@ -275,11 +272,11 @@ def market_symbols(market):
     if market=="futures":
         info=fetch_json(BINANCE_FUTURES+"/fapi/v1/exchangeInfo")
         return {x["symbol"] for x in info.get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("contractType")=="PERPETUAL" and x.get("baseAsset") not in STABLES}
-    return set()
+    return market_adapters.market_symbols(market)
 
 def market_tickers(market):
     if market not in ("spot","futures"):
-        return []
+        return market_adapters.market_tickers(market)
     base=BINANCE_FUTURES if market=="futures" else BINANCE_SPOT
     endpoint="/fapi/v1/ticker/24hr" if market=="futures" else "/api/v3/ticker/24hr"
     valid=market_symbols(market)
@@ -299,13 +296,14 @@ def snapshot(market):
     if market not in MARKETS: return json_error("السوق غير معروف",404)
     blocked=gate_section(market)
     if blocked: return blocked
-    if market not in ("spot","futures"): return jsonify({"ok":True,"market":market,"ready":provider_status(market)["ready"],"provider":provider_status(market),"direction":"غير متاح","up":None,"down":None,"assets":[],"message":"مصدر البيانات غير مربوط؛ لن نعرض أرقاماً تقديرية."})
-    try:
+     try:
         rows=market_tickers(market); up=sum(1 for x in rows if x["change_pct"]>0); down=sum(1 for x in rows if x["change_pct"]<0)
         return jsonify({"ok":True,"market":market,"direction":"صاعد" if up>down else "هابط" if down>up else "متعادل","direction_basis":"تغير السعر خلال 24 ساعة","up":up,"down":down,"total":len(rows),"assets":rows[:40],"updated_at":iso(utcnow())})
     except Exception as e:
         app.logger.exception("snapshot failed"); return json_error("تعذر جلب بيانات السوق من المصدر حالياً",502)
 def klines(market,symbol,interval,limit=120):
+    if market not in ("spot","futures"):
+        return market_adapters.klines(market,symbol,interval,limit)
     base=BINANCE_FUTURES if market=="futures" else BINANCE_SPOT
     path="/fapi/v1/klines" if market=="futures" else "/api/v3/klines"
     return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit})
@@ -403,8 +401,8 @@ def update_trade_outcomes(market,tickers):
     return changed
 
 def run_market_scan(market,force=False):
-    if market not in ("spot","futures"):
-        raise ValueError("No verified market adapter for "+str(market))
+    if market not in MARKETS:
+        raise ValueError("Unknown market "+str(market))
     now=utcnow()
     expire_stale_trades(market)
     scan_key="scan:"+market
@@ -467,9 +465,7 @@ def signals(market):
     blocked=gate_section(market)
     if blocked:
         return blocked
-    if market not in ("spot","futures"):
-        return jsonify({"ok":True,"market":market,"signals":[],"scan_ready":False,"message":"مصدر البيانات لهذا السوق غير مربوط؛ لن نعرض صفقات تقديرية."})
-    try:
+     try:
         # Keep web requests fast: the scheduler owns scans; page loads only read the latest committed result.
         expire_stale_trades(market)
         row=db.session.get(Setting,"scan:"+market)
@@ -648,7 +644,7 @@ with app.app_context():
 def scheduled_market_scan():
     with app.app_context():
         expire_stale_trades()
-        for market in ("spot","futures"):
+        for market in MARKETS:
             try:
                 result=run_market_scan(market,force=True)
                 app.logger.info("scheduled scan completed: market=%s signals=%s universe=%s failures=%s",market,len(result.get("signals",[])),result.get("scan_universe"),result.get("analysis_failed",0))
