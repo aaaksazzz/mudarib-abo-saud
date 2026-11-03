@@ -405,7 +405,7 @@ def run_market_scan(market,force=False):
         raise RuntimeError("Market provider returned an empty eligible universe")
     update_trade_outcomes(market,universe)
     # Scan a broad, liquid candidate set independently on every requested timeframe.
-    candidates=sorted(universe,key=lambda x:x["quote_volume"],reverse=True)[:60]
+    candidates=sorted(universe,key=lambda x:x["quote_volume"],reverse=True)[:30]
     jobs=[]
     found=[]
     completed=0
@@ -440,7 +440,7 @@ def run_market_scan(market,force=False):
     db.session.commit()
     active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(candidates),"analysis_completed":completed,"analysis_failed":failed,"timeframes":list(TIMEFRAMES)}
-@app.get("/api/markets/<market>/signals")@app.get("/api/markets/<market>/signals")
+@app.get("/api/markets/<market>/signals")
 def signals(market):
     if market not in MARKETS:
         return json_error("السوق غير معروف",404)
