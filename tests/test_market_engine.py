@@ -83,6 +83,22 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(signal["tp2"], signal["tp3"])
         self.assertAlmostEqual(signal["tp1"], signal["entry"] + 2 * (signal["entry"] - signal["stop"]))
 
+    def test_only_15m_timeframe_is_scanned_and_returned(self):
+        self.assertEqual(platform.TIMEFRAMES, ("15m",))
+        with platform.app.app_context():
+            now = platform.utcnow()
+            platform.db.session.add_all([
+                platform.Trade(market="spot", symbol="OLDUSDT", side="BUY", entry=100, stop=95,
+                    tp1=110, tp2=110, tp3=110, score=0, timeframe="1h",
+                    reason="legacy", expires_at=now + timedelta(hours=1)),
+                platform.Trade(market="spot", symbol="NEWUSDT", side="BUY", entry=100, stop=95,
+                    tp1=110, tp2=110, tp3=110, score=0, timeframe="15m",
+                    reason="current", expires_at=now + timedelta(hours=1)),
+            ])
+            platform.db.session.commit()
+        response = self.client.get("/api/markets/spot/signals")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([x["symbol"] for x in response.get_json()["signals"]], ["NEWUSDT"])
     def test_public_routes_do_not_disclose_strategy_details(self):
         self.assertEqual(self.client.get("/api/strategies").status_code, 404)
         self.assertEqual(self.client.get("/smart-flow-lab").status_code, 404)

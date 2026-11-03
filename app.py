@@ -6,7 +6,7 @@ import requests
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import func, text, inspect
+from sqlalchemy import func, text, inspect, or_
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -313,8 +313,8 @@ def ema(values,period):
     k=2/(period+1); v=sum(values[:period])/period
     for x in values[period:]: v=x*k+v*(1-k)
     return v
-TIMEFRAMES=("15m","1h","4h","1d","1w","1M")
-BINANCE_INTERVALS={"15m":"15m","1h":"1h","4h":"4h","1d":"1d","1w":"1w","1M":"1M"}
+TIMEFRAMES=("15m",)
+BINANCE_INTERVALS={"15m":"15m"}
 def build_signal(market,item,timeframe):
     symbol=item["symbol"]
     rows=klines(market,symbol,BINANCE_INTERVALS[timeframe],100)
@@ -412,7 +412,7 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
+                active=Trade.query.filter(Trade.market==market,Trade.timeframe=="15m",Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True}
         except (ValueError,TypeError):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
@@ -420,7 +420,7 @@ def run_market_scan(market,force=False):
     if not universe:
         raise RuntimeError("Market provider returned an empty eligible universe")
     # Retire legacy-strategy open trades so old signals never leak into the new strategy feed.
-    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),~Trade.reason.like("تقاطع EMA 9/14%")).update({"status":"superseded"},synchronize_session=False)
+    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),or_(Trade.timeframe!="15m",~Trade.reason.like("تقاطع EMA 9/14%"))).update({"status":"superseded"},synchronize_session=False)
     db.session.commit()
     update_trade_outcomes(market,universe)
     # Scan a broad, liquid candidate set independently on every requested timeframe.
@@ -457,7 +457,7 @@ def run_market_scan(market,force=False):
     else:
         scan_row.value=iso(now)
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
+    active=Trade.query.filter(Trade.market==market,Trade.timeframe=="15m",Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(candidates),"analysis_completed":completed,"analysis_failed":failed,"timeframes":list(TIMEFRAMES)}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
@@ -472,7 +472,7 @@ def signals(market):
         # Keep web requests fast: the scheduler owns scans; page loads only read the latest committed result.
         expire_stale_trades(market)
         row=db.session.get(Setting,"scan:"+market)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow()).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
+        active=Trade.query.filter(Trade.market==market,Trade.timeframe=="15m",Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow()).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
         updated=row.value if row else None
         stale=True
         if updated:
