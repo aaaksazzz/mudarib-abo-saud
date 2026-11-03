@@ -487,7 +487,7 @@ def trade_history():
 @app.get("/api/strategies")
 def strategies():
     if not section_enabled("strategies"): return json_error("قسم الاستراتيجيات متوقف",404)
-    return jsonify({"ok":True,"strategies":[{"id":"trend-momentum-v1","name":"اتجاه متعدد الأطر + زخم","markets":["spot","futures"],"frames":["15m","4h","1d"],"rules":["اتجاه 4 ساعات واليومي متوافق يحدد BUY أو SELL فقط","ترتيب الفرص حسب التغير الفعلي لشمعة 15 دقيقة المغلقة","تأكيد الدخول من زخم 15 دقيقة في اتجاه الإطارين الأعلى","وقف مبني على ATR وأهداف 1R/2R/3R"],"status":"active","note":"نسخة أولية قابلة للاختبار؛ لا يوجد ادعاء بنسبة نجاح قبل اختبار تاريخي مستقل."}]})
+    return jsonify({"ok":True,"strategies":[{"id":"smart-flow-15m-v1","name":"BINANCE SMART FLOW PRO","markets":["futures"],"frames":["15m"],"rules":["فحص جميع عقود USDⓈ-M الدائمة المؤهلة بحجم تداول 24 ساعة لا يقل عن مليون USDT","اتجاه واحد على 15 دقيقة باستخدام EMA20/EMA50 وزخم الشمعة المغلقة","مراجعة حجم التداول ورصد سحب السيولة عند ظهوره","أفضل 3 فرص فقط؛ شراء مع الاتجاه الصاعد وبيع مع الاتجاه الهابط","وقف ATR وأهداف متدرجة 1R/1.8R/2.7R"],"status":"active","note":"نموذج تجريبي للصفقات الورقية؛ لا يوجد ادعاء بنسبة نجاح قبل اختبار مستقل."}]})
 @app.get("/api/content/<kind>")
 def content_list(kind):
     if kind not in ("blog","news"): return json_error("نوع المحتوى غير معروف",404)
