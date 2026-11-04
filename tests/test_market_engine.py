@@ -70,24 +70,22 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["trades"][0]["status"], "expired")
 
-    def test_price_action_signal_uses_4h_structure_and_15m_liquidity_sweep(self):
-        four_hour = []
-        for i in range(60):
-            base = 100 + i * 0.2 + 5 * __import__("math").sin(i * __import__("math").pi / 3)
-            four_hour.append([i, base, base + 1, base - 1, base + 0.2, 1000])
-        four_hour.append([60, 115, 116, 114, 115, 1000])
-        fifteen = [[i, 101, 102, 100, 101, 1000] for i in range(30)]
-        fifteen[-1] = [29, 100.5, 102, 99, 101.8, 1600]
-        fifteen.append([30, 101.8, 102, 101, 101.5, 1000])
-        def candles(_market, _symbol, interval, _limit):
-            return four_hour if interval == "4h" else fifteen
-        with patch.object(platform, "klines", side_effect=candles):
+    def test_liquidity_sweep_signal_uses_exact_three_r_final_target(self):
+        fifteen = [[i, 100.2, 101, 100, 100.5, 1000] for i in range(20)]
+        fifteen.extend([
+            [20, 100.2, 101, 99.5, 100.7, 1000],
+            [21, 100.7, 102, 100.6, 101.6, 1600],
+            [22, 101.0, 101.5, 100.9, 101.2, 1000],
+            [23, 101.2, 101.5, 100.8, 101.0, 1000],
+        ])
+        with patch.object(platform, "klines", return_value=fifteen):
             signal = platform.build_signal("spot", {"symbol": "BTCUSDT", "quote_volume": 50000000}, "15m")
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "BUY")
-        self.assertLess(signal["stop"], signal["entry"])
-        self.assertLess(signal["tp1"], signal["tp2"])
-        self.assertLess(signal["tp2"], signal["tp3"])
+        risk = signal["entry"] - signal["stop"]
+        self.assertAlmostEqual(signal["tp1"] - signal["entry"], risk)
+        self.assertAlmostEqual(signal["tp2"] - signal["entry"], 2 * risk)
+        self.assertAlmostEqual(signal["tp3"] - signal["entry"], 3 * risk)
         self.assertIn("سحب سيولة", signal["reason"])
 
 
@@ -101,7 +99,7 @@ class MarketEngineTests(unittest.TestCase):
                     reason="legacy", expires_at=now + timedelta(hours=1)),
                 platform.Trade(market="spot", symbol="NEWUSDT", side="BUY", entry=100, stop=95,
                     tp1=110, tp2=110, tp3=110, score=0, timeframe="15m",
-                    reason="current", expires_at=now + timedelta(hours=1)),
+                    reason="Liquidity Sweep 3R: current", expires_at=now + timedelta(hours=1)),
             ])
             platform.db.session.commit()
         response = self.client.get("/api/markets/spot/signals")
@@ -134,12 +132,13 @@ class MarketEngineTests(unittest.TestCase):
                 self.assertFalse(forced.get("cached", False))
                 ticker_source.assert_called_once()
 
+    # Current-strategy fixtures must use the same reason prefix as production signals.
     def test_current_strategy_trades_are_not_superseded_on_next_scan_and_keep_score(self):
         signal = {
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":98.0,
-            "tp1":103.0,"tp2":105.0,"tp3":107.0,"score":84.5,
+            "tp1":102.0,"tp2":104.0,"tp3":106.0,"score":84.5,
             "change_pct":1.2,"timeframe":"15m",
-            "reason":"اتجاه 4س يحدد الاتجاه؛ سحب سيولة وإغلاق استردادي على 15د، مع تقييم قوة الشمعة والحجم."
+            "reason":"Liquidity Sweep 3R: سحب سيولة ثم إعادة اختبار."
         }
         with platform.app.app_context():
             with patch.object(platform, "market_tickers", return_value=[
@@ -188,27 +187,18 @@ class MarketEngineTests(unittest.TestCase):
             rows = platform.market_tickers("spot")
         self.assertEqual(rows, [])
 
-    def test_four_hour_structure_blocks_opposite_15m_sweep(self):
-        bearish_4h = []
-        for i in range(60):
-            base = 180 - i * 0.2 - 5 * __import__("math").sin(i * __import__("math").pi / 3)
-            bearish_4h.append([i, base, base + 1, base - 1, base - 0.2, 1000])
-        bearish_4h.append([60, 165, 166, 164, 165, 1000])
-        bullish_15m = [[i, 101, 102, 100, 101, 1000] for i in range(30)]
-        bullish_15m[-1] = [29, 100.5, 102, 99, 101.8, 1600]
-        bullish_15m.append([30, 101.8, 102, 101, 101.5, 1000])
-        def candles(_market, _symbol, interval, _limit):
-            return bearish_4h if interval == "4h" else bullish_15m
-        with patch.object(platform, "klines", side_effect=candles):
-            signal = platform.build_signal("spot", {"symbol": "BTCUSDT", "quote_volume": 5000000}, "15m")
-        self.assertIsNone(signal)
+    def test_strategy_is_15m_only_and_does_not_require_four_hour_direction(self):
+        self.assertEqual(platform.TIMEFRAMES, ("15m",))
+        self.assertNotIn("4h", platform.BINANCE_INTERVALS)
+
 
     def test_strategy_contains_no_ema_or_indicator_entry_rule(self):
         import inspect
-        source = inspect.getsource(platform.build_signal)
+        source = inspect.getsource(platform.liquidity_sweep_3r_setup)
         self.assertNotIn("ema(", source)
-        self.assertIn("swept_low", source)
+        self.assertIn("prior_low", source)
         self.assertIn("volume_ratio", source)
+        self.assertIn("tp3=entry+3.0*risk", source)
 
     def test_registration_accepts_unicode_letters_and_digits(self):
         bootstrap = self.client.get("/api/bootstrap").get_json()

@@ -1,58 +1,61 @@
 import unittest
 
-from app import volume_body_setup
+from app import liquidity_sweep_3r_setup
 
 
 def candle(open_price, high, low, close, volume, stamp):
     return [stamp, open_price, high, low, close, volume]
 
 
-class VolumeBodyStrategyTests(unittest.TestCase):
+class LiquiditySweep3RTests(unittest.TestCase):
     def make_rows(self, side):
-        rows = [candle(100, 140, 60, 100, 100, i) for i in range(20)]
+        rows = [candle(100.2, 101, 100, 100.5, 100, i) for i in range(20)]
         if side == "BUY":
-            rows.append(candle(100, 150, 50, 110, 250, 20))
-            rows.append(candle(110, 115, 105, 108, 100, 21))
-            rows.append(candle(108, 112, 106, 107, 100, 22))
+            rows.extend([
+                candle(100.2, 101, 99.5, 100.7, 100, 20),
+                candle(100.7, 102, 100.6, 101.6, 160, 21),
+                candle(101.0, 101.5, 100.9, 101.2, 100, 22),
+            ])
         else:
-            rows.append(candle(110, 150, 50, 100, 250, 20))
-            rows.append(candle(100, 105, 95, 98, 100, 21))
-            rows.append(candle(98, 102, 94, 103, 100, 22))
-        rows.append(candle(103, 120, 80, 110, 100, 23))
+            rows.extend([
+                candle(100.8, 101.5, 100, 100.3, 100, 20),
+                candle(100.3, 100.4, 99, 99.4, 160, 21),
+                candle(99.8, 99.8, 99.4, 99.7, 100, 22),
+            ])
+        rows.append(candle(100, 101, 99, 100, 100, 23))  # forming candle; ignored
         return rows
 
-    def test_buy_uses_body_midpoint_stop_and_extended_targets(self):
-        setup = volume_body_setup(self.make_rows("BUY"))
+    def test_buy_levels_are_exactly_one_two_and_three_r(self):
+        setup = liquidity_sweep_3r_setup(self.make_rows("BUY"))
         self.assertIsNotNone(setup)
         self.assertEqual(setup["side"], "BUY")
-        self.assertAlmostEqual(setup["entry"], 107)
-        self.assertAlmostEqual(setup["stop"], 104.5)
-        self.assertAlmostEqual(setup["tp1"], 128.16)
-        self.assertAlmostEqual(setup["tp2"], 129.16)
-        self.assertAlmostEqual(setup["tp3"], 130.0)
-        self.assertLess(setup["stop"], 105)
-        self.assertLess(setup["entry"], setup["tp1"])
-        self.assertLess(setup["tp1"], setup["tp2"])
-        self.assertLess(setup["tp2"], setup["tp3"])
+        risk = setup["entry"] - setup["stop"]
+        self.assertAlmostEqual(setup["tp1"] - setup["entry"], risk)
+        self.assertAlmostEqual(setup["tp2"] - setup["entry"], 2 * risk)
+        self.assertAlmostEqual(setup["tp3"] - setup["entry"], 3 * risk)
+        self.assertLess(setup["stop"], setup["entry"])
 
-    def test_sell_is_inverse_and_uses_body_only(self):
-        setup = volume_body_setup(self.make_rows("SELL"))
+    def test_sell_levels_are_exactly_one_two_and_three_r(self):
+        setup = liquidity_sweep_3r_setup(self.make_rows("SELL"))
         self.assertIsNotNone(setup)
         self.assertEqual(setup["side"], "SELL")
-        self.assertAlmostEqual(setup["entry"], 103)
-        self.assertAlmostEqual(setup["stop"], 105.5)
-        self.assertAlmostEqual(setup["tp1"], 81.84)
-        self.assertAlmostEqual(setup["tp2"], 80.84)
-        self.assertAlmostEqual(setup["tp3"], 80.0)
-        self.assertGreater(setup["stop"], 105)
-        self.assertGreater(setup["entry"], setup["tp1"])
-        self.assertGreater(setup["tp1"], setup["tp2"])
-        self.assertGreater(setup["tp2"], setup["tp3"])
+        risk = setup["stop"] - setup["entry"]
+        self.assertAlmostEqual(setup["entry"] - setup["tp1"], risk)
+        self.assertAlmostEqual(setup["entry"] - setup["tp2"], 2 * risk)
+        self.assertAlmostEqual(setup["entry"] - setup["tp3"], 3 * risk)
+        self.assertGreater(setup["stop"], setup["entry"])
 
-    def test_rejects_volume_below_threshold(self):
+    def test_rejects_weak_breakout_volume(self):
         rows = self.make_rows("BUY")
-        rows[20][5] = 150
-        self.assertIsNone(volume_body_setup(rows))
+        rows[-3][5] = 100
+        self.assertIsNone(liquidity_sweep_3r_setup(rows))
+
+    def test_ignores_unclosed_forming_candle(self):
+        rows = self.make_rows("BUY")
+        rows[-1] = candle(100, 200, 1, 199, 100000, 24)
+        setup = liquidity_sweep_3r_setup(rows)
+        self.assertIsNotNone(setup)
+        self.assertEqual(setup["side"], "BUY")
 
 
 if __name__ == "__main__":
