@@ -14,13 +14,13 @@ class LiquiditySweep3RTests(unittest.TestCase):
             rows.extend([
                 candle(100.2, 101, 99.5, 100.7, 100, 20),
                 candle(100.7, 102, 100.6, 101.6, 160, 21),
-                candle(101.3, 101.5, 100.9, 101.2, 100, 22),
+                candle(101.0, 101.5, 100.9, 101.2, 100, 22),
             ])
         else:
             rows.extend([
                 candle(100.8, 101.5, 100, 100.3, 100, 20),
                 candle(100.3, 100.4, 99, 99.4, 160, 21),
-                candle(99.6, 99.8, 99.4, 99.7, 100, 22),
+                candle(99.8, 99.8, 99.4, 99.7, 100, 22),
             ])
         rows.append(candle(100, 101, 99, 100, 100, 23))  # forming candle; ignored
         return rows
