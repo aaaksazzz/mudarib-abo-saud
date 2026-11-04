@@ -29,6 +29,21 @@ class MarketEngineTests(unittest.TestCase):
             platform.db.drop_all()
             platform.db.create_all()
 
+
+    def test_standalone_section_urls_and_authentication_flow(self):
+        for path in ("/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex", "/plans", "/journal", "/blog", "/news", "/login", "/register", "/account", "/admin"):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200, path)
+        bootstrap = self.client.get("/api/bootstrap").get_json()
+        headers = {"X-CSRF-Token": bootstrap["csrf"]}
+        registered = self.client.post("/api/auth/register", json={"email":"auth-check@example.com","password":"strongpass12345"}, headers=headers)
+        self.assertEqual(registered.status_code, 201, registered.get_json())
+        self.client.post("/api/auth/logout", headers={"X-CSRF-Token": registered.get_json()["csrf"]})
+        login_bootstrap = self.client.get("/api/bootstrap").get_json()
+        logged_in = self.client.post("/api/auth/login", json={"email":"auth-check@example.com","password":"strongpass12345"}, headers={"X-CSRF-Token":login_bootstrap["csrf"]})
+        self.assertEqual(logged_in.status_code, 200, logged_in.get_json())
+        self.assertEqual(logged_in.get_json()["user"]["role"], "user")
+
     def test_health_and_readiness_distinguish_liveness_from_scheduler(self):
         health = self.client.get("/health")
         ready = self.client.get("/ready")
