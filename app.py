@@ -452,7 +452,7 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("DIVE QUANT PRO:%")).order_by(func.abs(Trade.change_15m_pct).desc()).limit(3).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("DIVE QUANT PRO:%")).order_by(Trade.score.desc()).limit(3).all()
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True}
         except (ValueError,TypeError):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
@@ -482,7 +482,7 @@ def run_market_scan(market,force=False):
                 app.logger.exception("15-minute signal analysis failed for %s",market)
     if completed<max(1,math.ceil(len(futures)*0.8)):
         raise RuntimeError(f"Insufficient candle data: {completed}/{len(futures)} analyses completed")
-    # Ranking is by absolute 15-minute price change.
+    # Ranking is by consensus confidence, then traded value.
     for frame in TIMEFRAMES:
         frame_signals=sorted((x for x in found if x["timeframe"]==frame),key=lambda x:(x["score"],x.get("quote_volume",0)),reverse=True)
         for signal in frame_signals[:3]:
@@ -497,7 +497,7 @@ def run_market_scan(market,force=False):
     else:
         scan_row.value=iso(now)
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(Trade.score.desc()).limit(3).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(candidates),"analysis_completed":completed,"analysis_failed":failed,"timeframes":list(TIMEFRAMES)}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
