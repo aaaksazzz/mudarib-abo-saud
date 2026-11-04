@@ -388,6 +388,8 @@ def run_market_scan(market,force=False):
     # Retire signals that no longer agree with the live market direction.
     if market_bias:
         Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.side!=market_bias).update({"status":"superseded"},synchronize_session=False)
+    else:
+        Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES)).update({"status":"superseded"},synchronize_session=False)
     # Retire signals from previous strategies so old entries never leak into the new strategy feed.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),~Trade.reason.like("DIVE QUANT PRO:%")).update({"status":"superseded"},synchronize_session=False)
     db.session.commit()
