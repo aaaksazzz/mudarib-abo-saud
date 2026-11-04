@@ -37,7 +37,7 @@ async function marketPage(root,market){
   const stale=sig.stale===true;
   const warning=unavailable?"":sig.scan_error?'<div class="notice-bar">تعذّر الفحص: '+esc(sig.scan_error)+'</div>':stale&&!sig.updated_at?'<div class="notice-bar">لم يكتمل أول فحص ناجح بعد؛ ننتظر دورة الفحص المجدولة.</div>':stale?'<div class="notice-bar">نتائج الفحص أقدم من 20 دقيقة. نعرض آخر نتيجة محفوظة ولا نخترع بيانات جديدة.</div>':"";
   const signals=sig.signals||[];
-  root.innerHTML=warning+'<section class="panel market-summary"><div class="panel-head"><div><span class="section-kicker">'+esc(market.toUpperCase())+'</span><h2>'+esc(marketNames[market])+'</h2></div><span class="status-pending">'+(unavailable?"مصدر غير مربوط":"مصدر عام")+'</span></div><div class="direction-row"><div><small>اتجاه السوق · 24 ساعة</small><strong>'+esc(snap.direction||"غير متاح")+'</strong></div><div><small>الأصول الصاعدة</small><strong class="positive">'+(snap.up??"—")+'</strong></div><div><small>الأصول الهابطة</small><strong class="negative">'+(snap.down??"—")+'</strong></div><div><small>عدد الأصول</small><strong>'+(snap.total??"—")+'</strong></div></div></section><div class="section-head"><div><span class="section-kicker">LIVE OPPORTUNITIES</span><h2>الصفقات النشطة</h2></div><span class="muted-label">'+(sig.scan_universe==null?"نتائج آخر فحص محفوظة":sig.scan_universe+" أصل في آخر فحص")+'</span></div>'+(signals.length?'<div class="section-head"><h3>فرص DIVE QUANT PRO · 15 دقيقة</h3><span class="muted-label">أفضل 3 فرص حسب توافق التحليل</span></div><div class="trade-grid">'+signals.slice(0,3).map((t,i)=>tradeCard(t,i)).join("")+"</div>":sig.message?'<div class="panel empty-state">'+esc(sig.message)+'</div>':'<div class="panel empty-state">لا توجد حالياً صفقات مطابقة لشروط الاتجاه. لا نعرض فرصاً غير مؤكدة.</div>')+'<p class="data-footnote">آخر فحص: '+esc(sig.updated_at||snap.updated_at||"لم يبدأ بعد")+' · أساس الاتجاه: '+esc(snap.direction_basis||"غير متاح")+' · الأهداف والوقف تقديرات تحليلية وليست ضماناً للربح.</p>';
+  root.innerHTML=warning+'<section class="panel market-summary"><div class="panel-head"><div><span class="section-kicker">'+esc(market.toUpperCase())+'</span><h2>'+esc(marketNames[market])+'</h2></div><span class="status-pending">'+(unavailable?"مصدر غير مربوط":"مصدر عام")+'</span></div><div class="direction-row"><div><small>اتجاه السوق · 24 ساعة</small><strong>'+esc(snap.direction||"غير متاح")+'</strong></div><div><small>الأصول الصاعدة</small><strong class="positive">'+(snap.up??"—")+'</strong></div><div><small>الأصول الهابطة</small><strong class="negative">'+(snap.down??"—")+'</strong></div><div><small>عدد الأصول</small><strong>'+(snap.total??"—")+'</strong></div></div></section><div class="section-head"><div><span class="section-kicker">LIVE OPPORTUNITIES</span><h2>الصفقات النشطة</h2></div><span class="muted-label">'+(sig.scan_universe==null?"نتائج آخر فحص محفوظة":sig.scan_universe+" أصل في آخر فحص")+'</span></div>'+(signals.length?'<div class="section-head"><h3>فرص VOLUME IMPULSE · 15 دقيقة</h3><span class="muted-label">أفضل 3 فرص حسب توافق التحليل</span></div><div class="trade-grid">'+signals.slice(0,3).map((t,i)=>tradeCard(t,i)).join("")+"</div>":sig.message?'<div class="panel empty-state">'+esc(sig.message)+'</div>':'<div class="panel empty-state">لا توجد حالياً صفقات مطابقة لشروط الاتجاه. لا نعرض فرصاً غير مؤكدة.</div>')+'<p class="data-footnote">آخر فحص: '+esc(sig.updated_at||snap.updated_at||"لم يبدأ بعد")+' · أساس الاتجاه: '+esc(snap.direction_basis||"غير متاح")+' · الأهداف والوقف تقديرات تحليلية وليست ضماناً للربح.</p>';
  }catch(e){
   root.innerHTML='<div class="panel empty-state"><b>تعذر تحميل بيانات السوق</b><p>'+esc(e.message)+'</p><button class="login-btn" id="retryMarket">إعادة المحاولة</button></div>';
   $("#retryMarket").onclick=()=>renderPage(market);
@@ -76,4 +76,12 @@ if(localStorage.getItem("stp-theme")==="light")document.body.classList.add("ligh
 $("#languageSelect").value=localStorage.getItem("stp-language")||"ar";
 applyLanguage($("#languageSelect").value);
 init();
-setInterval(()=>{if(["spot","futures"].includes(currentPage))renderPage(currentPage)},15*60*1000);
+let marketRefreshBusy=false;
+setInterval(async()=>{
+ const market=currentPage;
+ if(!marketNames[market]||marketRefreshBusy)return;
+ const root=$("#dynamicContent");
+ if(!root)return;
+ marketRefreshBusy=true;
+ try{await marketPage(root,market)}finally{marketRefreshBusy=false}
+},30*1000);
