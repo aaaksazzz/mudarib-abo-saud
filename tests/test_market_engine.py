@@ -145,7 +145,7 @@ class MarketEngineTests(unittest.TestCase):
                 self.assertEqual(result["signals"], [])
                 self.assertEqual(platform.Trade.query.count(), 0)
 
-    def test_current_strategy_trades_are_not_superseded_on_next_scan_and_keep_score(self):
+    def test_each_successful_15m_scan_replaces_the_previous_signal_batch(self):
         signal = {
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":98.0,
             "tp1":102.0,"tp2":104.0,"tp3":106.0,"score":84.5,
@@ -161,9 +161,27 @@ class MarketEngineTests(unittest.TestCase):
                 trade = platform.Trade.query.filter_by(symbol="BTCUSDT", market="spot").one()
                 self.assertEqual(trade.score, 84.5)
                 second = platform.run_market_scan("spot", force=True)
-                trade = platform.Trade.query.filter_by(symbol="BTCUSDT", market="spot").one()
-                self.assertEqual(trade.status, "active")
+                trades = platform.Trade.query.filter_by(symbol="BTCUSDT", market="spot").order_by(platform.Trade.id.asc()).all()
+                self.assertEqual(len(trades), 2)
+                self.assertEqual(trades[0].status, "superseded")
+                self.assertEqual(trades[1].status, "active")
                 self.assertEqual(len(second["signals"]), 1)
+                self.assertNotEqual(trades[0].id, trades[1].id)
+
+
+    def test_stale_scan_hides_old_opportunities_instead_of_showing_stuck_coins(self):
+        with platform.app.app_context():
+            old = platform.Trade(market="spot", symbol="OLDUSDT", side="BUY", entry=100,
+                stop=97, tp1=101, tp2=102, tp3=103, score=70, timeframe="15m",
+                reason="VOLUME IMPULSE spot: old", expires_at=platform.utcnow()+timedelta(hours=1))
+            platform.db.session.add(old)
+            platform.db.session.add(platform.Setting(key="scan:spot",
+                value=platform.iso(platform.utcnow()-timedelta(minutes=25))))
+            platform.db.session.commit()
+        response = self.client.get("/api/markets/spot/signals")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["stale"])
+        self.assertEqual(response.get_json()["signals"], [])
 
     def test_trade_lifecycle_tracks_targets_and_stop(self):
         with platform.app.app_context():
