@@ -157,7 +157,8 @@ def public_article(a):
     return {"id":a.id,"kind":a.kind,"title":a.title,"slug":a.slug,"summary":a.summary,"body":a.body,"created_at":iso(a.created_at)}
 @app.get("/")
 def home(): return send_from_directory(".", "index.html")
-@app.get("/styles.css")def styles(): return send_from_directory(".", "styles.css")
+@app.get("/styles.css")
+def styles(): return send_from_directory(".", "styles.css")
 @app.get("/platform.js")
 def platform_script(): return send_from_directory(".", "platform.js")
 @app.get("/pro-theme.css")
@@ -316,7 +317,8 @@ def _confirmed_swings(rows, lookback=80):
     for i in range(2,len(sample)-2):
         try:
             high=float(sample[i][2]); low=float(sample[i][3])
-            left_high=max(float(x[2]) for x in sample[i-2:i])            right_high=max(float(x[2]) for x in sample[i+1:i+3])
+            left_high=max(float(x[2]) for x in sample[i-2:i])
+            right_high=max(float(x[2]) for x in sample[i+1:i+3])
             left_low=min(float(x[3]) for x in sample[i-2:i])
             right_low=min(float(x[3]) for x in sample[i+1:i+3])
             if high>=left_high and high>right_high:
@@ -348,33 +350,50 @@ def market_direction_4h(market,symbol):
 
 def volume_body_setup(rows):
     """Confirmed volume-body setup. All levels use candle bodies, never wicks."""
-    if not isinstance(rows,list) or len(rows)<23: return None
+    if not isinstance(rows,list) or len(rows)<23:
+        return None
     closed=rows[:-1]
-    if len(closed)<22: return None
+    if len(closed)<22:
+        return None
     try:
         confirm_close=float(closed[-1][4])
         for index in range(len(closed)-2,max(19,len(closed)-13),-1):
             candle=closed[index]
             op,hi,lo,cl,vol=(float(candle[i] or 0) for i in (1,2,3,4,5))
             prior_volumes=[max(0.0,float(x[5] or 0)) for x in closed[max(0,index-20):index]]
-            if len(prior_volumes)<20: continue
+            if len(prior_volumes)<20:
+                continue
             average=sum(prior_volumes)/20.0
-            if average<=0 or vol<average*1.8 or op<=0 or cl<=0 or hi<lo: continue
-            body_low=min(op,cl); body_high=max(op,cl); body=body_high-body_low
-            if body<=0: continue
+            if average<=0 or vol<average*1.8 or op<=0 or cl<=0 or hi<lo:
+                continue
+            body_low=min(op,cl)
+            body_high=max(op,cl)
+            body=body_high-body_low
+            if body<=0:
+                continue
             midpoint=(body_low+body_high)/2.0
             if cl>op and confirm_close>midpoint:
-                side="BUY"; stop=midpoint-body*0.05; target=body_high+body*1.618; entry=confirm_close
-                if not (stop<entry<target): continue
+                side="BUY"
+                stop=midpoint-body*0.05
+                target=body_high+body*1.618
+                entry=confirm_close
+                if not (stop<entry<target):
+                    continue
             elif cl<op and confirm_close<midpoint:
-                side="SELL"; stop=midpoint+body*0.05; target=body_low-body*1.618; entry=confirm_close
-                if not (target<entry<stop): continue
-            else: continue
+                side="SELL"
+                stop=midpoint+body*0.05
+                target=body_low-body*1.618
+                entry=confirm_close
+                if not (target<entry<stop):
+                    continue
+            else:
+                continue
             tp1=body_high+body*0.618 if side=="BUY" else body_low-body*0.618
             tp2=body_high+body if side=="BUY" else body_low-body
             return {"side":side,"entry":entry,"stop":stop,"tp1":tp1,"tp2":tp2,"tp3":target,
                     "volume_ratio":vol/average,"body":body,"signal_candle_time":int(float(candle[0]))}
-    except (IndexError,TypeError,ValueError,OverflowError): return None
+    except (IndexError,TypeError,ValueError,OverflowError):
+        return None
     return None
 
 def build_signal(market,item,timeframe):
@@ -382,9 +401,14 @@ def build_signal(market,item,timeframe):
     try:
         rows=klines(market,symbol,BINANCE_INTERVALS[timeframe],100)
         setup=volume_body_setup(rows)
-        if not setup: return None
-        side=setup["side"]; entry=setup["entry"]; stop=setup["stop"]
-        tp1=setup["tp1"]; tp2=setup["tp2"]; tp3=setup["tp3"]
+        if not setup:
+            return None
+        side=setup["side"]
+        entry=setup["entry"]
+        stop=setup["stop"]
+        tp1=setup["tp1"]
+        tp2=setup["tp2"]
+        tp3=setup["tp3"]
         body_ratio=min(1.0,setup["body"]/max(entry,1e-12))
         volume_points=min(25.0,max(0.0,(setup["volume_ratio"]-1.0)*12.5))
         score=round(min(98.0,65.0+body_ratio*20.0+volume_points),1)
@@ -458,7 +482,7 @@ def run_market_scan(market,force=False):
     if not universe:
         raise RuntimeError("Market provider returned an empty eligible universe")
     # Retire legacy-strategy open trades so old signals never leak into the new strategy feed.
-    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),or_(~Trade.reason.like("Volume Body 1.618:%"))).update({"status":"superseded"},synchronize_session=False)
+    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),~Trade.reason.like("Volume Body 1.618:%")).update({"status":"superseded"},synchronize_session=False)
     db.session.commit()
     update_trade_outcomes(market,universe)
     # Scan a broad, liquid candidate set independently on every requested timeframe.
@@ -468,7 +492,8 @@ def run_market_scan(market,force=False):
     completed=0
     failed=0
     with ThreadPoolExecutor(max_workers=3) as pool:
-        futures=[pool.submit(build_signal,market,item,frame) for item in candidates for frame in TIMEFRAMES]        for future in as_completed(futures):
+        futures=[pool.submit(build_signal,market,item,frame) for item in candidates for frame in TIMEFRAMES]
+        for future in as_completed(futures):
             try:
                 signal=future.result()
                 completed+=1
@@ -627,7 +652,8 @@ def create_content():
     db.session.add(a); audit("content_created",slug); db.session.commit(); return jsonify({"ok":True,"item":public_article(a)}),201
 @app.delete("/api/admin/content/<int:item_id>")
 @login_required
-@admin_requireddef delete_content(item_id):
+@admin_required
+def delete_content(item_id):
     a=db.session.get(Article,item_id)
     if not a: return json_error("المحتوى غير موجود",404)
     db.session.delete(a); audit("content_deleted",item_id); db.session.commit(); return jsonify({"ok":True})
