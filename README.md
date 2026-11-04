@@ -26,7 +26,8 @@ Production-oriented market intelligence terminal.
 - Ranking: absolute 15-minute change first, strength score and quote volume as tie-breakers.
 - Risk: DIVE-style ATR geometry on 15m ATR(14): 1.5×ATR stop and 1×/2×/3×ATR targets.
 - The scheduler runs Spot and Futures scans every 15 minutes. Market-page HTTP requests only read committed results and never launch a heavy scan synchronously.
-- Active records expire after 24 hours. Expired records are also cleaned when the journal is read.
+- Each successful 15-minute scan replaces the live opportunity batch, including repeated symbols with refreshed entry/SL/TP levels; previous rows remain in trade history and expire after 24 hours. If the scanner is more than 20 minutes behind, the API hides the old batch instead of presenting stale coins as current opportunities.
+- Expired records are also cleaned when the journal is read.
 - A score is a ranking heuristic, not an AI probability or a verified win rate. No performance claim is made without a reproducible backtest.
 
 ## Production deployment
