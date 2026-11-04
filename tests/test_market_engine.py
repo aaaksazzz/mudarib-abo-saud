@@ -70,18 +70,19 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["trades"][0]["status"], "expired")
 
-    def test_market_volume_strategy_build_signal_uses_single_3r_target(self):
+    def test_market_volume_strategy_preserves_dive_atr_levels(self):
         rows = [[i * 900000, 100, 101, 99, 100, 1000] for i in range(120)]
-        setup = {"side":"BUY","entry":100.0,"stop":98.0,"tp1":106.0,"tp2":106.0,
+        setup = {"side":"BUY","entry":100.0,"stop":97.0,"tp1":102.0,"tp2":104.0,
                  "tp3":106.0,"score":84.0,"timeframe":"15m","change_pct":0.5,
                  "change_15m_pct":0.5,"reason":"VOLUME IMPULSE spot: high volume candle"}
         with patch.object(platform, "klines", return_value=rows), patch.object(platform.market_strategies, "analyze", return_value=setup):
             signal = platform.build_signal("spot", {"symbol":"BTCUSDT","quote_volume":50000000}, "15m")
         self.assertEqual(signal["side"], "BUY")
         risk = signal["entry"] - signal["stop"]
-        self.assertAlmostEqual(signal["tp1"] - signal["entry"], 3 * risk)
-        self.assertEqual(signal["tp1"], signal["tp2"])
-        self.assertEqual(signal["tp2"], signal["tp3"])
+        atr = risk / 1.5
+        self.assertAlmostEqual(signal["tp1"] - signal["entry"], atr)
+        self.assertAlmostEqual(signal["tp2"] - signal["entry"], 2 * atr)
+        self.assertAlmostEqual(signal["tp3"] - signal["entry"], 3 * atr)
         self.assertIn("VOLUME IMPULSE", signal["reason"])
 
     def test_only_15m_timeframe_is_scanned_and_returned(self):
