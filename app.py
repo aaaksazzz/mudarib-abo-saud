@@ -307,102 +307,91 @@ def klines(market,symbol,interval,limit=120):
     base=BINANCE_FUTURES if market=="futures" else BINANCE_SPOT
     path="/fapi/v1/klines" if market=="futures" else "/api/v3/klines"
     return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit})
-TIMEFRAMES=("15m","30m","1h","4h","1d","1w","1M")
-BINANCE_INTERVALS={"15m":"15m","30m":"30m","1h":"1h","4h":"4h","1d":"1d","1w":"1w","1M":"1M"}
+TIMEFRAMES=("15m",)
+BINANCE_INTERVALS={"15m":"15m"}
 
-def _confirmed_swings(rows, lookback=80):
-    """Return confirmed price-action swing highs/lows; no indicator calculations."""
-    sample=rows[-lookback:]
-    highs=[]; lows=[]
-    for i in range(2,len(sample)-2):
-        try:
-            high=float(sample[i][2]); low=float(sample[i][3])
-            left_high=max(float(x[2]) for x in sample[i-2:i])
-            right_high=max(float(x[2]) for x in sample[i+1:i+3])
-            left_low=min(float(x[3]) for x in sample[i-2:i])
-            right_low=min(float(x[3]) for x in sample[i+1:i+3])
-            if high>=left_high and high>right_high:
-                highs.append((i,high))
-            if low<=left_low and low<right_low:
-                lows.append((i,low))
-        except (IndexError,TypeError,ValueError):
-            continue
-    return highs,lows
-
-def market_direction_4h(market,symbol):
-    rows=klines(market,symbol,BINANCE_INTERVALS["4h"],100)
+def liquidity_sweep_3r_setup(rows):
+    """15m liquidity sweep, displacement and retest. All candles must be closed."""
     if not isinstance(rows,list) or len(rows)<25:
         return None
-    # Exclude the still-forming candle so direction never changes mid-bar.
     closed=rows[:-1]
-    highs,lows=_confirmed_swings(closed,80)
-    if len(highs)<2 or len(lows)<2:
-        return None
-    higher_high=highs[-1][1]>highs[-2][1]
-    higher_low=lows[-1][1]>lows[-2][1]
-    lower_high=highs[-1][1]<highs[-2][1]
-    lower_low=lows[-1][1]<lows[-2][1]
-    if higher_high and higher_low:
-        return "BUY"
-    if lower_high and lower_low:
-        return "SELL"
-    return None
-
-def volume_body_setup(rows):
-    """Confirmed volume-body setup. All levels use candle bodies, never wicks."""
-    if not isinstance(rows,list) or len(rows)<23:
-        return None
-    closed=rows[:-1]
-    if len(closed)<22:
+    if len(closed)<24:
         return None
     try:
-        confirm_close=float(closed[-1][4])
-        for index in range(len(closed)-2,max(19,len(closed)-13),-1):
-            candle=closed[index]
-            op,hi,lo,cl,vol=(float(candle[i] or 0) for i in (1,2,3,4,5))
-            prior_volumes=[max(0.0,float(x[5] or 0)) for x in closed[max(0,index-20):index]]
-            if len(prior_volumes)<20:
-                continue
-            average=sum(prior_volumes)/20.0
-            if average<=0 or vol<average*1.8 or op<=0 or cl<=0 or hi<lo:
-                continue
-            body_low=min(op,cl)
-            body_high=max(op,cl)
-            body=body_high-body_low
-            if body<=0:
-                continue
-            midpoint=(body_low+body_high)/2.0
-            if cl>op and confirm_close>midpoint:
-                side="BUY"
-                stop=midpoint-body*0.05
-                tp1=body_high+body*1.816
-                tp2=body_high+body*1.916
-                tp3=body_high+body*2.0
-                entry=confirm_close
-                if not (stop<entry<tp1<tp2<tp3):
-                    continue
-            elif cl<op and confirm_close<midpoint:
-                side="SELL"
-                stop=midpoint+body*0.05
-                tp1=body_low-body*1.816
-                tp2=body_low-body*1.916
-                tp3=body_low-body*2.0
-                entry=confirm_close
-                if not (tp3<tp2<tp1<entry<stop):
-                    continue
-            else:
-                continue
-            return {"side":side,"entry":entry,"stop":stop,"tp1":tp1,"tp2":tp2,"tp3":tp3,
-                    "volume_ratio":vol/average,"body":body,"signal_candle_time":int(float(candle[0]))}
+        # The final three closed candles are: sweep, displacement, retest.
+        sweep, breakout, retest = closed[-3], closed[-2], closed[-1]
+        so, sh, sl, sc = (float(sweep[i]) for i in (1,2,3,4))
+        bo, bh, bl, bc, bv = (float(breakout[i]) for i in (1,2,3,4,5))
+        ro, rh, rl, rc = (float(retest[i]) for i in (1,2,3,4))
+        prior = closed[-23:-3]
+        prior_lows=[float(x[3]) for x in prior]
+        prior_highs=[float(x[2]) for x in prior]
+        prior_volumes=[max(0.0,float(x[5] or 0)) for x in closed[-23:-3]]
+        if len(prior)<20 or len(prior_volumes)!=20:
+            return None
+        prior_low=min(prior_lows)
+        prior_high=max(prior_highs)
+        avg_volume=sum(prior_volumes)/20.0
+        if avg_volume<=0:
+            return None
+        breakout_range=bh-bl
+        breakout_body=abs(bc-bo)
+        if breakout_range<=0 or breakout_body<=0:
+            return None
+        displacement=breakout_body/breakout_range
+        volume_ratio=bv/avg_volume
+        if not all(math.isfinite(x) for x in (so,sh,sl,sc,bo,bh,bl,bc,bv,ro,rh,rl,rc)):
+            return None
+        if min(so,sh,sl,sc,bo,bh,bl,bc,ro,rh,rl,rc)<=0 or sh<sl or bh<bl or rh<rl:
+            return None
+        side=None
+        if sl<prior_low and sc>prior_low and sc>so:
+            # Bullish displacement must close above the sweep candle high.
+            if bc<=sh or bc<=bo or displacement<0.55 or volume_ratio<1.3:
+                return None
+            # Retest the reclaimed level and close back above it.
+            if rl>sh*1.003 or rc<=sh or rc<=ro:
+                return None
+            side="BUY"
+            entry=rc
+            buffer=max((sh-sl)*0.10,entry*0.0005)
+            stop=sl-buffer
+            risk=entry-stop
+            if risk<=0 or risk/entry>0.025:
+                return None
+            tp1=entry+risk
+            tp2=entry+2.0*risk
+            tp3=entry+3.0*risk
+        elif sh>prior_high and sc<prior_high and sc<so:
+            # Bearish displacement must close below the sweep candle low.
+            if bc>=sl or bc>=bo or displacement<0.55 or volume_ratio<1.3:
+                return None
+            # Retest the lost level and close back below it.
+            if rh<sl*0.997 or rc>=sl or rc>=ro:
+                return None
+            side="SELL"
+            entry=rc
+            buffer=max((sh-sl)*0.10,entry*0.0005)
+            stop=sh+buffer
+            risk=stop-entry
+            if risk<=0 or risk/entry>0.025:
+                return None
+            tp1=entry-risk
+            tp2=entry-2.0*risk
+            tp3=entry-3.0*risk
+        else:
+            return None
+        return {"side":side,"entry":entry,"stop":stop,"tp1":tp1,"tp2":tp2,"tp3":tp3,
+                "risk":risk,"reward_risk":3.0,"volume_ratio":volume_ratio,
+                "signal_candle_time":int(float(sweep[0]))}
     except (IndexError,TypeError,ValueError,OverflowError):
         return None
-    return None
 
 def build_signal(market,item,timeframe):
     symbol=item["symbol"]
     try:
         rows=klines(market,symbol,BINANCE_INTERVALS[timeframe],100)
-        setup=volume_body_setup(rows)
+        setup=liquidity_sweep_3r_setup(rows)
         if not setup:
             return None
         side=setup["side"]
@@ -414,7 +403,7 @@ def build_signal(market,item,timeframe):
         body_ratio=min(1.0,setup["body"]/max(entry,1e-12))
         volume_points=min(25.0,max(0.0,(setup["volume_ratio"]-1.0)*12.5))
         score=round(min(98.0,65.0+body_ratio*20.0+volume_points),1)
-        reason="Volume Body: أهداف امتداد 1.816 و1.916 و2.0 من جسم شمعة الفوليوم دون الذيول."
+        reason="Liquidity Sweep 3R: سحب سيولة ثم اندفاع سعري وإعادة اختبار؛ TP1=1R وTP2=2R وTP3=3R."
         previous=float(rows[-3][4]) if len(rows)>=3 and float(rows[-3][4]) else entry
         change_pct=(entry/previous-1)*100 if previous else 0.0
         return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":stop,
@@ -483,11 +472,11 @@ def run_market_scan(market,force=False):
     universe=market_tickers(market)
     if not universe:
         raise RuntimeError("Market provider returned an empty eligible universe")
-    # Retire legacy-strategy open trades so old signals never leak into the new strategy feed.
-    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),~Trade.reason.like("Volume Body:%")).update({"status":"superseded"},synchronize_session=False)
+    # Retire signals from previous strategies so old entries never leak into the new strategy feed.
+    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),~Trade.reason.like("Liquidity Sweep 3R:%")).update({"status":"superseded"},synchronize_session=False)
     db.session.commit()
     update_trade_outcomes(market,universe)
-    # Scan a broad, liquid candidate set independently on every requested timeframe.
+    # Scan liquid candidates on the single 15-minute timeframe.
     candidates=sorted(universe,key=lambda x:x["quote_volume"],reverse=True)[:12]
     jobs=[]
     found=[]
@@ -506,7 +495,7 @@ def run_market_scan(market,force=False):
                 app.logger.exception("Multi-timeframe signal analysis failed for %s",market)
     if completed<max(1,math.ceil(len(futures)*0.8)):
         raise RuntimeError(f"Insufficient candle data: {completed}/{len(futures)} analyses completed")
-    # Ranking is strictly by absolute price change inside each same timeframe.
+    # Ranking is by absolute 15-minute price change.
     for frame in TIMEFRAMES:
         frame_signals=sorted((x for x in found if x["timeframe"]==frame),key=lambda x:abs(x["change_pct"]),reverse=True)
         for signal in frame_signals[:10]:
