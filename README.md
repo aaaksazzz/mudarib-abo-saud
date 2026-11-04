@@ -14,7 +14,7 @@ Production-oriented market intelligence terminal.
 
 ## Market-specific 15m strategy candidate
 - Market scans route through `market_strategies.py`: separate volume-expansion thresholds for Spot, Alpha, USD-M Futures, US stocks, US contracts, Tadawul and FX/metals.
-- The setup requires a closed 15m impulse candle, elevated volume versus the prior 20 candles, and a close beyond the prior 20-candle range. The stop is placed just beyond the impulse candle body midpoint and the single target is 3R.
+- The setup requires a closed 15m impulse candle, elevated volume versus the prior 20 candles, and a decisive close in the directional half of the candle. The stop is placed just beyond the impulse candle body midpoint and the single target is 3R.
 - Cash markets are long-only; derivatives and FX/metals can generate both directions. The module is intentionally dependency-light and uses the existing provider candle format.
 - This is a research candidate, not a verified profitable strategy. Do not advertise a win rate or treat it as validated until walk-forward/out-of-sample tests include fees, spread, slippage and market-specific trading hours.
 - **Binance USDT-M Futures:** active USDT perpetual contracts, excludes stablecoin base assets and applies the configured 24-hour quote-volume floor.
