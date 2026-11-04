@@ -15,8 +15,8 @@ def _get(url,params=None):
     if not isinstance(payload,dict): raise ValueError("Invalid market-data response")
     return payload
 
-def _chart(symbol):
-    payload=_get(YAHOO+"/v8/finance/chart/"+symbol,{"interval":"15m","range":"5d"})
+def _chart(symbol,interval="15m",period="5d"):
+    payload=_get(YAHOO+"/v8/finance/chart/"+symbol,{"interval":interval,"range":period})
     chart=payload.get("chart") or {}
     if chart.get("error"): raise ValueError(str(chart["error"]))
     results=chart.get("result") or []
@@ -107,15 +107,36 @@ def market_tickers(market):
         return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
     raise ValueError("Unsupported external market "+str(market))
 
+def _aggregate_4h(hourly):
+    buckets={}
+    for row in hourly:
+        try:
+            stamp=int(row[0])
+            bucket=(stamp//14400000)*14400000
+            item=buckets.get(bucket)
+            if item is None:
+                buckets[bucket]=[bucket,float(row[1]),float(row[2]),float(row[3]),float(row[4]),float(row[5] or 0)]
+            else:
+                item[2]=max(item[2],float(row[2]))
+                item[3]=min(item[3],float(row[3]))
+                item[4]=float(row[4])
+                item[5]+=float(row[5] or 0)
+        except (IndexError,TypeError,ValueError):
+            continue
+    return [buckets[key] for key in sorted(buckets)]
 def klines(market,symbol,interval="15m",limit=100):
-    if interval!="15m": raise ValueError("Only 15m candles are supported")
+    if interval not in ("15m","4h"):
+        raise ValueError("Only 15m entries and 4h direction candles are supported")
     if market=="alpha":
-        payload=_get(BINANCE_ALPHA+"/bapi/defi/v1/public/alpha-trade/klines",{"symbol":symbol,"interval":"INTERVAL_15M","limit":limit})
+        alpha_interval={"15m":"INTERVAL_15M","4h":"INTERVAL_4HOUR"}[interval]
+        payload=_get(BINANCE_ALPHA+"/bapi/defi/v1/public/alpha-trade/klines",{"symbol":symbol,"interval":alpha_interval,"limit":limit})
         data=payload.get("data") or []
         rows=[]
         for item in data:
             vals=[item.get(k) for k in ("openTime","open","high","low","close","volume")] if isinstance(item,dict) else item
             if vals and len(vals)>=6:
                 rows.append([int(float(vals[0])),*[float(v or 0) for v in vals[1:6]]])
-        return rows
-    return _chart(symbol)[-limit:]
+        return rows[-limit:]
+    if interval=="4h":
+        return _aggregate_4h(_chart(symbol,"60m","6mo"))[-limit:]
+    return _chart(symbol,"15m","5d")[-limit:]
