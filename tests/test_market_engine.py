@@ -132,6 +132,7 @@ class MarketEngineTests(unittest.TestCase):
                 self.assertFalse(forced.get("cached", False))
                 ticker_source.assert_called_once()
 
+    # Current-strategy fixtures must use the same reason prefix as production signals.
     def test_current_strategy_trades_are_not_superseded_on_next_scan_and_keep_score(self):
         signal = {
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":98.0,
