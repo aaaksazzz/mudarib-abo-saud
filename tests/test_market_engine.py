@@ -137,7 +137,7 @@ class MarketEngineTests(unittest.TestCase):
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":98.0,
             "tp1":102.0,"tp2":104.0,"tp3":106.0,"score":84.5,
             "change_pct":1.2,"timeframe":"15m",
-            "reason":"اتجاه 4س يحدد الاتجاه؛ سحب سيولة وإغلاق استردادي على 15د، مع تقييم قوة الشمعة والحجم."
+            "reason":"Liquidity Sweep 3R: سحب سيولة ثم إعادة اختبار."
         }
         with platform.app.app_context():
             with patch.object(platform, "market_tickers", return_value=[
