@@ -313,13 +313,33 @@ def ema(values,period):
     for x in values[period:]: v=x*k+v*(1-k)
     return v
 TIMEFRAMES=("15m",)
-BINANCE_INTERVALS={"15m":"15m"}
+BINANCE_INTERVALS={"15m":"15m","4h":"4h"}
+def market_direction_4h(market,symbol):
+    rows=klines(market,symbol,BINANCE_INTERVALS["4h"],100)
+    if not isinstance(rows,list) or len(rows)<52:
+        return None
+    closed=rows[:-1]
+    closes=[float(x[4]) for x in closed]
+    if len(closes)<51 or not all(math.isfinite(v) and v>0 for v in closes):
+        return None
+    fast,slow,base=ema(closes,9),ema(closes,14),ema(closes,50)
+    if None in (fast,slow,base):
+        return None
+    if closes[-1]>base and fast>slow:
+        return "BUY"
+    if closes[-1]<base and fast<slow:
+        return "SELL"
+    return None
 def build_signal(market,item,timeframe):
     symbol=item["symbol"]
+    # 4h sets the permitted direction; only 15m candles can trigger an entry.
+    bias=market_direction_4h(market,symbol)
+    if bias is None or timeframe!="15m":
+        return None
     rows=klines(market,symbol,BINANCE_INTERVALS[timeframe],100)
     if not isinstance(rows,list) or len(rows)<52:
         return None
-    # Only fully closed candles participate in the signal.
+    # Only fully closed 15m candles participate in the entry signal.
     closed=rows[:-1]
     closes=[float(x[4]) for x in closed]
     if len(closes)<51 or not all(math.isfinite(v) and v>0 for v in closes):
@@ -331,6 +351,10 @@ def build_signal(market,item,timeframe):
         return None
     bullish=ma9_prev<=ma14_prev and ma9_now>ma14_now and entry>ma50_now
     bearish=ma9_prev>=ma14_prev and ma9_now<ma14_now and entry<ma50_now
+    if bias=="BUY" and not bullish:
+        return None
+    if bias=="SELL" and not bearish:
+        return None
     if not bullish and not bearish:
         return None
     side="BUY" if bullish else "SELL"
@@ -358,7 +382,7 @@ def build_signal(market,item,timeframe):
     change_pct=(entry/closes[-2]-1)*100 if closes[-2] else 0.0
     return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":stop,
         "tp1":target,"tp2":target,"tp3":target,
-        "score":0.0,"timeframe":timeframe,"reason":"تقاطع EMA 9/14 على شمعة مغلقة؛ الوقف عند آخر قاع/قمة مؤكدة، والهدف ضعف المخاطرة (2R).",
+        "score":0.0,"timeframe":timeframe,"reason":"اتجاه 4س يحدد جهة الصفقة، وتقاطع 15د يحدد الدخول؛ الوقف عند آخر قاع/قمة مؤكدة والهدف 2R.",
         "status":"active","change_pct":round(change_pct,6),"change_15m_pct":round(change_pct,6),
         "quote_volume":item["quote_volume"]}
 def expire_stale_trades(market=None):
@@ -419,7 +443,7 @@ def run_market_scan(market,force=False):
     if not universe:
         raise RuntimeError("Market provider returned an empty eligible universe")
     # Retire legacy-strategy open trades so old signals never leak into the new strategy feed.
-    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),or_(Trade.timeframe!="15m",~Trade.reason.like("تقاطع EMA 9/14%"))).update({"status":"superseded"},synchronize_session=False)
+    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),or_(Trade.timeframe!="15m",~Trade.reason.like("اتجاه 4س%"))).update({"status":"superseded"},synchronize_session=False)
     db.session.commit()
     update_trade_outcomes(market,universe)
     # Scan a broad, liquid candidate set independently on every requested timeframe.
