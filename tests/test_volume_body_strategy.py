@@ -1,61 +1,68 @@
 import unittest
+from unittest.mock import patch
 
-from app import liquidity_sweep_3r_setup
-
-
-def candle(open_price, high, low, close, volume, stamp):
-    return [stamp, open_price, high, low, close, volume]
+import quant_engine
 
 
-class LiquiditySweep3RTests(unittest.TestCase):
-    def make_rows(self, side):
-        rows = [candle(100.2, 101, 100, 100.5, 100, i) for i in range(20)]
-        if side == "BUY":
-            rows.extend([
-                candle(100.2, 101, 99.5, 100.7, 100, 20),
-                candle(100.7, 102, 100.6, 101.6, 160, 21),
-                candle(101.0, 101.5, 100.9, 101.2, 100, 22),
-            ])
-        else:
-            rows.extend([
-                candle(100.8, 101.5, 100, 100.3, 100, 20),
-                candle(100.3, 100.4, 99, 99.4, 160, 21),
-                candle(99.8, 99.8, 99.4, 99.7, 100, 22),
-            ])
-        rows.append(candle(100, 101, 99, 100, 100, 23))  # forming candle; ignored
-        return rows
+class FakeSignalService:
+    def calculate_all(self, frame):
+        return [object() for _ in range(60)]
 
-    def test_buy_levels_are_exactly_one_two_and_three_r(self):
-        setup = liquidity_sweep_3r_setup(self.make_rows("BUY"))
+
+class FakeConsensusEngine:
+    def __init__(self, side):
+        self.side = side
+
+    def evaluate(self, results):
+        return {
+            "final_signal": self.side,
+            "should_trade": True,
+            "risk_level": "LOW",
+            "confidence": 82,
+            "weighted_score": 1.4 if self.side == "STRONG_BUY" else -1.4,
+            "score_data": {"active_signals": 12, "total_signals": 60, "buy_count": 11 if self.side == "STRONG_BUY" else 1,
+                           "sell_count": 1 if self.side == "STRONG_BUY" else 11},
+            "risk_data": {"risk_level": "LOW"},
+        }
+
+
+class DiveQuantProTests(unittest.TestCase):
+    def rows(self, rising=True):
+        out = []
+        for i in range(120):
+            close = 100 + i * 0.4 if rising else 180 - i * 0.4
+            open_price = close - 0.15 if rising else close + 0.15
+            out.append([i * 900000, open_price, close + 0.2, close - 0.2, close, 1000])
+        return out
+
+    def run_engine(self, side, market="spot", rising=True):
+        config = {"indicator_weights": {}}
+        with patch.object(quant_engine, "_engine", return_value=(config, FakeSignalService(), FakeConsensusEngine(side))), \
+             patch.object(quant_engine, "evaluate_regime", return_value={"regime":"TREND","adaptive_score":1.4}):
+            return quant_engine.analyze(market, "BTCUSDT", self.rows(rising), include_micro=False)
+
+    def test_upstream_consensus_builds_exact_three_r_long_targets(self):
+        setup = self.run_engine("STRONG_BUY")
         self.assertIsNotNone(setup)
         self.assertEqual(setup["side"], "BUY")
         risk = setup["entry"] - setup["stop"]
         self.assertAlmostEqual(setup["tp1"] - setup["entry"], risk)
         self.assertAlmostEqual(setup["tp2"] - setup["entry"], 2 * risk)
         self.assertAlmostEqual(setup["tp3"] - setup["entry"], 3 * risk)
-        self.assertLess(setup["stop"], setup["entry"])
+        self.assertEqual(setup["reward_risk"], 3.0)
+        self.assertEqual(setup["indicator_count"], 60)
 
-    def test_sell_levels_are_exactly_one_two_and_three_r(self):
-        setup = liquidity_sweep_3r_setup(self.make_rows("SELL"))
+    def test_upstream_consensus_builds_exact_three_r_short_targets(self):
+        setup = self.run_engine("STRONG_SELL", market="futures", rising=False)
         self.assertIsNotNone(setup)
         self.assertEqual(setup["side"], "SELL")
         risk = setup["stop"] - setup["entry"]
         self.assertAlmostEqual(setup["entry"] - setup["tp1"], risk)
         self.assertAlmostEqual(setup["entry"] - setup["tp2"], 2 * risk)
         self.assertAlmostEqual(setup["entry"] - setup["tp3"], 3 * risk)
-        self.assertGreater(setup["stop"], setup["entry"])
 
-    def test_rejects_weak_breakout_volume(self):
-        rows = self.make_rows("BUY")
-        rows[-3][5] = 100
-        self.assertIsNone(liquidity_sweep_3r_setup(rows))
-
-    def test_ignores_unclosed_forming_candle(self):
-        rows = self.make_rows("BUY")
-        rows[-1] = candle(100, 200, 1, 199, 100000, 24)
-        setup = liquidity_sweep_3r_setup(rows)
-        self.assertIsNotNone(setup)
-        self.assertEqual(setup["side"], "BUY")
+    def test_insufficient_candles_do_not_create_signals(self):
+        self.assertIsNone(quant_engine.analyze("spot", "BTCUSDT", self.rows()[:74]))
 
 
 if __name__ == "__main__":

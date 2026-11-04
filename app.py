@@ -4,6 +4,7 @@ from functools import wraps, lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import market_adapters
+import quant_engine
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -244,7 +245,7 @@ def market_list():
     return jsonify({"ok":True,"markets":[{"id":m,"enabled":section_enabled(m),"provider":provider_status(m)} for m in MARKETS]})
 def provider_status(m):
     sources={"spot":"Binance Spot public API","futures":"Binance USD-M Futures public API","alpha":"Binance Alpha public market API","us-stocks":"Yahoo Finance US equity screener","us-contracts":"Yahoo Finance US futures quotes","saudi":"Yahoo Finance Saudi-listed shares screener","forex":"Yahoo Finance FX and metals quotes"}
-    return {"ready":m in sources,"source":sources.get(m,"غير معروف"),"timeframe":"15m","requires_api_key":False}
+    return {"ready":m in sources,"source":sources.get(m,"غير معروف"),"timeframe":"15m","requires_api_key":False,"access":"public_no_key"}
 def fetch_json(url,params=None):
     last_error=None
     for attempt in range(3):
@@ -310,109 +311,18 @@ def klines(market,symbol,interval,limit=120):
 TIMEFRAMES=("15m",)
 BINANCE_INTERVALS={"15m":"15m"}
 
-def liquidity_sweep_3r_setup(rows):
-    """15m liquidity sweep, displacement and retest. All candles must be closed."""
-    if not isinstance(rows,list) or len(rows)<24:
-        return None
-    closed=rows[:-1]
-    if len(closed)<23:
-        return None
-    try:
-        # The final three closed candles are: sweep, displacement, retest.
-        sweep, breakout, retest = closed[-3], closed[-2], closed[-1]
-        so, sh, sl, sc = (float(sweep[i]) for i in (1,2,3,4))
-        bo, bh, bl, bc, bv = (float(breakout[i]) for i in (1,2,3,4,5))
-        ro, rh, rl, rc = (float(retest[i]) for i in (1,2,3,4))
-        prior = closed[-23:-3]
-        prior_lows=[float(x[3]) for x in prior]
-        prior_highs=[float(x[2]) for x in prior]
-        prior_volumes=[max(0.0,float(x[5] or 0)) for x in closed[-23:-3]]
-        if len(prior)<20 or len(prior_volumes)!=20:
-            return None
-        prior_low=min(prior_lows)
-        prior_high=max(prior_highs)
-        avg_volume=sum(prior_volumes)/20.0
-        if avg_volume<=0:
-            return None
-        breakout_range=bh-bl
-        breakout_body=abs(bc-bo)
-        if breakout_range<=0 or breakout_body<=0:
-            return None
-        displacement=breakout_body/breakout_range
-        volume_ratio=bv/avg_volume
-        if not all(math.isfinite(x) for x in (so,sh,sl,sc,bo,bh,bl,bc,bv,ro,rh,rl,rc)):
-            return None
-        if min(so,sh,sl,sc,bo,bh,bl,bc,ro,rh,rl,rc)<=0 or sh<sl or bh<bl or rh<rl:
-            return None
-        side=None
-        if sl<prior_low and sc>prior_low and sc>so:
-            # Bullish displacement must close above the sweep candle high.
-            if bc<=sh or bc<=bo or displacement<0.55 or volume_ratio<1.3:
-                return None
-            # Retest the reclaimed level and close back above it.
-            if rl>sh*1.003 or rc<=sh or rc<=ro:
-                return None
-            side="BUY"
-            entry=rc
-            buffer=max((sh-sl)*0.10,entry*0.0005)
-            stop=sl-buffer
-            risk=entry-stop
-            if risk<=0 or risk/entry>0.025:
-                return None
-            tp1=entry+risk
-            tp2=entry+2.0*risk
-            tp3=entry+3.0*risk
-        elif sh>prior_high and sc<prior_high and sc<so:
-            # Bearish displacement must close below the sweep candle low.
-            if bc>=sl or bc>=bo or displacement<0.55 or volume_ratio<1.3:
-                return None
-            # Retest the lost level and close back below it.
-            if rh<sl*0.997 or rc>=sl or rc>=ro:
-                return None
-            side="SELL"
-            entry=rc
-            buffer=max((sh-sl)*0.10,entry*0.0005)
-            stop=sh+buffer
-            risk=stop-entry
-            if risk<=0 or risk/entry>0.025:
-                return None
-            tp1=entry-risk
-            tp2=entry-2.0*risk
-            tp3=entry-3.0*risk
-        else:
-            return None
-        return {"side":side,"entry":entry,"stop":stop,"tp1":tp1,"tp2":tp2,"tp3":tp3,
-                "risk":risk,"reward_risk":3.0,"volume_ratio":volume_ratio,"displacement":displacement,
-                "signal_candle_time":int(float(sweep[0]))}
-    except (IndexError,TypeError,ValueError,OverflowError):
-        return None
-
 def build_signal(market,item,timeframe):
     symbol=item["symbol"]
     try:
-        rows=klines(market,symbol,BINANCE_INTERVALS[timeframe],100)
-        setup=liquidity_sweep_3r_setup(rows)
+        rows=klines(market,symbol,"15m",120)
+        setup=quant_engine.analyze(market,symbol,rows,include_micro=item.get("include_microstructure",False))
         if not setup:
             return None
-        side=setup["side"]
-        entry=setup["entry"]
-        stop=setup["stop"]
-        tp1=setup["tp1"]
-        tp2=setup["tp2"]
-        tp3=setup["tp3"]
-        displacement_points=min(20.0,max(0.0,(setup["displacement"]-0.55)*40.0))
-        volume_points=min(25.0,max(0.0,(setup["volume_ratio"]-1.0)*12.5))
-        score=round(min(98.0,65.0+displacement_points+volume_points),1)
-        reason="Liquidity Sweep 3R: سحب سيولة ثم اندفاع سعري وإعادة اختبار؛ TP1=1R وTP2=2R وTP3=3R."
-        previous=float(rows[-3][4]) if len(rows)>=3 and float(rows[-3][4]) else entry
-        change_pct=(entry/previous-1)*100 if previous else 0.0
-        return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":stop,
-            "tp1":tp1,"tp2":tp2,"tp3":tp3,"score":score,"timeframe":timeframe,
-            "reason":reason,"status":"active","change_pct":round(change_pct,6),
-            "change_15m_pct":round(change_pct,6),"quote_volume":item["quote_volume"],
-            "signal_candle_time":setup["signal_candle_time"]}
+        setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
+                      "status":"active","timeframe":"15m"})
+        return setup
     except Exception:
-        app.logger.exception("Liquidity Sweep 3R analysis failed for %s %s %s",market,symbol,timeframe)
+        app.logger.exception("DIVE QUANT PRO analysis failed for %s %s",market,symbol)
         return None
 
 def expire_stale_trades(market=None):
@@ -465,19 +375,29 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("Liquidity Sweep 3R:%")).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("DIVE QUANT PRO:%")).order_by(Trade.score.desc()).limit(3).all()
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True}
         except (ValueError,TypeError):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
     universe=market_tickers(market)
     if not universe:
         raise RuntimeError("Market provider returned an empty eligible universe")
+    market_up=sum(1 for item in universe if item.get("change_pct",0)>0)
+    market_down=sum(1 for item in universe if item.get("change_pct",0)<0)
+    market_bias="BUY" if market_up>market_down else "SELL" if market_down>market_up else None
+    # Retire signals that no longer agree with the live market direction.
+    if market_bias:
+        Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.side!=market_bias).update({"status":"superseded"},synchronize_session=False)
+    else:
+        Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES)).update({"status":"superseded"},synchronize_session=False)
     # Retire signals from previous strategies so old entries never leak into the new strategy feed.
-    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),~Trade.reason.like("Liquidity Sweep 3R:%")).update({"status":"superseded"},synchronize_session=False)
+    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),~Trade.reason.like("DIVE QUANT PRO:%")).update({"status":"superseded"},synchronize_session=False)
     db.session.commit()
     update_trade_outcomes(market,universe)
     # Scan liquid candidates on the single 15-minute timeframe.
-    candidates=sorted(universe,key=lambda x:x["quote_volume"],reverse=True)[:12]
+    candidates=sorted(universe,key=lambda x:x["quote_volume"],reverse=True)[:30]
+    for index,item in enumerate(candidates):
+        item["include_microstructure"]=(market=="futures" and index<12)
     jobs=[]
     found=[]
     completed=0
@@ -495,10 +415,12 @@ def run_market_scan(market,force=False):
                 app.logger.exception("15-minute signal analysis failed for %s",market)
     if completed<max(1,math.ceil(len(futures)*0.8)):
         raise RuntimeError(f"Insufficient candle data: {completed}/{len(futures)} analyses completed")
-    # Ranking is by absolute 15-minute price change.
+    # Only publish signals aligned with the market-wide direction.
+    found=[x for x in found if market_bias and x["side"]==market_bias]
+    # Ranking is by consensus confidence, then traded value.
     for frame in TIMEFRAMES:
-        frame_signals=sorted((x for x in found if x["timeframe"]==frame),key=lambda x:abs(x["change_pct"]),reverse=True)
-        for signal in frame_signals[:10]:
+        frame_signals=sorted((x for x in found if x["timeframe"]==frame),key=lambda x:(x["score"],x.get("quote_volume",0)),reverse=True)
+        for signal in frame_signals[:3]:
             exists=Trade.query.filter(Trade.market==market,Trade.symbol==signal["symbol"],Trade.timeframe==frame,Trade.status.in_(OPEN_TRADE_STATUSES)).first()
             if exists and aware(exists.created_at)>now-timedelta(hours=24):
                 continue
@@ -510,8 +432,8 @@ def run_market_scan(market,force=False):
     else:
         scan_row.value=iso(now)
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
-    return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(candidates),"analysis_completed":completed,"analysis_failed":failed,"timeframes":list(TIMEFRAMES)}
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(Trade.score.desc()).limit(3).all()
+    return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(candidates),"analysis_completed":completed,"analysis_failed":failed,"market_bias":market_bias,"timeframes":list(TIMEFRAMES)}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
     if market not in MARKETS:
@@ -523,7 +445,7 @@ def signals(market):
         # Keep web requests fast: the scheduler owns scans; page loads only read the latest committed result.
         expire_stale_trades(market)
         row=db.session.get(Setting,"scan:"+market)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("Liquidity Sweep 3R:%")).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("DIVE QUANT PRO:%")).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
         updated=row.value if row else None
         stale=True
         if updated:

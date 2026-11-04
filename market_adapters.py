@@ -79,7 +79,7 @@ def market_tickers(market):
             symbol=x.get("symbol")
             if not symbol or (market=="saudi" and not str(symbol).endswith(".SR")): continue
             row=_row(symbol,x.get("regularMarketPrice"),x.get("regularMarketChangePercent"),x.get("regularMarketVolume"),x.get("currency"))
-            if row and (market=="saudi" or row["volume"]>=1000000): out.append(row)
+            if row and (market=="saudi" or row["quote_volume"]>=1000000): out.append(row)
         return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
     if market in ("us-contracts","forex"):
         out=[]
