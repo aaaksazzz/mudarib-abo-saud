@@ -205,7 +205,7 @@ class MarketEngineTests(unittest.TestCase):
 
     def test_dive_quant_engine_uses_upstream_60_indicator_consensus(self):
         import inspect
-        source = inspect.getsource(platform.quant_engine.analyze)
+        source = inspect.getsource(platform.quant_engine.analyze) + inspect.getsource(platform.quant_engine._engine)
         self.assertIn("SignalService", source)
         self.assertIn("ConsensusEngine", source)
         self.assertIn("evaluate_regime", source)
