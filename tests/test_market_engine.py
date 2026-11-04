@@ -70,14 +70,13 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["trades"][0]["status"], "expired")
 
-    def test_dive_quant_signal_uses_exact_three_r_final_target(self):
-        rows = []
-        for index in range(120):
-            close = 100.0 + index * 0.4
-            rows.append([index * 900000, close - 0.15, close + 0.2, close - 0.2, close, 1000])
-        with patch.object(platform, "klines", return_value=rows):
-            signal = platform.build_signal("spot", {"symbol": "BTCUSDT", "quote_volume": 50000000}, "15m")
-        self.assertIsNotNone(signal)
+    def test_dive_quant_build_signal_uses_engine_trade_levels(self):
+        rows = [[i * 900000, 100, 101, 99, 100, 1000] for i in range(120)]
+        setup = {"side":"BUY","entry":100.0,"stop":98.0,"tp1":102.0,"tp2":104.0,
+                 "tp3":106.0,"score":84.0,"timeframe":"15m","change_pct":0.5,
+                 "change_15m_pct":0.5,"reason":"DIVE QUANT PRO: 60-indicator consensus"}
+        with patch.object(platform, "klines", return_value=rows), patch.object(platform.quant_engine, "analyze", return_value=setup):
+            signal = platform.build_signal("spot", {"symbol":"BTCUSDT","quote_volume":50000000}, "15m")
         self.assertEqual(signal["side"], "BUY")
         risk = signal["entry"] - signal["stop"]
         self.assertAlmostEqual(signal["tp1"] - signal["entry"], risk)
@@ -204,11 +203,12 @@ class MarketEngineTests(unittest.TestCase):
         self.assertNotIn("4h", platform.BINANCE_INTERVALS)
 
 
-    def test_dive_quant_engine_uses_weighted_consensus_and_microstructure(self):
+    def test_dive_quant_engine_uses_upstream_60_indicator_consensus(self):
         import inspect
         source = inspect.getsource(platform.quant_engine.analyze)
-        self.assertIn("WEIGHTS", source)
-        self.assertIn("regime", source)
+        self.assertIn("SignalService", source)
+        self.assertIn("ConsensusEngine", source)
+        self.assertIn("evaluate_regime", source)
         self.assertIn("include_micro", source)
         self.assertIn("reward_risk", source)
 
