@@ -14,7 +14,7 @@ Production-oriented market intelligence terminal.
 
 ## Market-specific 15m strategy candidate
 - Market scans route through `market_strategies.py`: separate volume-expansion thresholds for Spot, Alpha, USD-M Futures, US stocks, US contracts, Tadawul and FX/metals.
-- The setup requires a closed 15m impulse candle, elevated volume versus the prior 20 candles, and a decisive close in the directional half of the candle. The stop is placed just beyond the impulse candle body midpoint and the single target is 3R.
+- The setup requires a closed 15m impulse candle, elevated volume versus the prior 20 candles, and a decisive close in the directional half of the candle. Risk levels follow DIVE's ATR geometry using the 15m ATR(14): stop distance = 1.5×ATR; TP1 = 1×ATR, TP2 = 2×ATR, TP3 = 3×ATR from entry. These are distances, not 1R/2R/3R multiples of the stop; TP3 is 2R.
 - Cash markets are long-only; derivatives and FX/metals can generate both directions. The module is intentionally dependency-light and uses the existing provider candle format.
 - This is a research candidate, not a verified profitable strategy. Do not advertise a win rate or treat it as validated until walk-forward/out-of-sample tests include fees, spread, slippage and market-specific trading hours.
 - **Binance USDT-M Futures:** active USDT perpetual contracts, excludes stablecoin base assets and applies the configured 24-hour quote-volume floor.
@@ -24,7 +24,7 @@ Production-oriented market intelligence terminal.
 - Direction filter: 4-hour and daily candle trend must agree.
 - Entry confirmation: closed 15-minute candles only; the still-forming candle is excluded.
 - Ranking: absolute 15-minute change first, strength score and quote volume as tie-breakers.
-- Risk: ATR-based stop and 1R / 2R / 3R targets.
+- Risk: DIVE-style ATR geometry on 15m ATR(14): 1.5×ATR stop and 1×/2×/3×ATR targets.
 - The scheduler runs Spot and Futures scans every 15 minutes. Market-page HTTP requests only read committed results and never launch a heavy scan synchronously.
 - Active records expire after 24 hours. Expired records are also cleaned when the journal is read.
 - A score is a ranking heuristic, not an AI probability or a verified win rate. No performance claim is made without a reproducible backtest.
