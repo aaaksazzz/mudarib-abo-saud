@@ -390,14 +390,8 @@ def run_market_scan(market,force=False):
     market_up=sum(1 for item in universe if item.get("change_pct",0)>0)
     market_down=sum(1 for item in universe if item.get("change_pct",0)<0)
     market_bias="BUY" if market_up>market_down else "SELL" if market_down>market_up else None
-    # Retire signals that no longer agree with the live market direction.
-    if market_bias:
-        Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.side!=market_bias).update({"status":"superseded"},synchronize_session=False)
-    else:
-        Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES)).update({"status":"superseded"},synchronize_session=False)
-    # Retire signals from previous strategies so old entries never leak into the new strategy feed.
-    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),~Trade.reason.like("VOLUME IMPULSE%")).update({"status":"superseded"},synchronize_session=False)
-    db.session.commit()
+    # Update outcomes first, then keep the previous signal batch visible until
+    # this scan has successfully analysed enough fresh candles.
     update_trade_outcomes(market,universe)
     # Scan liquid candidates on the single 15-minute timeframe.
     candidates=sorted(universe,key=lambda x:x["quote_volume"],reverse=True)[:30]
@@ -422,15 +416,15 @@ def run_market_scan(market,force=False):
         raise RuntimeError(f"Insufficient candle data: {completed}/{len(futures)} analyses completed")
     # Only publish signals aligned with the market-wide direction.
     found=[x for x in found if market_bias and x["side"]==market_bias]
+    # A successful 15m scan replaces the complete previous signal batch.
+    # Keep historical rows, but never let old coins remain in the live feed.
+    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES)).update(
+        {"status":"superseded"},synchronize_session=False
+    )
     # Ranking is by consensus confidence, then traded value.
     for frame in TIMEFRAMES:
         frame_signals=sorted((x for x in found if x["timeframe"]==frame),key=lambda x:(x["score"],x.get("quote_volume",0)),reverse=True)
         for signal in frame_signals[:3]:
-            exists=Trade.query.filter(Trade.market==market,Trade.symbol==signal["symbol"],Trade.timeframe==frame,Trade.status.in_(OPEN_TRADE_STATUSES)).first()
-            if exists and aware(exists.created_at)>now-timedelta(hours=24):
-                continue
-            if exists:
-                exists.status="superseded"
             db.session.add(Trade(market=market,symbol=signal["symbol"],side=signal["side"],entry=signal["entry"],stop=signal["stop"],tp1=signal["tp1"],tp2=signal["tp2"],tp3=signal["tp3"],score=signal["score"],change_15m_pct=signal["change_pct"],timeframe=frame,reason=signal["reason"],expires_at=now+timedelta(hours=24)))
     if not scan_row:
         scan_row=Setting(key=scan_key,value=iso(now)); db.session.add(scan_row)
@@ -470,7 +464,9 @@ def signals(market):
                 stale=aware(datetime.fromisoformat(updated))<utcnow()-timedelta(minutes=20)
             except (ValueError,TypeError):
                 stale=True
-        return jsonify({"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":updated,"cached":True,"stale":stale,"scan_ready":bool(updated),**meta})
+        # Never present an old batch as current opportunities when the
+        # 15-minute scanner has stopped or fallen behind.
+        return jsonify({"ok":True,"market":market,"signals":[trade_json(x) for x in active] if not stale else [],"updated_at":updated,"cached":True,"stale":stale,"scan_ready":bool(updated),**meta})
     except Exception:
         app.logger.exception("signal retrieval failed")
         return json_error("تعذر قراءة نتائج الفحص المحفوظة حالياً",503)
