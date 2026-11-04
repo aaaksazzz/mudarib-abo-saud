@@ -72,19 +72,17 @@ def analyze(market, symbol, rows, include_micro=False):
         bearish = close < op and close_location <= 0.40
         if bullish:
             side = "BUY"
-            # Stop is just below the 50% point of the impulse candle body.
-            stop = (op + close) / 2.0 - max(atr * 0.03, close * 0.00005)
+            stop = close - 1.5 * atr
+            tp1, tp2, tp3 = close + atr, close + 2.0 * atr, close + 3.0 * atr
         elif bearish and not profile["long_only"]:
             side = "SELL"
-            stop = (op + close) / 2.0 + max(atr * 0.03, close * 0.00005)
+            stop = close + 1.5 * atr
+            tp1, tp2, tp3 = close - atr, close - 2.0 * atr, close - 3.0 * atr
         else:
             return None
 
         risk = close - stop if side == "BUY" else stop - close
-        if risk <= 0 or risk > atr * 2.5:
-            return None
-        target = close + 3.0 * risk if side == "BUY" else close - 3.0 * risk
-        if target <= 0:
+        if risk <= 0 or stop <= 0 or tp3 <= 0:
             return None
 
         location_score = close_location if side == "BUY" else 1.0 - close_location
@@ -94,18 +92,19 @@ def analyze(market, symbol, rows, include_micro=False):
             "side": side,
             "entry": close,
             "stop": stop,
-            "tp1": target,
-            "tp2": target,
-            "tp3": target,
+            "tp1": tp1,
+            "tp2": tp2,
+            "tp3": tp3,
             "score": round(score, 1),
             "timeframe": "15m",
             "change_pct": round((close / c[i - 1] - 1.0) * 100.0, 5),
             "change_15m_pct": round((close / c[i - 1] - 1.0) * 100.0, 5),
             "reason": (f"VOLUME IMPULSE {market}: volume {volume_ratio:.2f}x; "
-                       f"15m close in directional half of candle; body-midpoint stop; 3R target"),
+                       f"15m close in directional half of candle; SL 1.5x ATR; "
+                       f"TP1/TP2/TP3 at 1x/2x/3x ATR"),
             "signal_candle_time": int(float(bars[-1][0])),
             "risk_atr": round(risk / atr, 3),
-            "reward_risk": 3.0,
+            "reward_risk": 2.0,
             "volume_ratio": round(volume_ratio, 3),
             "strategy": f"VOLUME_IMPULSE_{market.upper()}",
         }
