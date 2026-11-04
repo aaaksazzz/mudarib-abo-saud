@@ -464,7 +464,9 @@ def run_market_scan(market,force=False):
     db.session.commit()
     update_trade_outcomes(market,universe)
     # Scan liquid candidates on the single 15-minute timeframe.
-    candidates=sorted(universe,key=lambda x:x["quote_volume"],reverse=True)[:30]\n    for index,item in enumerate(candidates):\n        item["include_microstructure"]=(market=="futures" and index<12)
+    candidates=sorted(universe,key=lambda x:x["quote_volume"],reverse=True)[:30]
+    for index,item in enumerate(candidates):
+        item["include_microstructure"]=(market=="futures" and index<12)
     jobs=[]
     found=[]
     completed=0
