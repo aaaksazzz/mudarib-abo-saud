@@ -307,82 +307,106 @@ def klines(market,symbol,interval,limit=120):
     base=BINANCE_FUTURES if market=="futures" else BINANCE_SPOT
     path="/fapi/v1/klines" if market=="futures" else "/api/v3/klines"
     return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit})
-def ema(values,period):
-    if len(values)<period: return None
-    k=2/(period+1); v=sum(values[:period])/period
-    for x in values[period:]: v=x*k+v*(1-k)
-    return v
 TIMEFRAMES=("15m",)
 BINANCE_INTERVALS={"15m":"15m","4h":"4h"}
+
+def _confirmed_swings(rows, lookback=80):
+    """Return confirmed price-action swing highs/lows; no indicator calculations."""
+    sample=rows[-lookback:]
+    highs=[]; lows=[]
+    for i in range(2,len(sample)-2):
+        try:
+            high=float(sample[i][2]); low=float(sample[i][3])
+            left_high=max(float(x[2]) for x in sample[i-2:i])
+            right_high=max(float(x[2]) for x in sample[i+1:i+3])
+            left_low=min(float(x[3]) for x in sample[i-2:i])
+            right_low=min(float(x[3]) for x in sample[i+1:i+3])
+            if high>=left_high and high>right_high:
+                highs.append((i,high))
+            if low<=left_low and low<right_low:
+                lows.append((i,low))
+        except (IndexError,TypeError,ValueError):
+            continue
+    return highs,lows
+
 def market_direction_4h(market,symbol):
     rows=klines(market,symbol,BINANCE_INTERVALS["4h"],100)
-    if not isinstance(rows,list) or len(rows)<52:
+    if not isinstance(rows,list) or len(rows)<25:
         return None
+    # Exclude the still-forming candle so direction never changes mid-bar.
     closed=rows[:-1]
-    closes=[float(x[4]) for x in closed]
-    if len(closes)<51 or not all(math.isfinite(v) and v>0 for v in closes):
+    highs,lows=_confirmed_swings(closed,80)
+    if len(highs)<2 or len(lows)<2:
         return None
-    fast,slow,base=ema(closes,9),ema(closes,14),ema(closes,50)
-    if None in (fast,slow,base):
-        return None
-    if closes[-1]>base and fast>slow:
+    higher_high=highs[-1][1]>highs[-2][1]
+    higher_low=lows[-1][1]>lows[-2][1]
+    lower_high=highs[-1][1]<highs[-2][1]
+    lower_low=lows[-1][1]<lows[-2][1]
+    if higher_high and higher_low:
         return "BUY"
-    if closes[-1]<base and fast<slow:
+    if lower_high and lower_low:
         return "SELL"
     return None
+
 def build_signal(market,item,timeframe):
     symbol=item["symbol"]
-    # 4h sets the permitted direction; only 15m candles can trigger an entry.
+    # Four-hour market structure controls the permitted side.
     bias=market_direction_4h(market,symbol)
     if bias is None or timeframe!="15m":
         return None
-    rows=klines(market,symbol,BINANCE_INTERVALS[timeframe],100)
-    if not isinstance(rows,list) or len(rows)<52:
+    rows=klines(market,symbol,BINANCE_INTERVALS["15m"],100)
+    if not isinstance(rows,list) or len(rows)<25:
         return None
-    # Only fully closed 15m candles participate in the entry signal.
     closed=rows[:-1]
-    closes=[float(x[4]) for x in closed]
-    if len(closes)<51 or not all(math.isfinite(v) and v>0 for v in closes):
+    if len(closed)<22:
         return None
-    ma9_now,ma14_now,ma50_now=ema(closes,9),ema(closes,14),ema(closes,50)
-    ma9_prev,ma14_prev=ema(closes[:-1],9),ema(closes[:-1],14)
-    entry=closes[-1]
-    if None in (ma9_now,ma14_now,ma50_now,ma9_prev,ma14_prev):
+    try:
+        candle=closed[-1]
+        open_price=float(candle[1]); high=float(candle[2])
+        low=float(candle[3]); entry=float(candle[4])
+        volume=max(0.0,float(candle[5] or 0))
+        prior=closed[-13:-1]
+        prior_lows=[float(x[3]) for x in prior]
+        prior_highs=[float(x[2]) for x in prior]
+        prior_volumes=[max(0.0,float(x[5] or 0)) for x in closed[-21:-1]]
+    except (IndexError,TypeError,ValueError):
         return None
-    bullish=ma9_prev<=ma14_prev and ma9_now>ma14_now and entry>ma50_now
-    bearish=ma9_prev>=ma14_prev and ma9_now<ma14_now and entry<ma50_now
-    if bias=="BUY" and not bullish:
+    values=(open_price,high,low,entry)
+    if not all(math.isfinite(v) and v>0 for v in values) or high<low:
         return None
-    if bias=="SELL" and not bearish:
+    candle_range=high-low
+    if candle_range<=0:
         return None
-    if not bullish and not bearish:
+    body_ratio=abs(entry-open_price)/candle_range
+    avg_volume=sum(prior_volumes)/len(prior_volumes) if prior_volumes else 0.0
+    volume_ratio=volume/avg_volume if avg_volume>0 else 1.0
+
+    # Entry is triggered by a liquidity sweep and close back inside the prior range.
+    swept_low=min(prior_lows) if prior_lows else 0.0
+    swept_high=max(prior_highs) if prior_highs else 0.0
+    bullish_sweep=(bias=="BUY" and low<swept_low and entry>swept_low
+                   and entry>open_price and body_ratio>=0.35)
+    bearish_sweep=(bias=="SELL" and high>swept_high and entry<swept_high
+                   and entry<open_price and body_ratio>=0.35)
+    if not bullish_sweep and not bearish_sweep:
         return None
-    side="BUY" if bullish else "SELL"
-    # Use the nearest confirmed 5-candle swing (two candles on each side).
-    lows=[float(x[3]) for x in closed]
-    highs=[float(x[2]) for x in closed]
-    swing_index=None
-    first=max(2,len(closed)-32)
-    for i in range(len(closed)-3,first-1,-1):
-        if side=="BUY":
-            is_swing=lows[i]<=min(lows[i-2:i]) and lows[i]<min(lows[i+1:i+3])
-        else:
-            is_swing=highs[i]>=max(highs[i-2:i]) and highs[i]>max(highs[i+1:i+3])
-        if is_swing:
-            swing_index=i
-            break
-    if swing_index is None:
-        return None
-    stop=lows[swing_index] if side=="BUY" else highs[swing_index]
+
+    side="BUY" if bullish_sweep else "SELL"
+    stop=low if side=="BUY" else high
     risk=(entry-stop) if side=="BUY" else (stop-entry)
     if not math.isfinite(risk) or risk<=0:
         return None
     sign=1 if side=="BUY" else -1
-    target=entry+sign*risk*2
-    change_pct=(entry/closes[-2]-1)*100 if closes[-2] else 0.0
+    tp1=entry+sign*risk*1.5
+    tp2=entry+sign*risk*2.5
+    tp3=entry+sign*risk*3.5
+    volume_points=min(20.0,max(0.0,(volume_ratio-1.0)*20.0))
+    score=round(min(95.0,60.0+body_ratio*20.0+volume_points),1)
+    change_pct=(entry/float(closed[-2][4])-1)*100 if float(closed[-2][4]) else 0.0
+    reason="هيكل 4س يحدد الاتجاه؛ سحب سيولة وإغلاق استردادي على 15د، مع تقييم قوة الشمعة والحجم."
     return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":stop,
-        "tp1":target,"tp2":target,"tp3":target,
-        "score":0.0,"timeframe":timeframe,"reason":"اتجاه 4س يحدد جهة الصفقة، وتقاطع 15د يحدد الدخول؛ الوقف عند آخر قاع/قمة مؤكدة والهدف 2R.",
+        "tp1":tp1,"tp2":tp2,"tp3":tp3,
+        "score":score,"timeframe":timeframe,"reason":reason,
         "status":"active","change_pct":round(change_pct,6),"change_15m_pct":round(change_pct,6),
         "quote_volume":item["quote_volume"]}
 def expire_stale_trades(market=None):
