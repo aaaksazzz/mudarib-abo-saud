@@ -4,6 +4,7 @@ from functools import wraps, lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import market_adapters
+import quant_engine
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -390,29 +391,15 @@ def liquidity_sweep_3r_setup(rows):
 def build_signal(market,item,timeframe):
     symbol=item["symbol"]
     try:
-        rows=klines(market,symbol,BINANCE_INTERVALS[timeframe],100)
-        setup=liquidity_sweep_3r_setup(rows)
+        rows=klines(market,symbol,"15m",120)
+        setup=quant_engine.analyze(market,symbol,rows)
         if not setup:
             return None
-        side=setup["side"]
-        entry=setup["entry"]
-        stop=setup["stop"]
-        tp1=setup["tp1"]
-        tp2=setup["tp2"]
-        tp3=setup["tp3"]
-        displacement_points=min(20.0,max(0.0,(setup["displacement"]-0.55)*40.0))
-        volume_points=min(25.0,max(0.0,(setup["volume_ratio"]-1.0)*12.5))
-        score=round(min(98.0,65.0+displacement_points+volume_points),1)
-        reason="Liquidity Sweep 3R: سحب سيولة ثم اندفاع سعري وإعادة اختبار؛ TP1=1R وTP2=2R وTP3=3R."
-        previous=float(rows[-3][4]) if len(rows)>=3 and float(rows[-3][4]) else entry
-        change_pct=(entry/previous-1)*100 if previous else 0.0
-        return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":stop,
-            "tp1":tp1,"tp2":tp2,"tp3":tp3,"score":score,"timeframe":timeframe,
-            "reason":reason,"status":"active","change_pct":round(change_pct,6),
-            "change_15m_pct":round(change_pct,6),"quote_volume":item["quote_volume"],
-            "signal_candle_time":setup["signal_candle_time"]}
+        setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
+                      "status":"active","timeframe":"15m"})
+        return setup
     except Exception:
-        app.logger.exception("Liquidity Sweep 3R analysis failed for %s %s %s",market,symbol,timeframe)
+        app.logger.exception("DIVE QUANT PRO analysis failed for %s %s",market,symbol)
         return None
 
 def expire_stale_trades(market=None):
@@ -465,7 +452,7 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("Liquidity Sweep 3R:%")).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("DIVE QUANT PRO:%")).order_by(func.abs(Trade.change_15m_pct).desc()).limit(3).all()
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True}
         except (ValueError,TypeError):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
@@ -473,11 +460,11 @@ def run_market_scan(market,force=False):
     if not universe:
         raise RuntimeError("Market provider returned an empty eligible universe")
     # Retire signals from previous strategies so old entries never leak into the new strategy feed.
-    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),~Trade.reason.like("Liquidity Sweep 3R:%")).update({"status":"superseded"},synchronize_session=False)
+    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),~Trade.reason.like("DIVE QUANT PRO:%")).update({"status":"superseded"},synchronize_session=False)
     db.session.commit()
     update_trade_outcomes(market,universe)
     # Scan liquid candidates on the single 15-minute timeframe.
-    candidates=sorted(universe,key=lambda x:x["quote_volume"],reverse=True)[:12]
+    candidates=sorted(universe,key=lambda x:x["quote_volume"],reverse=True)[:30]
     jobs=[]
     found=[]
     completed=0
@@ -497,8 +484,8 @@ def run_market_scan(market,force=False):
         raise RuntimeError(f"Insufficient candle data: {completed}/{len(futures)} analyses completed")
     # Ranking is by absolute 15-minute price change.
     for frame in TIMEFRAMES:
-        frame_signals=sorted((x for x in found if x["timeframe"]==frame),key=lambda x:abs(x["change_pct"]),reverse=True)
-        for signal in frame_signals[:10]:
+        frame_signals=sorted((x for x in found if x["timeframe"]==frame),key=lambda x:(x["score"],x.get("quote_volume",0)),reverse=True)
+        for signal in frame_signals[:3]:
             exists=Trade.query.filter(Trade.market==market,Trade.symbol==signal["symbol"],Trade.timeframe==frame,Trade.status.in_(OPEN_TRADE_STATUSES)).first()
             if exists and aware(exists.created_at)>now-timedelta(hours=24):
                 continue
@@ -523,7 +510,7 @@ def signals(market):
         # Keep web requests fast: the scheduler owns scans; page loads only read the latest committed result.
         expire_stale_trades(market)
         row=db.session.get(Setting,"scan:"+market)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("Liquidity Sweep 3R:%")).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("DIVE QUANT PRO:%")).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
         updated=row.value if row else None
         stale=True
         if updated:
