@@ -1,42 +1,23 @@
-"""DIVE QUANT PRO — open-data consensus engine.
-Methodology adapted from the MIT-licensed Dive Into Crypto project:
-weighted indicator voting, regime adaptation, futures microstructure,
-top-trader divergence, explicit data availability and 3R trade levels.
-This lightweight Flask integration ports the decision framework, not the
-upstream Android/desktop 60-indicator codebase. No API keys are required.
+"""DIVE QUANT PRO — upstream 60-indicator consensus engine with public market overlays.
+
+The indicator, scoring, risk and regime modules are vendored from the MIT-licensed
+Dive Into Crypto project. This adapter restricts all markets to closed 15m candles,
+adds Binance futures microstructure where available, and builds one-stop 1R/2R/3R
+trade plans. No exchange account credentials are used.
 """
 import math
 import requests
-from statistics import pstdev
+import pandas as pd
+from functools import lru_cache
+from dive_engine.engine.loader import load_config
+from dive_engine.engine.signal_service import SignalService
+from dive_engine.engine.consensus.engine import ConsensusEngine
+from dive_engine.engine.consensus.regime import evaluate as evaluate_regime
 
-FAPI = "https://fapi.binance.com"
-HEADERS = {"User-Agent": "SMART-TRADING-PRO/2.0", "Accept": "application/json"}
-WEIGHTS = {"ema":1.8,"sma":1.5,"macd":2.0,"rsi":1.5,"stoch":1.2,"cci":1.0,
-"williams":1.0,"roc":1.0,"bollinger":1.5,"mfi":1.2,"obv":1.2,"adx_di":1.5,
-"ichimoku":2.0,"supertrend":2.0,"cmf":1.5,"vwap":1.8,"vortex":1.5,
-"donchian":1.5,"keltner":1.5,"zscore":1.0,"engulfing":1.2}
-
-def _num(x):
-    try:
-        v=float(x)
-        return v if math.isfinite(v) else None
-    except (TypeError,ValueError):
-        return None
-
-def _sma(a,n):
-    return sum(a[-n:])/n if len(a)>=n else None
-
-def _ema(a,n):
-    if len(a)<n: return None
-    k=2/(n+1); value=sum(a[:n])/n
-    for x in a[n:]: value=x*k+value*(1-k)
-    return value
-
-def _rsi(a,n=14):
-    if len(a)<n+1: return None
-    d=[a[i]-a[i-1] for i in range(len(a)-n,len(a))]
-    up=sum(max(0,x) for x in d)/n; dn=sum(max(0,-x) for x in d)/n
-    return 100.0 if dn==0 else 100-100/(1+up/dn)
+@lru_cache(maxsize=1)
+def _engine():
+    config=load_config()
+    return config, SignalService(config), ConsensusEngine(config)
 
 def _atr(h,l,c,n=14):
     if len(c)<n+1: return None
@@ -88,129 +69,77 @@ def _micro(symbol,closes):
     return out
 
 def analyze(market,symbol,rows,include_micro=False):
-    """Analyze closed 15m OHLCV rows [timestamp,open,high,low,close,volume]."""
-    if not isinstance(rows,list) or len(rows)<75: return None
-    bars=rows[:-1]  # never use the still-forming candle
+    """Evaluate the upstream 60-vote engine on closed 15m candles and construct 3R levels."""
+    if not isinstance(rows,list) or len(rows)<75:
+        return None
+    bars=rows[:-1]
     try:
-        o=[_num(x[1]) for x in bars]; h=[_num(x[2]) for x in bars]
-        l=[_num(x[3]) for x in bars]; c=[_num(x[4]) for x in bars]
-        v=[_num(x[5]) or 0 for x in bars]
-        if any(x is None for q in (o,h,l,c) for x in q) or min(c[-60:])<=0: return None
-        close,high,low,op=c[-1],h[-1],l[-1],o[-1]
-        atr=_atr(h,l,c)
-        if not atr or atr<=0: return None
-        votes=[]
-        def add(name,score):
-            if score: votes.append((name,int(max(-2,min(2,score)))))
-        e9,e21=_ema(c,9),_ema(c,21); s20,s50=_sma(c,20),_sma(c,50)
-        if e9 is not None and e21 is not None: add("ema",2 if e9>e21*1.001 else -2 if e9<e21*0.999 else 0)
-        if s20 is not None and s50 is not None: add("sma",2 if s20>s50*1.001 else -2 if s20<s50*0.999 else 0)
-        macd=(_ema(c,12) or close)-(_ema(c,26) or close)
-        macd_hist=macd-((_ema([(_ema(c[:i+1],12) or c[i])-(_ema(c[:i+1],26) or c[i]) for i in range(len(c))],9)) or 0)
-        add("macd",2 if macd>0 and macd_hist>0 else -2 if macd<0 and macd_hist<0 else 0)
-        rsi=_rsi(c)
-        if rsi is not None: add("rsi",2 if rsi<30 and close>op else 1 if 52<rsi<70 else -2 if rsi>75 and close<op else -1 if rsi<48 else 0)
-        lo14,hi14=min(l[-14:]),max(h[-14:])
-        stoch=100*(close-lo14)/(hi14-lo14) if hi14>lo14 else 50
-        add("stoch",2 if stoch<15 and close>op else -2 if stoch>85 and close<op else 1 if 55<stoch<85 else -1 if 15<stoch<45 else 0)
-        typical=[(h[i]+l[i]+c[i])/3 for i in range(len(c))]
-        tp20=_sma(typical,20); mad=sum(abs(x-tp20) for x in typical[-20:])/20 if tp20 else 0
-        cci=(typical[-1]-tp20)/(0.015*mad) if mad else 0
-        add("cci",2 if cci>100 else 1 if cci>25 else -2 if cci< -100 else -1 if cci< -25 else 0)
-        wr=-100*(hi14-close)/(hi14-lo14) if hi14>lo14 else -50
-        add("williams",2 if wr< -85 and close>op else -2 if wr> -15 and close<op else 1 if -50<wr< -15 else -1 if -85<wr< -50 else 0)
-        roc=(close/c[-13]-1)*100 if c[-13] else 0
-        add("roc",2 if roc>1 else 1 if roc>0.15 else -2 if roc< -1 else -1 if roc< -0.15 else 0)
-        mid=_sma(c,20); sd=pstdev(c[-20:]); upper,lower=mid+2*sd,mid-2*sd
-        add("bollinger",2 if close>upper else -2 if close<lower else 1 if close>mid else -1 if close<mid else 0)
-        pos_flow=neg_flow=0.0
-        for i in range(-14,0):
-            flow=typical[i]*v[i]
-            if typical[i]>typical[i-1]: pos_flow+=flow
-            elif typical[i]<typical[i-1]: neg_flow+=flow
-        mfi=100-100/(1+pos_flow/neg_flow) if neg_flow else 100
-        add("mfi",2 if mfi<20 and close>op else -2 if mfi>80 and close<op else 1 if 55<mfi<80 else -1 if 20<mfi<45 else 0)
-        obv=[0.0]
-        for i in range(1,len(c)): obv.append(obv[-1]+(v[i] if c[i]>c[i-1] else -v[i] if c[i]<c[i-1] else 0))
-        of,os=_sma(obv,5),_sma(obv,20)
-        if of is not None and os is not None: add("obv",1 if of>os else -1 if of<os else 0)
-        pdm=[]; mdm=[]; tr=[]
-        for i in range(1,len(c)):
-            up,dn=h[i]-h[i-1],l[i-1]-l[i]
-            pdm.append(max(up,0) if up>dn else 0); mdm.append(max(dn,0) if dn>up else 0)
-            tr.append(max(h[i]-l[i],abs(h[i]-c[i-1]),abs(l[i]-c[i-1])))
-        tr14=sum(tr[-14:]) or 1; pdi=100*sum(pdm[-14:])/tr14; mdi=100*sum(mdm[-14:])/tr14
-        adx=100*abs(pdi-mdi)/(pdi+mdi) if pdi+mdi else 0
-        add("adx_di",2 if pdi>mdi and adx>25 else 1 if pdi>mdi else -2 if mdi>pdi and adx>25 else -1 if mdi>pdi else 0)
-        tenkan=(max(h[-9:])+min(l[-9:]))/2; kijun=(max(h[-26:])+min(l[-26:]))/2
-        spanb=(max(h[-52:])+min(l[-52:]))/2
-        add("ichimoku",2 if close>max(kijun,spanb) and tenkan>kijun else -2 if close<min(kijun,spanb) and tenkan<kijun else 1 if close>kijun else -1 if close<kijun else 0)
-        add("supertrend",1 if close>(h[-10:][0]+l[-10:][0])/2+2*atr else -1 if close<(h[-10:][0]+l[-10:][0])/2-2*atr else 0)
-        mfv=[(((c[i]-l[i])-(h[i]-c[i]))/(h[i]-l[i])*v[i]) if h[i]>l[i] else 0 for i in range(len(c))]
-        cmf=sum(mfv[-20:])/(sum(v[-20:]) or 1)
-        add("cmf",1 if cmf>0.08 else -1 if cmf< -0.08 else 0)
-        vwap=sum(typical[-20+i]*v[-20+i] for i in range(20))/(sum(v[-20:]) or 1)
-        add("vwap",1 if close>vwap else -1 if close<vwap else 0)
-        vp=sum(abs(h[i]-l[i-1]) for i in range(len(h)-14,len(h)))
-        vm=sum(abs(l[i]-h[i-1]) for i in range(len(h)-14,len(h)))
-        vip=vp/tr14; vim=vm/tr14
-        add("vortex",1 if vip>vim*1.03 else -1 if vim>vip*1.03 else 0)
-        dhi,dlo=max(h[-21:-1]),min(l[-21:-1])
-        add("donchian",2 if close>dhi else -2 if close<dlo else 1 if close>(dhi+dlo)/2 else -1 if close<(dhi+dlo)/2 else 0)
-        km=_ema(c,20) or close
-        add("keltner",1 if close>km+1.5*atr else -1 if close<km-1.5*atr else 0)
-        z=(close-mid)/sd if sd else 0
-        add("zscore",2 if z< -2 and close>op else -2 if z>2 and close<op else 1 if 0.4<z<2 else -1 if -2<z< -0.4 else 0)
-        bull=close>op and c[-2]<o[-2] and close>o[-2] and op<c[-2]
-        bear=close<op and c[-2]>o[-2] and close<o[-2] and op>c[-2]
-        add("engulfing",2 if bull else -2 if bear else 0)
-        active=[x for x in votes if x[1]]
-        if len(active)<6: return None
-        regime="TREND" if adx>=25 else "RANGE" if adx<20 else "MIXED"
-        trend={"ema","sma","macd","adx_di","ichimoku","supertrend","vortex","donchian","keltner"}
-        oscill={"rsi","stoch","cci","williams","bollinger","mfi","zscore"}
-        weighted=total=0.0; buys=sum(1 for _,s in active if s>0); sells=sum(1 for _,s in active if s<0)
-        for name,score in votes:
-            w=WEIGHTS[name]
-            if regime=="TREND" and name in trend: w*=1.35
-            elif regime=="TREND" and name in oscill: w*=0.70
-            elif regime=="RANGE" and name in oscill: w*=1.30
-            elif regime=="RANGE" and name in trend: w*=0.75
-            weighted+=score*w; total+=w
-        base_score=weighted/(total or 1)
+        o=[float(x[1]) for x in bars]
+        h=[float(x[2]) for x in bars]
+        l=[float(x[3]) for x in bars]
+        c=[float(x[4]) for x in bars]
+        v=[float(x[5] or 0) for x in bars]
+        if not all(math.isfinite(z) for seq in (o,h,l,c,v) for z in seq) or min(c[-60:])<=0:
+            return None
+        atr=_atr(h,l,c,14)
+        if not atr or atr<=0:
+            return None
+        config,service,consensus_engine=_engine()
+        frame=pd.DataFrame({"open":o,"high":h,"low":l,"close":c,"volume":v})
+        results=service.calculate_all(frame)
+        decision=consensus_engine.evaluate(results)
+        signal=decision.get("final_signal","NEUTRAL")
+        side="BUY" if signal in ("BUY","STRONG_BUY") else "SELL" if signal in ("SELL","STRONG_SELL") else None
+        score_data=decision.get("score_data") or {}
+        risk_data=decision.get("risk_data") or {}
+        if not side or not decision.get("should_trade") or decision.get("risk_level")=="HIGH":
+            return None
+        if int(decision.get("confidence",0))<55:
+            return None
+        active=int(score_data.get("active_signals",0))
+        total=int(score_data.get("total_signals",0))
+        buy=int(score_data.get("buy_count",0)); sell=int(score_data.get("sell_count",0))
+        agreement=max(buy,sell)/active if active else 0
+        if active<6 or agreement<0.58:
+            return None
+        if market in ("spot","alpha","us-stocks","saudi") and side=="SELL":
+            return None
+        regime=evaluate_regime(results,config.get("indicator_weights",{}),config)
         micro=_micro(symbol,c) if market=="futures" and include_micro else {"available":False,"score":0,"notes":[]}
-        final_score=base_score+(micro["score"]/100*0.45 if micro["available"] else 0)
-        side="BUY" if final_score>=0.4 else "SELL" if final_score<=-0.4 else None
-        if not side: return None
-        agreement=max(buys,sells)/len(active)
-        if agreement<0.58: return None
-        if market in ("spot","alpha","us-stocks","saudi") and side=="SELL": return None
-        confidence=min(abs(final_score)/2,1)*70+agreement*20+(len(active)/len(votes))*10
-        flags=[]; atr_pct=atr/close*100
-        if atr_pct>3: flags.append("تقلب مرتفع")
-        if adx<15: flags.append("اتجاه ضعيف")
-        if agreement<0.68: flags.append("تعارض جزئي")
-        if micro["available"] and abs(micro["score"])>=30 and ((side=="BUY" and micro["score"]<0) or (side=="SELL" and micro["score"]>0)): flags.append("تعارض تمركز العقود")
-        if len(flags)>=3: return None
-        confidence=max(0,min(98,round(confidence-len(flags)*4,1)))
-        if confidence<55: return None
-        swinglo=min(l[-10:]); swinghi=max(h[-10:])
+        if micro.get("available") and abs(micro.get("score",0))>=30:
+            if (side=="BUY" and micro["score"]<0) or (side=="SELL" and micro["score"]>0):
+                return None
+        confidence=float(decision["confidence"])
+        if micro.get("available") and ((side=="BUY" and micro["score"]>0) or (side=="SELL" and micro["score"]<0)):
+            confidence=min(98,confidence+4)
+        entry=c[-1]
         if side=="BUY":
-            stop=min(swinglo-0.15*atr,close-0.9*atr); risk=close-stop
-            if risk>2.5*atr: stop=close-1.8*atr; risk=close-stop
+            stop=min(min(l[-10:])-0.15*atr,entry-0.9*atr)
+            risk=entry-stop
+            if risk>2.5*atr:
+                stop=entry-1.8*atr
+                risk=entry-stop
             if risk<=0: return None
-            tps=[close+risk,close+2*risk,close+3*risk]
+            tp1,tp2,tp3=entry+risk,entry+2*risk,entry+3*risk
         else:
-            stop=max(swinghi+0.15*atr,close+0.9*atr); risk=stop-close
-            if risk>2.5*atr: stop=close+1.8*atr; risk=stop-close
+            stop=max(max(h[-10:])+0.15*atr,entry+0.9*atr)
+            risk=stop-entry
+            if risk>2.5*atr:
+                stop=entry+1.8*atr
+                risk=stop-entry
             if risk<=0: return None
-            tps=[close-risk,close-2*risk,close-3*risk]
-        change=(close/c[-2]-1)*100 if c[-2] else 0
-        why="؛ ".join(micro.get("notes",[])[:3]) if micro.get("notes") else "توافق الاتجاه والزخم والحجم"
-        return {"side":side,"entry":close,"stop":stop,"tp1":tps[0],"tp2":tps[1],"tp3":tps[2],
-                "score":confidence,"timeframe":"15m","change_pct":round(change,5),"change_15m_pct":round(change,5),
-                "reason":f"DIVE QUANT PRO: {final_score:.3f}; {regime}; {why}",
-                "signal_candle_time":int(float(bars[-1][0])),"risk_atr":round(risk/atr,2),
-                "reward_risk":3.0,"microstructure":micro,"indicator_count":len(votes),"active_count":len(active)}
+            tp1,tp2,tp3=entry-risk,entry-2*risk,entry-3*risk
+        change=(entry/c[-2]-1)*100 if c[-2] else 0
+        notes="؛ ".join(micro.get("notes",[])[:3]) if micro.get("notes") else "توافق محرك المؤشرات الـ60"
+        return {
+            "side":side,"entry":entry,"stop":stop,"tp1":tp1,"tp2":tp2,"tp3":tp3,
+            "score":round(confidence,1),"timeframe":"15m","change_pct":round(change,5),
+            "change_15m_pct":round(change,5),
+            "reason":f"DIVE QUANT PRO: {signal}; weighted={decision.get('weighted_score',0):.3f}; regime={regime.get('regime','MIXED')}; {notes}",
+            "signal_candle_time":int(float(bars[-1][0])),"risk_atr":round(risk/atr,2),
+            "reward_risk":3.0,"microstructure":micro,"indicator_count":total,
+            "active_count":active,"risk_level":decision.get("risk_level"),
+            "regime":regime.get("regime","MIXED")
+        }
     except (IndexError,TypeError,ValueError,ZeroDivisionError,OverflowError):
         return None
