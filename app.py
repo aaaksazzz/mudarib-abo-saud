@@ -394,7 +394,9 @@ def run_market_scan(market,force=False):
     # this scan has successfully analysed enough fresh candles.
     update_trade_outcomes(market,universe)
     # Scan liquid candidates on the single 15-minute timeframe.
-    candidates=sorted(universe,key=lambda x:x["quote_volume"],reverse=True)[:30]
+    # Prioritize fast movers first; use traded value as the liquidity tie-breaker.
+    # Scan a wider candidate set so the volume-only cutoff does not hide movers.
+    candidates=sorted(universe,key=lambda x:(abs(float(x.get("change_pct") or 0)),float(x.get("quote_volume") or 0)),reverse=True)[:60]
     for index,item in enumerate(candidates):
         item["include_microstructure"]=(market=="futures" and index<12)
     jobs=[]
