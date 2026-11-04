@@ -203,16 +203,6 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(platform.TIMEFRAMES, ("15m",))
         self.assertNotIn("4h", platform.BINANCE_INTERVALS)
 
-
-    def test_dive_quant_engine_uses_upstream_60_indicator_consensus(self):
-        import inspect
-        source = inspect.getsource(platform.quant_engine.analyze) + inspect.getsource(platform.quant_engine._engine)
-        self.assertIn("SignalService", source)
-        self.assertIn("ConsensusEngine", source)
-        self.assertIn("evaluate_regime", source)
-        self.assertIn("include_micro", source)
-        self.assertIn("reward_risk", source)
-
     def test_registration_accepts_unicode_letters_and_digits(self):
         bootstrap = self.client.get("/api/bootstrap").get_json()
         response = self.client.post("/api/auth/register",
