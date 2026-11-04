@@ -70,15 +70,12 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["trades"][0]["status"], "expired")
 
-    def test_liquidity_sweep_signal_uses_exact_three_r_final_target(self):
-        fifteen = [[i, 100.2, 101, 100, 100.5, 1000] for i in range(20)]
-        fifteen.extend([
-            [20, 100.2, 101, 99.5, 100.7, 1000],
-            [21, 100.7, 102, 100.6, 101.6, 1600],
-            [22, 101.0, 101.5, 100.9, 101.2, 1000],
-            [23, 101.2, 101.5, 100.8, 101.0, 1000],
-        ])
-        with patch.object(platform, "klines", return_value=fifteen):
+    def test_dive_quant_signal_uses_exact_three_r_final_target(self):
+        rows = []
+        for index in range(120):
+            close = 100.0 + index * 0.4
+            rows.append([index * 900000, close - 0.15, close + 0.2, close - 0.2, close, 1000])
+        with patch.object(platform, "klines", return_value=rows):
             signal = platform.build_signal("spot", {"symbol": "BTCUSDT", "quote_volume": 50000000}, "15m")
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "BUY")
@@ -86,8 +83,7 @@ class MarketEngineTests(unittest.TestCase):
         self.assertAlmostEqual(signal["tp1"] - signal["entry"], risk)
         self.assertAlmostEqual(signal["tp2"] - signal["entry"], 2 * risk)
         self.assertAlmostEqual(signal["tp3"] - signal["entry"], 3 * risk)
-        self.assertIn("سحب سيولة", signal["reason"])
-
+        self.assertIn("DIVE QUANT PRO:", signal["reason"])
 
     def test_only_15m_timeframe_is_scanned_and_returned(self):
         self.assertEqual(platform.TIMEFRAMES, ("15m",))
@@ -99,7 +95,7 @@ class MarketEngineTests(unittest.TestCase):
                     reason="legacy", expires_at=now + timedelta(hours=1)),
                 platform.Trade(market="spot", symbol="NEWUSDT", side="BUY", entry=100, stop=95,
                     tp1=110, tp2=110, tp3=110, score=0, timeframe="15m",
-                    reason="Liquidity Sweep 3R: current", expires_at=now + timedelta(hours=1)),
+                    reason="DIVE QUANT PRO: current", expires_at=now + timedelta(hours=1)),
             ])
             platform.db.session.commit()
         response = self.client.get("/api/markets/spot/signals")
@@ -138,7 +134,7 @@ class MarketEngineTests(unittest.TestCase):
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":98.0,
             "tp1":102.0,"tp2":104.0,"tp3":106.0,"score":84.5,
             "change_pct":1.2,"timeframe":"15m",
-            "reason":"Liquidity Sweep 3R: سحب سيولة ثم إعادة اختبار."
+            "reason":"DIVE QUANT PRO: consensus confirmed."
         }
         with platform.app.app_context():
             with patch.object(platform, "market_tickers", return_value=[
@@ -192,13 +188,13 @@ class MarketEngineTests(unittest.TestCase):
         self.assertNotIn("4h", platform.BINANCE_INTERVALS)
 
 
-    def test_strategy_contains_no_ema_or_indicator_entry_rule(self):
+    def test_dive_quant_engine_uses_weighted_consensus_and_microstructure(self):
         import inspect
-        source = inspect.getsource(platform.liquidity_sweep_3r_setup)
-        self.assertNotIn("ema(", source)
-        self.assertIn("prior_low", source)
-        self.assertIn("volume_ratio", source)
-        self.assertIn("tp3=entry+3.0*risk", source)
+        source = inspect.getsource(platform.quant_engine.analyze)
+        self.assertIn("WEIGHTS", source)
+        self.assertIn("regime", source)
+        self.assertIn("include_micro", source)
+        self.assertIn("reward_risk", source)
 
     def test_registration_accepts_unicode_letters_and_digits(self):
         bootstrap = self.client.get("/api/bootstrap").get_json()
