@@ -87,7 +87,7 @@ def _micro(symbol,closes):
         out["unavailable_reason"]=str(exc)[:140]
     return out
 
-def analyze(market,symbol,rows):
+def analyze(market,symbol,rows,include_micro=False):
     """Analyze closed 15m OHLCV rows [timestamp,open,high,low,close,volume]."""
     if not isinstance(rows,list) or len(rows)<75: return None
     bars=rows[:-1]  # never use the still-forming candle
@@ -178,7 +178,7 @@ def analyze(market,symbol,rows):
             elif regime=="RANGE" and name in trend: w*=0.75
             weighted+=score*w; total+=w
         base_score=weighted/(total or 1)
-        micro=_micro(symbol,c) if market=="futures" else {"available":False,"score":0,"notes":[]}
+        micro=_micro(symbol,c) if market=="futures" and include_micro else {"available":False,"score":0,"notes":[]}
         final_score=base_score+(micro["score"]/100*0.45 if micro["available"] else 0)
         side="BUY" if final_score>=0.4 else "SELL" if final_score<=-0.4 else None
         if not side: return None
