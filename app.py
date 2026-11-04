@@ -403,7 +403,7 @@ def build_signal(market,item,timeframe):
     volume_points=min(20.0,max(0.0,(volume_ratio-1.0)*20.0))
     score=round(min(95.0,60.0+body_ratio*20.0+volume_points),1)
     change_pct=(entry/float(closed[-2][4])-1)*100 if float(closed[-2][4]) else 0.0
-    reason="هيكل 4س يحدد الاتجاه؛ سحب سيولة وإغلاق استردادي على 15د، مع تقييم قوة الشمعة والحجم."
+    reason="اتجاه 4س يحدد الاتجاه؛ سحب سيولة وإغلاق استردادي على 15د، مع تقييم قوة الشمعة والحجم."
     return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":stop,
         "tp1":tp1,"tp2":tp2,"tp3":tp3,
         "score":score,"timeframe":timeframe,"reason":reason,
@@ -498,7 +498,7 @@ def run_market_scan(market,force=False):
                 continue
             if exists:
                 exists.status="superseded"
-            db.session.add(Trade(market=market,symbol=signal["symbol"],side=signal["side"],entry=signal["entry"],stop=signal["stop"],tp1=signal["tp1"],tp2=signal["tp2"],tp3=signal["tp3"],score=0.0,change_15m_pct=signal["change_pct"],timeframe=frame,reason=signal["reason"],expires_at=now+timedelta(hours=24)))
+            db.session.add(Trade(market=market,symbol=signal["symbol"],side=signal["side"],entry=signal["entry"],stop=signal["stop"],tp1=signal["tp1"],tp2=signal["tp2"],tp3=signal["tp3"],score=signal["score"],change_15m_pct=signal["change_pct"],timeframe=frame,reason=signal["reason"],expires_at=now+timedelta(hours=24)))
     if not scan_row:
         scan_row=Setting(key=scan_key,value=iso(now)); db.session.add(scan_row)
     else:

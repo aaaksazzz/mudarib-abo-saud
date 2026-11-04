@@ -134,6 +134,26 @@ class MarketEngineTests(unittest.TestCase):
                 self.assertFalse(forced.get("cached", False))
                 ticker_source.assert_called_once()
 
+    def test_current_strategy_trades_are_not_superseded_on_next_scan_and_keep_score(self):
+        signal = {
+            "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":98.0,
+            "tp1":103.0,"tp2":105.0,"tp3":107.0,"score":84.5,
+            "change_pct":1.2,"timeframe":"15m",
+            "reason":"اتجاه 4س يحدد الاتجاه؛ سحب سيولة وإغلاق استردادي على 15د، مع تقييم قوة الشمعة والحجم."
+        }
+        with platform.app.app_context():
+            with patch.object(platform, "market_tickers", return_value=[
+                {"symbol":"BTCUSDT","price":100.0,"change_pct":1.2,"quote_volume":5000000}
+            ]), patch.object(platform, "build_signal", return_value=signal):
+                first = platform.run_market_scan("spot", force=True)
+                self.assertEqual(len(first["signals"]), 1)
+                trade = platform.Trade.query.filter_by(symbol="BTCUSDT", market="spot").one()
+                self.assertEqual(trade.score, 84.5)
+                second = platform.run_market_scan("spot", force=True)
+                trade = platform.Trade.query.filter_by(symbol="BTCUSDT", market="spot").one()
+                self.assertEqual(trade.status, "active")
+                self.assertEqual(len(second["signals"]), 1)
+
     def test_trade_lifecycle_tracks_targets_and_stop(self):
         with platform.app.app_context():
             trade = platform.Trade(
