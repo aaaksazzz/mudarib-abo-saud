@@ -56,6 +56,28 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(signals["signals"], [])
         self.assertFalse(signals["scan_ready"])
 
+    def test_saudi_screener_merges_yahoo_lists_and_keeps_all_tasi_volumes(self):
+        lists = {
+            "most_actives": [
+                {"symbol":"2222.SR","regularMarketPrice":30,"regularMarketChangePercent":1.2,"regularMarketVolume":10,"currency":"SAR"},
+            ],
+            "day_gainers": [
+                {"symbol":"7010.SR","regularMarketPrice":40,"regularMarketChangePercent":3.0,"regularMarketVolume":5,"currency":"SAR"},
+            ],
+            "day_losers": [
+                {"symbol":"2222.SR","regularMarketPrice":31,"regularMarketChangePercent":-1.0,"regularMarketVolume":20,"currency":"SAR"},
+                {"symbol":"AAPL","regularMarketPrice":200,"regularMarketChangePercent":1.0,"regularMarketVolume":1000,"currency":"USD"},
+            ],
+        }
+        with patch.object(platform.market_adapters, "_screener",
+                          side_effect=lambda region, scr_id: lists[scr_id]) as screener:
+            rows = platform.market_adapters.market_tickers("saudi")
+        self.assertEqual({row["symbol"] for row in rows}, {"2222.SR","7010.SR"})
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(screener.call_count, 3)
+        # Saudi equities are not filtered by the one-million-volume threshold.
+        self.assertTrue(all(row["quote_volume"] < 1_000_000 for row in rows))
+
     def test_journal_expires_old_active_trades(self):
         with platform.app.app_context():
             trade = platform.Trade(
