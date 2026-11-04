@@ -375,22 +375,24 @@ def volume_body_setup(rows):
             if cl>op and confirm_close>midpoint:
                 side="BUY"
                 stop=midpoint-body*0.05
-                target=body_high+body*1.618
+                tp1=body_high+body*1.816
+                tp2=body_high+body*1.916
+                tp3=body_high+body*2.0
                 entry=confirm_close
-                if not (stop<entry<tp1<tp2<target):
+                if not (stop<entry<tp1<tp2<tp3):
                     continue
             elif cl<op and confirm_close<midpoint:
                 side="SELL"
                 stop=midpoint+body*0.05
-                target=body_low-body*1.618
+                tp1=body_low-body*1.816
+                tp2=body_low-body*1.916
+                tp3=body_low-body*2.0
                 entry=confirm_close
-                if not (target<tp2<tp1<entry<stop):
+                if not (tp3<tp2<tp1<entry<stop):
                     continue
             else:
                 continue
-            tp1=body_high+body*0.618 if side=="BUY" else body_low-body*0.618
-            tp2=body_high+body if side=="BUY" else body_low-body
-            return {"side":side,"entry":entry,"stop":stop,"tp1":tp1,"tp2":tp2,"tp3":target,
+            return {"side":side,"entry":entry,"stop":stop,"tp1":tp1,"tp2":tp2,"tp3":tp3,
                     "volume_ratio":vol/average,"body":body,"signal_candle_time":int(float(candle[0]))}
     except (IndexError,TypeError,ValueError,OverflowError):
         return None
@@ -412,7 +414,7 @@ def build_signal(market,item,timeframe):
         body_ratio=min(1.0,setup["body"]/max(entry,1e-12))
         volume_points=min(25.0,max(0.0,(setup["volume_ratio"]-1.0)*12.5))
         score=round(min(98.0,65.0+body_ratio*20.0+volume_points),1)
-        reason="Volume Body 1.618: شمعة فوليوم مغلقة، تأكيد لاحق من منتصف الجسم، والقياس دون الذيول."
+        reason="Volume Body: أهداف امتداد 1.816 و1.916 و2.0 من جسم شمعة الفوليوم دون الذيول."
         previous=float(rows[-3][4]) if len(rows)>=3 and float(rows[-3][4]) else entry
         change_pct=(entry/previous-1)*100 if previous else 0.0
         return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":stop,
