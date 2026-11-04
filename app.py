@@ -392,7 +392,7 @@ def build_signal(market,item,timeframe):
     symbol=item["symbol"]
     try:
         rows=klines(market,symbol,"15m",120)
-        setup=quant_engine.analyze(market,symbol,rows)
+        setup=quant_engine.analyze(market,symbol,rows,include_micro=item.get("include_microstructure",False))
         if not setup:
             return None
         setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
@@ -464,7 +464,7 @@ def run_market_scan(market,force=False):
     db.session.commit()
     update_trade_outcomes(market,universe)
     # Scan liquid candidates on the single 15-minute timeframe.
-    candidates=sorted(universe,key=lambda x:x["quote_volume"],reverse=True)[:30]
+    candidates=sorted(universe,key=lambda x:x["quote_volume"],reverse=True)[:30]\n    for index,item in enumerate(candidates):\n        item["include_microstructure"]=(market=="futures" and index<12)
     jobs=[]
     found=[]
     completed=0
