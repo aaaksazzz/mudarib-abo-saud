@@ -158,6 +158,22 @@ def public_article(a):
     return {"id":a.id,"kind":a.kind,"title":a.title,"slug":a.slug,"summary":a.summary,"body":a.body,"created_at":iso(a.created_at)}
 @app.get("/")
 def home(): return send_from_directory(".", "index.html")
+@app.get("/market/<market>")
+def market_page_route(market):
+    if market not in MARKETS: return json_error("السوق غير معروف",404)
+    return send_from_directory(".", "index.html")
+
+@app.get("/plans")
+@app.get("/journal")
+@app.get("/blog")
+@app.get("/news")
+@app.get("/login")
+@app.get("/register")
+@app.get("/account")
+@app.get("/admin")
+def standalone_section_route():
+    return send_from_directory(".", "index.html")
+
 @app.get("/styles.css")
 def styles(): return send_from_directory(".", "styles.css")
 @app.get("/platform.js")
