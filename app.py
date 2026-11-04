@@ -5,7 +5,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import market_adapters
 import market_strategies
-import quant_engine  # retained for legacy engine regression coverage
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
