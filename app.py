@@ -4,7 +4,8 @@ from functools import wraps, lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import market_adapters
-import quant_engine
+import market_strategies
+import quant_engine  # retained for legacy engine regression coverage
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -315,7 +316,7 @@ def build_signal(market,item,timeframe):
     symbol=item["symbol"]
     try:
         rows=klines(market,symbol,"15m",120)
-        setup=quant_engine.analyze(market,symbol,rows,include_micro=item.get("include_microstructure",False))
+        setup=market_strategies.analyze(market,symbol,rows,include_micro=item.get("include_microstructure",False))
         if not setup:
             return None
         setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
@@ -376,7 +377,12 @@ def run_market_scan(market,force=False):
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
                 active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("DIVE QUANT PRO:%")).order_by(Trade.score.desc()).limit(3).all()
-                return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True}
+                meta_row=db.session.get(Setting,"scan-meta:"+market)
+                try:
+                    meta=json.loads(meta_row.value) if meta_row else {}
+                except (ValueError,TypeError):
+                    meta={}
+                return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True,**meta}
         except (ValueError,TypeError):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
     universe=market_tickers(market)
@@ -431,6 +437,13 @@ def run_market_scan(market,force=False):
         scan_row=Setting(key=scan_key,value=iso(now)); db.session.add(scan_row)
     else:
         scan_row.value=iso(now)
+    meta_key="scan-meta:"+market
+    meta_row=db.session.get(Setting,meta_key)
+    meta_value=json.dumps({"scan_universe":len(candidates),"analysis_completed":completed,"analysis_failed":failed,"market_bias":market_bias,"timeframes":list(TIMEFRAMES)},ensure_ascii=False)
+    if not meta_row:
+        db.session.add(Setting(key=meta_key,value=meta_value))
+    else:
+        meta_row.value=meta_value
     db.session.commit()
     active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(Trade.score.desc()).limit(3).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(candidates),"analysis_completed":completed,"analysis_failed":failed,"market_bias":market_bias,"timeframes":list(TIMEFRAMES)}
@@ -447,13 +460,18 @@ def signals(market):
         row=db.session.get(Setting,"scan:"+market)
         active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("DIVE QUANT PRO:%")).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
         updated=row.value if row else None
+        meta_row=db.session.get(Setting,"scan-meta:"+market)
+        try:
+            meta=json.loads(meta_row.value) if meta_row else {}
+        except (ValueError,TypeError):
+            meta={}
         stale=True
         if updated:
             try:
                 stale=aware(datetime.fromisoformat(updated))<utcnow()-timedelta(minutes=20)
             except (ValueError,TypeError):
                 stale=True
-        return jsonify({"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":updated,"cached":True,"stale":stale,"scan_ready":bool(updated)})
+        return jsonify({"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":updated,"cached":True,"stale":stale,"scan_ready":bool(updated),**meta})
     except Exception:
         app.logger.exception("signal retrieval failed")
         return json_error("تعذر قراءة نتائج الفحص المحفوظة حالياً",503)
