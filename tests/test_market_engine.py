@@ -129,6 +129,22 @@ class MarketEngineTests(unittest.TestCase):
                 ticker_source.assert_called_once()
 
     # Current-strategy fixtures must use the same reason prefix as production signals.
+    def test_market_wide_direction_filters_opposite_trade_signals(self):
+        signal = {
+            "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":98.0,
+            "tp1":102.0,"tp2":104.0,"tp3":106.0,"score":84.5,
+            "change_pct":1.2,"timeframe":"15m",
+            "reason":"DIVE QUANT PRO: consensus confirmed."
+        }
+        with platform.app.app_context():
+            with patch.object(platform, "market_tickers", return_value=[
+                {"symbol":"BTCUSDT","price":100.0,"change_pct":-2.0,"quote_volume":5000000}
+            ]), patch.object(platform, "build_signal", return_value=signal):
+                result = platform.run_market_scan("futures", force=True)
+                self.assertEqual(result["market_bias"], "SELL")
+                self.assertEqual(result["signals"], [])
+                self.assertEqual(platform.Trade.query.count(), 0)
+
     def test_current_strategy_trades_are_not_superseded_on_next_scan_and_keep_score(self):
         signal = {
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":98.0,
