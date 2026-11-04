@@ -377,14 +377,14 @@ def volume_body_setup(rows):
                 stop=midpoint-body*0.05
                 target=body_high+body*1.618
                 entry=confirm_close
-                if not (stop<entry<target):
+                if not (stop<entry<tp1<tp2<target):
                     continue
             elif cl<op and confirm_close<midpoint:
                 side="SELL"
                 stop=midpoint+body*0.05
                 target=body_low-body*1.618
                 entry=confirm_close
-                if not (target<entry<stop):
+                if not (target<tp2<tp1<entry<stop):
                     continue
             else:
                 continue
