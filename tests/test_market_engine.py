@@ -160,6 +160,26 @@ class MarketEngineTests(unittest.TestCase):
             rows = platform.market_tickers("spot")
         self.assertEqual(rows, [])
 
+    def test_four_hour_bias_blocks_opposite_fifteen_minute_entry(self):
+        bullish_15m = candle_rows([100] * 70 + [95, 93, 91, 90, 89, 90] + [90] * 22 + [110])
+        bullish_15m.append([len(bullish_15m), 110, 111, 109, 1, 1000, len(bullish_15m) + 1, 0, 0, 0, 0, 0])
+        bearish_4h = candle_rows(list(range(180, 80, -1)))
+        bearish_4h.append([len(bearish_4h), 80, 81, 79, 80, 1000, len(bearish_4h) + 1, 0, 0, 0, 0, 0])
+        def candles(_market, _symbol, interval, _limit):
+            return bearish_4h if interval == "4h" else bullish_15m
+        with patch.object(platform, "klines", side_effect=candles):
+            signal = platform.build_signal("spot", {"symbol": "BTCUSDT", "change_pct": 4.0, "quote_volume": 5000000}, "15m")
+        self.assertIsNone(signal)
+
+    def test_four_hour_bias_allows_only_matching_fifteen_minute_side(self):
+        bullish = candle_rows([100] * 70 + [95, 93, 91, 90, 89, 90] + [90] * 22 + [110])
+        bullish.append([len(bullish), 110, 111, 109, 1, 1000, len(bullish) + 1, 0, 0, 0, 0, 0])
+        with patch.object(platform, "klines", return_value=bullish):
+            signal = platform.build_signal("spot", {"symbol": "BTCUSDT", "change_pct": 4.0, "quote_volume": 5000000}, "15m")
+        self.assertIsNotNone(signal)
+        self.assertEqual(signal["side"], "BUY")
+        self.assertEqual(signal["timeframe"], "15m")
+
     def test_registration_accepts_unicode_letters_and_digits(self):
         bootstrap = self.client.get("/api/bootstrap").get_json()
         response = self.client.post("/api/auth/register",
