@@ -94,13 +94,13 @@ def analyze(market,symbol,rows,include_micro=False):
         risk_data=decision.get("risk_data") or {}
         if not side or not decision.get("should_trade") or decision.get("risk_level")=="HIGH":
             return None
-        if int(decision.get("confidence",0))<55:
+        if int(decision.get("confidence",0))<38:
             return None
         active=int(score_data.get("active_signals",0))
         total=int(score_data.get("total_signals",0))
         buy=int(score_data.get("buy_count",0)); sell=int(score_data.get("sell_count",0))
         agreement=max(buy,sell)/active if active else 0
-        if active<6 or agreement<0.58:
+        if active<3 or agreement<0.52:
             return None
         if market in ("spot","alpha","us-stocks","saudi") and side=="SELL":
             return None
