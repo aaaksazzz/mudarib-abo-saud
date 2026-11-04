@@ -382,6 +382,12 @@ def run_market_scan(market,force=False):
     universe=market_tickers(market)
     if not universe:
         raise RuntimeError("Market provider returned an empty eligible universe")
+    market_up=sum(1 for item in universe if item.get("change_pct",0)>0)
+    market_down=sum(1 for item in universe if item.get("change_pct",0)<0)
+    market_bias="BUY" if market_up>market_down else "SELL" if market_down>market_up else None
+    # Retire signals that no longer agree with the live market direction.
+    if market_bias:
+        Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.side!=market_bias).update({"status":"superseded"},synchronize_session=False)
     # Retire signals from previous strategies so old entries never leak into the new strategy feed.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),~Trade.reason.like("DIVE QUANT PRO:%")).update({"status":"superseded"},synchronize_session=False)
     db.session.commit()
@@ -407,6 +413,8 @@ def run_market_scan(market,force=False):
                 app.logger.exception("15-minute signal analysis failed for %s",market)
     if completed<max(1,math.ceil(len(futures)*0.8)):
         raise RuntimeError(f"Insufficient candle data: {completed}/{len(futures)} analyses completed")
+    # Only publish signals aligned with the market-wide direction.
+    found=[x for x in found if market_bias and x["side"]==market_bias]
     # Ranking is by consensus confidence, then traded value.
     for frame in TIMEFRAMES:
         frame_signals=sorted((x for x in found if x["timeframe"]==frame),key=lambda x:(x["score"],x.get("quote_volume",0)),reverse=True)
@@ -423,7 +431,7 @@ def run_market_scan(market,force=False):
         scan_row.value=iso(now)
     db.session.commit()
     active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(Trade.score.desc()).limit(3).all()
-    return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(candidates),"analysis_completed":completed,"analysis_failed":failed,"timeframes":list(TIMEFRAMES)}
+    return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(candidates),"analysis_completed":completed,"analysis_failed":failed,"market_bias":market_bias,"timeframes":list(TIMEFRAMES)}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
     if market not in MARKETS:
