@@ -96,6 +96,7 @@ class MarketEngineTests(unittest.TestCase):
                 platform.Trade(market="spot", symbol="NEWUSDT", side="BUY", entry=100, stop=95,
                     tp1=110, tp2=110, tp3=110, score=0, timeframe="15m",
                     reason="VOLUME IMPULSE spot: current", expires_at=now + timedelta(hours=1)),
+                platform.Setting(key="scan:spot", value=platform.iso(now)),
             ])
             platform.db.session.commit()
         response = self.client.get("/api/markets/spot/signals")
