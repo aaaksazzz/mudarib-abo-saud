@@ -1,0 +1,205 @@
+# Canonical engine configuration. Every key here is consumed by the code:
+# - indicator_thresholds / indicator_weights: keyed by real indicator names
+#   (enforced by tests/test_config_integrity.py)
+# - consensus / no_trade / risk: ConsensusEngine + risk module
+# - microstructure: strategy overlay switch
+# - regime: Regime-Adaptive Weighting thresholds (matches regime.py defaults)
+# The old bot-service blocks (mode/paper/leverage/cooldown/...) were removed —
+# nothing in the scanner reads them; this service is a scanner, not a bot.
+consensus:
+  buy_threshold: 0.4
+  conflict_ratio_threshold: 0.6
+  min_active_signals: 4
+  sell_threshold: -0.4
+  strong_buy_threshold: 1.2
+  strong_sell_threshold: -1.2
+indicator_thresholds:
+  adx_di:
+    period: 14
+    strong_trend: 25
+    weak_trend: 15
+  atr_filter:
+    high_volatility_multiplier: 2.0
+    period: 14
+  awesome_oscillator:
+    fast_period: 5
+    slow_period: 34
+  bollinger:
+    period: 20
+    squeeze_threshold: 0.02
+    std_dev: 2.0
+  cci:
+    buy: -100
+    period: 20
+    sell: 100
+    strong_buy: -200
+    strong_sell: 200
+  choppiness:
+    choppy_threshold: 61.8
+    period: 14
+    trending_threshold: 38.2
+  cmf:
+    buy: 0.05
+    period: 20
+    sell: -0.05
+    strong_buy: 0.2
+    strong_sell: -0.2
+  ema_cross:
+    long_period: 21
+    short_period: 9
+    strong_divergence_pct: 0.02
+  engulfing:
+    body_ratio: 0.7
+  ichimoku:
+    kijun_period: 26
+    senkou_b_period: 52
+    tenkan_period: 9
+  liquidity_sweep:
+    atr_period: 14
+    lookback: 10
+    strong_penetration_atr: 0.5
+  macd:
+    fast_period: 12
+    signal_period: 9
+    slow_period: 26
+    strong_histogram_threshold: 0.5
+  mfi:
+    buy: 30
+    period: 14
+    sell: 70
+    strong_buy: 20
+    strong_sell: 80
+  obv:
+    divergence_lookback: 10
+    sma_period: 20
+  pivot_structure:
+    k: 2
+  psar:
+    af_increment: 0.02
+    af_max: 0.2
+    af_start: 0.02
+  roc:
+    period: 12
+    strong_threshold: 5.0
+    weak_threshold: 1.0
+  rsi:
+    buy: 35
+    period: 14
+    sell: 65
+    strong_buy: 25
+    strong_sell: 80
+  sma_cross:
+    long_period: 50
+    short_period: 10
+    strong_divergence_pct: 0.02
+  squeeze:
+    bb_mult: 2.0
+    kc_mult: 1.5
+    period: 20
+  stochastic:
+    d_period: 3
+    k_period: 14
+    overbought: 80
+    oversold: 20
+  supertrend:
+    multiplier: 3.0
+    period: 10
+  vortex:
+    period: 14
+  vwap:
+    period: 20
+  williams_r:
+    overbought: -20
+    oversold: -80
+    period: 14
+indicator_weights:
+  adx_di: 1.5
+  atr_filter: 0.0
+  awesome_oscillator: 1.2
+  bollinger: 1.5
+  cci: 1.0
+  choppiness: 1.0
+  cmf: 1.5
+  ema_cross: 1.8
+  ichimoku: 2.0
+  macd: 2.0
+  mfi: 1.2
+  obv: 1.2
+  psar: 1.3
+  roc: 1.0
+  rsi: 1.5
+  sma_cross: 1.8
+  squeeze: 2.5
+  stochastic: 1.2
+  supertrend: 2.0
+  vortex: 1.5
+  vwap: 1.8
+  williams_r: 1.0
+  # --- New indicators (strategy-lab R&D fleet, 2026-07-19) ---
+  keltner_breakout: 1.5
+  donchian_breakout: 1.5
+  chaikin_oscillator: 1.3
+  elder_ray: 1.2
+  klinger_oscillator: 1.3
+  trix: 1.4
+  coppock_curve: 1.2
+  kst: 1.4
+  dpo: 1.0
+  fisher_transform: 1.2
+  connors_rsi: 1.2
+  stoch_rsi: 1.2
+  ultimate_oscillator: 1.2
+  aroon_oscillator: 1.3
+  schaff_trend_cycle: 1.4
+  wavetrend: 1.5
+  relative_vigor_index: 1.1
+  balance_of_power: 1.0
+  accum_dist_line: 1.3
+  mass_index: 1.0
+  # --- New indicators batch 2 (strategy-lab, 2026-07-19) ---
+  cmo: 1.2
+  tsi: 1.3
+  vwma_cross: 1.4
+  qstick: 1.0
+  force_index: 1.2
+  bollinger_percent_b: 1.2
+  zscore_reversion: 1.0
+  linreg_slope: 1.4
+  atr_percentile: 1.0
+  hist_vol_percentile: 0.8
+  hurst: 1.2
+  range_expansion: 1.0
+  kalman_trend: 1.4
+  half_life_reversion: 1.0
+  rolling_sharpe: 1.2
+  # --- Price-action pattern library (2026-09-12) ---
+  engulfing: 1.2
+  liquidity_sweep: 1.4
+  pivot_structure: 1.1
+microstructure:
+  enabled: true
+  window: 24
+no_trade:
+  adx_min: 15.0
+  atr_high_percentile: 95.0
+  min_confidence: 30.0
+# Regime-Adaptive Weighting (engine/consensus/regime.py). These mirror the
+# module's fallback defaults exactly — making them explicit so the overlay is
+# tunable without code edits.
+regime:
+  strong_adx: 25.0
+  weak_adx: 20.0
+  chop_trend: 38.2
+  chop_range: 61.8
+risk:
+  break_even_trigger_pct: 0.025
+  confidence_threshold: 25
+  daily_loss_limit_enabled: false
+  daily_loss_limit_pct: 0.05
+  max_open_positions: 10
+  max_risk_level: MEDIUM
+  risk_per_trade: 0.35
+  stop_loss_pct: 0.04
+  take_profit_pct: 0.1
+  trailing_stop_activation_pct: 0.04
+  trailing_stop_pct: 0.03
