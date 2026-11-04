@@ -323,7 +323,7 @@ def build_signal(market,item,timeframe):
                       "status":"active","timeframe":"15m"})
         return setup
     except Exception:
-        app.logger.exception("DIVE QUANT PRO analysis failed for %s %s",market,symbol)
+        app.logger.exception("VOLUME IMPULSE analysis failed for %s %s",market,symbol)
         return None
 
 def expire_stale_trades(market=None):
@@ -376,7 +376,7 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("DIVE QUANT PRO:%")).order_by(Trade.score.desc()).limit(3).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("VOLUME IMPULSE%")).order_by(Trade.score.desc()).limit(3).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
                     meta=json.loads(meta_row.value) if meta_row else {}
@@ -397,7 +397,7 @@ def run_market_scan(market,force=False):
     else:
         Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES)).update({"status":"superseded"},synchronize_session=False)
     # Retire signals from previous strategies so old entries never leak into the new strategy feed.
-    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),~Trade.reason.like("DIVE QUANT PRO:%")).update({"status":"superseded"},synchronize_session=False)
+    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),~Trade.reason.like("VOLUME IMPULSE%")).update({"status":"superseded"},synchronize_session=False)
     db.session.commit()
     update_trade_outcomes(market,universe)
     # Scan liquid candidates on the single 15-minute timeframe.
@@ -458,7 +458,7 @@ def signals(market):
         # Keep web requests fast: the scheduler owns scans; page loads only read the latest committed result.
         expire_stale_trades(market)
         row=db.session.get(Setting,"scan:"+market)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("DIVE QUANT PRO:%")).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("VOLUME IMPULSE%")).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
         updated=row.value if row else None
         meta_row=db.session.get(Setting,"scan-meta:"+market)
         try:
