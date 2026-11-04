@@ -31,7 +31,9 @@ class VolumeBodyStrategyTests(unittest.TestCase):
         self.assertAlmostEqual(setup["tp2"], 129.16)
         self.assertAlmostEqual(setup["tp3"], 130.0)
         self.assertLess(setup["stop"], 105)
-        self.assertLess(setup["entry"], setup["tp1"] < setup["tp2"] < setup["tp3"])
+        self.assertLess(setup["entry"], setup["tp1"])
+        self.assertLess(setup["tp1"], setup["tp2"])
+        self.assertLess(setup["tp2"], setup["tp3"])
 
     def test_sell_is_inverse_and_uses_body_only(self):
         setup = volume_body_setup(self.make_rows("SELL"))
@@ -43,7 +45,9 @@ class VolumeBodyStrategyTests(unittest.TestCase):
         self.assertAlmostEqual(setup["tp2"], 80.84)
         self.assertAlmostEqual(setup["tp3"], 80.0)
         self.assertGreater(setup["stop"], 105)
-        self.assertGreater(setup["entry"], setup["tp1"] > setup["tp2"] > setup["tp3"])
+        self.assertGreater(setup["entry"], setup["tp1"])
+        self.assertGreater(setup["tp1"], setup["tp2"])
+        self.assertGreater(setup["tp2"], setup["tp3"])
 
     def test_rejects_volume_below_threshold(self):
         rows = self.make_rows("BUY")
