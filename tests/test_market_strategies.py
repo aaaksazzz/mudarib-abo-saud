@@ -19,13 +19,17 @@ def candles(side="BUY", volume=220.0):
 
 
 class MarketStrategyTests(unittest.TestCase):
-    def test_crypto_buy_signal_has_three_risk_target(self):
+    def test_crypto_buy_signal_uses_dive_atr_stop_and_targets(self):
         signal = analyze("futures", "TESTUSDT", candles("BUY"))
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "BUY")
         risk = signal["entry"] - signal["stop"]
-        self.assertAlmostEqual(signal["tp1"] - signal["entry"], 3 * risk)
-        self.assertAlmostEqual(signal["tp1"], signal["tp2"])
+        atr = risk / 1.5
+        self.assertAlmostEqual(signal["risk_atr"], 1.5)
+        self.assertAlmostEqual(signal["tp1"] - signal["entry"], atr)
+        self.assertAlmostEqual(signal["tp2"] - signal["entry"], 2 * atr)
+        self.assertAlmostEqual(signal["tp3"] - signal["entry"], 3 * atr)
+        self.assertAlmostEqual(signal["reward_risk"], 2.0)
         self.assertEqual(signal["timeframe"], "15m")
 
     def test_spot_does_not_emit_short(self):
@@ -36,7 +40,11 @@ class MarketStrategyTests(unittest.TestCase):
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "SELL")
         risk = signal["stop"] - signal["entry"]
-        self.assertAlmostEqual(signal["entry"] - signal["tp1"], 3 * risk)
+        atr = risk / 1.5
+        self.assertAlmostEqual(signal["risk_atr"], 1.5)
+        self.assertAlmostEqual(signal["entry"] - signal["tp1"], atr)
+        self.assertAlmostEqual(signal["entry"] - signal["tp2"], 2 * atr)
+        self.assertAlmostEqual(signal["entry"] - signal["tp3"], 3 * atr)
 
     def test_low_volume_is_rejected(self):
         self.assertIsNone(analyze("futures", "TESTUSDT", candles("BUY", volume=110.0)))
