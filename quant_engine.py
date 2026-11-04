@@ -153,7 +153,6 @@ def analyze(market,symbol,rows):
         add("vwap",1 if close>vwap else -1 if close<vwap else 0)
         vp=sum(abs(h[i]-l[i-1]) for i in range(len(h)-14,len(h)))
         vm=sum(abs(l[i]-h[i-1]) for i in range(len(h)-14,len(h)))
-        vip,v im=0,0
         vip=vp/tr14; vim=vm/tr14
         add("vortex",1 if vip>vim*1.03 else -1 if vim>vip*1.03 else 0)
         dhi,dlo=max(h[-21:-1]),min(l[-21:-1])
