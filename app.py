@@ -312,10 +312,10 @@ BINANCE_INTERVALS={"15m":"15m"}
 
 def liquidity_sweep_3r_setup(rows):
     """15m liquidity sweep, displacement and retest. All candles must be closed."""
-    if not isinstance(rows,list) or len(rows)<25:
+    if not isinstance(rows,list) or len(rows)<24:
         return None
     closed=rows[:-1]
-    if len(closed)<24:
+    if len(closed)<23:
         return None
     try:
         # The final three closed candles are: sweep, displacement, retest.
@@ -465,7 +465,7 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("Liquidity Sweep 3R:%")).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True}
         except (ValueError,TypeError):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
@@ -523,7 +523,7 @@ def signals(market):
         # Keep web requests fast: the scheduler owns scans; page loads only read the latest committed result.
         expire_stale_trades(market)
         row=db.session.get(Setting,"scan:"+market)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow()).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("Liquidity Sweep 3R:%")).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
         updated=row.value if row else None
         stale=True
         if updated:
