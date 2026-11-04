@@ -73,7 +73,7 @@ class MarketEngineTests(unittest.TestCase):
     def test_price_action_signal_uses_4h_structure_and_15m_liquidity_sweep(self):
         four_hour = []
         for i in range(60):
-            base = 100 + i * 0.25 + (5 if i % 6 == 3 else 0)
+            base = 100 + i * 0.2 + 5 * __import__("math").sin(i * __import__("math").pi / 3)
             four_hour.append([i, base, base + 1, base - 1, base + 0.2, 1000])
         four_hour.append([60, 115, 116, 114, 115, 1000])
         fifteen = [[i, 101, 102, 100, 101, 1000] for i in range(30)]
@@ -171,7 +171,7 @@ class MarketEngineTests(unittest.TestCase):
     def test_four_hour_structure_blocks_opposite_15m_sweep(self):
         bearish_4h = []
         for i in range(60):
-            base = 180 - i * 0.25 - (5 if i % 6 == 3 else 0)
+            base = 180 - i * 0.2 - 5 * __import__("math").sin(i * __import__("math").pi / 3)
             bearish_4h.append([i, base, base + 1, base - 1, base - 0.2, 1000])
         bearish_4h.append([60, 165, 166, 164, 165, 1000])
         bullish_15m = [[i, 101, 102, 100, 101, 1000] for i in range(30)]
