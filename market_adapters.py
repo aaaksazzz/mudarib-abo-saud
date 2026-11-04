@@ -37,11 +37,28 @@ def _chart(symbol,interval="15m",period=None):
     if not rows: raise ValueError("No valid Yahoo candles for "+symbol)
     return rows
 
-def _screener(region):
-    payload=_get(YAHOO+"/v1/finance/screener/predefined/saved",{"scrIds":"most_actives","count":250,"start":0,"region":region,"formatted":"false","lang":"en-US"})
+def _screener(region,scr_id="most_actives"):
+    payload=_get(YAHOO+"/v1/finance/screener/predefined/saved",{"scrIds":scr_id,"count":250,"start":0,"region":region,"formatted":"false","lang":"en-US"})
     result=((payload.get("finance") or {}).get("result") or [])
-    if not result: raise ValueError("Yahoo screener has no results for "+region)
+    if not result: raise ValueError("Yahoo screener has no results for "+region+"/"+scr_id)
     return result[0].get("quotes") or []
+
+def _screener_quotes(region):
+    # Saudi tickers are not consistently present in Yahoo's most_actives list.
+    # Merge the three Yahoo Saudi market lists while preserving first-seen quotes.
+    quotes={}
+    errors=[]
+    for scr_id in ("most_actives","day_gainers","day_losers"):
+        try:
+            for item in _screener(region,scr_id):
+                symbol=str(item.get("symbol") or "")
+                if symbol:
+                    quotes.setdefault(symbol,item)
+        except Exception as exc:
+            errors.append(f"{scr_id}: {exc}")
+    if not quotes and errors:
+        raise ValueError("Yahoo returned no screener quotes for "+region+" ("+"; ".join(errors)+")")
+    return list(quotes.values())
 
 def _row(symbol,price,change,volume,currency=None):
     try:
@@ -67,7 +84,7 @@ def _alpha_symbols():
 def market_symbols(market):
     if market=="alpha": return _alpha_symbols()
     if market=="us-stocks": return {x["symbol"] for x in _screener("US") if x.get("symbol")}
-    if market=="saudi": return {x["symbol"] for x in _screener("SA") if str(x.get("symbol","")).endswith(".SR")}
+    if market=="saudi": return {x["symbol"] for x in _screener_quotes("SA") if str(x.get("symbol","")).endswith(".SR")}
     if market=="us-contracts": return set(US_CONTRACTS)
     if market=="forex": return set(FX_SYMBOLS)
     return set()
@@ -75,11 +92,14 @@ def market_symbols(market):
 def market_tickers(market):
     if market in ("us-stocks","saudi"):
         out=[]
-        for x in _screener("US" if market=="us-stocks" else "SA"):
+        source_rows=_screener("US") if market=="us-stocks" else _screener_quotes("SA")
+        for x in source_rows:
             symbol=x.get("symbol")
             if not symbol or (market=="saudi" and not str(symbol).endswith(".SR")): continue
             row=_row(symbol,x.get("regularMarketPrice"),x.get("regularMarketChangePercent"),x.get("regularMarketVolume"),x.get("currency"))
             if row and (market=="saudi" or row["quote_volume"]>=1000000): out.append(row)
+        if market=="saudi" and not out:
+            raise ValueError("Yahoo returned no eligible Saudi-listed quotes (.SR)")
         return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
     if market in ("us-contracts","forex"):
         out=[]
