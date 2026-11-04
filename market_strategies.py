@@ -64,12 +64,12 @@ def analyze(market, symbol, rows, include_micro=False):
         atr = _atr(h, l, c, 14)
         if atr <= 0:
             return None
-        prior_high = max(h[i - 20:i])
-        prior_low = min(l[i - 20:i])
         close_location = (close - lo) / candle_range
 
-        bullish = close > op and close_location >= 0.65 and close > prior_high
-        bearish = close < op and close_location <= 0.35 and close < prior_low
+        # A decisive close in the upper/lower half is the core setup.
+        # Avoid a 20-candle breakout gate that would suppress valid impulses.
+        bullish = close > op and close_location >= 0.60
+        bearish = close < op and close_location <= 0.40
         if bullish:
             side = "BUY"
             # Stop is just below the 50% point of the impulse candle body.
@@ -102,7 +102,7 @@ def analyze(market, symbol, rows, include_micro=False):
             "change_pct": round((close / c[i - 1] - 1.0) * 100.0, 5),
             "change_15m_pct": round((close / c[i - 1] - 1.0) * 100.0, 5),
             "reason": (f"VOLUME IMPULSE {market}: volume {volume_ratio:.2f}x; "
-                       f"15m close beyond prior 20-candle range; body-midpoint stop; 3R target"),
+                       f"15m close in directional half of candle; body-midpoint stop; 3R target"),
             "signal_candle_time": int(float(bars[-1][0])),
             "risk_atr": round(risk / atr, 3),
             "reward_risk": 3.0,
