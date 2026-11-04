@@ -15,7 +15,9 @@ def _get(url,params=None):
     if not isinstance(payload,dict): raise ValueError("Invalid market-data response")
     return payload
 
-def _chart(symbol,interval="15m",period="5d"):
+def _chart(symbol,interval="15m",period=None):
+    periods={"15m":"5d","30m":"1mo","60m":"3mo","1d":"2y","1wk":"5y","1mo":"10y"}
+    period=period or periods.get(interval,"5d")
     payload=_get(YAHOO+"/v8/finance/chart/"+symbol,{"interval":interval,"range":period})
     chart=payload.get("chart") or {}
     if chart.get("error"): raise ValueError(str(chart["error"]))
@@ -125,11 +127,12 @@ def _aggregate_4h(hourly):
             continue
     return [buckets[key] for key in sorted(buckets)]
 def klines(market,symbol,interval="15m",limit=100):
-    if interval not in ("15m","4h"):
-        raise ValueError("Only 15m entries and 4h direction candles are supported")
+    supported=("15m","30m","1h","4h","1d","1w","1M")
+    if interval not in supported:
+        raise ValueError("Unsupported timeframe "+str(interval))
     if market=="alpha":
-        alpha_interval={"15m":"INTERVAL_15M","4h":"INTERVAL_4HOUR"}[interval]
-        payload=_get(BINANCE_ALPHA+"/bapi/defi/v1/public/alpha-trade/klines",{"symbol":symbol,"interval":alpha_interval,"limit":limit})
+        alpha_map={"15m":"INTERVAL_15M","30m":"INTERVAL_30M","1h":"INTERVAL_1HOUR","4h":"INTERVAL_4HOUR","1d":"INTERVAL_1DAY","1w":"INTERVAL_1WEEK","1M":"INTERVAL_1MONTH"}
+        payload=_get(BINANCE_ALPHA+"/bapi/defi/v1/public/alpha-trade/klines",{"symbol":symbol,"interval":alpha_map[interval],"limit":limit})
         data=payload.get("data") or []
         rows=[]
         for item in data:
@@ -137,6 +140,7 @@ def klines(market,symbol,interval="15m",limit=100):
             if vals and len(vals)>=6:
                 rows.append([int(float(vals[0])),*[float(v or 0) for v in vals[1:6]]])
         return rows[-limit:]
+    yahoo_map={"15m":"15m","30m":"30m","1h":"60m","1d":"1d","1w":"1wk","1M":"1mo"}
     if interval=="4h":
-        return _aggregate_4h(_chart(symbol,"60m","6mo"))[-limit:]
-    return _chart(symbol,"15m","5d")[-limit:]
+        return _aggregate_4h(_chart(symbol,"60m","3mo"))[-limit:]
+    return _chart(symbol,yahoo_map[interval])[-limit:]
