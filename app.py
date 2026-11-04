@@ -382,7 +382,7 @@ def liquidity_sweep_3r_setup(rows):
         else:
             return None
         return {"side":side,"entry":entry,"stop":stop,"tp1":tp1,"tp2":tp2,"tp3":tp3,
-                "risk":risk,"reward_risk":3.0,"volume_ratio":volume_ratio,
+                "risk":risk,"reward_risk":3.0,"volume_ratio":volume_ratio,"displacement":displacement,
                 "signal_candle_time":int(float(sweep[0]))}
     except (IndexError,TypeError,ValueError,OverflowError):
         return None
@@ -400,9 +400,9 @@ def build_signal(market,item,timeframe):
         tp1=setup["tp1"]
         tp2=setup["tp2"]
         tp3=setup["tp3"]
-        body_ratio=min(1.0,setup["body"]/max(entry,1e-12))
+        displacement_points=min(20.0,max(0.0,(setup["displacement"]-0.55)*40.0))
         volume_points=min(25.0,max(0.0,(setup["volume_ratio"]-1.0)*12.5))
-        score=round(min(98.0,65.0+body_ratio*20.0+volume_points),1)
+        score=round(min(98.0,65.0+displacement_points+volume_points),1)
         reason="Liquidity Sweep 3R: سحب سيولة ثم اندفاع سعري وإعادة اختبار؛ TP1=1R وTP2=2R وTP3=3R."
         previous=float(rows[-3][4]) if len(rows)>=3 and float(rows[-3][4]) else entry
         change_pct=(entry/previous-1)*100 if previous else 0.0
@@ -412,7 +412,7 @@ def build_signal(market,item,timeframe):
             "change_15m_pct":round(change_pct,6),"quote_volume":item["quote_volume"],
             "signal_candle_time":setup["signal_candle_time"]}
     except Exception:
-        app.logger.exception("Volume Body 1.618 analysis failed for %s %s %s",market,symbol,timeframe)
+        app.logger.exception("Liquidity Sweep 3R analysis failed for %s %s %s",market,symbol,timeframe)
         return None
 
 def expire_stale_trades(market=None):
@@ -492,7 +492,7 @@ def run_market_scan(market,force=False):
                     found.append(signal)
             except Exception:
                 failed+=1
-                app.logger.exception("Multi-timeframe signal analysis failed for %s",market)
+                app.logger.exception("15-minute signal analysis failed for %s",market)
     if completed<max(1,math.ceil(len(futures)*0.8)):
         raise RuntimeError(f"Insufficient candle data: {completed}/{len(futures)} analyses completed")
     # Ranking is by absolute 15-minute price change.
