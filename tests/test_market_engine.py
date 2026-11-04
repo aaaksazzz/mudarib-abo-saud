@@ -72,9 +72,9 @@ class MarketEngineTests(unittest.TestCase):
 
     def test_market_volume_strategy_build_signal_uses_single_3r_target(self):
         rows = [[i * 900000, 100, 101, 99, 100, 1000] for i in range(120)]
-        setup = {"side":"BUY","entry":100.0,"stop":98.0,"tp1":102.0,"tp2":104.0,
+        setup = {"side":"BUY","entry":100.0,"stop":98.0,"tp1":106.0,"tp2":106.0,
                  "tp3":106.0,"score":84.0,"timeframe":"15m","change_pct":0.5,
-                 "change_15m_pct":0.5,"reason":"DIVE QUANT PRO: 60-indicator consensus"}
+                 "change_15m_pct":0.5,"reason":"VOLUME IMPULSE spot: high volume candle"}
         with patch.object(platform, "klines", return_value=rows), patch.object(platform.market_strategies, "analyze", return_value=setup):
             signal = platform.build_signal("spot", {"symbol":"BTCUSDT","quote_volume":50000000}, "15m")
         self.assertEqual(signal["side"], "BUY")
