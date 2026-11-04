@@ -70,18 +70,26 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["trades"][0]["status"], "expired")
 
-    def test_signal_uses_closed_15m_candles_and_confirmed_swing_stop(self):
-        closes = [100] * 70 + [95, 93, 91, 90, 89, 90] + [90] * 22 + [110]
-        rows = candle_rows(closes)
-        rows.append([len(rows), 110, 111, 109, 1, 1000, len(rows) + 1, 0, 0, 0, 0, 0])
-        with patch.object(platform, "klines", return_value=rows):
-            signal = platform.build_signal("spot", {"symbol": "BTCUSDT", "change_pct": 4.0, "quote_volume": 50_000_000}, "15m")
+    def test_price_action_signal_uses_4h_structure_and_15m_liquidity_sweep(self):
+        four_hour = []
+        for i in range(60):
+            base = 100 + i * 0.25 + (5 if i % 6 == 3 else 0)
+            four_hour.append([i, base, base + 1, base - 1, base + 0.2, 1000])
+        four_hour.append([60, 115, 116, 114, 115, 1000])
+        fifteen = [[i, 101, 102, 100, 101, 1000] for i in range(30)]
+        fifteen[-1] = [29, 100.5, 102, 99, 101.8, 1600]
+        fifteen.append([30, 101.8, 102, 101, 101.5, 1000])
+        def candles(_market, _symbol, interval, _limit):
+            return four_hour if interval == "4h" else fifteen
+        with patch.object(platform, "klines", side_effect=candles):
+            signal = platform.build_signal("spot", {"symbol": "BTCUSDT", "quote_volume": 50000000}, "15m")
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "BUY")
         self.assertLess(signal["stop"], signal["entry"])
-        self.assertEqual(signal["tp1"], signal["tp2"])
-        self.assertEqual(signal["tp2"], signal["tp3"])
-        self.assertAlmostEqual(signal["tp1"], signal["entry"] + 2 * (signal["entry"] - signal["stop"]))
+        self.assertLess(signal["tp1"], signal["tp2"])
+        self.assertLess(signal["tp2"], signal["tp3"])
+        self.assertIn("سحب سيولة", signal["reason"])
+
 
     def test_only_15m_timeframe_is_scanned_and_returned(self):
         self.assertEqual(platform.TIMEFRAMES, ("15m",))
@@ -160,25 +168,27 @@ class MarketEngineTests(unittest.TestCase):
             rows = platform.market_tickers("spot")
         self.assertEqual(rows, [])
 
-    def test_four_hour_bias_blocks_opposite_fifteen_minute_entry(self):
-        bullish_15m = candle_rows([100] * 70 + [95, 93, 91, 90, 89, 90] + [90] * 22 + [110])
-        bullish_15m.append([len(bullish_15m), 110, 111, 109, 1, 1000, len(bullish_15m) + 1, 0, 0, 0, 0, 0])
-        bearish_4h = candle_rows(list(range(180, 80, -1)))
-        bearish_4h.append([len(bearish_4h), 80, 81, 79, 80, 1000, len(bearish_4h) + 1, 0, 0, 0, 0, 0])
+    def test_four_hour_structure_blocks_opposite_15m_sweep(self):
+        bearish_4h = []
+        for i in range(60):
+            base = 180 - i * 0.25 - (5 if i % 6 == 3 else 0)
+            bearish_4h.append([i, base, base + 1, base - 1, base - 0.2, 1000])
+        bearish_4h.append([60, 165, 166, 164, 165, 1000])
+        bullish_15m = [[i, 101, 102, 100, 101, 1000] for i in range(30)]
+        bullish_15m[-1] = [29, 100.5, 102, 99, 101.8, 1600]
+        bullish_15m.append([30, 101.8, 102, 101, 101.5, 1000])
         def candles(_market, _symbol, interval, _limit):
             return bearish_4h if interval == "4h" else bullish_15m
         with patch.object(platform, "klines", side_effect=candles):
-            signal = platform.build_signal("spot", {"symbol": "BTCUSDT", "change_pct": 4.0, "quote_volume": 5000000}, "15m")
+            signal = platform.build_signal("spot", {"symbol": "BTCUSDT", "quote_volume": 5000000}, "15m")
         self.assertIsNone(signal)
 
-    def test_four_hour_bias_allows_only_matching_fifteen_minute_side(self):
-        bullish = candle_rows([100] * 70 + [95, 93, 91, 90, 89, 90] + [90] * 22 + [110])
-        bullish.append([len(bullish), 110, 111, 109, 1, 1000, len(bullish) + 1, 0, 0, 0, 0, 0])
-        with patch.object(platform, "klines", return_value=bullish):
-            signal = platform.build_signal("spot", {"symbol": "BTCUSDT", "change_pct": 4.0, "quote_volume": 5000000}, "15m")
-        self.assertIsNotNone(signal)
-        self.assertEqual(signal["side"], "BUY")
-        self.assertEqual(signal["timeframe"], "15m")
+    def test_strategy_contains_no_ema_or_indicator_entry_rule(self):
+        import inspect
+        source = inspect.getsource(platform.build_signal)
+        self.assertNotIn("ema(", source)
+        self.assertIn("swept_low", source)
+        self.assertIn("volume_ratio", source)
 
     def test_registration_accepts_unicode_letters_and_digits(self):
         bootstrap = self.client.get("/api/bootstrap").get_json()
