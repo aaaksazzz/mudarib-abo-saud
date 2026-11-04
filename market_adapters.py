@@ -128,15 +128,19 @@ def _aggregate_4h(hourly):
     return [buckets[key] for key in sorted(buckets)]
 def klines(market,symbol,interval="15m",limit=100):
     supported=("15m","30m","1h","4h","1d","1w","1M")
-    if interval not in supported: raise ValueError("Unsupported timeframe "+str(interval))
+    if interval not in supported:
+        raise ValueError("Unsupported timeframe "+str(interval))
     if market=="alpha":
         alpha_map={"15m":"INTERVAL_15M","30m":"INTERVAL_30M","1h":"INTERVAL_1HOUR","4h":"INTERVAL_4HOUR","1d":"INTERVAL_1DAY","1w":"INTERVAL_1WEEK","1M":"INTERVAL_1MONTH"}
         payload=_get(BINANCE_ALPHA+"/bapi/defi/v1/public/alpha-trade/klines",{"symbol":symbol,"interval":alpha_map[interval],"limit":limit})
-        data=payload.get("data") or []; rows=[]
+        data=payload.get("data") or []
+        rows=[]
         for item in data:
             vals=[item.get(k) for k in ("openTime","open","high","low","close","volume")] if isinstance(item,dict) else item
-            if vals and len(vals)>=6: rows.append([int(float(vals[0])),*[float(v or 0) for v in vals[1:6]]])
+            if vals and len(vals)>=6:
+                rows.append([int(float(vals[0])),*[float(v or 0) for v in vals[1:6]]])
         return rows[-limit:]
     yahoo_map={"15m":"15m","30m":"30m","1h":"60m","1d":"1d","1w":"1wk","1M":"1mo"}
-    if interval=="4h": return _aggregate_4h(_chart(symbol,"60m","3mo"))[-limit:]
+    if interval=="4h":
+        return _aggregate_4h(_chart(symbol,"60m","3mo"))[-limit:]
     return _chart(symbol,yahoo_map[interval])[-limit:]
