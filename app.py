@@ -157,8 +157,7 @@ def public_article(a):
     return {"id":a.id,"kind":a.kind,"title":a.title,"slug":a.slug,"summary":a.summary,"body":a.body,"created_at":iso(a.created_at)}
 @app.get("/")
 def home(): return send_from_directory(".", "index.html")
-@app.get("/styles.css")
-def styles(): return send_from_directory(".", "styles.css")
+@app.get("/styles.css")def styles(): return send_from_directory(".", "styles.css")
 @app.get("/platform.js")
 def platform_script(): return send_from_directory(".", "platform.js")
 @app.get("/pro-theme.css")
@@ -307,8 +306,8 @@ def klines(market,symbol,interval,limit=120):
     base=BINANCE_FUTURES if market=="futures" else BINANCE_SPOT
     path="/fapi/v1/klines" if market=="futures" else "/api/v3/klines"
     return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit})
-TIMEFRAMES=("15m",)
-BINANCE_INTERVALS={"15m":"15m","4h":"4h"}
+TIMEFRAMES=("15m","30m","1h","4h","1d","1w","1M")
+BINANCE_INTERVALS={"15m":"15m","30m":"30m","1h":"1h","4h":"4h","1d":"1d","1w":"1w","1M":"1M"}
 
 def _confirmed_swings(rows, lookback=80):
     """Return confirmed price-action swing highs/lows; no indicator calculations."""
@@ -317,8 +316,7 @@ def _confirmed_swings(rows, lookback=80):
     for i in range(2,len(sample)-2):
         try:
             high=float(sample[i][2]); low=float(sample[i][3])
-            left_high=max(float(x[2]) for x in sample[i-2:i])
-            right_high=max(float(x[2]) for x in sample[i+1:i+3])
+            left_high=max(float(x[2]) for x in sample[i-2:i])            right_high=max(float(x[2]) for x in sample[i+1:i+3])
             left_low=min(float(x[3]) for x in sample[i-2:i])
             right_low=min(float(x[3]) for x in sample[i+1:i+3])
             if high>=left_high and high>right_high:
@@ -348,67 +346,60 @@ def market_direction_4h(market,symbol):
         return "SELL"
     return None
 
+def volume_body_setup(rows):
+    """Confirmed volume-body setup. All levels use candle bodies, never wicks."""
+    if not isinstance(rows,list) or len(rows)<23: return None
+    closed=rows[:-1]
+    if len(closed)<22: return None
+    try:
+        confirm_close=float(closed[-1][4])
+        for index in range(len(closed)-2,max(19,len(closed)-13),-1):
+            candle=closed[index]
+            op,hi,lo,cl,vol=(float(candle[i] or 0) for i in (1,2,3,4,5))
+            prior_volumes=[max(0.0,float(x[5] or 0)) for x in closed[max(0,index-20):index]]
+            if len(prior_volumes)<20: continue
+            average=sum(prior_volumes)/20.0
+            if average<=0 or vol<average*1.8 or op<=0 or cl<=0 or hi<lo: continue
+            body_low=min(op,cl); body_high=max(op,cl); body=body_high-body_low
+            if body<=0: continue
+            midpoint=(body_low+body_high)/2.0
+            if cl>op and confirm_close>midpoint:
+                side="BUY"; stop=midpoint-body*0.05; target=body_high+body*1.618; entry=confirm_close
+                if not (stop<entry<target): continue
+            elif cl<op and confirm_close<midpoint:
+                side="SELL"; stop=midpoint+body*0.05; target=body_low-body*1.618; entry=confirm_close
+                if not (target<entry<stop): continue
+            else: continue
+            tp1=body_high+body*0.618 if side=="BUY" else body_low-body*0.618
+            tp2=body_high+body if side=="BUY" else body_low-body
+            return {"side":side,"entry":entry,"stop":stop,"tp1":tp1,"tp2":tp2,"tp3":target,
+                    "volume_ratio":vol/average,"body":body,"signal_candle_time":int(float(candle[0]))}
+    except (IndexError,TypeError,ValueError,OverflowError): return None
+    return None
+
 def build_signal(market,item,timeframe):
     symbol=item["symbol"]
-    # Four-hour market structure controls the permitted side.
-    bias=market_direction_4h(market,symbol)
-    if bias is None or timeframe!="15m":
-        return None
-    rows=klines(market,symbol,BINANCE_INTERVALS["15m"],100)
-    if not isinstance(rows,list) or len(rows)<25:
-        return None
-    closed=rows[:-1]
-    if len(closed)<22:
-        return None
     try:
-        candle=closed[-1]
-        open_price=float(candle[1]); high=float(candle[2])
-        low=float(candle[3]); entry=float(candle[4])
-        volume=max(0.0,float(candle[5] or 0))
-        prior=closed[-13:-1]
-        prior_lows=[float(x[3]) for x in prior]
-        prior_highs=[float(x[2]) for x in prior]
-        prior_volumes=[max(0.0,float(x[5] or 0)) for x in closed[-21:-1]]
-    except (IndexError,TypeError,ValueError):
-        return None
-    values=(open_price,high,low,entry)
-    if not all(math.isfinite(v) and v>0 for v in values) or high<low:
-        return None
-    candle_range=high-low
-    if candle_range<=0:
-        return None
-    body_ratio=abs(entry-open_price)/candle_range
-    avg_volume=sum(prior_volumes)/len(prior_volumes) if prior_volumes else 0.0
-    volume_ratio=volume/avg_volume if avg_volume>0 else 1.0
-
-    # Entry is triggered by a liquidity sweep and close back inside the prior range.
-    swept_low=min(prior_lows) if prior_lows else 0.0
-    swept_high=max(prior_highs) if prior_highs else 0.0
-    bullish_sweep=(bias=="BUY" and low<swept_low and entry>swept_low
-                   and entry>open_price and body_ratio>=0.35)
-    bearish_sweep=(bias=="SELL" and high>swept_high and entry<swept_high
-                   and entry<open_price and body_ratio>=0.35)
-    if not bullish_sweep and not bearish_sweep:
+        rows=klines(market,symbol,BINANCE_INTERVALS[timeframe],100)
+        setup=volume_body_setup(rows)
+        if not setup: return None
+        side=setup["side"]; entry=setup["entry"]; stop=setup["stop"]
+        tp1=setup["tp1"]; tp2=setup["tp2"]; tp3=setup["tp3"]
+        body_ratio=min(1.0,setup["body"]/max(entry,1e-12))
+        volume_points=min(25.0,max(0.0,(setup["volume_ratio"]-1.0)*12.5))
+        score=round(min(98.0,65.0+body_ratio*20.0+volume_points),1)
+        reason="Volume Body 1.618: شمعة فوليوم مغلقة، تأكيد لاحق من منتصف الجسم، والقياس دون الذيول."
+        previous=float(rows[-3][4]) if len(rows)>=3 and float(rows[-3][4]) else entry
+        change_pct=(entry/previous-1)*100 if previous else 0.0
+        return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":stop,
+            "tp1":tp1,"tp2":tp2,"tp3":tp3,"score":score,"timeframe":timeframe,
+            "reason":reason,"status":"active","change_pct":round(change_pct,6),
+            "change_15m_pct":round(change_pct,6),"quote_volume":item["quote_volume"],
+            "signal_candle_time":setup["signal_candle_time"]}
+    except Exception:
+        app.logger.exception("Volume Body 1.618 analysis failed for %s %s %s",market,symbol,timeframe)
         return None
 
-    side="BUY" if bullish_sweep else "SELL"
-    stop=low if side=="BUY" else high
-    risk=(entry-stop) if side=="BUY" else (stop-entry)
-    if not math.isfinite(risk) or risk<=0:
-        return None
-    sign=1 if side=="BUY" else -1
-    tp1=entry+sign*risk*1.5
-    tp2=entry+sign*risk*2.5
-    tp3=entry+sign*risk*3.5
-    volume_points=min(20.0,max(0.0,(volume_ratio-1.0)*20.0))
-    score=round(min(95.0,60.0+body_ratio*20.0+volume_points),1)
-    change_pct=(entry/float(closed[-2][4])-1)*100 if float(closed[-2][4]) else 0.0
-    reason="اتجاه 4س يحدد الاتجاه؛ سحب سيولة وإغلاق استردادي على 15د، مع تقييم قوة الشمعة والحجم."
-    return {"market":market,"symbol":symbol,"side":side,"entry":entry,"stop":stop,
-        "tp1":tp1,"tp2":tp2,"tp3":tp3,
-        "score":score,"timeframe":timeframe,"reason":reason,
-        "status":"active","change_pct":round(change_pct,6),"change_15m_pct":round(change_pct,6),
-        "quote_volume":item["quote_volume"]}
 def expire_stale_trades(market=None):
     now=utcnow()
     query=Trade.query.filter(Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at<=now)
@@ -459,7 +450,7 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
-                active=Trade.query.filter(Trade.market==market,Trade.timeframe=="15m",Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True}
         except (ValueError,TypeError):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
@@ -467,18 +458,17 @@ def run_market_scan(market,force=False):
     if not universe:
         raise RuntimeError("Market provider returned an empty eligible universe")
     # Retire legacy-strategy open trades so old signals never leak into the new strategy feed.
-    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),or_(Trade.timeframe!="15m",~Trade.reason.like("اتجاه 4س%"))).update({"status":"superseded"},synchronize_session=False)
+    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),or_(~Trade.reason.like("Volume Body 1.618:%"))).update({"status":"superseded"},synchronize_session=False)
     db.session.commit()
     update_trade_outcomes(market,universe)
     # Scan a broad, liquid candidate set independently on every requested timeframe.
-    candidates=sorted(universe,key=lambda x:x["quote_volume"],reverse=True)[:30]
+    candidates=sorted(universe,key=lambda x:x["quote_volume"],reverse=True)[:12]
     jobs=[]
     found=[]
     completed=0
     failed=0
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        futures=[pool.submit(build_signal,market,item,frame) for item in candidates for frame in TIMEFRAMES]
-        for future in as_completed(futures):
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures=[pool.submit(build_signal,market,item,frame) for item in candidates for frame in TIMEFRAMES]        for future in as_completed(futures):
             try:
                 signal=future.result()
                 completed+=1
@@ -494,7 +484,7 @@ def run_market_scan(market,force=False):
         frame_signals=sorted((x for x in found if x["timeframe"]==frame),key=lambda x:abs(x["change_pct"]),reverse=True)
         for signal in frame_signals[:10]:
             exists=Trade.query.filter(Trade.market==market,Trade.symbol==signal["symbol"],Trade.timeframe==frame,Trade.status.in_(OPEN_TRADE_STATUSES)).first()
-            if exists and aware(exists.created_at)>now-timedelta(minutes=15):
+            if exists and aware(exists.created_at)>now-timedelta(hours=24):
                 continue
             if exists:
                 exists.status="superseded"
@@ -504,7 +494,7 @@ def run_market_scan(market,force=False):
     else:
         scan_row.value=iso(now)
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.timeframe=="15m",Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(candidates),"analysis_completed":completed,"analysis_failed":failed,"timeframes":list(TIMEFRAMES)}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
@@ -517,7 +507,7 @@ def signals(market):
         # Keep web requests fast: the scheduler owns scans; page loads only read the latest committed result.
         expire_stale_trades(market)
         row=db.session.get(Setting,"scan:"+market)
-        active=Trade.query.filter(Trade.market==market,Trade.timeframe=="15m",Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow()).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow()).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
         updated=row.value if row else None
         stale=True
         if updated:
@@ -637,8 +627,7 @@ def create_content():
     db.session.add(a); audit("content_created",slug); db.session.commit(); return jsonify({"ok":True,"item":public_article(a)}),201
 @app.delete("/api/admin/content/<int:item_id>")
 @login_required
-@admin_required
-def delete_content(item_id):
+@admin_requireddef delete_content(item_id):
     a=db.session.get(Article,item_id)
     if not a: return json_error("المحتوى غير موجود",404)
     db.session.delete(a); audit("content_deleted",item_id); db.session.commit(); return jsonify({"ok":True})
