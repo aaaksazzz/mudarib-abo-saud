@@ -152,6 +152,20 @@ class MarketEngineTests(unittest.TestCase):
                 ticker_source.assert_called_once()
 
     # Current-strategy fixtures must use the same reason prefix as production signals.
+    def test_scan_prioritizes_fast_movers_and_checks_up_to_60_assets(self):
+        items = [{"symbol":f"COIN{i}USDT","price":1.0,"change_pct":float(i),"quote_volume":1_000_000.0+i} for i in range(70)]
+        visited=[]
+        def capture(market,item,timeframe):
+            visited.append(item["symbol"])
+            return None
+        with platform.app.app_context():
+            with patch.object(platform,"market_tickers",return_value=items), patch.object(platform,"build_signal",side_effect=capture):
+                result=platform.run_market_scan("futures",force=True)
+        self.assertEqual(result["scan_universe"],60)
+        self.assertEqual(len(visited),60)
+        self.assertEqual(visited[0],"COIN69USDT")
+        self.assertEqual(visited[-1],"COIN10USDT")
+
     def test_market_wide_direction_filters_opposite_trade_signals(self):
         signal = {
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":98.0,

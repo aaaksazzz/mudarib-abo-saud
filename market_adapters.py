@@ -5,8 +5,8 @@ from functools import lru_cache
 YAHOO="https://query1.finance.yahoo.com"
 BINANCE_ALPHA="https://www.binance.com"
 HEADERS={"User-Agent":"Mozilla/5.0 (compatible; SMART-TRADING-PRO/1.0)","Accept":"application/json"}
-US_CONTRACTS=["ES=F","NQ=F","YM=F","RTY=F","CL=F","BZ=F","NG=F","GC=F","SI=F","HG=F","ZC=F","ZW=F","ZS=F","6E=F","6B=F","6J=F","6A=F","6C=F","6S=F","ZB=F","ZN=F","ZF=F","ZT=F"]
-FX_SYMBOLS=["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X","EURJPY=X","GBPJPY=X","EURGBP=X","AUDJPY=X","CADJPY=X","CHFJPY=X","NZDJPY=X","XAUUSD=X","XAGUSD=X"]
+US_CONTRACTS=["ES=F","MES=F","NQ=F","MNQ=F","YM=F","MYM=F","RTY=F","M2K=F","CL=F","MCL=F","BZ=F","NG=F","RB=F","HO=F","GC=F","MGC=F","SI=F","SIL=F","HG=F","ZC=F","ZW=F","ZS=F","ZM=F","ZL=F","ZO=F","ZR=F","LE=F","HE=F","GF=F","6E=F","6B=F","6J=F","6A=F","6C=F","6S=F","6N=F","6M=F","ZB=F","UB=F","ZN=F","ZF=F","ZT=F"]
+FX_SYMBOLS=["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X","EURJPY=X","GBPJPY=X","EURGBP=X","AUDJPY=X","CADJPY=X","CHFJPY=X","NZDJPY=X","EURAUD=X","EURCAD=X","EURCHF=X","EURNZD=X","GBPAUD=X","GBPCAD=X","GBPCHF=X","GBPNZD=X","AUDCAD=X","AUDCHF=X","AUDNZD=X","CADCHF=X","NZDCAD=X","NZDCHF=X","XAUUSD=X","XAGUSD=X"]
 
 def _get(url,params=None):
     response=requests.get(url,params=params,headers=HEADERS,timeout=(3.05,10))
@@ -83,7 +83,7 @@ def _alpha_symbols():
 
 def market_symbols(market):
     if market=="alpha": return _alpha_symbols()
-    if market=="us-stocks": return {x["symbol"] for x in _screener("US") if x.get("symbol")}
+    if market=="us-stocks": return {x["symbol"] for x in _screener_quotes("US") if x.get("symbol")}
     if market=="saudi": return {x["symbol"] for x in _screener_quotes("SA") if str(x.get("symbol","")).endswith(".SR")}
     if market=="us-contracts": return set(US_CONTRACTS)
     if market=="forex": return set(FX_SYMBOLS)
@@ -92,7 +92,7 @@ def market_symbols(market):
 def market_tickers(market):
     if market in ("us-stocks","saudi"):
         out=[]
-        source_rows=_screener("US") if market=="us-stocks" else _screener_quotes("SA")
+        source_rows=_screener_quotes("US") if market=="us-stocks" else _screener_quotes("SA")
         for x in source_rows:
             symbol=x.get("symbol")
             if not symbol or (market=="saudi" and not str(symbol).endswith(".SR")): continue
@@ -117,7 +117,7 @@ def market_tickers(market):
         return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
     if market=="alpha":
         out=[]
-        for symbol in sorted(market_symbols("alpha"))[:100]:
+        for symbol in sorted(market_symbols("alpha")):
             try:
                 payload=_get(BINANCE_ALPHA+"/bapi/defi/v1/public/alpha-trade/ticker",{"symbol":symbol})
                 data=payload.get("data") or {}
