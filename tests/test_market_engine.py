@@ -70,19 +70,19 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["trades"][0]["status"], "expired")
 
-    def test_dive_quant_build_signal_uses_engine_trade_levels(self):
+    def test_market_volume_strategy_build_signal_uses_single_3r_target(self):
         rows = [[i * 900000, 100, 101, 99, 100, 1000] for i in range(120)]
         setup = {"side":"BUY","entry":100.0,"stop":98.0,"tp1":102.0,"tp2":104.0,
                  "tp3":106.0,"score":84.0,"timeframe":"15m","change_pct":0.5,
                  "change_15m_pct":0.5,"reason":"DIVE QUANT PRO: 60-indicator consensus"}
-        with patch.object(platform, "klines", return_value=rows), patch.object(platform.quant_engine, "analyze", return_value=setup):
+        with patch.object(platform, "klines", return_value=rows), patch.object(platform.market_strategies, "analyze", return_value=setup):
             signal = platform.build_signal("spot", {"symbol":"BTCUSDT","quote_volume":50000000}, "15m")
         self.assertEqual(signal["side"], "BUY")
         risk = signal["entry"] - signal["stop"]
-        self.assertAlmostEqual(signal["tp1"] - signal["entry"], risk)
-        self.assertAlmostEqual(signal["tp2"] - signal["entry"], 2 * risk)
-        self.assertAlmostEqual(signal["tp3"] - signal["entry"], 3 * risk)
-        self.assertIn("DIVE QUANT PRO:", signal["reason"])
+        self.assertAlmostEqual(signal["tp1"] - signal["entry"], 3 * risk)
+        self.assertEqual(signal["tp1"], signal["tp2"])
+        self.assertEqual(signal["tp2"], signal["tp3"])
+        self.assertIn("VOLUME IMPULSE", signal["reason"])
 
     def test_only_15m_timeframe_is_scanned_and_returned(self):
         self.assertEqual(platform.TIMEFRAMES, ("15m",))
