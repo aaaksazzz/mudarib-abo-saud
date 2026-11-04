@@ -4,7 +4,7 @@ from functools import wraps, lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 import market_adapters
-import quant_engine
+import market_strategies
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -315,7 +315,7 @@ def build_signal(market,item,timeframe):
     symbol=item["symbol"]
     try:
         rows=klines(market,symbol,"15m",120)
-        setup=quant_engine.analyze(market,symbol,rows,include_micro=item.get("include_microstructure",False))
+        setup=market_strategies.analyze(market,symbol,rows,include_micro=item.get("include_microstructure",False))
         if not setup:
             return None
         setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
