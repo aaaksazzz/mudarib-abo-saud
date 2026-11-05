@@ -39,7 +39,7 @@ jobs:
           assert client.get("/api/bootstrap").status_code == 200
           for path in ("/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex"):
               page = client.get(path)
-              assert page.status_code == 200 and b'src="/platform.js?' in page.data, (path, page.status_code)
+              assert page.status_code == 200 and b'src="/platform.js?' in page.data and b'href="/styles.css?' in page.data, (path, page.status_code)
           assert client.get("/compat.css").status_code == 200
           print("route and static asset smoke tests passed")
           PY
