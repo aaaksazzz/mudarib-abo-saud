@@ -1,4 +1,4 @@
-"""MiND-Shot-inspired VWAP mean-reversion signals for all supported markets/timeframes.
+"""MiND-Shot-inspired VWAP mean-reversion signals for supported markets on 15m candles only.
 
 The source project validates this strategy on ETH 4h only. This adaptation
 generalizes its disclosed rules to our market universe; it is not the original
