@@ -1,4 +1,5 @@
 import math
+import time
 from concurrent.futures import ThreadPoolExecutor
 import requests
 from functools import lru_cache
@@ -8,7 +9,17 @@ YAHOO=YAHOO_HOSTS[0]
 BINANCE_ALPHA="https://www.binance.com"
 HEADERS={"User-Agent":"Mozilla/5.0 (compatible; SMART-TRADING-PRO/1.0)","Accept":"application/json"}
 US_CONTRACTS=["ES=F","MES=F","NQ=F","MNQ=F","YM=F","MYM=F","RTY=F","M2K=F","CL=F","MCL=F","BZ=F","NG=F","RB=F","HO=F","GC=F","MGC=F","SI=F","SIL=F","HG=F","ZC=F","ZW=F","ZS=F","ZM=F","ZL=F","ZO=F","ZR=F","LE=F","HE=F","GF=F","6E=F","6B=F","6J=F","6A=F","6C=F","6S=F","6N=F","6M=F","ZB=F","UB=F","ZN=F","ZF=F","ZT=F"]
-FX_SYMBOLS=["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X","EURJPY=X","GBPJPY=X","EURGBP=X","AUDJPY=X","CADJPY=X","CHFJPY=X","NZDJPY=X","EURAUD=X","EURCAD=X","EURCHF=X","EURNZD=X","GBPAUD=X","GBPCAD=X","GBPCHF=X","GBPNZD=X","AUDCAD=X","AUDCHF=X","AUDNZD=X","CADCHF=X","NZDCAD=X","NZDCHF=X","XAUUSD=X","XAGUSD=X"]
+FX_SYMBOLS=[
+    "EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X",
+    "EURJPY=X","GBPJPY=X","EURGBP=X","AUDJPY=X","CADJPY=X","CHFJPY=X","NZDJPY=X",
+    "EURAUD=X","EURCAD=X","EURCHF=X","EURNZD=X","GBPAUD=X","GBPCAD=X","GBPCHF=X",
+    "GBPNZD=X","AUDCAD=X","AUDCHF=X","AUDNZD=X","CADCHF=X","NZDCAD=X","NZDCHF=X",
+    "USDNOK=X","USDSEK=X","USDHKD=X","USDSGD=X","USDCNH=X","USDINR=X","USDMXN=X",
+    "USDZAR=X","USDTRY=X","USDBRL=X","USDKRW=X","USDTHB=X","EURSEK=X","EURNOK=X",
+    "EURDKK=X","EURPLN=X","EURHUF=X","EURCZK=X","EURTRY=X","GBPSEK=X","GBPNOK=X",
+    "AUDSGD=X","AUDHKD=X","CADSGD=X","CHFSGD=X","SGDJPY=X","NOKSEK=X",
+    "XAUUSD=X","XAGUSD=X"
+]
 
 def _get(url,params=None):
     response=requests.get(url,params=params,headers=HEADERS,timeout=(3.05,10))
@@ -48,11 +59,11 @@ def _chart(symbol,interval="15m",period=None):
     if not rows: raise ValueError("No valid Yahoo candles for "+symbol)
     return rows
 
-def _screener(region,scr_id="most_actives"):
-    # Yahoo's screener edge can fail independently by host/region. Retry the
-    # secondary public host before declaring the whole market unavailable.
+def _screener(region,scr_id="most_actives",start=0):
+    # Yahoo screener pages are capped; request successive pages and retry
+    # the secondary public host before treating a page as unavailable.
     errors=[]
-    params={"scrIds":scr_id,"count":250,"start":0,"region":region,
+    params={"scrIds":scr_id,"count":250,"start":int(start),"region":region,
             "formatted":"false","lang":"en-US"}
     for host in YAHOO_HOSTS:
         try:
@@ -63,30 +74,42 @@ def _screener(region,scr_id="most_actives"):
             result=finance.get("result") or []
             if not result:
                 raise ValueError("empty screener result")
-            quotes=result[0].get("quotes") or []
-            if quotes:
-                return quotes
-            raise ValueError("empty screener quotes")
+            return result[0].get("quotes") or []
         except Exception as exc:
             errors.append(host+": "+str(exc))
-    raise ValueError("Yahoo screener failed for "+region+"/"+scr_id+" ("+"; ".join(errors)+")")
+    raise ValueError("Yahoo screener failed for "+region+"/"+scr_id+" offset "+str(start)+" ("+"; ".join(errors)+")")
 
-def _screener_quotes(region):
-    # Saudi tickers are not consistently present in Yahoo's most_actives list.
-    # Merge the three Yahoo Saudi market lists while preserving first-seen quotes.
+@lru_cache(maxsize=4)
+def _screener_quotes_cached(region,cache_bucket):
+    # Merge independent public universes so the scan is not limited to the
+    # first 250 most-active names. US lists are paged; Saudi lists are merged.
+    screeners=("most_actives","day_gainers","day_losers",
+               "small_cap_gainers","aggressive_small_caps") if region=="US" else (
+               "most_actives","day_gainers","day_losers")
+    page_limit=2 if region=="US" else 1
     quotes={}
     errors=[]
-    for scr_id in ("most_actives","day_gainers","day_losers"):
-        try:
-            for item in _screener(region,scr_id):
-                symbol=str(item.get("symbol") or "")
-                if symbol:
-                    quotes.setdefault(symbol,item)
-        except Exception as exc:
-            errors.append(f"{scr_id}: {exc}")
+    for scr_id in screeners:
+        for page in range(page_limit):
+            try:
+                batch=_screener(region,scr_id,page*250)
+                for item in batch:
+                    symbol=str(item.get("symbol") or "")
+                    if symbol:
+                        quotes.setdefault(symbol,item)
+                if len(batch)<250:
+                    break
+            except Exception as exc:
+                errors.append(f"{scr_id}[{page}]: {exc}")
+                break
     if not quotes and errors:
         raise ValueError("Yahoo returned no screener quotes for "+region+" ("+"; ".join(errors)+")")
-    return list(quotes.values())
+    return tuple(quotes.values())
+
+def _screener_quotes(region):
+    # Refresh the merged universe every ten minutes while avoiding duplicate
+    # screener bursts from the scanner and snapshot endpoints.
+    return list(_screener_quotes_cached(region,int(time.time()//600)))
 
 def _row(symbol,price,change,volume,currency=None):
     try:
