@@ -674,17 +674,31 @@ with app.app_context():
     provision_admin_from_env()
 
 
-def scheduled_market_scan():
+def _scheduled_scan_one_market(market):
+    # Each worker owns its Flask/SQLAlchemy context so a provider outage in
+    # one market cannot stop the remaining market scans.
     with app.app_context():
-        # run_market_scan expires that market's trades before scanning it.
-        # Avoid a duplicate global write before the per-market scan loop.
-        for market in MARKETS:
-            try:
-                result=run_market_scan(market,force=True)
-                app.logger.info("scheduled scan completed: market=%s signals=%s universe=%s failures=%s",market,len(result.get("signals",[])),result.get("scan_universe"),result.get("analysis_failed",0))
-            except Exception:
-                db.session.rollback()
-                app.logger.exception("scheduled scan failed: %s",market)
+        try:
+            result=run_market_scan(market,force=True)
+            app.logger.info(
+                "scheduled scan completed: market=%s signals=%s universe=%s completed=%s failed=%s",
+                market,len(result.get("signals",[])),result.get("scan_universe"),
+                result.get("analysis_completed"),result.get("analysis_failed",0)
+            )
+            return result
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("scheduled scan failed: %s",market)
+            return None
+        finally:
+            db.session.remove()
+
+def scheduled_market_scan():
+    # Keep slow external providers from delaying Binance and other markets.
+    with ThreadPoolExecutor(max_workers=len(MARKETS)) as pool:
+        futures={pool.submit(_scheduled_scan_one_market,market):market for market in MARKETS}
+        for future in as_completed(futures):
+            future.result()
 
 if os.environ.get("ENABLE_AUTO_SCAN","true").lower()=="true":
     scheduler=BackgroundScheduler(timezone="UTC")
