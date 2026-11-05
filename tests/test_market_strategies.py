@@ -24,7 +24,7 @@ class VWAPReversionTests(unittest.TestCase):
         signal = analyze("futures", "TEST", candles("BUY"), timeframe="15m")
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "BUY")
-        self.assertAlmostEqual(signal["entry"] - signal["stop"], 1.5 * (signal["entry"] - signal["stop"]) / 1.5)
+        self.assertGreater(signal["entry"], signal["stop"])
         self.assertLess(signal["entry"], signal["tp1"])
         self.assertLess(signal["tp1"], signal["tp2"])
         self.assertLess(signal["tp2"], signal["tp3"])
