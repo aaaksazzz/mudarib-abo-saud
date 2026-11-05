@@ -148,15 +148,23 @@ def market_tickers(market):
         if not out: raise ValueError("Yahoo returned no live market quotes")
         return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
     if market=="alpha":
-        out=[]
-        for symbol in sorted(market_symbols("alpha")):
+        symbols=sorted(market_symbols("alpha"))
+        def quote(symbol):
             try:
                 payload=_get(BINANCE_ALPHA+"/bapi/defi/v1/public/alpha-trade/ticker",{"symbol":symbol})
                 data=payload.get("data") or {}
                 if isinstance(data,list): data=data[0] if data else {}
-                row=_row(symbol,data.get("lastPrice") or data.get("price"),data.get("priceChangePercent") or data.get("priceChange"),data.get("volume") or data.get("quoteVolume"))
-                if row and row["quote_volume"]>=1000000: out.append(row)
-            except Exception: continue
+                price=data.get("lastPrice") or data.get("price")
+                quote_volume=data.get("quoteVolume")
+                # quoteVolume is already notional turnover; normalize it to
+                # base volume before _row computes quote-currency turnover.
+                volume=(float(quote_volume)/float(price)) if quote_volume and price else data.get("volume",0)
+                row=_row(symbol,price,data.get("priceChangePercent") or data.get("priceChange"),volume)
+                return row if row and row["quote_volume"]>=1000000 else None
+            except Exception:
+                return None
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            out=[row for row in pool.map(quote,symbols) if row]
         if not out: raise ValueError("Binance Alpha returned no eligible live tickers")
         return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
     raise ValueError("Unsupported external market "+str(market))
