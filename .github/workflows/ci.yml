@@ -20,7 +20,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Compile backend
-        run: python -m compileall -q app.py quant_engine.py market_adapters.py market_strategies.py dive_engine
+        run: python -m compileall -q app.py market_adapters.py market_strategies.py
       - name: Run backend regression tests
         env:
           SECRET_KEY: ci-test-secret-key-not-for-production
