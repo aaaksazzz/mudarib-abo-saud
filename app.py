@@ -358,7 +358,11 @@ def build_signal(market,item,timeframe):
     symbol=item["symbol"]
     try:
         rows=klines(market,symbol,"15m",120)
-        setup=market_strategies.analyze(market,symbol,rows,include_micro=item.get("include_microstructure",False))
+        micro_rows=klines(market,symbol,"1m",90)
+        setup=market_strategies.analyze(
+            market,symbol,rows,include_micro=item.get("include_microstructure",False),
+            micro_rows=micro_rows
+        )
         if not setup:
             return None
         setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
