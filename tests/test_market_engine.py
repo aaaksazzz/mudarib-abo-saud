@@ -179,7 +179,7 @@ class MarketEngineTests(unittest.TestCase):
                     tp1=110, tp2=110, tp3=110, score=0, timeframe="1h",
                     reason="legacy", expires_at=now + timedelta(hours=1)),
                 platform.Trade(market="spot", symbol="NEWUSDT", side="BUY", entry=100, stop=95,
-                    tp1=110, tp2=110, tp3=110, score=0, timeframe="4h",
+                    tp1=110, tp2=110, tp3=110, score=0, timeframe="15m",
                     reason="VWAP REVERSION spot: current | bar_ts=123", expires_at=now + timedelta(hours=1)),
                 platform.Setting(key="scan:spot", value=platform.iso(now)),
             ])
@@ -188,7 +188,7 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         signals = response.get_json()["signals"]
         self.assertEqual([x["symbol"] for x in signals], ["NEWUSDT"])
-        self.assertEqual(signals[0]["timeframe"], "4h")
+        self.assertEqual(signals[0]["timeframe"], "15m")
     def test_public_routes_do_not_disclose_strategy_details(self):
         self.assertEqual(self.client.get("/api/strategies").status_code, 404)
         self.assertEqual(self.client.get("/smart-flow-lab").status_code, 404)
@@ -270,7 +270,7 @@ class MarketEngineTests(unittest.TestCase):
                 self.assertEqual(platform.Trade.query.count(), 1)
                 self.assertEqual(len(second["signals"]), 1)
                 self.assertTrue(all(x.status == "active" for x in platform.Trade.query.all()))
-                candle_time[0] = int(platform.utcnow().timestamp()*1000)-900000
+                candle_time[0] = int(platform.utcnow().timestamp()*1000)-900000+1
                 third = platform.run_market_scan("spot", force=True)
                 trades = platform.Trade.query.order_by(platform.Trade.id.asc()).all()
                 self.assertEqual(len(trades), 2)
