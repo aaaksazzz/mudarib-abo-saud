@@ -141,19 +141,17 @@ def analyze(market, symbol, rows, include_micro=False, micro_rows=None):
         if not (zone_low <= entry <= zone_high):
             return None
 
-        # Target the prior swing extreme formed after displacement and
-        # before the retest. Stop is beyond the immediately preceding 1m bar.
-        post = bars[i + 1:-1]
-        if not post:
-            return None
+        # Both risk and reward are anchored to the same high-volume
+        # 15m order-block candle: BUY targets its high and stops at its low;
+        # SELL targets its low and stops at its high.
         if side == "BUY":
-            target = max(x[2] for x in post)
-            stop = previous[3]
+            target = h[i]
+            stop = l[i]
             if not (stop < entry < target):
                 return None
         else:
-            target = min(x[3] for x in post)
-            stop = previous[2]
+            target = l[i]
+            stop = h[i]
             if not (target < entry < stop):
                 return None
 
@@ -175,13 +173,16 @@ def analyze(market, symbol, rows, include_micro=False, micro_rows=None):
             "change_pct": round((entry / c[-2] - 1.0) * 100.0, 5),
             "change_15m_pct": round((entry / c[-2] - 1.0) * 100.0, 5),
             "reason": (f"{side} order-block retest: 15m high-volume opposite candle, "
-                       f"displacement confirmed, 1m retest entry; volume {volume_ratio:.2f}x"),
+                       f"1m retest entry; target and stop use that candle high/low; "
+                       f"volume {volume_ratio:.2f}x"),
             "signal_candle_time": int(bars[i][0]),
             "risk_atr": round(risk / atr, 3),
             "reward_risk": round(reward / risk, 3),
             "volume_ratio": round(volume_ratio, 3),
             "order_block_low": round(zone_low, 10),
             "order_block_high": round(zone_high, 10),
+            "volume_candle_high": round(h[i], 10),
+            "volume_candle_low": round(l[i], 10),
             "strategy": f"ORDER_BLOCK_RETEST_{market.upper()}",
         }
     except (IndexError, TypeError, ValueError, ZeroDivisionError, OverflowError):
