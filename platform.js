@@ -46,13 +46,22 @@ async function marketPage(root,market,version=renderVersion){
   const stale=sig.stale===true;
   const warning=unavailable?"":sig.scan_error?'<div class="notice-bar">تعذّر الفحص: '+esc(sig.scan_error)+'</div>':stale&&!sig.updated_at?'<div class="notice-bar">لم يكتمل أول فحص ناجح بعد؛ ننتظر دورة الفحص المجدولة.</div>':stale?'<div class="notice-bar">نتائج الفحص أقدم من 20 دقيقة. نعرض آخر نتيجة محفوظة ولا نخترع بيانات جديدة.</div>':"";
   const signals=sig.signals||[];
-  root.innerHTML=warning+'<section class="panel market-summary"><div class="panel-head"><div><span class="section-kicker">'+esc(market.toUpperCase())+'</span><h2>'+esc(marketNames[market])+'</h2></div><span class="status-pending">'+(unavailable?"مصدر غير مربوط":"مصدر عام")+'</span></div><div class="direction-row"><div><small>اتجاه السوق · 24 ساعة</small><strong>'+esc(snap.direction||"غير متاح")+'</strong></div><div><small>الأصول الصاعدة</small><strong class="positive">'+(snap.up??"—")+'</strong></div><div><small>الأصول الهابطة</small><strong class="negative">'+(snap.down??"—")+'</strong></div><div><small>عدد الأصول</small><strong>'+(snap.total??"—")+'</strong></div></div></section><div class="section-head"><div><span class="section-kicker">LIVE OPPORTUNITIES</span><h2>الصفقات النشطة</h2></div><span class="muted-label">'+(sig.scan_universe==null?"نتائج آخر فحص محفوظة":sig.scan_universe+" أصل في آخر فحص")+'</span><select id="tradeTimeframe" class="language-select" aria-label="الفريم"><option value="all">كل الفريمات</option><option value="15m">15 دقيقة</option><option value="1h">ساعة</option><option value="4h">4 ساعات</option><option value="1d">يومي</option><option value="1w">أسبوعي</option><option value="1M">شهري</option></select></div>'+(signals.length?'<div class="section-head"><h3>فرص VWAP REVERSION · جميع الفريمات</h3><span class="muted-label">حتى 3 فرص لكل فريم</span></div><div class="trade-grid" id="tradeCards">'+signals.slice(0,18).map((t,i)=>tradeCard(t,i)).join("")+"</div>":sig.message?'<div class="panel empty-state">'+esc(sig.message)+'</div>':'<div class="panel empty-state">لا توجد حالياً صفقات مطابقة لشروط الاتجاه. لا نعرض فرصاً غير مؤكدة.</div>')+'<p class="data-footnote">آخر فحص: '+esc(sig.updated_at||snap.updated_at||"لم يبدأ بعد")+' · أساس الاتجاه: '+esc(snap.direction_basis||"غير متاح")+' · الأهداف والوقف تقديرات تحليلية وليست ضماناً للربح.</p>';
- const timeframeSelect=$("#tradeTimeframe");
-  if(timeframeSelect){
-   const drawTrades=()=>{const selected=timeframeSelect.value;const visible=signals.filter(t=>selected==="all"||t.timeframe===selected);const grid=$("#tradeCards");if(grid)grid.innerHTML=visible.length?visible.map((t,i)=>tradeCard(t,i)).join(""):'<div class="panel empty-state">لا توجد صفقات على هذا الفريم حالياً.</div>';};
-   timeframeSelect.addEventListener("change",drawTrades);
-   drawTrades();
-  }
+  const timeframeOptions=[["all","كل الفريمات"],["15m","15 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
+  const timeframeTabs='<nav class="timeframe-tabs" id="timeframeTabs" aria-label="اختيار الفريم">'+timeframeOptions.map(([value,label])=>'<button type="button" class="timeframe-tab" data-timeframe="'+value+'" aria-pressed="'+(value==="all"?"true":"false")+'"><span>'+label+'</span><b>'+(value==="all"?signals.length:signals.filter(t=>t.timeframe===value).length)+'</b></button>').join("")+'</nav>';
+  root.innerHTML=warning+'<section class="panel market-summary"><div class="panel-head"><div><span class="section-kicker">'+esc(market.toUpperCase())+'</span><h2>'+esc(marketNames[market])+'</h2></div><span class="status-pending">'+(unavailable?"مصدر غير مربوط":"مصدر عام")+'</span></div><div class="direction-row"><div><small>اتجاه السوق · 24 ساعة</small><strong>'+esc(snap.direction||"غير متاح")+'</strong></div><div><small>الأصول الصاعدة</small><strong class="positive">'+(snap.up??"—")+'</strong></div><div><small>الأصول الهابطة</small><strong class="negative">'+(snap.down??"—")+'</strong></div><div><small>عدد الأصول</small><strong>'+(snap.total??"—")+'</strong></div></div></section><div class="section-head"><div><span class="section-kicker">LIVE OPPORTUNITIES</span><h2>الصفقات النشطة</h2></div><span class="muted-label">'+(sig.scan_universe==null?"نتائج آخر فحص محفوظة":sig.scan_universe+" أصل في آخر فحص")+'</span>'+timeframeTabs+'</div>'+'<div class="section-head"><h3>الفرص حسب الفريم</h3><span class="muted-label">حتى 3 فرص لكل فريم</span></div><div class="trade-grid" id="tradeCards"></div>'+'<p class="data-footnote">آخر فحص: '+esc(sig.updated_at||snap.updated_at||"لم يبدأ بعد")+' · أساس الاتجاه: '+esc(snap.direction_basis||"غير متاح")+' · الأهداف والوقف تقديرات تحليلية وليست ضماناً للربح.</p>';
+ const timeframeTabsRoot=$("#timeframeTabs");
+  const drawTrades=(selected="all")=>{
+   const visible=signals.filter(t=>selected==="all"||t.timeframe===selected);
+   const grid=$("#tradeCards");
+   if(grid)grid.innerHTML=visible.length?visible.map((t,i)=>tradeCard(t,i)).join(""):'<div class="panel empty-state"><b>لا توجد صفقات على هذا الفريم حالياً</b><p>الفريم مفعّل ويجري فحصه؛ تظهر الفرص عند تحقق شروط الاستراتيجية.</p></div>';
+   if(timeframeTabsRoot)timeframeTabsRoot.querySelectorAll("[data-timeframe]").forEach(button=>{
+    const active=button.dataset.timeframe===selected;
+    button.classList.toggle("active",active);
+    button.setAttribute("aria-pressed",active?"true":"false");
+   });
+  };
+  if(timeframeTabsRoot)timeframeTabsRoot.querySelectorAll("[data-timeframe]").forEach(button=>button.addEventListener("click",()=>drawTrades(button.dataset.timeframe)));
+  drawTrades("all");
  }catch(e){
   if(version!==renderVersion||currentPage!==market)return;
   root.innerHTML='<div class="panel empty-state"><b>تعذر تحميل بيانات السوق</b><p>'+esc(e.message)+'</p><button class="login-btn" id="retryMarket">إعادة المحاولة</button></div>';
