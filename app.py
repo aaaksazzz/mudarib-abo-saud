@@ -369,6 +369,51 @@ def build_signal(market,item,timeframe):
         app.logger.exception("VWAP REVERSION analysis failed for %s %s %s",market,symbol,timeframe)
         return None
 
+def filter_fresh_signals(signals, universe, now=None):
+    """Reject old 15m candles and entries that have materially moved before publication."""
+    now=now or utcnow()
+    now_ms=int(now.timestamp()*1000)
+    interval_ms=900000
+    live_prices={}
+    for item in universe:
+        try:
+            price=float(item.get("price") or 0)
+            if item.get("symbol") and math.isfinite(price) and price>0:
+                live_prices[item["symbol"]]=price
+        except (TypeError,ValueError):
+            continue
+    accepted=[]
+    rejected_old=0
+    rejected_moved=0
+    for signal in signals:
+        try:
+            candle_time=int(signal.get("signal_candle_time") or 0)
+            entry=float(signal.get("entry") or 0)
+            stop=float(signal.get("stop") or 0)
+            tp1=float(signal.get("tp1") or 0)
+            current=live_prices.get(signal.get("symbol"))
+            direction=1.0 if signal.get("side")=="BUY" else -1.0
+            if signal.get("timeframe")!="15m" or not candle_time or now_ms-(candle_time+interval_ms)>interval_ms*1.5+120000:
+                rejected_old+=1
+                continue
+            if current is None or min(entry,stop,tp1)<=0:
+                rejected_moved+=1
+                continue
+            target_distance=abs(tp1-entry)
+            risk=abs(entry-stop)
+            favorable_move=(current-entry)*direction
+            if target_distance<=0 or risk<=0 or favorable_move>=target_distance*0.80:
+                rejected_moved+=1
+                continue
+            if abs(current-entry)>max(risk*0.35,target_distance*0.50):
+                rejected_moved+=1
+                continue
+            accepted.append(signal)
+        except (TypeError,ValueError,OverflowError):
+            rejected_moved+=1
+    return accepted,{"rejected_stale_candle":rejected_old,"rejected_late_price":rejected_moved}
+
+
 def expire_stale_trades(market=None):
     now=utcnow()
     query=Trade.query.filter(Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at<=now)
@@ -419,7 +464,7 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("VWAP REVERSION%")).order_by(Trade.score.desc()).limit(18).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("VWAP REVERSION%")).order_by(Trade.score.desc()).limit(3).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
                     meta=json.loads(meta_row.value) if meta_row else {}
@@ -459,10 +504,11 @@ def run_market_scan(market,force=False):
                 app.logger.exception("multi-timeframe signal analysis failed for %s",market)
     if completed<max(1,math.ceil(len(futures)*0.8)):
         raise RuntimeError(f"Insufficient candle data: {completed}/{len(futures)} analyses completed")
-    # VWAP mean reversion is intentionally counter-trend; do not veto it using 24h breadth.
-    # Keep an existing trade while its signal candle is still the latest closed
-    # candle for that timeframe. This prevents a weekly/monthly setup from being
-    # re-created every 15 minutes with a fake "fresh" timestamp.
+    found,freshness=filter_fresh_signals(found,universe,now)
+    found=[signal for signal in found if signal.get("side")==market_bias]
+    app.logger.info("signal validation: market=%s accepted=%s stale=%s late=%s direction=%s",
+                    market,len(found),freshness["rejected_stale_candle"],freshness["rejected_late_price"],market_bias)
+    # Keep the same 15m candle from being republished every scheduler cycle.
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
@@ -516,7 +562,7 @@ def run_market_scan(market,force=False):
     else:
         meta_row.value=meta_value
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(Trade.score.desc()).limit(18).all()
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(Trade.score.desc()).limit(3).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(candidates),"analysis_completed":completed,"analysis_failed":failed,"market_bias":market_bias,"timeframes":list(TIMEFRAMES)}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
@@ -529,7 +575,7 @@ def signals(market):
         # Keep this endpoint read-only. The single scheduler expires trades;
         # writing from page requests races with scheduled scans on SQLite.
         row=db.session.get(Setting,"scan:"+market)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("VWAP REVERSION%")).order_by(Trade.score.desc()).limit(60).all()
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("VWAP REVERSION%")).order_by(Trade.score.desc()).limit(3).all()
         updated=row.value if row else None
         meta_row=db.session.get(Setting,"scan-meta:"+market)
         try:
