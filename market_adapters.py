@@ -99,10 +99,20 @@ def _alpha_symbols():
     if not found: raise ValueError("Binance Alpha returned no USDT symbols")
     return found
 
+def _saudi_symbol(value):
+    symbol=str(value or "").strip().upper()
+    if symbol.endswith(".SR") and symbol[:-3].isdigit():
+        return symbol
+    # Yahoo's Saudi screener sometimes returns the Tadawul code without
+    # the Yahoo exchange suffix. Normalize valid four-digit stock codes.
+    if len(symbol)==4 and symbol.isdigit():
+        return symbol+".SR"
+    return None
+
 def market_symbols(market):
     if market=="alpha": return _alpha_symbols()
     if market=="us-stocks": return {x["symbol"] for x in _screener_quotes("US") if x.get("symbol")}
-    if market=="saudi": return {x["symbol"] for x in _screener_quotes("SA") if str(x.get("symbol","")).endswith(".SR")}
+    if market=="saudi": return {normalized for x in _screener_quotes("SA") if (normalized:=_saudi_symbol(x.get("symbol")))}
     if market=="us-contracts": return set(US_CONTRACTS)
     if market=="forex": return set(FX_SYMBOLS)
     return set()
@@ -112,8 +122,8 @@ def market_tickers(market):
         out=[]
         source_rows=_screener_quotes("US") if market=="us-stocks" else _screener_quotes("SA")
         for x in source_rows:
-            symbol=x.get("symbol")
-            if not symbol or (market=="saudi" and not str(symbol).endswith(".SR")): continue
+            symbol=_saudi_symbol(x.get("symbol")) if market=="saudi" else x.get("symbol")
+            if not symbol: continue
             row=_row(symbol,x.get("regularMarketPrice"),x.get("regularMarketChangePercent"),x.get("regularMarketVolume"),x.get("currency"))
             if row and (market=="saudi" or row["quote_volume"]>=1000000): out.append(row)
         if market=="saudi" and not out:
