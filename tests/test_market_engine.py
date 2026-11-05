@@ -249,14 +249,14 @@ class MarketEngineTests(unittest.TestCase):
                 self.assertEqual(len(result["signals"]), 0)
                 self.assertEqual(platform.Trade.query.count(), 0)
 
-    def test_same_higher_timeframe_candle_does_not_create_duplicate_trades(self):
+    def test_same_15m_candle_does_not_create_duplicate_trades(self):
         signal = {
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":98.0,
             "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,
             "change_pct":1.2,"timeframe":"15m","signal_candle_time":int(platform.utcnow().timestamp()*1000)-900000,
             "reason":"VWAP REVERSION spot: confirmed."
         }
-        candle_time = [123]
+        candle_time = [int(platform.utcnow().timestamp()*1000)-900000]
         def per_frame(market, item, timeframe):
             return {**signal, "timeframe": timeframe, "signal_candle_time": candle_time[0]}
         with platform.app.app_context():
@@ -270,7 +270,7 @@ class MarketEngineTests(unittest.TestCase):
                 self.assertEqual(platform.Trade.query.count(), 1)
                 self.assertEqual(len(second["signals"]), 1)
                 self.assertTrue(all(x.status == "active" for x in platform.Trade.query.all()))
-                candle_time[0] = 124
+                candle_time[0] = int(platform.utcnow().timestamp()*1000)-900000
                 third = platform.run_market_scan("spot", force=True)
                 trades = platform.Trade.query.order_by(platform.Trade.id.asc()).all()
                 self.assertEqual(len(trades), 2)
@@ -326,8 +326,8 @@ class MarketEngineTests(unittest.TestCase):
             rows = platform.market_tickers("spot")
         self.assertEqual(rows, [])
 
-    def test_strategy_exposes_all_six_supported_timeframes(self):
-        self.assertEqual(platform.TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
+    def test_strategy_exposes_only_15m(self):
+        self.assertEqual(platform.TIMEFRAMES, ("15m",))
         self.assertEqual(platform.provider_status("spot")["timeframes"], ["15m"])
 
     def test_registration_accepts_unicode_letters_and_digits(self):
