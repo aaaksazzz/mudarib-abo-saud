@@ -7,13 +7,13 @@ import math
 
 # Separate volume thresholds reflect differences in reported market volume.
 PROFILES = {
-    "spot": {"volume_ratio": 1.70, "long_only": True},
-    "alpha": {"volume_ratio": 1.80, "long_only": True},
-    "futures": {"volume_ratio": 1.65, "long_only": False},
-    "us-stocks": {"volume_ratio": 1.55, "long_only": True},
-    "us-contracts": {"volume_ratio": 1.50, "long_only": False},
-    "saudi": {"volume_ratio": 1.40, "long_only": True},
-    "forex": {"volume_ratio": 1.25, "long_only": False},
+    "spot": {"volume_ratio": 1.35, "long_only": False},
+    "alpha": {"volume_ratio": 1.40, "long_only": False},
+    "futures": {"volume_ratio": 1.30, "long_only": False},
+    "us-stocks": {"volume_ratio": 1.30, "long_only": False},
+    "us-contracts": {"volume_ratio": 1.25, "long_only": False},
+    "saudi": {"volume_ratio": 1.20, "long_only": False},
+    "forex": {"volume_ratio": 1.15, "long_only": False},
 }
 
 
