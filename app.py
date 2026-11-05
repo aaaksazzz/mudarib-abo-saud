@@ -463,7 +463,7 @@ def run_market_scan(market,force=False):
     # re-created every 15 minutes with a fake "fresh" timestamp.
     existing_rows=Trade.query.filter(
         Trade.market==market,
-        Trade.created_at>=now-timedelta(days=2),
+        Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.reason.like("VWAP REVERSION%"),
     ).all()
     existing_by_key={}
@@ -482,11 +482,17 @@ def run_market_scan(market,force=False):
         for signal in frame_signals[:3]:
             marker=str(signal["signal_candle_time"])
             key=(signal["symbol"],frame,marker)
+            setting_key=f"signal-candle:{market}:{signal['symbol']}:{frame}"
+            candle_row=db.session.get(Setting,setting_key)
             previous=existing_by_key.get(key)
-            if previous:
-                if previous.status in OPEN_TRADE_STATUSES and previous.expires_at>now:
+            if candle_row and candle_row.value==marker:
+                if previous and previous.expires_at>now:
                     retained_ids.add(previous.id)
                 continue
+            if candle_row is None:
+                db.session.add(Setting(key=setting_key,value=marker))
+            else:
+                candle_row.value=marker
             signal["reason"]=signal["reason"]+" | bar_ts="+marker
             new_signals.append(signal)
     active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES))
