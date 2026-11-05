@@ -20,7 +20,7 @@ Production-oriented market intelligence terminal.
 - TP2 (1.0×ATR) and TP3 (1.5×ATR) are staged extensions added for this platform's three-target card. They are not part of the source project's single-target bracket.
 - Spot, Alpha, US stocks and Tadawul remain long-only. Futures, US contracts and FX/metals can produce long and short signals.
 - The original repository's disclosed validation is BTC/ETH on 4h only. Generalizing its rules to other assets/timeframes is a research adaptation, not proof those combinations are profitable. The source also warns that its results are in-sample and may weaken live.
-- The scanner ranks the 20 most liquid eligible symbols per market and evaluates each across six timeframes; this is a practical scan cap, not a claim that every listed symbol is evaluated on every cycle. It runs every 15 minutes.
+- For feeds without exchange volume (notably some Yahoo FX candles), the engine explicitly falls back to an equal-weight typical-price proxy and labels the signal; it does not pretend the proxy is true volume-weighted VWAP. The scanner ranks the 20 most liquid eligible symbols per market and evaluates each across six timeframes; this is a practical scan cap, not a claim that every listed symbol is evaluated on every cycle. It runs every 15 minutes.
 - Signal scores are ranking heuristics, not AI win probabilities. Validate each market/timeframe with out-of-sample tests, spread, fees and slippage before relying on signals.
 
 ## Signal engine
