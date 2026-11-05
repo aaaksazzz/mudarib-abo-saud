@@ -93,6 +93,38 @@ class MarketEngineTests(unittest.TestCase):
         # Saudi equities are not filtered by the one-million-volume threshold.
         self.assertTrue(all(row["quote_volume"] < 1_000_000 for row in rows))
 
+    def test_saudi_screener_normalizes_numeric_tadawul_codes(self):
+        lists = {
+            "most_actives": [
+                {"symbol":"2222","regularMarketPrice":30,"regularMarketChangePercent":1.2,"regularMarketVolume":10,"currency":"SAR"},
+            ],
+            "day_gainers": [
+                {"symbol":"7010","regularMarketPrice":40,"regularMarketChangePercent":3.0,"regularMarketVolume":5,"currency":"SAR"},
+            ],
+            "day_losers": [],
+        }
+        with patch.object(platform.market_adapters, "_screener",
+                          side_effect=lambda region, scr_id: lists[scr_id]):
+            rows = platform.market_adapters.market_tickers("saudi")
+        self.assertEqual({row["symbol"] for row in rows}, {"2222.SR","7010.SR"})
+
+    def test_signal_read_does_not_write_expired_trades(self):
+        with platform.app.app_context():
+            trade = platform.Trade(
+                market="spot", symbol="BTCUSDT", side="BUY", entry=100,
+                stop=97, tp1=103, tp2=106, tp3=109, score=70,
+                timeframe="15m", reason="test",
+                expires_at=platform.utcnow() - timedelta(minutes=1),
+            )
+            platform.db.session.add(trade)
+            platform.db.session.commit()
+            trade_id = trade.id
+        response = self.client.get("/api/markets/spot/signals")
+        self.assertEqual(response.status_code, 200)
+        with platform.app.app_context():
+            trade = platform.db.session.get(platform.Trade, trade_id)
+            self.assertEqual(trade.status, "active")
+
     def test_journal_expires_old_active_trades(self):
         with platform.app.app_context():
             trade = platform.Trade(
