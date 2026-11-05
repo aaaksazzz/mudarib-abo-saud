@@ -1,11 +1,11 @@
-"""Lightweight market-specific 15m volume-impulse strategies.
+"""15m order-block formation with 1m retest entries.
 
-Research candidate adapted to the data available in each market. It does not
-claim a win rate; validate with out-of-sample tests before production use.
+A bullish order block is the last high-volume bearish candle before a confirmed
+upward displacement. A bearish order block is the inverse. Entry is considered
+only when a closed 1m candle retests the zone and confirms rejection.
 """
 import math
 
-# Separate volume thresholds reflect differences in reported market volume.
 PROFILES = {
     "spot": {"volume_ratio": 1.70, "long_only": True},
     "alpha": {"volume_ratio": 1.80, "long_only": True},
@@ -18,94 +18,171 @@ PROFILES = {
 
 
 def _atr(highs, lows, closes, period=14):
-    tr = []
+    ranges = []
     for i in range(1, len(closes)):
-        tr.append(max(highs[i] - lows[i],
-                      abs(highs[i] - closes[i - 1]),
-                      abs(lows[i] - closes[i - 1])))
-    sample = tr[-period:]
+        ranges.append(max(highs[i] - lows[i],
+                          abs(highs[i] - closes[i - 1]),
+                          abs(lows[i] - closes[i - 1])))
+    sample = ranges[-period:]
     return sum(sample) / len(sample) if sample else 0.0
 
 
-def analyze(market, symbol, rows, include_micro=False):
-    """Return a 15m setup from a closed high-volume impulse candle, or None."""
-    profile = PROFILES.get(market)
-    if not profile or not isinstance(rows, list) or len(rows) < 45:
+def _bars(rows):
+    if not isinstance(rows, list) or len(rows) < 3:
         return None
-    # Ignore the final, potentially still-forming 15m candle.
-    bars = rows[:-1]
     try:
-        o = [float(x[1]) for x in bars]
-        h = [float(x[2]) for x in bars]
-        l = [float(x[3]) for x in bars]
-        c = [float(x[4]) for x in bars]
-        v = [float(x[5] or 0) for x in bars]
-        if not all(math.isfinite(z) for seq in (o, h, l, c, v) for z in seq):
-            return None
-        if any(x <= 0 for x in c[-25:]) or any(x < 0 for x in v[-25:]):
-            return None
+        parsed = []
+        for row in rows:
+            values = [float(row[i] or 0) for i in range(6)]
+            if not all(math.isfinite(x) for x in values):
+                return None
+            timestamp, op, high, low, close, volume = values
+            if min(op, high, low, close) <= 0 or volume < 0 or high < low:
+                return None
+            parsed.append((int(timestamp), op, high, low, close, volume))
+        return parsed
+    except (IndexError, TypeError, ValueError, OverflowError):
+        return None
 
-        i = len(bars) - 1
-        op, hi, lo, close, volume = o[i], h[i], l[i], c[i], v[i]
-        candle_range = hi - lo
-        body = abs(close - op)
-        if candle_range <= 0 or body <= 0 or close <= 0:
-            return None
 
-        baseline = sum(v[i - 20:i]) / 20.0
-        if baseline <= 0:
-            return None
-        volume_ratio = volume / baseline
-        if volume_ratio < profile["volume_ratio"]:
-            return None
+def analyze(market, symbol, rows, include_micro=False, micro_rows=None):
+    """Find a 15m order block and return a 1m retest entry, otherwise None."""
+    profile = PROFILES.get(market)
+    bars = _bars(rows)
+    micro = _bars(micro_rows)
+    if not profile or not bars or len(bars) < 45 or not micro or len(micro) < 4:
+        return None
 
+    # Ignore the still-forming final candle on both timeframes.
+    bars = bars[:-1]
+    micro = micro[:-1]
+    if len(bars) < 25 or len(micro) < 3:
+        return None
+
+    try:
+        o = [x[1] for x in bars]
+        h = [x[2] for x in bars]
+        l = [x[3] for x in bars]
+        c = [x[4] for x in bars]
+        v = [x[5] for x in bars]
         atr = _atr(h, l, c, 14)
         if atr <= 0:
             return None
-        close_location = (close - lo) / candle_range
 
-        # Strong close in the directional half of the impulse candle.
-        bullish = close > op and close_location >= 0.60
-        bearish = close < op and close_location <= 0.40
-        buffer = max(atr * 0.03, close * 0.00005)
-        if bullish:
-            side = "BUY"
-            stop = (op + close) / 2.0 - buffer
-        elif bearish and not profile["long_only"]:
-            side = "SELL"
-            stop = (op + close) / 2.0 + buffer
+        # The most recent 15m bar defines the active market context.
+        current_price = c[-1]
+        current_time = bars[-1][0]
+        micro = [x for x in micro if x[0] >= current_time - 15 * 60 * 1000]
+        if len(micro) < 3:
+            return None
+        trigger = micro[-1]
+        previous = micro[-2]
+        _, mo, mh, ml, mc, mv = trigger
+        if mc <= 0:
+            return None
+
+        # Search recent closed 15m candles for the last opposite candle
+        # before a meaningful displacement. The displacement must happen
+        # after the candidate candle, not on the same candle.
+        candidates = []
+        first = max(20, len(bars) - 32)
+        last = len(bars) - 3
+        for i in range(first, last):
+            op, hi, lo, close, volume = o[i], h[i], l[i], c[i], v[i]
+            baseline = sum(v[i - 20:i]) / 20.0
+            if baseline <= 0 or hi <= lo:
+                continue
+            ratio = volume / baseline
+            if ratio < profile["volume_ratio"]:
+                continue
+
+            # Bullish OB: high-volume bearish candle, then strong upward
+            # displacement through its high within the next four candles.
+            if close < op:
+                future = bars[i + 1:min(i + 5, len(bars))]
+                if not future:
+                    continue
+                displacement = max(x[4] for x in future)
+                if displacement < hi + atr * 0.35:
+                    continue
+                zone_low, zone_high = lo, op
+                direction = "BUY"
+            # Bearish OB: high-volume bullish candle, then strong downward
+            # displacement through its low.
+            elif close > op and not profile["long_only"]:
+                future = bars[i + 1:min(i + 5, len(bars))]
+                if not future:
+                    continue
+                displacement = min(x[4] for x in future)
+                if displacement > lo - atr * 0.35:
+                    continue
+                zone_low, zone_high = op, hi
+                direction = "SELL"
+            else:
+                continue
+
+            if zone_low <= 0 or zone_high <= zone_low:
+                continue
+            # Require a later return to the zone; don't chase the impulse.
+            if not (ml <= zone_high and mh >= zone_low):
+                continue
+            if direction == "BUY" and not (mc > mo and mc >= previous[4]):
+                continue
+            if direction == "SELL" and not (mc < mo and mc <= previous[4]):
+                continue
+            candidates.append((i, direction, zone_low, zone_high, ratio))
+
+        if not candidates:
+            return None
+
+        # Use the latest valid, unmitigated retest setup.
+        i, side, zone_low, zone_high, volume_ratio = candidates[-1]
+        entry = mc
+        if not (zone_low <= entry <= zone_high):
+            return None
+
+        # Target the prior swing extreme formed after displacement and
+        # before the retest. Stop is beyond the immediately preceding 1m bar.
+        post = bars[i + 1:-1]
+        if not post:
+            return None
+        if side == "BUY":
+            target = max(x[2] for x in post)
+            stop = previous[3]
+            if not (stop < entry < target):
+                return None
         else:
-            return None
+            target = min(x[3] for x in post)
+            stop = previous[2]
+            if not (target < entry < stop):
+                return None
 
-        risk = close - stop if side == "BUY" else stop - close
-        if risk <= 0 or risk > atr * 2.5:
+        risk = entry - stop if side == "BUY" else stop - entry
+        reward = target - entry if side == "BUY" else entry - target
+        if risk <= 0 or reward <= 0 or risk > atr * 2.5:
             return None
-        target = close + 3.0 * risk if side == "BUY" else close - 3.0 * risk
-        if stop <= 0 or target <= 0:
-            return None
+        score = min(95.0, 60.0 + min(volume_ratio - profile["volume_ratio"], 2.0) * 12.0)
 
-        location_score = close_location if side == "BUY" else 1.0 - close_location
-        score = min(95.0, 55.0 + min(volume_ratio - profile["volume_ratio"], 2.0) * 10.0
-                    + max(0.0, location_score - 0.65) * 40.0)
         return {
             "side": side,
-            "entry": close,
+            "entry": entry,
             "stop": stop,
-            # Restore the original single 3R target; TP labels share that level.
             "tp1": target,
             "tp2": target,
             "tp3": target,
             "score": round(score, 1),
-            "timeframe": "15m",
-            "change_pct": round((close / c[i - 1] - 1.0) * 100.0, 5),
-            "change_15m_pct": round((close / c[i - 1] - 1.0) * 100.0, 5),
-            "reason": (f"VOLUME IMPULSE {market}: volume {volume_ratio:.2f}x; "
-                       "15m impulse close in directional half; body-midpoint stop; 3R target"),
-            "signal_candle_time": int(float(bars[-1][0])),
+            "timeframe": "15m / 1m entry",
+            "change_pct": round((entry / c[-2] - 1.0) * 100.0, 5),
+            "change_15m_pct": round((entry / c[-2] - 1.0) * 100.0, 5),
+            "reason": (f"{side} order-block retest: 15m high-volume opposite candle, "
+                       f"displacement confirmed, 1m retest entry; volume {volume_ratio:.2f}x"),
+            "signal_candle_time": int(bars[i][0]),
             "risk_atr": round(risk / atr, 3),
-            "reward_risk": 3.0,
+            "reward_risk": round(reward / risk, 3),
             "volume_ratio": round(volume_ratio, 3),
-            "strategy": f"VOLUME_IMPULSE_{market.upper()}",
+            "order_block_low": round(zone_low, 10),
+            "order_block_high": round(zone_high, 10),
+            "strategy": f"ORDER_BLOCK_RETEST_{market.upper()}",
         }
     except (IndexError, TypeError, ValueError, ZeroDivisionError, OverflowError):
         return None
