@@ -82,9 +82,26 @@ class MarketStrategyTests(unittest.TestCase):
         self.assertIsNone(analyze("futures", "TEST", market_rows("BUY"),
                                   micro_rows=micro_rows("SELL")))
 
-    def test_low_volume_order_block_is_rejected(self):
+    def test_low_volume_on_both_timeframes_is_rejected(self):
+        quiet_micro = micro_rows("BUY")
+        quiet_micro[-2][5] = 10.0
         self.assertIsNone(analyze("futures", "TEST", market_rows("BUY", 110.0),
-                                  micro_rows=micro_rows("BUY")))
+                                  micro_rows=quiet_micro))
+
+    def test_one_minute_volume_spike_can_confirm_low_15m_volume(self):
+        signal = analyze("futures", "TEST", market_rows("BUY", 110.0),
+                         micro_rows=micro_rows("BUY"))
+        self.assertIsNotNone(signal)
+        self.assertEqual(signal["side"], "BUY")
+
+    def test_fvg_filter_can_be_disabled(self):
+        candles = micro_rows("BUY")
+        candles[0][2] = 99.9
+        self.assertIsNone(analyze("futures", "TEST", market_rows("BUY"),
+                                  micro_rows=candles))
+        signal = analyze("futures", "TEST", market_rows("BUY"),
+                         micro_rows=candles, enable_fvg=False)
+        self.assertIsNotNone(signal)
 
     def test_every_supported_market_has_a_profile(self):
         self.assertEqual(set(PROFILES), {
