@@ -67,16 +67,17 @@ def _adx(highs, lows, closes, period=14):
 
 def _vwap_z(highs, lows, closes, volumes, period=20):
     result = [None] * len(closes)
+    proxy_used = [False] * len(closes)
     window = []
     tpv = vol_sum = 0.0
     for i in range(len(closes)):
         volume = max(0.0, volumes[i])
         typical = (highs[i] + lows[i] + closes[i]) / 3.0
-        window.append((typical * volume, volume, closes[i]))
+        window.append((typical * volume, volume, closes[i], typical))
         tpv += typical * volume
         vol_sum += volume
         if len(window) > period:
-            old_tpv, old_vol, _ = window.pop(0)
+            old_tpv, old_vol, _, _ = window.pop(0)
             tpv -= old_tpv
             vol_sum -= old_vol
         if len(window) < period:
@@ -84,9 +85,15 @@ def _vwap_z(highs, lows, closes, volumes, period=20):
         mean = sum(item[2] for item in window) / period
         variance = sum((item[2] - mean) ** 2 for item in window) / period
         std = math.sqrt(max(variance, 0.0))
-        vwap = tpv / vol_sum if vol_sum > 0 else closes[i]
-        result[i] = (closes[i] - vwap) / (std + 1e-12)
-    return result
+        # Yahoo FX quotes often have no exchange volume. Use an explicitly
+        # labelled equal-weight typical-price proxy instead of fake VWAP.
+        if vol_sum > 0:
+            anchor = tpv / vol_sum
+        else:
+            anchor = sum(item[3] for item in window) / period
+            proxy_used[i] = True
+        result[i] = (closes[i] - anchor) / (std + 1e-12)
+    return result, proxy_used
 
 
 def analyze(market, symbol, rows, timeframe="15m", include_micro=False):
@@ -116,8 +123,9 @@ def analyze(market, symbol, rows, timeframe="15m", include_micro=False):
         i = len(bars) - 1
         atr_values = _atr(h, l, c, 14)
         adx_values = _adx(h, l, c, 14)
-        z_values = _vwap_z(h, l, c, v, 20)
+        z_values, proxy_flags = _vwap_z(h, l, c, v, 20)
         atr, adx, zscore = atr_values[i], adx_values[i], z_values[i]
+        vwap_proxy = proxy_flags[i]
         if atr is None or adx is None or zscore is None or atr <= 0 or adx >= 25.0:
             return None
 
@@ -150,10 +158,11 @@ def analyze(market, symbol, rows, timeframe="15m", include_micro=False):
             "score": round(score, 1), "timeframe": timeframe,
             "change_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
             "change_15m_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
-            "reason": f"VWAP REVERSION {market}: VWAP(20) z={zscore:.2f}, ADX(14)={adx:.1f}, ATR(14) stop 1.5x",
+            "reason": f"VWAP REVERSION {market}: {'equal-weight proxy' if vwap_proxy else 'VWAP'}(20) z={zscore:.2f}, ADX(14)={adx:.1f}, ATR(14) stop 1.5x",
             "signal_candle_time": int(float(bars[-1][0])),
             "risk_atr": 1.5, "reward_risk": 0.5,
             "adx": round(adx, 2), "vwap_z": round(zscore, 3),
+            "vwap_method": "equal_weight_proxy" if vwap_proxy else "volume_weighted",
             "strategy": f"MIINDSHOT_VWAP_{market.upper()}_{timeframe}",
         }
     except (IndexError, TypeError, ValueError, ZeroDivisionError, OverflowError):
