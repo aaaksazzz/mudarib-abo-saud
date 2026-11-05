@@ -367,6 +367,8 @@ def build_signal(market,item,timeframe):
             return None
         setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                       "status":"active","timeframe":"15m"})
+        # Keep the existing live-trade feed compatible with this strategy.
+        setup["reason"]="VOLUME IMPULSE · "+setup["reason"]
         return setup
     except Exception:
         app.logger.exception("VOLUME IMPULSE analysis failed for %s %s",market,symbol)
