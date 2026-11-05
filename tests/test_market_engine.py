@@ -240,7 +240,7 @@ class MarketEngineTests(unittest.TestCase):
                 ticker_source.assert_called_once()
 
     # Current-strategy fixtures must use the same reason prefix as production signals.
-    def test_scan_checks_rotating_batch_of_eligible_assets_on_15m_only(self):
+    def test_scan_checks_rotating_batch_on_all_six_timeframes(self):
         items = [{"symbol":f"COIN{i}USDT","price":1.0,"change_pct":float(i),"quote_volume":1_000_000.0+i} for i in range(70)]
         visited=[]
         def capture(market,item,timeframe):
@@ -251,9 +251,9 @@ class MarketEngineTests(unittest.TestCase):
                 result=platform.run_market_scan("futures",force=True)
         self.assertEqual(result["scan_universe"],70)
         self.assertEqual(result["scan_batch_size"],70)
-        self.assertEqual(len(visited),70)
+        self.assertEqual(len(visited),70*len(platform.TIMEFRAMES))
         self.assertEqual({symbol for symbol, _ in visited}, {f"COIN{i}USDT" for i in range(70)})
-        self.assertEqual({frame for _, frame in visited}, {"15m"})
+        self.assertEqual({frame for _, frame in visited}, set(platform.TIMEFRAMES))
 
     def test_signals_must_match_market_direction(self):
         signal = {
@@ -273,7 +273,7 @@ class MarketEngineTests(unittest.TestCase):
                 self.assertEqual(len(result["signals"]), 0)
                 self.assertEqual(platform.Trade.query.count(), 0)
 
-    def test_same_15m_candle_does_not_create_duplicate_trades(self):
+    def test_same_candle_per_timeframe_does_not_create_duplicate_trades(self):
         signal = {
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":98.0,
             "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,
@@ -288,18 +288,18 @@ class MarketEngineTests(unittest.TestCase):
                 {"symbol":"BTCUSDT","price":100.0,"change_pct":1.2,"quote_volume":5000000}
             ]), patch.object(platform, "build_signal", side_effect=per_frame):
                 first = platform.run_market_scan("spot", force=True)
-                self.assertEqual(len(first["signals"]), 1)
-                self.assertEqual(platform.Trade.query.count(), 1)
+                self.assertEqual(len(first["signals"]), len(platform.TIMEFRAMES))
+                self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
                 second = platform.run_market_scan("spot", force=True)
-                self.assertEqual(platform.Trade.query.count(), 1)
-                self.assertEqual(len(second["signals"]), 1)
+                self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
+                self.assertEqual(len(second["signals"]), len(platform.TIMEFRAMES))
                 self.assertTrue(all(x.status == "active" for x in platform.Trade.query.all()))
                 candle_time[0] = int(platform.utcnow().timestamp()*1000)-900000+1
                 third = platform.run_market_scan("spot", force=True)
                 trades = platform.Trade.query.order_by(platform.Trade.id.asc()).all()
-                self.assertEqual(len(trades), 2)
-                self.assertEqual(sum(x.status == "superseded" for x in trades), 1)
-                self.assertEqual(len(third["signals"]), 1)
+                self.assertEqual(len(trades), 2*len(platform.TIMEFRAMES))
+                self.assertEqual(sum(x.status == "superseded" for x in trades), len(platform.TIMEFRAMES))
+                self.assertEqual(len(third["signals"]), len(platform.TIMEFRAMES))
 
 
     def test_stale_scan_hides_old_opportunities_instead_of_showing_stuck_coins(self):
