@@ -355,18 +355,16 @@ TIMEFRAMES=("15m",)
 BINANCE_INTERVALS={"15m":"15m"}
 
 def build_signal(market,item,timeframe):
+    # Allow provider errors to reach the scan loop; valid candles with no setup
+    # are different from failed candle downloads.
     symbol=item["symbol"]
-    try:
-        rows=klines(market,symbol,"15m",120)
-        setup=market_strategies.analyze(market,symbol,rows,include_micro=item.get("include_microstructure",False))
-        if not setup:
-            return None
-        setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
-                      "status":"active","timeframe":"15m"})
-        return setup
-    except Exception:
-        app.logger.exception("VOLUME IMPULSE analysis failed for %s %s",market,symbol)
+    rows=klines(market,symbol,"15m",120)
+    setup=market_strategies.analyze(market,symbol,rows,include_micro=item.get("include_microstructure",False))
+    if not setup:
         return None
+    setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
+                  "status":"active","timeframe":"15m"})
+    return setup
 
 def expire_stale_trades(market=None):
     now=utcnow()
@@ -446,7 +444,7 @@ def run_market_scan(market,force=False):
     found=[]
     completed=0
     failed=0
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=6) as pool:
         futures=[pool.submit(build_signal,market,item,frame) for item in candidates for frame in TIMEFRAMES]
         for future in as_completed(futures):
             try:
@@ -457,8 +455,9 @@ def run_market_scan(market,force=False):
             except Exception:
                 failed+=1
                 app.logger.exception("15-minute signal analysis failed for %s",market)
-    if completed<max(1,math.ceil(len(futures)*0.8)):
-        raise RuntimeError(f"Insufficient candle data: {completed}/{len(futures)} analyses completed")
+    attempted=completed+failed
+    if attempted==0 or completed<max(1,math.ceil(attempted*0.8)):
+        raise RuntimeError(f"Insufficient candle data: {completed}/{attempted} analyses completed; {failed} failed")
     # Only publish signals aligned with the market-wide direction.
     found=[x for x in found if market_bias and x["side"]==market_bias]
     # A successful 15m scan replaces the complete previous signal batch.
@@ -477,7 +476,7 @@ def run_market_scan(market,force=False):
         scan_row.value=iso(now)
     meta_key="scan-meta:"+market
     meta_row=db.session.get(Setting,meta_key)
-    meta_value=json.dumps({"scan_universe":len(candidates),"analysis_completed":completed,"analysis_failed":failed,"market_bias":market_bias,"timeframes":list(TIMEFRAMES)},ensure_ascii=False)
+    meta_value=json.dumps({"scan_universe":len(candidates),"analysis_attempted":attempted,"analysis_completed":completed,"analysis_failed":failed,"signals_found":len(found),"market_bias":market_bias,"timeframes":list(TIMEFRAMES)},ensure_ascii=False)
     if not meta_row:
         db.session.add(Setting(key=meta_key,value=meta_value))
     else:
