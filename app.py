@@ -368,7 +368,7 @@ def build_signal(market,item,timeframe):
     return setup
 
 def filter_fresh_signals(signals, universe, now=None):
-    """Reject old 15m candles and entries that have materially moved before publication."""
+    """Reject stale candles and entries that have materially moved on each timeframe."""
     now=now or utcnow()
     now_ms=int(now.timestamp()*1000)
     live_prices={}
@@ -590,7 +590,7 @@ def run_market_scan(market,force=False):
     else:
         cursor_row.value=str(next_cursor)
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.timeframe=="15m").order_by(Trade.score.desc()).limit(3).all()
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("OPEN_SOURCE ENSEMBLE%")).order_by(Trade.timeframe.asc(),Trade.score.desc()).limit(18).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
             "scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
             "analysis_completed":completed,"analysis_failed":failed,"strategy_matches":strategy_matches,
