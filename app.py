@@ -288,7 +288,7 @@ def market_list():
     return jsonify({"ok":True,"markets":[{"id":m,"enabled":section_enabled(m),"provider":provider_status(m)} for m in MARKETS]})
 def provider_status(m):
     sources={"spot":"Binance Spot public API","futures":"Binance USD-M Futures public API","alpha":"Binance Alpha public market API","us-stocks":"Yahoo Finance US equity screener","us-contracts":"Yahoo Finance US futures quotes","saudi":"Yahoo Finance Saudi-listed shares screener","forex":"Yahoo Finance FX and metals quotes"}
-    return {"ready":m in sources,"source":sources.get(m,"غير معروف"),"timeframe":"15m","requires_api_key":False,"access":"public_no_key"}
+    return {"ready":m in sources,"source":sources.get(m,"غير معروف"),"timeframe":"15m","timeframes":list(market_strategies.TIMEFRAMES),"requires_api_key":False,"access":"public_no_key"}
 def fetch_json(url,params=None):
     last_error=None
     for attempt in range(3):
