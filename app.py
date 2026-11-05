@@ -454,11 +454,11 @@ def run_market_scan(market,force=False):
                     found.append(signal)
             except Exception:
                 failed+=1
-                app.logger.exception("15-minute signal analysis failed for %s",market)
+                app.logger.exception("multi-timeframe signal analysis failed for %s",market)
     if completed<max(1,math.ceil(len(futures)*0.8)):
         raise RuntimeError(f"Insufficient candle data: {completed}/{len(futures)} analyses completed")
     # VWAP mean reversion is intentionally counter-trend; do not veto it using 24h breadth.
-    # A successful 15m scan replaces the complete previous signal batch.
+    # A successful multi-timeframe scan replaces the complete previous signal batch.
     # Keep historical rows, but never let old coins remain in the live feed.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES)).update(
         {"status":"superseded"},synchronize_session=False
