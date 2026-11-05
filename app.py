@@ -486,7 +486,7 @@ def run_market_scan(market,force=False):
             candle_row=db.session.get(Setting,setting_key)
             previous=existing_by_key.get(key)
             if candle_row and candle_row.value==marker:
-                if previous and previous.expires_at>now:
+                if previous and aware(previous.expires_at)>now:
                     retained_ids.add(previous.id)
                 continue
             if candle_row is None:
