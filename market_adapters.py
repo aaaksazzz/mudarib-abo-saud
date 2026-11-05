@@ -2,7 +2,8 @@ import math
 import requests
 from functools import lru_cache
 
-YAHOO="https://query1.finance.yahoo.com"
+YAHOO_HOSTS=("https://query1.finance.yahoo.com","https://query2.finance.yahoo.com")
+YAHOO=YAHOO_HOSTS[0]
 BINANCE_ALPHA="https://www.binance.com"
 HEADERS={"User-Agent":"Mozilla/5.0 (compatible; SMART-TRADING-PRO/1.0)","Accept":"application/json"}
 US_CONTRACTS=["ES=F","NQ=F","YM=F","RTY=F","CL=F","BZ=F","NG=F","GC=F","SI=F","HG=F","ZC=F","ZW=F","ZS=F","6E=F","6B=F","6J=F","6A=F","6C=F","6S=F","ZB=F","ZN=F","ZF=F","ZT=F"]
@@ -38,10 +39,27 @@ def _chart(symbol,interval="15m",period=None):
     return rows
 
 def _screener(region,scr_id="most_actives"):
-    payload=_get(YAHOO+"/v1/finance/screener/predefined/saved",{"scrIds":scr_id,"count":250,"start":0,"region":region,"formatted":"false","lang":"en-US"})
-    result=((payload.get("finance") or {}).get("result") or [])
-    if not result: raise ValueError("Yahoo screener has no results for "+region+"/"+scr_id)
-    return result[0].get("quotes") or []
+    # Yahoo's screener edge can fail independently by host/region. Retry the
+    # secondary public host before declaring the whole market unavailable.
+    errors=[]
+    params={"scrIds":scr_id,"count":250,"start":0,"region":region,
+            "formatted":"false","lang":"en-US"}
+    for host in YAHOO_HOSTS:
+        try:
+            payload=_get(host+"/v1/finance/screener/predefined/saved",params)
+            finance=payload.get("finance") or {}
+            if finance.get("error"):
+                raise ValueError(str(finance["error"]))
+            result=finance.get("result") or []
+            if not result:
+                raise ValueError("empty screener result")
+            quotes=result[0].get("quotes") or []
+            if quotes:
+                return quotes
+            raise ValueError("empty screener quotes")
+        except Exception as exc:
+            errors.append(host+": "+str(exc))
+    raise ValueError("Yahoo screener failed for "+region+"/"+scr_id+" ("+"; ".join(errors)+")")
 
 def _screener_quotes(region):
     # Saudi tickers are not consistently present in Yahoo's most_actives list.
