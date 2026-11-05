@@ -453,7 +453,7 @@ def update_trade_outcomes(market,tickers):
 
 def select_scan_candidates(universe,offset=0,batch_size=80):
     """Rotate through the full eligible universe without changing signal rules."""
-    ranked=sorted(universe,key=lambda x:(float(x.get("quote_volume") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)
+    # Prioritise fast-moving assets first (largest absolute 24h move), then liquidity;\n    # cursor rotation continues into slower assets on subsequent 15m scan cycles.\n    ranked=sorted(universe,key=lambda x:(abs(float(x.get("change_pct") or 0)),float(x.get("quote_volume") or 0)),reverse=True)
     if not ranked:
         return [],0,0
     start=int(offset or 0)%len(ranked)
