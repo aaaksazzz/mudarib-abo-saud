@@ -45,8 +45,10 @@ def _bars(rows):
         return None
 
 
-def analyze(market, symbol, rows, include_micro=False, micro_rows=None):
-    """Find a 15m order block and return a 1m retest entry, otherwise None."""
+def analyze(market, symbol, rows, include_micro=False, micro_rows=None,
+            use_candle_extremes=True, risk_reward=2.0,
+            enable_fvg=True, enable_volume=True):
+    """Find a 15m high-volume order block and confirm its retest on 1m."""
     profile = PROFILES.get(market)
     bars = _bars(rows)
     micro = _bars(micro_rows)
@@ -93,7 +95,7 @@ def analyze(market, symbol, rows, include_micro=False, micro_rows=None):
             if baseline <= 0 or hi <= lo:
                 continue
             ratio = volume / baseline
-            if ratio < profile["volume_ratio"]:
+            if enable_volume and ratio < profile["volume_ratio"]:
                 continue
 
             # Bullish OB: high-volume bearish candle, then strong upward
@@ -130,6 +132,24 @@ def analyze(market, symbol, rows, include_micro=False, micro_rows=None):
                 continue
             if direction == "SELL" and not (mc < mo and mc <= previous[4]):
                 continue
+
+            # 1m fair-value gap: newest closed candle vs two bars earlier.
+            if enable_fvg:
+                two_back = micro[-3]
+                bullish_fvg = ml > two_back[2]
+                bearish_fvg = mh < two_back[3]
+                if direction == "BUY" and not bullish_fvg:
+                    continue
+                if direction == "SELL" and not bearish_fvg:
+                    continue
+
+            # If 15m relative-volume filtering is disabled, retain a 1m
+            # reaction-volume check at the actual retest.
+            if enable_volume and ratio < profile["volume_ratio"]:
+                recent_volumes = [x[5] for x in micro[:-1]][-20:]
+                volume_average = sum(recent_volumes) / max(1, len(recent_volumes))
+                if volume_average <= 0 or mv < volume_average * 1.5:
+                    continue
             candidates.append((i, direction, zone_low, zone_high, ratio))
 
         if not candidates:
@@ -144,16 +164,24 @@ def analyze(market, symbol, rows, include_micro=False, micro_rows=None):
         # Both risk and reward are anchored to the same high-volume
         # 15m order-block candle: BUY targets its high and stops at its low;
         # SELL targets its low and stops at its high.
-        if side == "BUY":
-            target = h[i]
-            stop = l[i]
-            if not (stop < entry < target):
-                return None
+        if use_candle_extremes:
+            if side == "BUY":
+                target, stop = h[i], l[i]
+                if not (stop < entry < target):
+                    return None
+            else:
+                target, stop = l[i], h[i]
+                if not (target < entry < stop):
+                    return None
         else:
-            target = l[i]
-            stop = h[i]
-            if not (target < entry < stop):
+            rr = float(risk_reward)
+            if not math.isfinite(rr) or rr <= 0:
                 return None
+            risk_distance = entry - l[i] if side == "BUY" else h[i] - entry
+            if risk_distance <= 0:
+                return None
+            stop = l[i] if side == "BUY" else h[i]
+            target = entry + risk_distance * rr if side == "BUY" else entry - risk_distance * rr
 
         risk = entry - stop if side == "BUY" else stop - entry
         reward = target - entry if side == "BUY" else entry - target
@@ -183,7 +211,11 @@ def analyze(market, symbol, rows, include_micro=False, micro_rows=None):
             "order_block_high": round(zone_high, 10),
             "volume_candle_high": round(h[i], 10),
             "volume_candle_low": round(l[i], 10),
-            "strategy": f"ORDER_BLOCK_RETEST_{market.upper()}",
+            "strategy": f"FVG_ORDER_BLOCK_VOLUME_{market.upper()}",
+            "fvg_enabled": bool(enable_fvg),
+            "volume_enabled": bool(enable_volume),
+            "candle_extremes_enabled": bool(use_candle_extremes),
+            "risk_reward_setting": float(risk_reward),
         }
     except (IndexError, TypeError, ValueError, ZeroDivisionError, OverflowError):
         return None
