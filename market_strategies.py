@@ -1,40 +1,81 @@
-"""Lightweight market-specific 15m volume-impulse strategies.
+"""Donchian 55 + EMA 8/55 + ADX 14 breakout strategy.
 
-Research candidate adapted to the data available in each market. It does not
-claim a win rate; validate with out-of-sample tests before production use.
+Research adaptation of the public 15m community strategy concept
+(QuantifyMe community #203). This implementation is deterministic Python,
+not the original RandomForest model. It uses closed candles only and
+ATR-based 1R/2R/3R levels. No profitability claim is made.
 """
 import math
 
-# Separate volume thresholds reflect differences in reported market volume.
 PROFILES = {
-    "spot": {"volume_ratio": 1.70, "long_only": True},
-    "alpha": {"volume_ratio": 1.80, "long_only": True},
-    "futures": {"volume_ratio": 1.65, "long_only": False},
-    "us-stocks": {"volume_ratio": 1.55, "long_only": True},
-    "us-contracts": {"volume_ratio": 1.50, "long_only": False},
-    "saudi": {"volume_ratio": 1.40, "long_only": True},
-    "forex": {"volume_ratio": 1.25, "long_only": False},
+    "spot": {"allow_short": False, "adx_min": 18.0},
+    "alpha": {"allow_short": False, "adx_min": 20.0},
+    "futures": {"allow_short": True, "adx_min": 18.0},
+    "us-stocks": {"allow_short": False, "adx_min": 18.0},
+    "us-contracts": {"allow_short": True, "adx_min": 18.0},
+    "saudi": {"allow_short": False, "adx_min": 18.0},
+    "forex": {"allow_short": True, "adx_min": 16.0},
 }
 
 
+def _ema(values, period):
+    if not values:
+        return []
+    alpha = 2.0 / (period + 1.0)
+    result = [float(values[0])]
+    for value in values[1:]:
+        result.append(alpha * float(value) + (1.0 - alpha) * result[-1])
+    return result
+
+
 def _atr(highs, lows, closes, period=14):
-    tr = []
+    true_ranges = []
     for i in range(1, len(closes)):
-        tr.append(max(highs[i] - lows[i],
-                      abs(highs[i] - closes[i - 1]),
-                      abs(lows[i] - closes[i - 1])))
-    sample = tr[-period:]
-    return sum(sample) / len(sample) if sample else 0.0
+        true_ranges.append(max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i] - closes[i - 1]),
+        ))
+    if len(true_ranges) < period:
+        return 0.0
+    return sum(true_ranges[-period:]) / period
+
+
+def _adx(highs, lows, closes, period=14):
+    if len(closes) < period * 2 + 1:
+        return 0.0
+    plus_dm, minus_dm, tr = [], [], []
+    for i in range(1, len(closes)):
+        up = highs[i] - highs[i - 1]
+        down = lows[i - 1] - lows[i]
+        plus_dm.append(up if up > down and up > 0 else 0.0)
+        minus_dm.append(down if down > up and down > 0 else 0.0)
+        tr.append(max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i] - closes[i - 1]),
+        ))
+    dx = []
+    for end in range(period, len(tr) + 1):
+        tr_sum = sum(tr[end - period:end])
+        if tr_sum <= 0:
+            dx.append(0.0)
+            continue
+        pdi = 100.0 * sum(plus_dm[end - period:end]) / tr_sum
+        mdi = 100.0 * sum(minus_dm[end - period:end]) / tr_sum
+        denom = pdi + mdi
+        dx.append(100.0 * abs(pdi - mdi) / denom if denom > 0 else 0.0)
+    return sum(dx[-period:]) / min(period, len(dx)) if dx else 0.0
 
 
 def analyze(market, symbol, rows, include_micro=False):
-    """Return a 15m setup from a closed high-volume impulse candle, or None."""
+    """Return one 15m Donchian breakout setup, or None."""
     profile = PROFILES.get(market)
-    if not profile or not isinstance(rows, list) or len(rows) < 45:
+    if not profile or not isinstance(rows, list) or len(rows) < 90:
         return None
-    # Ignore the final, potentially still-forming 15m candle.
-    bars = rows[:-1]
     try:
+        # The last provider candle may still be forming: never trade it.
+        bars = rows[:-1]
         o = [float(x[1]) for x in bars]
         h = [float(x[2]) for x in bars]
         l = [float(x[3]) for x in bars]
@@ -42,70 +83,88 @@ def analyze(market, symbol, rows, include_micro=False):
         v = [float(x[5] or 0) for x in bars]
         if not all(math.isfinite(z) for seq in (o, h, l, c, v) for z in seq):
             return None
-        if any(x <= 0 for x in c[-25:]) or any(x < 0 for x in v[-25:]):
+        if any(x <= 0 for x in c[-60:]) or any(x < 0 for x in v[-60:]):
             return None
 
         i = len(bars) - 1
-        op, hi, lo, close, volume = o[i], h[i], l[i], c[i], v[i]
-        candle_range = hi - lo
-        body = abs(close - op)
-        if candle_range <= 0 or body <= 0 or close <= 0:
+        if i < 56:
+            return None
+        entry = c[i]
+        candle_range = h[i] - l[i]
+        if entry <= 0 or candle_range <= 0:
             return None
 
-        baseline = sum(v[i - 20:i]) / 20.0
-        if baseline <= 0:
-            return None
-        volume_ratio = volume / baseline
-        if volume_ratio < profile["volume_ratio"]:
-            return None
-
+        # Donchian boundaries are built only from candles before the signal.
+        prior_high = max(h[i - 55:i])
+        prior_low = min(l[i - 55:i])
+        ema_fast = _ema(c, 8)[i]
+        ema_slow = _ema(c, 55)[i]
+        adx = _adx(h, l, c, 14)
         atr = _atr(h, l, c, 14)
-        if atr <= 0:
-            return None
-        close_location = (close - lo) / candle_range
-
-        # Strong close in the directional half of the impulse candle.
-        bullish = close > op and close_location >= 0.60
-        bearish = close < op and close_location <= 0.40
-        buffer = max(atr * 0.03, close * 0.00005)
-        if bullish:
-            side = "BUY"
-            stop = (op + close) / 2.0 - buffer
-        elif bearish and not profile["long_only"]:
-            side = "SELL"
-            stop = (op + close) / 2.0 + buffer
-        else:
+        if atr <= 0 or adx < profile["adx_min"]:
             return None
 
-        risk = close - stop if side == "BUY" else stop - close
-        if risk <= 0 or risk > atr * 2.5:
-            return None
-        target = close + 3.0 * risk if side == "BUY" else close - 3.0 * risk
-        if stop <= 0 or target <= 0:
+        close_location = (entry - l[i]) / candle_range
+        bullish = (
+            entry > prior_high
+            and entry > o[i]
+            and ema_fast > ema_slow
+            and close_location >= 0.60
+        )
+        bearish = (
+            profile["allow_short"]
+            and entry < prior_low
+            and entry < o[i]
+            and ema_fast < ema_slow
+            and close_location <= 0.40
+        )
+        if not bullish and not bearish:
             return None
 
-        location_score = close_location if side == "BUY" else 1.0 - close_location
-        score = min(95.0, 55.0 + min(volume_ratio - profile["volume_ratio"], 2.0) * 10.0
-                    + max(0.0, location_score - 0.65) * 40.0)
+        side = "BUY" if bullish else "SELL"
+        direction = 1.0 if bullish else -1.0
+        # Volatility-normalized stop; targets are true R multiples.
+        risk = 1.5 * atr
+        stop = entry - direction * risk
+        tp1 = entry + direction * risk
+        tp2 = entry + direction * 2.0 * risk
+        tp3 = entry + direction * 3.0 * risk
+        if stop <= 0 or min(tp1, tp2, tp3) <= 0:
+            return None
+
+        breakout_atr = (
+            (entry - prior_high) / atr if bullish
+            else (prior_low - entry) / atr
+        )
+        trend_gap = abs(ema_fast - ema_slow) / atr
+        score = min(
+            95.0,
+            58.0
+            + min(max(adx - profile["adx_min"], 0.0), 25.0) * 0.65
+            + min(max(breakout_atr, 0.0), 1.0) * 12.0
+            + min(trend_gap, 1.0) * 8.0,
+        )
         return {
             "side": side,
-            "entry": close,
+            "entry": entry,
             "stop": stop,
-            # Restore the original single 3R target; TP labels share that level.
-            "tp1": target,
-            "tp2": target,
-            "tp3": target,
+            "tp1": tp1,
+            "tp2": tp2,
+            "tp3": tp3,
             "score": round(score, 1),
             "timeframe": "15m",
-            "change_pct": round((close / c[i - 1] - 1.0) * 100.0, 5),
-            "change_15m_pct": round((close / c[i - 1] - 1.0) * 100.0, 5),
-            "reason": (f"VOLUME IMPULSE {market}: volume {volume_ratio:.2f}x; "
-                       "15m impulse close in directional half; body-midpoint stop; 3R target"),
+            "change_pct": round((entry / c[i - 1] - 1.0) * 100.0, 5),
+            "change_15m_pct": round((entry / c[i - 1] - 1.0) * 100.0, 5),
+            "reason": (
+                f"DONCHIAN BREAKOUT {market}: 55-candle channel, "
+                f"EMA 8/55 trend, ADX {adx:.1f}, ATR stop, targets 1R/2R/3R"
+            ),
             "signal_candle_time": int(float(bars[-1][0])),
             "risk_atr": round(risk / atr, 3),
             "reward_risk": 3.0,
-            "volume_ratio": round(volume_ratio, 3),
-            "strategy": f"VOLUME_IMPULSE_{market.upper()}",
+            "adx": round(adx, 2),
+            "donchian_period": 55,
+            "strategy": f"DONCHIAN_EMA_ADX_{market.upper()}",
         }
     except (IndexError, TypeError, ValueError, ZeroDivisionError, OverflowError):
         return None
