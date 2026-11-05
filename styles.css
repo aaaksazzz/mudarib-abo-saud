@@ -18,3 +18,14 @@ body[dir="ltr"] .sidebar{right:auto;left:0;border-left:0;border-right:1px solid 
 @media(max-width:700px){.direction-row{grid-template-columns:repeat(2,1fr)}.trade-grid,.article-grid{grid-template-columns:1fr}.admin-stats{grid-template-columns:repeat(3,1fr)}.admin-sections{grid-template-columns:1fr}.auth-card{padding:25px 20px}.account-status{display:none}}
 
 .medal{display:inline-block;font-size:17px;vertical-align:middle;margin-left:6px}
+
+/* Always-visible market timeframe navigation */
+.timeframe-tabs{display:flex;align-items:center;gap:8px;max-width:100%;overflow-x:auto;padding:5px 2px 12px;margin:-2px 0 15px;scrollbar-width:thin;overscroll-behavior-inline:contain}
+.timeframe-tab{flex:0 0 auto;min-width:82px;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 13px;border:1px solid #26394e;border-radius:11px;background:#101c2b;color:#aebed0;font:600 11px inherit;cursor:pointer;transition:background .18s,border-color .18s,color .18s}
+.timeframe-tab b{min-width:19px;padding:3px 5px;border-radius:20px;background:#1a2b3d;color:#8fa4ba;font:700 9px Inter,sans-serif}
+.timeframe-tab:hover{border-color:#3d7867;color:#e8fff7}
+.timeframe-tab.active{background:linear-gradient(135deg,#164536,#12352f);border-color:#3bbd95;color:#7ce9c3;box-shadow:0 5px 18px #24b58a18}
+.timeframe-tab.active b{background:#22634e;color:#b5f8df}
+body.light .timeframe-tab{background:#f3f7fa;color:#53677d;border-color:#d5e0e9}
+body.light .timeframe-tab.active{background:#e4f7ef;color:#13795d;border-color:#57bd98}
+@media(max-width:600px){.timeframe-tabs{gap:6px;margin-bottom:11px}.timeframe-tab{min-width:74px;padding:9px 10px;font-size:10px;border-radius:10px}}
