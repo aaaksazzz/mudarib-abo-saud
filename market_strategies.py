@@ -27,6 +27,16 @@ def _atr(highs, lows, closes, period=14):
     return sum(sample) / len(sample) if sample else 0.0
 
 
+def _ema(values, period=14):
+    if len(values) < period:
+        return 0.0
+    alpha = 2.0 / (period + 1.0)
+    value = sum(values[:period]) / period
+    for price in values[period:]:
+        value = alpha * price + (1.0 - alpha) * value
+    return value
+
+
 def analyze(market, symbol, rows, include_micro=False):
     """Return a 15m setup from a closed high-volume impulse candle, or None."""
     profile = PROFILES.get(market)
@@ -60,7 +70,8 @@ def analyze(market, symbol, rows, include_micro=False):
             return None
 
         atr = _atr(h, l, c, 14)
-        if atr <= 0:
+        ema14 = _ema(c, 14)
+        if atr <= 0 or ema14 <= 0:
             return None
         close_location = (close - lo) / candle_range
 
@@ -70,13 +81,15 @@ def analyze(market, symbol, rows, include_micro=False):
         buffer = max(atr * 0.03, close * 0.00005)
         if bullish:
             side = "BUY"
-            stop = (op + close) / 2.0 - buffer
+            stop = ema14 - buffer
         elif bearish and not profile["long_only"]:
             side = "SELL"
-            stop = (op + close) / 2.0 + buffer
+            stop = ema14 + buffer
         else:
             return None
 
+        # Reject setups where EMA14 is on the wrong side of entry or risk
+        # is too wide; never silently move the stop to an unrelated level.
         risk = close - stop if side == "BUY" else stop - close
         if risk <= 0 or risk > atr * 2.5:
             return None
@@ -100,9 +113,10 @@ def analyze(market, symbol, rows, include_micro=False):
             "change_pct": round((close / c[i - 1] - 1.0) * 100.0, 5),
             "change_15m_pct": round((close / c[i - 1] - 1.0) * 100.0, 5),
             "reason": (f"VOLUME IMPULSE {market}: volume {volume_ratio:.2f}x; "
-                       "15m impulse close in directional half; body-midpoint stop; 3R target"),
+                       "15m impulse close in directional half; EMA14 stop with ATR buffer; 3R target"),
             "signal_candle_time": int(float(bars[-1][0])),
             "risk_atr": round(risk / atr, 3),
+            "ema14": round(ema14, 8),
             "reward_risk": 3.0,
             "volume_ratio": round(volume_ratio, 3),
             "strategy": f"VOLUME_IMPULSE_{market.upper()}",
