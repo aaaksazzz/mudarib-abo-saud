@@ -14,7 +14,7 @@
 - Binance Spot and Binance USDT-M perpetual Futures use public market endpoints; Binance account API keys are not required for these public feeds.
 - The scan strategy evaluates closed 15-minute candles only; no higher-timeframe requests are made.
 - Market-page requests read cached database results and do not perform long-running scans.
-- Binance Alpha, US equities, US contracts, Tadawul, Forex and Gold use public Yahoo/Binance adapters without account keys. Their symbol universes are provider-limited and are not exhaustive until independently reconciled with official exchange listings.
+- Binance Alpha, US equities, US contracts, Tadawul, Forex and Gold use public Yahoo/Binance adapters without account keys. Their symbol universes are provider-limited; the current Yahoo screeners do not guarantee a complete TASI or US-equity listing. Do not treat these lists as exhaustive.
 
 ## Health checks
 - `GET /health`: process liveness.
