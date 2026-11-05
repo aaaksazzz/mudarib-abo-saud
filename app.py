@@ -8,7 +8,7 @@ import market_strategies
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import func, text, inspect, or_
+from sqlalchemy import func, text, inspect, or_, event
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -24,6 +24,17 @@ app.config.update(
     MAX_CONTENT_LENGTH=2 * 1024 * 1024,
 )
 db=SQLAlchemy(app)
+
+def configure_sqlite_connection(dbapi_connection, connection_record):
+    if db.engine.dialect.name != "sqlite":
+        return
+    cursor=dbapi_connection.cursor()
+    cursor.execute("PRAGMA busy_timeout=15000")
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
+
+event.listen(db.engine,"connect",configure_sqlite_connection)
 limiter=Limiter(get_remote_address,app=app,default_limits=["300 per hour"],storage_uri=os.environ.get("RATE_LIMIT_STORAGE_URI","memory://"))
 MARKETS=("spot","futures","alpha","us-stocks","us-contracts","saudi","forex")
 SECTION_DEFAULTS={k:True for k in ("overview",)+MARKETS+("strategies","journal","blog","news")}
@@ -466,8 +477,8 @@ def signals(market):
     if blocked:
         return blocked
     try:
-        # Keep web requests fast: the scheduler owns scans; page loads only read the latest committed result.
-        expire_stale_trades(market)
+        # Keep this endpoint read-only. The single scheduler expires trades;
+        # writing from page requests races with scheduled scans on SQLite.
         row=db.session.get(Setting,"scan:"+market)
         active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("VOLUME IMPULSE%")).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
         updated=row.value if row else None
@@ -650,7 +661,8 @@ with app.app_context():
 
 def scheduled_market_scan():
     with app.app_context():
-        expire_stale_trades()
+        # run_market_scan expires that market's trades before scanning it.
+        # Avoid a duplicate global write before the per-market scan loop.
         for market in MARKETS:
             try:
                 result=run_market_scan(market,force=True)
