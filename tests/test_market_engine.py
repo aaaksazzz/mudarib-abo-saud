@@ -233,7 +233,7 @@ class MarketEngineTests(unittest.TestCase):
                 ticker_source.assert_called_once()
 
     # Current-strategy fixtures must use the same reason prefix as production signals.
-    def test_scan_checks_top_20_liquid_assets_on_15m_only(self):
+    def test_scan_checks_rotating_batch_of_eligible_assets_on_15m_only(self):
         items = [{"symbol":f"COIN{i}USDT","price":1.0,"change_pct":float(i),"quote_volume":1_000_000.0+i} for i in range(70)]
         visited=[]
         def capture(market,item,timeframe):
@@ -242,9 +242,10 @@ class MarketEngineTests(unittest.TestCase):
         with platform.app.app_context():
             with patch.object(platform,"market_tickers",return_value=items), patch.object(platform,"build_signal",side_effect=capture):
                 result=platform.run_market_scan("futures",force=True)
-        self.assertEqual(result["scan_universe"],20)
-        self.assertEqual(len(visited),20)
-        self.assertEqual({symbol for symbol, _ in visited}, {f"COIN{i}USDT" for i in range(50,70)})
+        self.assertEqual(result["scan_universe"],70)
+        self.assertEqual(result["scan_batch_size"],70)
+        self.assertEqual(len(visited),70)
+        self.assertEqual({symbol for symbol, _ in visited}, {f"COIN{i}USDT" for i in range(70)})
         self.assertEqual({frame for _, frame in visited}, {"15m"})
 
     def test_signals_must_match_market_direction(self):
