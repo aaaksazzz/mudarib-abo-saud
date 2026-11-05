@@ -14,21 +14,20 @@ Production-oriented market intelligence terminal.
 - **Binance Alpha:** public Alpha symbol, ticker and candle endpoints.
 - **US stocks / US contracts / Tadawul / Forex & Gold:** Yahoo Finance public screener and 15m candle adapters; US stocks apply the configured $1M traded-value floor and Tadawul does not.
 
-## Market-specific 15m strategy candidate
-- Market scans route through one `market_strategies.py` engine using the public Donchian 55 + EMA ribbon 8/55 + ADX 14 strategy concept (QuantifyMe community #203, NZD/USD 15m).
-- The implementation is a deterministic rule-based adaptation, not the original RandomForest model: it requires a closed 15m Donchian breakout, aligned EMA trend and ADX confirmation. The last still-forming candle is ignored.
-- Stops use 1.5×ATR; targets are distinct at 1R, 2R and 3R. Spot, Alpha, US stocks and Tadawul are long-only; futures, US contracts and FX/metals allow short signals.
-- This is a research candidate, not a verified profitable strategy. The published source's NZD/USD metrics are not transferable to other markets. Validate each market with fees, spread, slippage and walk-forward tests before relying on it.
+## Market-wide MiND-Shot-inspired VWAP strategy
+- All seven market sections use the disclosed VWAP mean-reversion bracket logic from the public MiND-Shot project: rolling VWAP(20), price deviation z-score threshold of ±2, ADX(14) < 25, ATR(14) stop at 1.5×ATR, and the original TP1 at 0.75×ATR.
+- The signal engine independently evaluates **15m, 1h, 4h, 1d, 1w and 1M** candles. Each signal stores its own timeframe; the market page includes a timeframe filter.
+- TP2 (1.0×ATR) and TP3 (1.5×ATR) are staged extensions added for this platform's three-target card. They are not part of the source project's single-target bracket.
+- Spot, Alpha, US stocks and Tadawul remain long-only. Futures, US contracts and FX/metals can produce long and short signals.
+- The original repository's disclosed validation is BTC/ETH on 4h only. Generalizing its rules to other assets/timeframes is a research adaptation, not proof those combinations are profitable. The source also warns that its results are in-sample and may weaken live.
+- For feeds without exchange volume (notably some Yahoo FX candles), the engine explicitly falls back to an equal-weight typical-price proxy and labels the signal; it does not pretend the proxy is true volume-weighted VWAP. The scanner ranks the 20 most liquid eligible symbols per market and evaluates each across six timeframes; this is a practical scan cap, not a claim that every listed symbol is evaluated on every cycle. It runs every 15 minutes.
+- Signal scores are ranking heuristics, not AI win probabilities. Validate each market/timeframe with out-of-sample tests, spread, fees and slippage before relying on signals.
 
 ## Signal engine
-- Direction filter: market-wide breadth must agree with the signal side.
-- Entry confirmation: Donchian 55 breakout, EMA 8/55 trend and ADX 14 confirmation on closed 15-minute candles only.
-- Ranking: strength score first, then traded value; maximum three opportunities per market.
-- Risk: 1.5×ATR stop; three distinct targets at 1R/2R/3R.
-- The scheduler scans all configured markets every 15 minutes. Market-page HTTP requests only read committed results and never launch a heavy scan synchronously.
-- Each successful 15-minute scan replaces the live opportunity batch, including repeated symbols with refreshed entry/SL/TP levels; previous rows remain in trade history and expire after 24 hours. If the scanner is more than 20 minutes behind, the API hides the old batch instead of presenting stale coins as current opportunities.
+- Each successful market scan replaces the live opportunity batch, keeping up to three opportunities per timeframe (up to 18 per market). Previous rows remain in trade history and expire after 24 hours.
+- Market-page requests only read committed results and never launch heavy scans synchronously.
 - Expired records are also cleaned when the journal is read.
-- A score is a ranking heuristic, not an AI probability or a verified win rate. No performance claim is made without a reproducible backtest.
+- No performance claim is made without reproducible per-market, per-timeframe backtests.
 
 ## Production deployment
 - Python runtime is pinned by `.python-version` to 3.12.

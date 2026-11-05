@@ -1,67 +1,69 @@
 import unittest
 
-from market_strategies import PROFILES, analyze
+from market_strategies import PROFILES, TIMEFRAMES, analyze
 
 
 def candles(side="BUY"):
     rows = []
-    # 100 quiet bars, then a persistent trend to establish EMA/ADX alignment.
-    price = 100.0
+    # Stable, low-range candles keep ADX in a ranging regime.
     for i in range(100):
-        if i >= 82:
-            price += 0.18 if side == "BUY" else -0.18
-        rows.append([
-            i * 900000, price - 0.05, price + 0.12,
-            price - 0.12, price, 1000.0
-        ])
-    # Closed breakout candle above/below the prior 55-candle channel.
+        price = 100.0 + (0.03 if i % 2 else -0.03)
+        rows.append([i * 900000, price - 0.05, price + 0.05, price - 0.05, price, 1000.0])
+    stamp = 100 * 900000
     if side == "BUY":
-        rows[-1] = [99 * 900000, price, price + 1.0, price - 0.05, price + 0.9, 3000.0]
+        rows.append([stamp, 100.0, 101.0, 94.5, 95.0, 3000.0])
     else:
-        rows[-1] = [99 * 900000, price, price + 0.05, price - 1.0, price - 0.9, 3000.0]
-    # A still-forming candle is deliberately extreme and must be ignored.
-    rows.append([100 * 900000, price, price + 5.0, price - 5.0, price, 99999.0])
+        rows.append([stamp, 100.0, 105.5, 99.0, 105.0, 3000.0])
+    # Forming candle is deliberately extreme and must be ignored.
+    rows.append([stamp + 900000, 100.0, 110.0, 90.0, 100.0, 99999.0])
     return rows
 
 
-class DonchianStrategyTests(unittest.TestCase):
-    def test_long_breakout_has_distinct_risk_targets(self):
-        signal = analyze("futures", "TESTUSDT", candles("BUY"))
+class VWAPReversionTests(unittest.TestCase):
+    def test_long_bracket_and_staged_targets(self):
+        signal = analyze("futures", "TEST", candles("BUY"), timeframe="15m")
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "BUY")
-        risk = signal["entry"] - signal["stop"]
-        self.assertAlmostEqual(signal["tp1"], signal["entry"] + risk)
-        self.assertAlmostEqual(signal["tp2"], signal["entry"] + 2 * risk)
-        self.assertAlmostEqual(signal["tp3"], signal["entry"] + 3 * risk)
+        self.assertGreater(signal["entry"], signal["stop"])
+        self.assertLess(signal["entry"], signal["tp1"])
         self.assertLess(signal["tp1"], signal["tp2"])
         self.assertLess(signal["tp2"], signal["tp3"])
         self.assertEqual(signal["timeframe"], "15m")
 
-    def test_short_breakout_has_distinct_risk_targets(self):
-        signal = analyze("futures", "TESTUSDT", candles("SELL"))
+    def test_short_only_for_markets_that_allow_it(self):
+        signal = analyze("futures", "TEST", candles("SELL"), timeframe="4h")
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "SELL")
-        risk = signal["stop"] - signal["entry"]
-        self.assertAlmostEqual(signal["tp1"], signal["entry"] - risk)
-        self.assertAlmostEqual(signal["tp2"], signal["entry"] - 2 * risk)
-        self.assertAlmostEqual(signal["tp3"], signal["entry"] - 3 * risk)
+        self.assertGreater(signal["stop"], signal["entry"])
         self.assertGreater(signal["tp1"], signal["tp2"])
         self.assertGreater(signal["tp2"], signal["tp3"])
-
-    def test_spot_and_cash_markets_never_short(self):
         for market in ("spot", "alpha", "us-stocks", "saudi"):
-            self.assertFalse(PROFILES[market]["allow_short"])
-            self.assertIsNone(analyze(market, "TEST", candles("SELL")))
+            self.assertIsNone(analyze(market, "TEST", candles("SELL"), timeframe="4h"))
 
-    def test_derivatives_and_forex_can_short(self):
-        for market in ("futures", "us-contracts", "forex"):
-            self.assertTrue(PROFILES[market]["allow_short"])
-            signal = analyze(market, "TEST", candles("SELL"))
+    def test_cash_markets_can_generate_long_signals(self):
+        for market in ("spot", "alpha", "us-stocks", "saudi"):
+            signal = analyze(market, "TEST", candles("BUY"), timeframe="1d")
             self.assertIsNotNone(signal, market)
-            self.assertEqual(signal["side"], "SELL")
+            self.assertEqual(signal["side"], "BUY")
 
-    def test_unknown_market_is_rejected(self):
-        self.assertIsNone(analyze("unknown", "TEST", candles("BUY")))
+    def test_all_six_timeframes_are_registered(self):
+        self.assertEqual(TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
+        for frame in TIMEFRAMES:
+            signal = analyze("futures", "TEST", candles("BUY"), timeframe=frame)
+            self.assertIsNotNone(signal, frame)
+            self.assertEqual(signal["timeframe"], frame)
+
+    def test_zero_volume_feed_uses_explicit_price_proxy(self):
+        rows = candles("BUY")
+        for row in rows:
+            row[5] = 0.0
+        signal = analyze("forex", "EURUSD=X", rows, timeframe="15m")
+        self.assertIsNotNone(signal)
+        self.assertEqual(signal["vwap_method"], "equal_weight_proxy")
+
+    def test_unknown_market_and_timeframe_are_rejected(self):
+        self.assertIsNone(analyze("unknown", "TEST", candles("BUY"), timeframe="15m"))
+        self.assertIsNone(analyze("futures", "TEST", candles("BUY"), timeframe="3m"))
 
 
 if __name__ == "__main__":
