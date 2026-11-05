@@ -207,6 +207,8 @@ def styles(): return send_from_directory(".", "styles.css")
 def platform_script(): return send_from_directory(".", "platform.js")
 @app.get("/pro-theme.css")
 def pro_theme(): return send_from_directory(".", "pro-theme.css")
+@app.get("/compat.css")
+def compat_styles(): return send_from_directory(".", "compat.css")
 @app.get("/health")
 def health():
     return jsonify({"ok":True,"service":"SMART TRADING PRO","time":iso(utcnow())})
