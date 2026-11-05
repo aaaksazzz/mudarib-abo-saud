@@ -55,6 +55,22 @@ class MarketEngineTests(unittest.TestCase):
         self.assertTrue(ready.get_json()["checks"]["persistent_secret"])
         self.assertFalse(ready.get_json()["checks"]["market_scheduler"])
 
+
+    def test_scan_candidate_batches_rotate_across_the_eligible_universe(self):
+        universe = [{"symbol":f"COIN{i}","quote_volume":float(1000-i),"change_pct":0.1} for i in range(170)]
+        first, cursor, offset = platform.select_scan_candidates(universe, 0, 80)
+        second, cursor, _ = platform.select_scan_candidates(universe, cursor, 80)
+        third, cursor, _ = platform.select_scan_candidates(universe, cursor, 80)
+        self.assertEqual((len(first),len(second),len(third)), (80,80,10))
+        self.assertEqual(len({x["symbol"] for x in first+second+third}), 170)
+        self.assertEqual(offset, 0)
+        self.assertEqual(cursor, 0)
+
+    def test_build_signal_propagates_provider_failure_for_accurate_scan_health(self):
+        with patch.object(platform, "klines", side_effect=RuntimeError("provider timeout")):
+            with self.assertRaisesRegex(RuntimeError, "provider timeout"):
+                platform.build_signal("spot", {"symbol":"BTCUSDT"}, "15m")
+
     def test_freshness_filter_rejects_late_or_old_entries(self):
         now = platform.utcnow()
         current = int(now.timestamp() * 1000)
