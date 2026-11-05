@@ -53,6 +53,14 @@ class VWAPReversionTests(unittest.TestCase):
             self.assertIsNotNone(signal, frame)
             self.assertEqual(signal["timeframe"], frame)
 
+    def test_zero_volume_feed_uses_explicit_price_proxy(self):
+        rows = candles("BUY")
+        for row in rows:
+            row[5] = 0.0
+        signal = analyze("forex", "EURUSD=X", rows, timeframe="15m")
+        self.assertIsNotNone(signal)
+        self.assertEqual(signal["vwap_method"], "equal_weight_proxy")
+
     def test_unknown_market_and_timeframe_are_rejected(self):
         self.assertIsNone(analyze("unknown", "TEST", candles("BUY"), timeframe="15m"))
         self.assertIsNone(analyze("futures", "TEST", candles("BUY"), timeframe="3m"))
