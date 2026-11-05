@@ -154,8 +154,8 @@ class MarketEngineTests(unittest.TestCase):
         self.assertAlmostEqual(signal["tp3"] - signal["entry"], 3 * atr)
         self.assertIn("VOLUME IMPULSE", signal["reason"])
 
-    def test_only_15m_timeframe_is_scanned_and_returned(self):
-        self.assertEqual(platform.TIMEFRAMES, ("15m",))
+    def test_six_timeframes_are_scanned_and_returned(self):
+        self.assertEqual(platform.TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
         with platform.app.app_context():
             now = platform.utcnow()
             platform.db.session.add_all([
@@ -163,14 +163,16 @@ class MarketEngineTests(unittest.TestCase):
                     tp1=110, tp2=110, tp3=110, score=0, timeframe="1h",
                     reason="legacy", expires_at=now + timedelta(hours=1)),
                 platform.Trade(market="spot", symbol="NEWUSDT", side="BUY", entry=100, stop=95,
-                    tp1=110, tp2=110, tp3=110, score=0, timeframe="15m",
-                    reason="VOLUME IMPULSE spot: current", expires_at=now + timedelta(hours=1)),
+                    tp1=110, tp2=110, tp3=110, score=0, timeframe="4h",
+                    reason="VWAP REVERSION spot: current | bar_ts=123", expires_at=now + timedelta(hours=1)),
                 platform.Setting(key="scan:spot", value=platform.iso(now)),
             ])
             platform.db.session.commit()
         response = self.client.get("/api/markets/spot/signals")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual([x["symbol"] for x in response.get_json()["signals"]], ["NEWUSDT"])
+        signals = response.get_json()["signals"]
+        self.assertEqual([x["symbol"] for x in signals], ["NEWUSDT"])
+        self.assertEqual(signals[0]["timeframe"], "4h")
     def test_public_routes_do_not_disclose_strategy_details(self):
         self.assertEqual(self.client.get("/api/strategies").status_code, 404)
         self.assertEqual(self.client.get("/smart-flow-lab").status_code, 404)
@@ -199,58 +201,65 @@ class MarketEngineTests(unittest.TestCase):
                 ticker_source.assert_called_once()
 
     # Current-strategy fixtures must use the same reason prefix as production signals.
-    def test_scan_prioritizes_fast_movers_and_checks_up_to_60_assets(self):
+    def test_scan_checks_top_20_liquid_assets_on_all_six_timeframes(self):
         items = [{"symbol":f"COIN{i}USDT","price":1.0,"change_pct":float(i),"quote_volume":1_000_000.0+i} for i in range(70)]
         visited=[]
         def capture(market,item,timeframe):
-            visited.append(item["symbol"])
+            visited.append((item["symbol"], timeframe))
             return None
         with platform.app.app_context():
             with patch.object(platform,"market_tickers",return_value=items), patch.object(platform,"build_signal",side_effect=capture):
                 result=platform.run_market_scan("futures",force=True)
-        self.assertEqual(result["scan_universe"],60)
-        self.assertEqual(len(visited),60)
-        self.assertEqual(visited[0],"COIN69USDT")
-        self.assertEqual(visited[-1],"COIN10USDT")
+        self.assertEqual(result["scan_universe"],20)
+        self.assertEqual(len(visited),120)
+        self.assertEqual({symbol for symbol, _ in visited}, {f"COIN{i}USDT" for i in range(50,70)})
+        self.assertEqual({frame for _, frame in visited}, set(platform.TIMEFRAMES))
 
-    def test_market_wide_direction_filters_opposite_trade_signals(self):
+    def test_countertrend_vwap_signal_is_not_vetoed_by_market_breadth(self):
         signal = {
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":98.0,
-            "tp1":102.0,"tp2":104.0,"tp3":106.0,"score":84.5,
-            "change_pct":1.2,"timeframe":"15m",
-            "reason":"VOLUME IMPULSE spot: confirmed."
+            "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,
+            "change_pct":1.2,"timeframe":"15m","signal_candle_time":123,
+            "reason":"VWAP REVERSION futures: confirmed."
         }
+        def per_frame(market, item, timeframe):
+            return {**signal, "timeframe": timeframe}
         with platform.app.app_context():
             with patch.object(platform, "market_tickers", return_value=[
                 {"symbol":"BTCUSDT","price":100.0,"change_pct":-2.0,"quote_volume":5000000}
-            ]), patch.object(platform, "build_signal", return_value=signal):
+            ]), patch.object(platform, "build_signal", side_effect=per_frame):
                 result = platform.run_market_scan("futures", force=True)
                 self.assertEqual(result["market_bias"], "SELL")
-                self.assertEqual(result["signals"], [])
-                self.assertEqual(platform.Trade.query.count(), 0)
+                self.assertEqual(len(result["signals"]), 6)
+                self.assertEqual(platform.Trade.query.count(), 6)
 
-    def test_each_successful_15m_scan_replaces_the_previous_signal_batch(self):
+    def test_same_higher_timeframe_candle_does_not_create_duplicate_trades(self):
         signal = {
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":98.0,
-            "tp1":102.0,"tp2":104.0,"tp3":106.0,"score":84.5,
-            "change_pct":1.2,"timeframe":"15m",
-            "reason":"VOLUME IMPULSE spot: confirmed."
+            "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,
+            "change_pct":1.2,"timeframe":"15m","signal_candle_time":123,
+            "reason":"VWAP REVERSION spot: confirmed."
         }
+        candle_time = [123]
+        def per_frame(market, item, timeframe):
+            return {**signal, "timeframe": timeframe, "signal_candle_time": candle_time[0]}
         with platform.app.app_context():
             with patch.object(platform, "market_tickers", return_value=[
                 {"symbol":"BTCUSDT","price":100.0,"change_pct":1.2,"quote_volume":5000000}
-            ]), patch.object(platform, "build_signal", return_value=signal):
+            ]), patch.object(platform, "build_signal", side_effect=per_frame):
                 first = platform.run_market_scan("spot", force=True)
-                self.assertEqual(len(first["signals"]), 1)
-                trade = platform.Trade.query.filter_by(symbol="BTCUSDT", market="spot").one()
-                self.assertEqual(trade.score, 84.5)
+                self.assertEqual(len(first["signals"]), 6)
+                self.assertEqual(platform.Trade.query.count(), 6)
                 second = platform.run_market_scan("spot", force=True)
-                trades = platform.Trade.query.filter_by(symbol="BTCUSDT", market="spot").order_by(platform.Trade.id.asc()).all()
-                self.assertEqual(len(trades), 2)
-                self.assertEqual(trades[0].status, "superseded")
-                self.assertEqual(trades[1].status, "active")
-                self.assertEqual(len(second["signals"]), 1)
-                self.assertNotEqual(trades[0].id, trades[1].id)
+                self.assertEqual(platform.Trade.query.count(), 6)
+                self.assertEqual(len(second["signals"]), 6)
+                self.assertTrue(all(x.status == "active" for x in platform.Trade.query.all()))
+                candle_time[0] = 124
+                third = platform.run_market_scan("spot", force=True)
+                trades = platform.Trade.query.order_by(platform.Trade.id.asc()).all()
+                self.assertEqual(len(trades), 12)
+                self.assertEqual(sum(x.status == "superseded" for x in trades), 6)
+                self.assertEqual(len(third["signals"]), 6)
 
 
     def test_stale_scan_hides_old_opportunities_instead_of_showing_stuck_coins(self):
@@ -301,9 +310,9 @@ class MarketEngineTests(unittest.TestCase):
             rows = platform.market_tickers("spot")
         self.assertEqual(rows, [])
 
-    def test_strategy_is_15m_only_and_does_not_require_four_hour_direction(self):
-        self.assertEqual(platform.TIMEFRAMES, ("15m",))
-        self.assertNotIn("4h", platform.BINANCE_INTERVALS)
+    def test_strategy_exposes_all_six_supported_timeframes(self):
+        self.assertEqual(platform.TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
+        self.assertEqual(platform.provider_status("spot")["timeframes"], list(platform.TIMEFRAMES))
 
     def test_registration_accepts_unicode_letters_and_digits(self):
         bootstrap = self.client.get("/api/bootstrap").get_json()
