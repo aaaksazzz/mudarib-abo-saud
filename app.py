@@ -482,12 +482,10 @@ def run_market_scan(market,force=False):
     # Update outcomes first, then keep the previous signal batch visible until
     # this scan has successfully analysed enough fresh candles.
     update_trade_outcomes(market,universe)
-    # Scan the most liquid eligible candidates independently on each timeframe.
-    # Six independent intervals multiply data requests, so cap the candidate set.
+    # Scan the most liquid eligible candidates on the single supported 15m interval.
     candidates=sorted(universe,key=lambda x:(float(x.get("quote_volume") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:20]
     for index,item in enumerate(candidates):
         item["include_microstructure"]=(market=="futures" and index<12)
-    jobs=[]
     found=[]
     completed=0
     failed=0
@@ -504,7 +502,7 @@ def run_market_scan(market,force=False):
                 app.logger.exception("multi-timeframe signal analysis failed for %s",market)
     if completed<max(1,math.ceil(len(futures)*0.8)):
         raise RuntimeError(f"Insufficient candle data: {completed}/{len(futures)} analyses completed")
-    found,freshness=filter_fresh_signals(found,universe,now)
+    found,freshness=filter_fresh_signals(found,universe,utcnow())
     found=[signal for signal in found if signal.get("side")==market_bias]
     app.logger.info("signal validation: market=%s accepted=%s stale=%s late=%s direction=%s",
                     market,len(found),freshness["rejected_stale_candle"],freshness["rejected_late_price"],market_bias)
