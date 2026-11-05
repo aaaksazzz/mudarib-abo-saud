@@ -9,24 +9,23 @@ Production-oriented market intelligence terminal.
 - Public read-only market signal pages and trade journal; administrative actions remain protected.
 - Liveness endpoint `GET /health` and readiness endpoint `GET /ready`.
 
-## Verified market integrations
-- **Binance Spot:** USDT spot universe, active symbols only, excludes stablecoin base assets and applies the configured 24-hour quote-volume floor.
+## Market data integrations
+- **Binance Spot / USD-M Futures:** active USDT pairs and perpetual contracts, stablecoin base assets excluded, configured 24-hour quote-volume floor applied.
+- **Binance Alpha:** public Alpha symbol, ticker and candle endpoints.
+- **US stocks / US contracts / Tadawul / Forex & Gold:** Yahoo Finance public screener and 15m candle adapters; US stocks apply the configured $1M traded-value floor and Tadawul does not.
 
 ## Market-specific 15m strategy candidate
 - Market scans route through one `market_strategies.py` engine using the public Donchian 55 + EMA ribbon 8/55 + ADX 14 strategy concept (QuantifyMe community #203, NZD/USD 15m).
 - The implementation is a deterministic rule-based adaptation, not the original RandomForest model: it requires a closed 15m Donchian breakout, aligned EMA trend and ADX confirmation. The last still-forming candle is ignored.
 - Stops use 1.5×ATR; targets are distinct at 1R, 2R and 3R. Spot, Alpha, US stocks and Tadawul are long-only; futures, US contracts and FX/metals allow short signals.
 - This is a research candidate, not a verified profitable strategy. The published source's NZD/USD metrics are not transferable to other markets. Validate each market with fees, spread, slippage and walk-forward tests before relying on it.
-- This is a research candidate, not a verified profitable strategy. Do not advertise a win rate or treat it as validated until walk-forward/out-of-sample tests include fees, spread, slippage and market-specific trading hours.
-- **Binance USDT-M Futures:** active USDT perpetual contracts, excludes stablecoin base assets and applies the configured 24-hour quote-volume floor.
-- Other market pages (Binance Alpha, US stocks, US contracts, Tadawul, Forex and Gold) remain unavailable until their provider adapter, universe, market-hours behavior and data quality are implemented and verified. Setting an API key alone does not make a market live.
 
 ## Signal engine
 - Direction filter: market-wide breadth must agree with the signal side.
 - Entry confirmation: Donchian 55 breakout, EMA 8/55 trend and ADX 14 confirmation on closed 15-minute candles only.
 - Ranking: strength score first, then traded value; maximum three opportunities per market.
 - Risk: 1.5×ATR stop; three distinct targets at 1R/2R/3R.
-- The scheduler runs Spot and Futures scans every 15 minutes. Market-page HTTP requests only read committed results and never launch a heavy scan synchronously.
+- The scheduler scans all configured markets every 15 minutes. Market-page HTTP requests only read committed results and never launch a heavy scan synchronously.
 - Each successful 15-minute scan replaces the live opportunity batch, including repeated symbols with refreshed entry/SL/TP levels; previous rows remain in trade history and expire after 24 hours. If the scanner is more than 20 minutes behind, the API hides the old batch instead of presenting stale coins as current opportunities.
 - Expired records are also cleaned when the journal is read.
 - A score is a ranking heuristic, not an AI probability or a verified win rate. No performance claim is made without a reproducible backtest.
