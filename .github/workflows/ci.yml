@@ -32,10 +32,14 @@ jobs:
           python - <<'PY'
           from app import app
           client = app.test_client()
-          for path in ("/health", "/ready", "/api/bootstrap", "/", "/styles.css", "/pro-theme.css", "/platform.js"):
+          for path in ("/health", "/ready", "/api/bootstrap", "/", "/plans", "/journal", "/blog", "/news", "/login", "/register", "/account", "/admin", "/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex", "/styles.css", "/pro-theme.css", "/compat.css", "/platform.js"):
               response = client.get(path)
               assert response.status_code in (200, 503), (path, response.status_code, response.data[:300])
           assert client.get("/health").get_json()["ok"] is True
           assert client.get("/api/bootstrap").status_code == 200
+          for path in ("/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex"):
+              page = client.get(path)
+              assert page.status_code == 200 and b'src="/platform.js?' in page.data, (path, page.status_code)
+          assert client.get("/compat.css").status_code == 200
           print("route and static asset smoke tests passed")
           PY
