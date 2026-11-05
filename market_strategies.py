@@ -1,4 +1,4 @@
-"""MiND-Shot-inspired VWAP mean-reversion signals for supported markets on 15m candles only.
+"""Inverse VWAP mean-reversion signals for supported markets on 15m candles only.
 
 The source project validates this strategy on ETH 4h only. This adaptation
 generalizes its disclosed rules to our market universe; it is not the original
@@ -97,9 +97,9 @@ def _vwap_z(highs, lows, closes, volumes, period=20):
 
 
 def analyze(market, symbol, rows, timeframe="15m", include_micro=False):
-    """Return a VWAP mean-reversion setup, or None.
+    """Return a fully inverted VWAP mean-reversion setup, or None.
 
-    Original MiND-Shot ETH 4h bracket: |VWAP z-score| >= 2, ADX < 25,
+    Inverse rule: buy upper extremes and sell lower extremes when shorting is supported; ADX < 25,
     stop 1.5 ATR and take-profit 0.75 ATR. TP2/TP3 are optional staged
     extensions for this platform and are not part of the original rule.
     """
@@ -129,9 +129,10 @@ def analyze(market, symbol, rows, timeframe="15m", include_micro=False):
         if atr is None or adx is None or zscore is None or atr <= 0 or adx >= 25.0:
             return None
 
-        # Fade only statistically extended prices while ADX confirms a range.
-        bullish = zscore <= -2.0
-        bearish = zscore >= 2.0 and profile["allow_short"]
+        # Fully invert the original mean-reversion direction:
+        # upper extreme -> BUY; lower extreme -> SELL where shorting is supported.
+        bullish = zscore >= 2.0
+        bearish = zscore <= -2.0 and profile["allow_short"]
         if not bullish and not bearish:
             return None
         side = "BUY" if bullish else "SELL"
@@ -158,12 +159,12 @@ def analyze(market, symbol, rows, timeframe="15m", include_micro=False):
             "score": round(score, 1), "timeframe": timeframe,
             "change_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
             "change_15m_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
-            "reason": f"VWAP REVERSION {market}: {'equal-weight proxy' if vwap_proxy else 'VWAP'}(20) z={zscore:.2f}, ADX(14)={adx:.1f}, ATR(14) stop 1.5x",
+            "reason": f"INVERSE VWAP REVERSION {market}: {'equal-weight proxy' if vwap_proxy else 'VWAP'}(20) z={zscore:.2f}, ADX(14)={adx:.1f}, ATR(14) stop 1.5x",
             "signal_candle_time": int(float(bars[-1][0])),
             "risk_atr": 1.5, "reward_risk": 0.5,
             "adx": round(adx, 2), "vwap_z": round(zscore, 3),
             "vwap_method": "equal_weight_proxy" if vwap_proxy else "volume_weighted",
-            "strategy": f"MIINDSHOT_VWAP_{market.upper()}_{timeframe}",
+            "strategy": f"INVERSE_VWAP_{market.upper()}_{timeframe}",
         }
     except (IndexError, TypeError, ValueError, ZeroDivisionError, OverflowError):
         return None

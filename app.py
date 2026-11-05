@@ -366,7 +366,7 @@ def build_signal(market,item,timeframe):
                       "status":"active","timeframe":timeframe})
         return setup
     except Exception:
-        app.logger.exception("VWAP REVERSION analysis failed for %s %s %s",market,symbol,timeframe)
+        app.logger.exception("INVERSE VWAP REVERSION analysis failed for %s %s %s",market,symbol,timeframe)
         return None
 
 def filter_fresh_signals(signals, universe, now=None):
@@ -464,7 +464,7 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("VWAP REVERSION%"),Trade.timeframe=="15m").order_by(Trade.score.desc()).limit(3).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("INVERSE VWAP REVERSION%"),Trade.timeframe=="15m").order_by(Trade.score.desc()).limit(3).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
                     meta=json.loads(meta_row.value) if meta_row else {}
@@ -510,7 +510,7 @@ def run_market_scan(market,force=False):
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("VWAP REVERSION%"),
+        Trade.reason.like("INVERSE VWAP REVERSION%"),
     ).all()
     existing_by_key={}
     for trade in existing_rows:
@@ -573,7 +573,7 @@ def signals(market):
         # Keep this endpoint read-only. The single scheduler expires trades;
         # writing from page requests races with scheduled scans on SQLite.
         row=db.session.get(Setting,"scan:"+market)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("VWAP REVERSION%"),Trade.timeframe=="15m").order_by(Trade.score.desc()).limit(3).all()
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("INVERSE VWAP REVERSION%"),Trade.timeframe=="15m").order_by(Trade.score.desc()).limit(3).all()
         updated=row.value if row else None
         meta_row=db.session.get(Setting,"scan-meta:"+market)
         try:

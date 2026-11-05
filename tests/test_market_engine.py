@@ -180,7 +180,7 @@ class MarketEngineTests(unittest.TestCase):
                     reason="legacy", expires_at=now + timedelta(hours=1)),
                 platform.Trade(market="spot", symbol="NEWUSDT", side="BUY", entry=100, stop=95,
                     tp1=110, tp2=110, tp3=110, score=0, timeframe="15m",
-                    reason="VWAP REVERSION spot: current | bar_ts=123", expires_at=now + timedelta(hours=1)),
+                    reason="INVERSE VWAP REVERSION spot: current | bar_ts=123", expires_at=now + timedelta(hours=1)),
                 platform.Setting(key="scan:spot", value=platform.iso(now)),
             ])
             platform.db.session.commit()
@@ -236,7 +236,7 @@ class MarketEngineTests(unittest.TestCase):
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":98.0,
             "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,
             "change_pct":1.2,"timeframe":"15m","signal_candle_time":int(platform.utcnow().timestamp()*1000)-900000,
-            "reason":"VWAP REVERSION futures: confirmed."
+            "reason":"INVERSE VWAP REVERSION futures: confirmed."
         }
         def per_frame(market, item, timeframe):
             return {**signal, "timeframe": timeframe}
@@ -254,7 +254,7 @@ class MarketEngineTests(unittest.TestCase):
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":98.0,
             "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,
             "change_pct":1.2,"timeframe":"15m","signal_candle_time":int(platform.utcnow().timestamp()*1000)-900000,
-            "reason":"VWAP REVERSION spot: confirmed."
+            "reason":"INVERSE VWAP REVERSION spot: confirmed."
         }
         candle_time = [int(platform.utcnow().timestamp()*1000)-900000]
         def per_frame(market, item, timeframe):
