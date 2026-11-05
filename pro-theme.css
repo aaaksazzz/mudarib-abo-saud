@@ -162,3 +162,12 @@ body[dir="ltr"] .nav-item.active{box-shadow:inset 2px 0 #55dfb7,0 7px 20px #0002
 .admin-contact{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:#7ddfff!important;border-color:#25617c!important;font-weight:800}
 .admin-contact[hidden]{display:none}
 @media(max-width:700px){.plan-grid{grid-template-columns:1fr}.payment-method{align-items:flex-start}.payment-method code{font-size:10px}}
+
+
+/* Independent timeframe selector */
+.timeframe-tabs{display:flex;gap:8px;overflow-x:auto;max-width:100%;padding:5px 1px 9px;margin:14px 0 5px;scrollbar-width:thin}
+.timeframe-tab{flex:0 0 auto;min-width:68px;border:1px solid #26394d;border-radius:11px;background:linear-gradient(145deg,#111e2d,#0b1420);color:#9fb1c5;padding:9px 13px;font:inherit;font-size:11px;font-weight:600;cursor:pointer;transition:background .18s,border-color .18s,color .18s,transform .18s}
+.timeframe-tab:hover{border-color:#3e8d76;color:#d8f8ed;transform:translateY(-1px)}
+.timeframe-tab.active{border-color:#43d6ad;background:linear-gradient(135deg,#174438,#102b2c);color:#8df0ce;box-shadow:inset 0 0 0 1px #43d6ad25,0 6px 18px #0003}
+.timeframe-tab:focus-visible{outline:2px solid #75a7ff;outline-offset:2px}
+@media(max-width:700px){.timeframe-tabs{gap:6px;margin:10px 0 3px}.timeframe-tab{min-width:62px;padding:8px 10px;font-size:10px}}

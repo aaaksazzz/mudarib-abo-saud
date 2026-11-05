@@ -12,19 +12,19 @@ Production-oriented market intelligence terminal.
 ## Market data integrations
 - **Binance Spot / USD-M Futures:** active USDT pairs and perpetual contracts, stablecoin base assets excluded, configured 24-hour quote-volume floor applied.
 - **Binance Alpha:** public Alpha symbol, ticker and candle endpoints.
-- **US stocks / US contracts / Tadawul / Forex & Gold:** Yahoo Finance public screener and 15m candle adapters; US stocks apply the configured $1M traded-value floor and Tadawul does not.
+- **US stocks / US contracts / Tadawul / Forex & Gold:** Yahoo Finance public screener and candle adapters for 15m, 1h, 4h (aggregated from hourly candles), 1d, 1w and 1M; US stocks apply the configured $1M traded-value floor and Tadawul does not.
 
-## Market-wide MiND-Shot-inspired VWAP strategy
-- All seven market sections use the disclosed VWAP mean-reversion bracket logic from the public MiND-Shot project: rolling VWAP(20), price deviation z-score threshold of ±2, ADX(14) < 25, ATR(14) stop at 1.5×ATR, and the original TP1 at 0.75×ATR.
-- The signal engine evaluates only completed **15-minute** candles. The market pages do not expose timeframe controls.
-- TP2 (1.0×ATR) and TP3 (1.5×ATR) are staged extensions added for this platform's three-target card. They are not part of the source project's single-target bracket.
+## Open-source-inspired multi-strategy ensemble
+- Market pages provide six independent analysis timeframes: **15m, 1h, 4h, 1d, 1w and 1M**. Each timeframe has its own closed-candle analysis, signal batch, entry, stop and targets.
+- The ensemble combines independent EMA-trend, MACD-trend and RSI-trend votes with an NFI-inspired volume-breakout confirmation. A signal requires at least two aligned votes; this is a ranking/filtering design, not a verified win-rate model.
+- Stop distance is **1 ATR (1R)** with staged targets at **1R, 2R and 3R**. Displayed confluence scores are not probabilities of profit.
 - Spot, Alpha, US stocks and Tadawul remain long-only. Futures, US contracts and FX/metals can produce long and short signals.
-- The original repository's disclosed validation is BTC/ETH on 4h only. Applying its rules to other assets is a research adaptation, not proof those combinations are profitable. The source also warns that its results are in-sample and may weaken live.
-- For feeds without exchange volume (notably some Yahoo FX candles), the engine explicitly falls back to an equal-weight typical-price proxy and labels the signal; it does not pretend the proxy is true volume-weighted VWAP. The scanner ranks the 20 most liquid eligible symbols per market and evaluates each on the 15-minute timeframe; this is a practical scan cap, not a claim that every listed symbol is evaluated on every cycle. It runs every 15 minutes.
-- Signal scores are ranking heuristics, not AI win probabilities. Validate each market with out-of-sample tests, spread, fees and slippage before relying on signals.
-
+- Binance Spot, USD-M Futures and Alpha use native candle intervals. Yahoo 4h candles are aggregated from hourly data; Yahoo chart history and interval availability vary by asset and may be delayed or rate-limited.
+- Each timeframe is scanned on its own candle-close cadence: 15m, hourly, 4-hourly, daily, weekly and monthly. The scanner rotates a bounded candidate batch to limit provider load; coverage diagnostics report the universe and batch scanned.
+- The engine uses completed candles only, checks signal freshness against each timeframe and preserves the market-wide direction filter. It does not claim to reproduce the complete NostalgiaForInfinity strategy or embed the Freqtrade bot framework.
+- See [OPEN_SOURCE_NOTICES.md](OPEN_SOURCE_NOTICES.md) for source attribution, licenses and implementation boundaries. No upstream backtest result is represented as a SMART TRADING PRO performance result. Validate with out-of-sample tests, fees, spread and slippage before relying on signals.
 ## Signal engine
-- Each successful market scan replaces the live opportunity batch, keeping up to three opportunities per market. Previous rows remain in trade history and expire after 24 hours.
+- Each successful timeframe scan replaces that timeframe's live batch, keeping up to three opportunities per market per timeframe. Previous rows remain in trade history and expire after 24 hours.
 - Market-page requests only read committed results and never launch heavy scans synchronously.
 - Expired records are also cleaned when the journal is read.
 - No performance claim is made without reproducible per-market backtests.

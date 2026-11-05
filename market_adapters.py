@@ -18,7 +18,7 @@ def _get(url,params=None):
     return payload
 
 def _chart(symbol,interval="15m",period=None):
-    periods={"15m":"5d","30m":"1mo","60m":"3mo","1d":"2y","1wk":"5y","1mo":"10y"}
+    periods={"15m":"5d","30m":"1mo","60m":"6mo","1d":"2y","1wk":"5y","1mo":"10y"}
     period=period or periods.get(interval,"5d")
     payload=None
     errors=[]
@@ -181,12 +181,29 @@ def market_tickers(market):
         return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
     raise ValueError("Unsupported external market "+str(market))
 
-def klines(market,symbol,interval="15m",limit=100):
-    supported=("15m","1h","4h","1d","1w","1M")
-    if interval not in supported:
+def _aggregate_4h(rows):
+    buckets={}
+    for row in rows:
+        stamp=int(row[0])
+        key=(stamp//14_400_000)*14_400_000
+        if key not in buckets:
+            buckets[key]=[key,float(row[1]),float(row[2]),float(row[3]),float(row[4]),float(row[5] or 0)]
+        else:
+            item=buckets[key]
+            item[2]=max(item[2],float(row[2]))
+            item[3]=min(item[3],float(row[3]))
+            item[4]=float(row[4])
+            item[5]+=float(row[5] or 0)
+    return [buckets[key] for key in sorted(buckets)]
+
+
+def klines(market,symbol,interval="15m",limit=250):
+    yahoo_map={"15m":"15m","1h":"60m","1d":"1d","1w":"1wk","1M":"1mo"}
+    alpha_map={"15m":"15m","1h":"1h","4h":"4h",
+               "1d":"1d","1w":"1w","1M":"1M"}
+    if interval not in ("15m","1h","4h","1d","1w","1M"):
         raise ValueError("Unsupported timeframe "+str(interval))
     if market=="alpha":
-        alpha_map={"15m":"INTERVAL_15M","1h":"INTERVAL_1H","4h":"INTERVAL_4H","1d":"INTERVAL_1D","1w":"INTERVAL_1W","1M":"INTERVAL_1M"}
         payload=_get(BINANCE_ALPHA+"/bapi/defi/v1/public/alpha-trade/klines",{"symbol":symbol,"interval":alpha_map[interval],"limit":limit})
         data=payload.get("data") or []
         rows=[]
@@ -194,20 +211,11 @@ def klines(market,symbol,interval="15m",limit=100):
             vals=[item.get(k) for k in ("openTime","open","high","low","close","volume")] if isinstance(item,dict) else item
             if vals and len(vals)>=6:
                 rows.append([int(float(vals[0])),*[float(v or 0) for v in vals[1:6]]])
-        if not rows:
-            raise ValueError("Binance Alpha returned no "+interval+" candles for "+symbol)
         return rows[-limit:]
-    yahoo_interval={"15m":"15m","1h":"60m","4h":"60m","1d":"1d","1w":"1wk","1M":"1mo"}[interval]
-    period={"15m":"5d","1h":"3mo","4h":"3mo","1d":"2y","1w":"5y","1M":"10y"}[interval]
-    rows=_chart(symbol,yahoo_interval,period=period)
+    if market in ("spot","futures"):
+        base=BINANCE_FUTURES if market=="futures" else BINANCE_SPOT
+        path="/fapi/v1/klines" if market=="futures" else "/api/v3/klines"
+        return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit})
     if interval=="4h":
-        buckets={}
-        for row in rows:
-            bucket=(int(row[0])//14400000)*14400000
-            if bucket not in buckets:
-                buckets[bucket]=[bucket,row[1],row[2],row[3],row[4],row[5]]
-            else:
-                bar=buckets[bucket]
-                bar[2]=max(bar[2],row[2]); bar[3]=min(bar[3],row[3]); bar[4]=row[4]; bar[5]+=row[5]
-        rows=[buckets[k] for k in sorted(buckets)]
-    return rows[-limit:]
+        return _aggregate_4h(_chart(symbol,"60m","6mo"))[-limit:]
+    return _chart(symbol,yahoo_map[interval])[-limit:]

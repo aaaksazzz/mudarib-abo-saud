@@ -368,10 +368,9 @@ def build_signal(market,item,timeframe):
     return setup
 
 def filter_fresh_signals(signals, universe, now=None):
-    """Reject stale candles and entries that have materially moved before publication."""
+    """Reject stale candles and entries that have materially moved on each timeframe."""
     now=now or utcnow()
     now_ms=int(now.timestamp()*1000)
-    intervals={"15m":900000,"1h":3600000,"4h":14400000,"1d":86400000,"1w":604800000,"1M":2592000000}
     live_prices={}
     for item in universe:
         try:
@@ -385,13 +384,13 @@ def filter_fresh_signals(signals, universe, now=None):
     rejected_moved=0
     for signal in signals:
         try:
-            interval_ms=intervals.get(signal.get("timeframe"))
             candle_time=int(signal.get("signal_candle_time") or 0)
             entry=float(signal.get("entry") or 0)
             stop=float(signal.get("stop") or 0)
             tp1=float(signal.get("tp1") or 0)
             current=live_prices.get(signal.get("symbol"))
             direction=1.0 if signal.get("side")=="BUY" else -1.0
+            interval_ms=market_strategies.INTERVAL_MS.get(signal.get("timeframe"))
             if not interval_ms or not candle_time or now_ms-(candle_time+interval_ms)>interval_ms*1.5+120000:
                 rejected_old+=1
                 continue
@@ -411,6 +410,7 @@ def filter_fresh_signals(signals, universe, now=None):
         except (TypeError,ValueError,OverflowError):
             rejected_moved+=1
     return accepted,{"rejected_stale_candle":rejected_old,"rejected_late_price":rejected_moved}
+
 
 def expire_stale_trades(market=None):
     now=utcnow()
@@ -463,6 +463,23 @@ def select_scan_candidates(universe,offset=0,batch_size=80):
     return selected,next_offset,start
 
 
+def timeframe_bucket(frame,now):
+    current=aware(now).astimezone(timezone.utc)
+    if frame=="15m":
+        return int(current.timestamp()//900)
+    if frame=="1h":
+        return int(current.timestamp()//3600)
+    if frame=="4h":
+        return int(current.timestamp()//14400)
+    if frame=="1d":
+        return current.date().toordinal()
+    if frame=="1w":
+        return (current.date()-datetime(1970,1,5).date()).days//7
+    if frame=="1M":
+        return current.year*12+current.month
+    raise ValueError("Unsupported timeframe "+str(frame))
+
+
 def run_market_scan(market,force=False):
     if market not in MARKETS:
         raise ValueError("Unknown market "+str(market))
@@ -474,7 +491,7 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("INVERSE VWAP REVERSION%")).order_by(Trade.score.desc()).limit(18).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("OPEN_SOURCE ENSEMBLE%")).order_by(Trade.timeframe.asc(),Trade.score.desc()).limit(18).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
                     meta=json.loads(meta_row.value) if meta_row else {}
@@ -483,6 +500,16 @@ def run_market_scan(market,force=False):
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True,**meta}
         except (ValueError,TypeError):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
+    frames_to_scan=[]
+    frame_buckets={}
+    for frame in TIMEFRAMES:
+        bucket=timeframe_bucket(frame,now)
+        frame_buckets[frame]=bucket
+        frame_row=db.session.get(Setting,f"scan-frame:{market}:{frame}")
+        if frame_row is None or frame_row.value!=str(bucket):
+            frames_to_scan.append(frame)
+    if not frames_to_scan:
+        frames_to_scan=["15m"]
     universe=market_tickers(market)
     if not universe:
         raise RuntimeError("Market provider returned an empty eligible universe")
@@ -507,7 +534,7 @@ def run_market_scan(market,force=False):
     completed=0
     failed=0
     with ThreadPoolExecutor(max_workers=8) as pool:
-        futures=[pool.submit(build_signal,market,item,frame) for item in candidates for frame in TIMEFRAMES]
+        futures=[pool.submit(build_signal,market,item,frame) for item in candidates for frame in frames_to_scan]
         for future in as_completed(futures):
             try:
                 signal=future.result()
@@ -531,7 +558,8 @@ def run_market_scan(market,force=False):
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("INVERSE VWAP REVERSION%"),
+        Trade.reason.like("OPEN_SOURCE ENSEMBLE%"),
+        Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
     for trade in existing_rows:
@@ -540,7 +568,7 @@ def run_market_scan(market,force=False):
             existing_by_key[(trade.symbol,trade.timeframe,marker)]=trade
     retained_ids=set()
     new_signals=[]
-    for frame in TIMEFRAMES:
+    for frame in frames_to_scan:
         frame_signals=sorted(
             (x for x in found if x["timeframe"]==frame),
             key=lambda x:(x["score"],x.get("quote_volume",0)),
@@ -562,7 +590,7 @@ def run_market_scan(market,force=False):
                 candle_row.value=marker
             signal["reason"]=signal["reason"]+" | bar_ts="+marker
             new_signals.append(signal)
-    active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES))
+    active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(frames_to_scan))
     if retained_ids:
         active_query=active_query.filter(~Trade.id.in_(retained_ids))
     active_query.update({"status":"superseded"},synchronize_session=False)
@@ -580,7 +608,7 @@ def run_market_scan(market,force=False):
                             "fresh_matches":fresh_matches,"direction_rejected":direction_rejected,
                             "accepted_signals":len(found),"rejected_stale_candle":freshness["rejected_stale_candle"],
                             "rejected_late_price":freshness["rejected_late_price"],
-                            "market_bias":market_bias,"timeframes":list(TIMEFRAMES)},ensure_ascii=False)
+                            "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":frames_to_scan},ensure_ascii=False)
     if not meta_row:
         db.session.add(Setting(key=meta_key,value=meta_value))
     else:
@@ -589,15 +617,23 @@ def run_market_scan(market,force=False):
         db.session.add(Setting(key=cursor_key,value=str(next_cursor)))
     else:
         cursor_row.value=str(next_cursor)
+    for frame in frames_to_scan:
+        frame_key=f"scan-frame:{market}:{frame}"
+        frame_row=db.session.get(Setting,frame_key)
+        bucket_value=str(frame_buckets[frame])
+        if frame_row is None:
+            db.session.add(Setting(key=frame_key,value=bucket_value))
+        else:
+            frame_row.value=bucket_value
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(Trade.score.desc()).limit(18).all()
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("OPEN_SOURCE ENSEMBLE%")).order_by(Trade.timeframe.asc(),Trade.score.desc()).limit(18).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
             "scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
             "analysis_completed":completed,"analysis_failed":failed,"strategy_matches":strategy_matches,
             "fresh_matches":fresh_matches,"direction_rejected":direction_rejected,"accepted_signals":len(found),
             "rejected_stale_candle":freshness["rejected_stale_candle"],
             "rejected_late_price":freshness["rejected_late_price"],
-            "market_bias":market_bias,"timeframes":list(TIMEFRAMES)}
+            "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":frames_to_scan}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
     if market not in MARKETS:
@@ -612,7 +648,7 @@ def signals(market):
         timeframe=request.args.get("timeframe","15m")
         if timeframe not in TIMEFRAMES:
             return json_error("الفريم غير مدعوم",400)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("INVERSE VWAP REVERSION%"),Trade.timeframe==timeframe).order_by(Trade.score.desc()).limit(3).all()
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("OPEN_SOURCE ENSEMBLE%"),Trade.timeframe==timeframe).order_by(Trade.score.desc()).limit(3).all()
         updated=row.value if row else None
         meta_row=db.session.get(Setting,"scan-meta:"+market)
         try:
@@ -625,9 +661,9 @@ def signals(market):
                 stale=aware(datetime.fromisoformat(updated))<utcnow()-timedelta(minutes=20)
             except (ValueError,TypeError):
                 stale=True
-        # The scan timestamp applies to all stored timeframe batches. Each
-        # selected timeframe is filtered independently above.
-        return jsonify({"ok":True,"market":market,"signals":[trade_json(x) for x in active] if not stale else [],"updated_at":updated,"cached":True,"stale":stale,"scan_ready":bool(updated),**meta})
+        # Never present an old batch as current opportunities when the
+        # 15-minute scanner has stopped or fallen behind.
+        return jsonify({"ok":True,"market":market,"timeframe":timeframe,"timeframes":list(TIMEFRAMES),"signals":[trade_json(x) for x in active] if not stale else [],"updated_at":updated,"cached":True,"stale":stale,"scan_ready":bool(updated),**meta})
     except Exception:
         app.logger.exception("signal retrieval failed")
         return json_error("تعذر قراءة نتائج الفحص المحفوظة حالياً",503)

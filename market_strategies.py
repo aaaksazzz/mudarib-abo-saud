@@ -1,12 +1,22 @@
-"""Inverse VWAP mean-reversion signals for supported markets across selectable timeframes.
+"""Independent, closed-candle strategy ensemble for SMART TRADING PRO.
 
-The source project validates this strategy on ETH 4h only. This adaptation
-generalizes its disclosed rules to our market universe; it is not the original
-project's complete engine or ML model. Entries use closed candles only.
+Methodology references:
+- NFI: volume/momentum confirmation and regime-aware filtering (adapted conceptually).
+- Paul Csapak's MIT-licensed Freqtrade strategy examples: EMA, MACD and RSI trend rules.
+This is a clean-room implementation, not a vendored copy of either trading bot.
+Scores are confluence scores, not probabilities of profit.
 """
 import math
 
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
+INTERVAL_MS = {
+    "15m": 900_000,
+    "1h": 3_600_000,
+    "4h": 14_400_000,
+    "1d": 86_400_000,
+    "1w": 604_800_000,
+    "1M": 2_592_000_000,
+}
 PROFILES = {
     "spot": {"allow_short": False},
     "alpha": {"allow_short": False},
@@ -18,98 +28,94 @@ PROFILES = {
 }
 
 
-def _rma(values, period):
+def _ema(values, period):
     out = [None] * len(values)
-    alpha = 1.0 / period
-    previous = None
+    if not values:
+        return out
+    alpha = 2.0 / (period + 1.0)
+    seed = None
     for i, value in enumerate(values):
-        if value is None:
-            out[i] = previous
-            continue
-        previous = value if previous is None else previous + alpha * (value - previous)
-        out[i] = previous
+        seed = value if seed is None else alpha * value + (1.0 - alpha) * seed
+        out[i] = seed
+    return out
+
+
+def _rsi(values, period=14):
+    out = [None] * len(values)
+    if len(values) <= period:
+        return out
+    gains = [0.0] * len(values)
+    losses = [0.0] * len(values)
+    for i in range(1, len(values)):
+        change = values[i] - values[i - 1]
+        gains[i] = max(change, 0.0)
+        losses[i] = max(-change, 0.0)
+    avg_gain = sum(gains[1:period + 1]) / period
+    avg_loss = sum(losses[1:period + 1]) / period
+    for i in range(period, len(values)):
+        if i > period:
+            avg_gain = ((period - 1) * avg_gain + gains[i]) / period
+            avg_loss = ((period - 1) * avg_loss + losses[i]) / period
+        rs = avg_gain / avg_loss if avg_loss else float("inf")
+        out[i] = 100.0 - 100.0 / (1.0 + rs)
     return out
 
 
 def _atr(highs, lows, closes, period=14):
-    tr = [None] * len(closes)
+    out = [None] * len(closes)
     if not closes:
-        return tr
-    tr[0] = highs[0] - lows[0]
+        return out
+    tr = [highs[0] - lows[0]]
     for i in range(1, len(closes)):
-        tr[i] = max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
-    return _rma(tr, period)
+        tr.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]),
+                      abs(lows[i] - closes[i - 1])))
+    alpha = 1.0 / period
+    value = None
+    for i, item in enumerate(tr):
+        value = item if value is None else value + alpha * (item - value)
+        out[i] = value
+    return out
 
 
-def _adx(highs, lows, closes, period=14):
-    n = len(closes)
-    plus_dm, minus_dm = [None] * n, [None] * n
-    for i in range(1, n):
-        up, down = highs[i] - highs[i - 1], lows[i - 1] - lows[i]
-        plus_dm[i] = up if up > down and up > 0 else 0.0
-        minus_dm[i] = down if down > up and down > 0 else 0.0
-    tr = [None] * n
-    if n:
-        tr[0] = highs[0] - lows[0]
-    for i in range(1, n):
-        tr[i] = max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
-    atr = _rma(tr, period)
-    pdm, mdm = _rma(plus_dm, period), _rma(minus_dm, period)
-    dx = [None] * n
-    for i in range(n):
-        if atr[i] is None or pdm[i] is None or mdm[i] is None or atr[i] <= 0:
-            continue
-        pdi, mdi = 100.0 * pdm[i] / atr[i], 100.0 * mdm[i] / atr[i]
-        denom = pdi + mdi
-        dx[i] = 100.0 * abs(pdi - mdi) / denom if denom else 0.0
-    return _rma(dx, period)
+def _macd(values):
+    fast, slow = _ema(values, 12), _ema(values, 26)
+    line = [a - b for a, b in zip(fast, slow)]
+    signal = _ema(line, 9)
+    return line, signal
 
 
-def _vwap_z(highs, lows, closes, volumes, period=20):
-    result = [None] * len(closes)
-    proxy_used = [False] * len(closes)
-    window = []
-    tpv = vol_sum = 0.0
-    for i in range(len(closes)):
-        volume = max(0.0, volumes[i])
-        typical = (highs[i] + lows[i] + closes[i]) / 3.0
-        window.append((typical * volume, volume, closes[i], typical))
-        tpv += typical * volume
-        vol_sum += volume
-        if len(window) > period:
-            old_tpv, old_vol, _, _ = window.pop(0)
-            tpv -= old_tpv
-            vol_sum -= old_vol
-        if len(window) < period:
-            continue
-        mean = sum(item[2] for item in window) / period
-        variance = sum((item[2] - mean) ** 2 for item in window) / period
-        std = math.sqrt(max(variance, 0.0))
-        # Yahoo FX quotes often have no exchange volume. Use an explicitly
-        # labelled equal-weight typical-price proxy instead of fake VWAP.
-        if vol_sum > 0:
-            anchor = tpv / vol_sum
-        else:
-            anchor = sum(item[3] for item in window) / period
-            proxy_used[i] = True
-        result[i] = (closes[i] - anchor) / (std + 1e-12)
-    return result, proxy_used
+def _volume_breakout_vote(highs, lows, closes, volumes, index):
+    if index < 21:
+        return None
+    sample = volumes[index - 20:index]
+    positive = [v for v in sample if v > 0]
+    current_volume = volumes[index]
+    if not positive or current_volume <= 0:
+        return None
+    average = sum(positive) / len(positive)
+    if average <= 0 or current_volume / average < 1.35:
+        return None
+    candle_range = highs[index] - lows[index]
+    if candle_range <= 0:
+        return None
+    close_location = (closes[index] - lows[index]) / candle_range
+    prior_high = max(highs[index - 20:index])
+    prior_low = min(lows[index - 20:index])
+    if closes[index] > prior_high and close_location >= 0.70:
+        return "BUY"
+    if closes[index] < prior_low and close_location <= 0.30:
+        return "SELL"
+    return None
 
 
 def analyze(market, symbol, rows, timeframe="15m", include_micro=False):
-    """Return a fully inverted VWAP mean-reversion setup on the requested timeframe, or None.
-
-    Inverse rule: buy upper extremes and sell lower extremes when shorting is supported; ADX < 25,
-    stop 1.5 ATR and take-profit 0.75 ATR. TP2/TP3 are optional staged
-    extensions for this platform and are not part of the original rule.
-    """
+    """Analyze one market and one timeframe independently; only closed candles count."""
     profile = PROFILES.get(market)
-    if not profile or timeframe not in TIMEFRAMES or not isinstance(rows, list) or len(rows) < 65:
+    if not profile or timeframe not in TIMEFRAMES or not isinstance(rows, list) or len(rows) < 55:
         return None
     try:
-        # Exclude the provider's potentially-forming candle.
-        bars = rows[:-1]
-        if len(bars) < 64:
+        bars = rows[:-1]  # Exclude the provider's potentially-forming candle.
+        if len(bars) < 50:
             return None
         o = [float(x[1]) for x in bars]
         h = [float(x[2]) for x in bars]
@@ -118,40 +124,65 @@ def analyze(market, symbol, rows, timeframe="15m", include_micro=False):
         v = [float(x[5] or 0) for x in bars]
         if not all(math.isfinite(z) for seq in (o, h, l, c, v) for z in seq):
             return None
-        if any(x <= 0 for x in c[-64:]) or any(x < 0 for x in v[-64:]):
+        if any(x <= 0 for x in c[-55:]) or any(x < 0 for x in v[-55:]):
             return None
         i = len(bars) - 1
         atr_values = _atr(h, l, c, 14)
-        adx_values = _adx(h, l, c, 14)
-        z_values, proxy_flags = _vwap_z(h, l, c, v, 20)
-        atr, adx, zscore = atr_values[i], adx_values[i], z_values[i]
-        vwap_proxy = proxy_flags[i]
-        if atr is None or adx is None or zscore is None or atr <= 0 or adx >= 25.0:
+        atr = atr_values[i]
+        if atr is None or atr <= 0:
             return None
 
-        # Fully invert the original mean-reversion direction:
-        # upper extreme -> BUY; lower extreme -> SELL where shorting is supported.
-        bullish = zscore >= 2.0
-        bearish = zscore <= -2.0 and profile["allow_short"]
-        if not bullish and not bearish:
+        fast = _ema(c, 9)
+        slow = _ema(c, 21)
+        trend_period = min(100, max(30, len(c) // 2))
+        trend = _ema(c, trend_period)
+        macd_line, macd_signal = _macd(c)
+        rsi = _rsi(c, 14)
+        if any(x is None for x in (fast[i], slow[i], trend[i], macd_line[i],
+                                    macd_signal[i], rsi[i])):
             return None
-        side = "BUY" if bullish else "SELL"
-        direction = 1.0 if bullish else -1.0
+
+        votes = {}
+        if fast[i] > slow[i] and c[i] > trend[i]:
+            votes["EMA trend"] = "BUY"
+        elif fast[i] < slow[i] and c[i] < trend[i]:
+            votes["EMA trend"] = "SELL"
+
+        if macd_line[i] > macd_signal[i] and c[i] > trend[i]:
+            votes["MACD trend"] = "BUY"
+        elif macd_line[i] < macd_signal[i] and c[i] < trend[i]:
+            votes["MACD trend"] = "SELL"
+
+        if rsi[i] >= 52 and c[i] > trend[i]:
+            votes["RSI trend"] = "BUY"
+        elif rsi[i] <= 48 and c[i] < trend[i]:
+            votes["RSI trend"] = "SELL"
+
+        volume_vote = _volume_breakout_vote(h, l, c, v, i)
+        if volume_vote:
+            votes["NFI-style volume breakout"] = volume_vote
+
+        buys = sum(1 for side in votes.values() if side == "BUY")
+        sells = sum(1 for side in votes.values() if side == "SELL")
+        if buys >= 2 and buys > sells:
+            side, confirmations = "BUY", buys
+        elif sells >= 2 and sells > buys and profile["allow_short"]:
+            side, confirmations = "SELL", sells
+        else:
+            return None
+
         entry = c[i]
-        risk = 1.5 * atr
+        risk = atr
+        direction = 1.0 if side == "BUY" else -1.0
         stop = entry - direction * risk
-        # TP1 preserves the source strategy's 0.75 ATR bracket.
-        # TP2/TP3 are clearly labelled staged extensions for the site's 3-target UI.
-        tp1 = entry + direction * 0.75 * atr
-        tp2 = entry + direction * 1.00 * atr
-        tp3 = entry + direction * 1.50 * atr
-        if stop <= 0 or min(tp1, tp2, tp3) <= 0:
+        tp1 = entry + direction * risk
+        tp2 = entry + direction * risk * 2.0
+        tp3 = entry + direction * risk * 3.0
+        if min(entry, stop, tp1, tp2, tp3) <= 0:
             return None
 
-        excess = max(0.0, abs(zscore) - 2.0)
-        score = min(95.0, 60.0 + min(excess, 2.0) * 10.0 + max(0.0, 25.0 - adx) * 0.4)
-        interval_ms = {"15m": 900000, "1h": 3600000, "4h": 14400000,
-                       "1d": 86400000, "1w": 604800000, "1M": 2592000000}[timeframe]
+        aligned = [name for name, vote in votes.items() if vote == side]
+        score = min(96.0, 60.0 + confirmations * 8.0 + (5.0 if volume_vote == side else 0.0))
         previous_close = c[i - 1] if i > 0 else entry
         return {
             "side": side, "entry": entry, "stop": stop,
@@ -159,12 +190,12 @@ def analyze(market, symbol, rows, timeframe="15m", include_micro=False):
             "score": round(score, 1), "timeframe": timeframe,
             "change_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
             "change_15m_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
-            "reason": f"INVERSE VWAP REVERSION {market}: {'equal-weight proxy' if vwap_proxy else 'VWAP'}(20) z={zscore:.2f}, ADX(14)={adx:.1f}, ATR(14) stop 1.5x",
+            "reason": "OPEN_SOURCE ENSEMBLE: " + " + ".join(aligned) + "; ATR(14) stop 1R, targets 1R/2R/3R",
             "signal_candle_time": int(float(bars[-1][0])),
-            "risk_atr": 1.5, "reward_risk": 0.5,
-            "adx": round(adx, 2), "vwap_z": round(zscore, 3),
-            "vwap_method": "equal_weight_proxy" if vwap_proxy else "volume_weighted",
-            "strategy": f"INVERSE_VWAP_{market.upper()}_{timeframe}",
+            "risk_atr": 1.0, "reward_risk": 3.0,
+            "atr": atr, "confirmations": confirmations,
+            "strategy_votes": votes,
+            "strategy": "OPEN_SOURCE_ENSEMBLE_" + market.upper() + "_" + timeframe,
         }
     except (IndexError, TypeError, ValueError, ZeroDivisionError, OverflowError):
         return None
