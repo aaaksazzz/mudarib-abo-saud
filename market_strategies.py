@@ -1,11 +1,12 @@
-"""Lightweight market-specific 15m volume-impulse strategies.
+"""Lightweight, Freqtrade-inspired 15m volume-impulse strategy.
 
-Research candidate adapted to the data available in each market. It does not
-claim a win rate; validate with out-of-sample tests before production use.
+Uses closed-candle OHLCV only, explicit risk geometry and market-specific
+volume thresholds. This is a research candidate, not a verified profitable
+strategy; validate out-of-sample with fees, spread and slippage.
 """
 import math
 
-# Separate volume thresholds reflect differences in reported market volume.
+# Separate thresholds reflect differences in reported market volume.
 PROFILES = {
     "spot": {"volume_ratio": 1.70, "long_only": True},
     "alpha": {"volume_ratio": 1.80, "long_only": True},
@@ -80,8 +81,13 @@ def analyze(market, symbol, rows, include_micro=False):
         risk = close - stop if side == "BUY" else stop - close
         if risk <= 0 or risk > atr * 2.5:
             return None
-        target = close + 3.0 * risk if side == "BUY" else close - 3.0 * risk
-        if stop <= 0 or target <= 0:
+
+        # Three genuinely distinct targets at 1R / 2R / 3R.
+        direction = 1.0 if side == "BUY" else -1.0
+        tp1 = close + direction * risk
+        tp2 = close + direction * 2.0 * risk
+        tp3 = close + direction * 3.0 * risk
+        if stop <= 0 or min(tp1, tp2, tp3) <= 0:
             return None
 
         location_score = close_location if side == "BUY" else 1.0 - close_location
@@ -91,16 +97,15 @@ def analyze(market, symbol, rows, include_micro=False):
             "side": side,
             "entry": close,
             "stop": stop,
-            # Restore the original single 3R target; TP labels share that level.
-            "tp1": target,
-            "tp2": target,
-            "tp3": target,
+            "tp1": tp1,
+            "tp2": tp2,
+            "tp3": tp3,
             "score": round(score, 1),
             "timeframe": "15m",
             "change_pct": round((close / c[i - 1] - 1.0) * 100.0, 5),
             "change_15m_pct": round((close / c[i - 1] - 1.0) * 100.0, 5),
             "reason": (f"VOLUME IMPULSE {market}: volume {volume_ratio:.2f}x; "
-                       "15m impulse close in directional half; body-midpoint stop; 3R target"),
+                       "closed 15m impulse; body-midpoint stop; targets 1R/2R/3R"),
             "signal_candle_time": int(float(bars[-1][0])),
             "risk_atr": round(risk / atr, 3),
             "reward_risk": 3.0,
