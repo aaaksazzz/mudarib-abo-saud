@@ -186,8 +186,8 @@ class MarketEngineTests(unittest.TestCase):
         self.assertAlmostEqual(signal["tp3"] - signal["entry"], 3 * atr)
         self.assertIn("VOLUME IMPULSE", signal["reason"])
 
-    def test_only_15m_is_returned(self):
-        self.assertEqual(platform.TIMEFRAMES, ("15m",))
+    def test_each_supported_timeframe_can_be_requested_independently(self):
+        self.assertEqual(platform.TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
         with platform.app.app_context():
             now = platform.utcnow()
             platform.db.session.add_all([
@@ -197,6 +197,9 @@ class MarketEngineTests(unittest.TestCase):
                 platform.Trade(market="spot", symbol="NEWUSDT", side="BUY", entry=100, stop=95,
                     tp1=110, tp2=110, tp3=110, score=0, timeframe="15m",
                     reason="INVERSE VWAP REVERSION spot: current | bar_ts=123", expires_at=now + timedelta(hours=1)),
+                platform.Trade(market="spot", symbol="HOURUSDT", side="BUY", entry=100, stop=95,
+                    tp1=110, tp2=110, tp3=110, score=0, timeframe="1h",
+                    reason="INVERSE VWAP REVERSION spot: hourly | bar_ts=456", expires_at=now + timedelta(hours=1)),
                 platform.Setting(key="scan:spot", value=platform.iso(now)),
             ])
             platform.db.session.commit()
@@ -205,6 +208,10 @@ class MarketEngineTests(unittest.TestCase):
         signals = response.get_json()["signals"]
         self.assertEqual([x["symbol"] for x in signals], ["NEWUSDT"])
         self.assertEqual(signals[0]["timeframe"], "15m")
+        hourly = self.client.get("/api/markets/spot/signals?timeframe=1h")
+        self.assertEqual(hourly.status_code, 200)
+        self.assertEqual([x["symbol"] for x in hourly.get_json()["signals"]], ["HOURUSDT"])
+        self.assertEqual(self.client.get("/api/markets/spot/signals?timeframe=3m").status_code, 400)
     def test_public_routes_do_not_disclose_strategy_details(self):
         self.assertEqual(self.client.get("/api/strategies").status_code, 404)
         self.assertEqual(self.client.get("/smart-flow-lab").status_code, 404)
@@ -343,9 +350,10 @@ class MarketEngineTests(unittest.TestCase):
             rows = platform.market_tickers("spot")
         self.assertEqual(rows, [])
 
-    def test_strategy_exposes_only_15m(self):
-        self.assertEqual(platform.TIMEFRAMES, ("15m",))
-        self.assertEqual(platform.provider_status("spot")["timeframes"], ["15m"])
+    def test_strategy_exposes_six_timeframes(self):
+        expected = ["15m", "1h", "4h", "1d", "1w", "1M"]
+        self.assertEqual(platform.TIMEFRAMES, tuple(expected))
+        self.assertEqual(platform.provider_status("spot")["timeframes"], expected)
 
     def test_registration_accepts_unicode_letters_and_digits(self):
         bootstrap = self.client.get("/api/bootstrap").get_json()
