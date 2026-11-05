@@ -1,5 +1,5 @@
 import math
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 import requests
 from functools import lru_cache
 
@@ -181,23 +181,6 @@ def market_tickers(market):
         return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
     raise ValueError("Unsupported external market "+str(market))
 
-def _aggregate_4h(hourly):
-    buckets={}
-    for row in hourly:
-        try:
-            stamp=int(row[0])
-            bucket=(stamp//14400000)*14400000
-            item=buckets.get(bucket)
-            if item is None:
-                buckets[bucket]=[bucket,float(row[1]),float(row[2]),float(row[3]),float(row[4]),float(row[5] or 0)]
-            else:
-                item[2]=max(item[2],float(row[2]))
-                item[3]=min(item[3],float(row[3]))
-                item[4]=float(row[4])
-                item[5]+=float(row[5] or 0)
-        except (IndexError,TypeError,ValueError):
-            continue
-    return [buckets[key] for key in sorted(buckets)]
 def klines(market,symbol,interval="15m",limit=100):
     supported=("15m",)
     if interval not in supported:
