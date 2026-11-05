@@ -38,8 +38,10 @@ app.config.update(
 )
 db=SQLAlchemy(app)
 
+SQLITE_DATABASE=database_url.startswith("sqlite:")
+
 def configure_sqlite_connection(dbapi_connection, connection_record):
-    if db.engine.dialect.name != "sqlite":
+    if not SQLITE_DATABASE:
         return
     cursor=dbapi_connection.cursor()
     cursor.execute("PRAGMA busy_timeout=15000")
@@ -47,7 +49,8 @@ def configure_sqlite_connection(dbapi_connection, connection_record):
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.close()
 
-event.listen(db.engine,"connect",configure_sqlite_connection)
+with app.app_context():
+    event.listen(db.engine,"connect",configure_sqlite_connection)
 limiter=Limiter(get_remote_address,app=app,default_limits=["300 per hour"],storage_uri=os.environ.get("RATE_LIMIT_STORAGE_URI","memory://"))
 MARKETS=("spot","futures","alpha","us-stocks","us-contracts","saudi","forex")
 SECTION_DEFAULTS={k:True for k in ("overview",)+MARKETS+("strategies","journal","blog","news")}
