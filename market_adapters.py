@@ -199,8 +199,8 @@ def _aggregate_4h(rows):
 
 def klines(market,symbol,interval="15m",limit=250):
     yahoo_map={"15m":"15m","1h":"60m","1d":"1d","1w":"1wk","1M":"1mo"}
-    alpha_map={"15m":"INTERVAL_15M","1h":"INTERVAL_1H","4h":"INTERVAL_4H",
-               "1d":"INTERVAL_1D","1w":"INTERVAL_1W","1M":"INTERVAL_1M"}
+    alpha_map={"15m":"15m","1h":"1h","4h":"4h",
+               "1d":"1d","1w":"1w","1M":"1M"}
     if interval not in ("15m","1h","4h","1d","1w","1M"):
         raise ValueError("Unsupported timeframe "+str(interval))
     if market=="alpha":
