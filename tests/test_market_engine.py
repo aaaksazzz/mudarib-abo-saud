@@ -55,6 +55,22 @@ class MarketEngineTests(unittest.TestCase):
         self.assertTrue(ready.get_json()["checks"]["persistent_secret"])
         self.assertFalse(ready.get_json()["checks"]["market_scheduler"])
 
+
+    def test_scan_candidate_batches_rotate_across_the_eligible_universe(self):
+        universe = [{"symbol":f"COIN{i}","quote_volume":float(1000-i),"change_pct":0.1} for i in range(170)]
+        first, cursor, offset = platform.select_scan_candidates(universe, 0, 80)
+        second, cursor, _ = platform.select_scan_candidates(universe, cursor, 80)
+        third, cursor, _ = platform.select_scan_candidates(universe, cursor, 80)
+        self.assertEqual((len(first),len(second),len(third)), (80,80,10))
+        self.assertEqual(len({x["symbol"] for x in first+second+third}), 170)
+        self.assertEqual(offset, 0)
+        self.assertEqual(cursor, 0)
+
+    def test_build_signal_propagates_provider_failure_for_accurate_scan_health(self):
+        with patch.object(platform, "klines", side_effect=RuntimeError("provider timeout")):
+            with self.assertRaisesRegex(RuntimeError, "provider timeout"):
+                platform.build_signal("spot", {"symbol":"BTCUSDT"}, "15m")
+
     def test_freshness_filter_rejects_late_or_old_entries(self):
         now = platform.utcnow()
         current = int(now.timestamp() * 1000)
@@ -217,7 +233,7 @@ class MarketEngineTests(unittest.TestCase):
                 ticker_source.assert_called_once()
 
     # Current-strategy fixtures must use the same reason prefix as production signals.
-    def test_scan_checks_top_20_liquid_assets_on_15m_only(self):
+    def test_scan_checks_rotating_batch_of_eligible_assets_on_15m_only(self):
         items = [{"symbol":f"COIN{i}USDT","price":1.0,"change_pct":float(i),"quote_volume":1_000_000.0+i} for i in range(70)]
         visited=[]
         def capture(market,item,timeframe):
@@ -226,9 +242,10 @@ class MarketEngineTests(unittest.TestCase):
         with platform.app.app_context():
             with patch.object(platform,"market_tickers",return_value=items), patch.object(platform,"build_signal",side_effect=capture):
                 result=platform.run_market_scan("futures",force=True)
-        self.assertEqual(result["scan_universe"],20)
-        self.assertEqual(len(visited),20)
-        self.assertEqual({symbol for symbol, _ in visited}, {f"COIN{i}USDT" for i in range(50,70)})
+        self.assertEqual(result["scan_universe"],70)
+        self.assertEqual(result["scan_batch_size"],70)
+        self.assertEqual(len(visited),70)
+        self.assertEqual({symbol for symbol, _ in visited}, {f"COIN{i}USDT" for i in range(70)})
         self.assertEqual({frame for _, frame in visited}, {"15m"})
 
     def test_signals_must_match_market_direction(self):

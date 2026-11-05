@@ -356,18 +356,16 @@ def klines(market,symbol,interval,limit=120):
 TIMEFRAMES=market_strategies.TIMEFRAMES
 
 def build_signal(market,item,timeframe):
+    # Let provider/transport failures reach the scan coordinator. Returning None
+    # for both "no setup" and "data unavailable" made failed feeds look healthy.
     symbol=item["symbol"]
-    try:
-        rows=klines(market,symbol,timeframe,250)
-        setup=market_strategies.analyze(market,symbol,rows,timeframe=timeframe,include_micro=item.get("include_microstructure",False))
-        if not setup:
-            return None
-        setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
-                      "status":"active","timeframe":timeframe})
-        return setup
-    except Exception:
-        app.logger.exception("INVERSE VWAP REVERSION analysis failed for %s %s %s",market,symbol,timeframe)
+    rows=klines(market,symbol,timeframe,250)
+    setup=market_strategies.analyze(market,symbol,rows,timeframe=timeframe,include_micro=item.get("include_microstructure",False))
+    if not setup:
         return None
+    setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
+                  "status":"active","timeframe":timeframe})
+    return setup
 
 def filter_fresh_signals(signals, universe, now=None):
     """Reject old 15m candles and entries that have materially moved before publication."""
@@ -453,6 +451,18 @@ def update_trade_outcomes(market,tickers):
         db.session.commit()
     return changed
 
+def select_scan_candidates(universe,offset=0,batch_size=80):
+    """Rotate through the full eligible universe without changing signal rules."""
+    ranked=sorted(universe,key=lambda x:(float(x.get("quote_volume") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)
+    if not ranked:
+        return [],0,0
+    start=int(offset or 0)%len(ranked)
+    size=min(max(1,int(batch_size)),len(ranked)-start)
+    selected=ranked[start:start+size]
+    next_offset=0 if start+size>=len(ranked) else start+size
+    return selected,next_offset,start
+
+
 def run_market_scan(market,force=False):
     if market not in MARKETS:
         raise ValueError("Unknown market "+str(market))
@@ -482,8 +492,15 @@ def run_market_scan(market,force=False):
     # Update outcomes first, then keep the previous signal batch visible until
     # this scan has successfully analysed enough fresh candles.
     update_trade_outcomes(market,universe)
-    # Scan the most liquid eligible candidates on the single supported 15m interval.
-    candidates=sorted(universe,key=lambda x:(float(x.get("quote_volume") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:20]
+    # Scan a larger rotating slice; small markets are fully scanned every cycle.
+    # This prevents the same top-20 symbols from monopolising every 15m scan.
+    cursor_key="scan-cursor:"+market
+    cursor_row=db.session.get(Setting,cursor_key)
+    try:
+        cursor=int(cursor_row.value) if cursor_row else 0
+    except (TypeError,ValueError):
+        cursor=0
+    candidates,next_cursor,scan_offset=select_scan_candidates(universe,cursor,80)
     for index,item in enumerate(candidates):
         item["include_microstructure"]=(market=="futures" and index<12)
     found=[]
@@ -502,10 +519,14 @@ def run_market_scan(market,force=False):
                 app.logger.exception("multi-timeframe signal analysis failed for %s",market)
     if completed<max(1,math.ceil(len(futures)*0.8)):
         raise RuntimeError(f"Insufficient candle data: {completed}/{len(futures)} analyses completed")
+    strategy_matches=len(found)
     found,freshness=filter_fresh_signals(found,universe,utcnow())
+    fresh_matches=len(found)
+    direction_rejected=sum(1 for signal in found if signal.get("side")!=market_bias)
     found=[signal for signal in found if signal.get("side")==market_bias]
-    app.logger.info("signal validation: market=%s accepted=%s stale=%s late=%s direction=%s",
-                    market,len(found),freshness["rejected_stale_candle"],freshness["rejected_late_price"],market_bias)
+    app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s direction_rejected=%s accepted=%s stale=%s late=%s direction=%s",
+                    market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,direction_rejected,len(found),
+                    freshness["rejected_stale_candle"],freshness["rejected_late_price"],market_bias)
     # Keep the same 15m candle from being republished every scheduler cycle.
     existing_rows=Trade.query.filter(
         Trade.market==market,
@@ -554,14 +575,29 @@ def run_market_scan(market,force=False):
         scan_row.value=iso(now)
     meta_key="scan-meta:"+market
     meta_row=db.session.get(Setting,meta_key)
-    meta_value=json.dumps({"scan_universe":len(candidates),"analysis_completed":completed,"analysis_failed":failed,"market_bias":market_bias,"timeframes":list(TIMEFRAMES)},ensure_ascii=False)
+    meta_value=json.dumps({"scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
+                            "analysis_completed":completed,"analysis_failed":failed,"strategy_matches":strategy_matches,
+                            "fresh_matches":fresh_matches,"direction_rejected":direction_rejected,
+                            "accepted_signals":len(found),"rejected_stale_candle":freshness["rejected_stale_candle"],
+                            "rejected_late_price":freshness["rejected_late_price"],
+                            "market_bias":market_bias,"timeframes":list(TIMEFRAMES)},ensure_ascii=False)
     if not meta_row:
         db.session.add(Setting(key=meta_key,value=meta_value))
     else:
         meta_row.value=meta_value
+    if cursor_row is None:
+        db.session.add(Setting(key=cursor_key,value=str(next_cursor)))
+    else:
+        cursor_row.value=str(next_cursor)
     db.session.commit()
     active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.timeframe=="15m").order_by(Trade.score.desc()).limit(3).all()
-    return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(candidates),"analysis_completed":completed,"analysis_failed":failed,"market_bias":market_bias,"timeframes":list(TIMEFRAMES)}
+    return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
+            "scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
+            "analysis_completed":completed,"analysis_failed":failed,"strategy_matches":strategy_matches,
+            "fresh_matches":fresh_matches,"direction_rejected":direction_rejected,"accepted_signals":len(found),
+            "rejected_stale_candle":freshness["rejected_stale_candle"],
+            "rejected_late_price":freshness["rejected_late_price"],
+            "market_bias":market_bias,"timeframes":list(TIMEFRAMES)}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
     if market not in MARKETS:
