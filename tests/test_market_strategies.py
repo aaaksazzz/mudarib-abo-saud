@@ -17,28 +17,33 @@ def candles(side="BUY", volume=220.0):
 
 
 class MarketStrategyTests(unittest.TestCase):
-    def test_buy_uses_body_midpoint_stop_and_single_3r_target(self):
+    def test_buy_uses_body_midpoint_stop_and_staggered_targets(self):
         signal = analyze("futures", "TESTUSDT", candles("BUY"))
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "BUY")
         midpoint = (100.1 + 102.8) / 2.0
         self.assertLess(signal["stop"], midpoint)
         risk = signal["entry"] - signal["stop"]
-        self.assertAlmostEqual(signal["tp1"], signal["entry"] + 3 * risk)
-        self.assertEqual(signal["tp1"], signal["tp2"])
-        self.assertEqual(signal["tp2"], signal["tp3"])
+        self.assertAlmostEqual(signal["tp1"], signal["entry"] + risk)
+        self.assertAlmostEqual(signal["tp2"], signal["entry"] + 2 * risk)
+        self.assertAlmostEqual(signal["tp3"], signal["entry"] + 3 * risk)
+        self.assertLess(signal["tp1"], signal["tp2"])
+        self.assertLess(signal["tp2"], signal["tp3"])
         self.assertAlmostEqual(signal["reward_risk"], 3.0)
         self.assertEqual(signal["timeframe"], "15m")
 
-    def test_sell_uses_body_midpoint_stop_and_3r_target(self):
+    def test_sell_uses_body_midpoint_stop_and_staggered_targets(self):
         signal = analyze("futures", "TESTUSDT", candles("SELL"))
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "SELL")
         midpoint = (99.9 + 97.2) / 2.0
         self.assertGreater(signal["stop"], midpoint)
         risk = signal["stop"] - signal["entry"]
-        self.assertAlmostEqual(signal["tp1"], signal["entry"] - 3 * risk)
-        self.assertEqual(signal["tp1"], signal["tp3"])
+        self.assertAlmostEqual(signal["tp1"], signal["entry"] - risk)
+        self.assertAlmostEqual(signal["tp2"], signal["entry"] - 2 * risk)
+        self.assertAlmostEqual(signal["tp3"], signal["entry"] - 3 * risk)
+        self.assertGreater(signal["tp1"], signal["tp2"])
+        self.assertGreater(signal["tp2"], signal["tp3"])
 
     def test_cash_markets_are_long_only(self):
         for market in ("spot", "alpha", "us-stocks", "saudi"):
