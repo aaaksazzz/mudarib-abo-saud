@@ -66,3 +66,9 @@ img, svg, video, canvas { max-width: 100%; }
   .timeframe-tab.active, .nav-item.active { outline: 2px solid Highlight; }
   button, a, select { forced-color-adjust: auto; }
 }
+
+
+/* Restored multi-timeframe selector */
+.timeframe-control{display:inline-flex;align-items:center;gap:8px;color:var(--muted,#9aa7bb);font-size:13px}
+.timeframe-select{min-width:112px;padding:9px 12px;border:1px solid var(--border,#263247);border-radius:12px;background:var(--panel,#111a2a);color:inherit;font:inherit;outline:none}
+.timeframe-select:focus{border-color:var(--accent,#4b8cff)}
