@@ -456,13 +456,11 @@ def select_scan_candidates(universe,offset=0,batch_size=80):
     ranked=sorted(universe,key=lambda x:(float(x.get("quote_volume") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)
     if not ranked:
         return [],0,0
-    size=min(max(1,int(batch_size)),len(ranked))
     start=int(offset or 0)%len(ranked)
-    if len(ranked)<=size:
-        return ranked,0,start
-    end=start+size
-    selected=ranked[start:end] if end<=len(ranked) else ranked[start:]+ranked[:end-len(ranked)]
-    return selected,end%len(ranked),start
+    size=min(max(1,int(batch_size)),len(ranked)-start)
+    selected=ranked[start:start+size]
+    next_offset=0 if start+size>=len(ranked) else start+size
+    return selected,next_offset,start
 
 
 def run_market_scan(market,force=False):
