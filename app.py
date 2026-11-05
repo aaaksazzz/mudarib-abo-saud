@@ -458,16 +458,44 @@ def run_market_scan(market,force=False):
     if completed<max(1,math.ceil(len(futures)*0.8)):
         raise RuntimeError(f"Insufficient candle data: {completed}/{len(futures)} analyses completed")
     # VWAP mean reversion is intentionally counter-trend; do not veto it using 24h breadth.
-    # A successful multi-timeframe scan replaces the complete previous signal batch.
-    # Keep historical rows, but never let old coins remain in the live feed.
-    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES)).update(
-        {"status":"superseded"},synchronize_session=False
-    )
-    # Ranking is by consensus confidence, then traded value.
+    # Keep an existing trade while its signal candle is still the latest closed
+    # candle for that timeframe. This prevents a weekly/monthly setup from being
+    # re-created every 15 minutes with a fake "fresh" timestamp.
+    existing_rows=Trade.query.filter(
+        Trade.market==market,
+        Trade.created_at>=now-timedelta(days=2),
+        Trade.reason.like("VWAP REVERSION%"),
+    ).all()
+    existing_by_key={}
+    for trade in existing_rows:
+        marker=trade.reason.rsplit("bar_ts=",1)[-1] if "bar_ts=" in trade.reason else ""
+        if marker:
+            existing_by_key[(trade.symbol,trade.timeframe,marker)]=trade
+    retained_ids=set()
+    new_signals=[]
     for frame in TIMEFRAMES:
-        frame_signals=sorted((x for x in found if x["timeframe"]==frame),key=lambda x:(x["score"],x.get("quote_volume",0)),reverse=True)
+        frame_signals=sorted(
+            (x for x in found if x["timeframe"]==frame),
+            key=lambda x:(x["score"],x.get("quote_volume",0)),
+            reverse=True,
+        )
         for signal in frame_signals[:3]:
-            db.session.add(Trade(market=market,symbol=signal["symbol"],side=signal["side"],entry=signal["entry"],stop=signal["stop"],tp1=signal["tp1"],tp2=signal["tp2"],tp3=signal["tp3"],score=signal["score"],change_15m_pct=signal["change_pct"],timeframe=frame,reason=signal["reason"],expires_at=now+timedelta(hours=24)))
+            marker=str(signal["signal_candle_time"])
+            key=(signal["symbol"],frame,marker)
+            previous=existing_by_key.get(key)
+            if previous:
+                if previous.status in OPEN_TRADE_STATUSES and previous.expires_at>now:
+                    retained_ids.add(previous.id)
+                continue
+            signal["reason"]=signal["reason"]+" | bar_ts="+marker
+            new_signals.append(signal)
+    active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES))
+    if retained_ids:
+        active_query=active_query.filter(~Trade.id.in_(retained_ids))
+    active_query.update({"status":"superseded"},synchronize_session=False)
+    for signal in new_signals:
+        frame=signal["timeframe"]
+        db.session.add(Trade(market=market,symbol=signal["symbol"],side=signal["side"],entry=signal["entry"],stop=signal["stop"],tp1=signal["tp1"],tp2=signal["tp2"],tp3=signal["tp3"],score=signal["score"],change_15m_pct=signal["change_pct"],timeframe=frame,reason=signal["reason"],expires_at=now+timedelta(hours=24)))
     if not scan_row:
         scan_row=Setting(key=scan_key,value=iso(now)); db.session.add(scan_row)
     else:
