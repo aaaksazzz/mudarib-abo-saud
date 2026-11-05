@@ -1,4 +1,4 @@
-import os, re, secrets, hashlib, hmac, time, json, math
+import os, re, secrets, hashlib, hmac, time, json, math, shutil
 from datetime import datetime, timedelta, timezone
 from functools import wraps, lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -14,9 +14,22 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 app = Flask(__name__, static_folder=None)
+database_url=os.environ.get("DATABASE_URL")
+if not database_url:
+    data_dir=os.environ.get("DATA_DIR","").strip()
+    if data_dir:
+        os.makedirs(data_dir,exist_ok=True)
+        durable_db=os.path.join(data_dir,"smart_trading_pro.db")
+        legacy_db=os.path.join(app.instance_path,"smart_trading_pro.db")
+        if os.path.isfile(legacy_db) and not os.path.exists(durable_db):
+            shutil.copy2(legacy_db,durable_db)
+            app.logger.info("Migrated existing SQLite database to DATA_DIR volume")
+        database_url="sqlite:///"+durable_db
+    else:
+        database_url="sqlite:///smart_trading_pro.db"
 app.config.update(
     SECRET_KEY=os.environ.get("SECRET_KEY") or secrets.token_hex(32),
-    SQLALCHEMY_DATABASE_URI=os.environ.get("DATABASE_URL", "sqlite:///smart_trading_pro.db").replace("postgres://", "postgresql+psycopg://", 1).replace("postgresql://", "postgresql+psycopg://", 1),
+    SQLALCHEMY_DATABASE_URI=database_url.replace("postgres://", "postgresql+psycopg://", 1).replace("postgresql://", "postgresql+psycopg://", 1),
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
     SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "true").lower() == "true",
