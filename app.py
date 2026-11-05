@@ -464,7 +464,7 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("VWAP REVERSION%")).order_by(Trade.score.desc()).limit(3).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("VWAP REVERSION%"),Trade.timeframe=="15m").order_by(Trade.score.desc()).limit(3).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
                     meta=json.loads(meta_row.value) if meta_row else {}
@@ -541,7 +541,7 @@ def run_market_scan(market,force=False):
                 candle_row.value=marker
             signal["reason"]=signal["reason"]+" | bar_ts="+marker
             new_signals.append(signal)
-    active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES))
+    active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe=="15m")
     if retained_ids:
         active_query=active_query.filter(~Trade.id.in_(retained_ids))
     active_query.update({"status":"superseded"},synchronize_session=False)
@@ -573,7 +573,7 @@ def signals(market):
         # Keep this endpoint read-only. The single scheduler expires trades;
         # writing from page requests races with scheduled scans on SQLite.
         row=db.session.get(Setting,"scan:"+market)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("VWAP REVERSION%")).order_by(Trade.score.desc()).limit(3).all()
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("VWAP REVERSION%"),Trade.timeframe=="15m").order_by(Trade.score.desc()).limit(3).all()
         updated=row.value if row else None
         meta_row=db.session.get(Setting,"scan-meta:"+market)
         try:
