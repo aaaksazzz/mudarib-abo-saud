@@ -1,4 +1,4 @@
-"""MiND-Shot-inspired VWAP mean-reversion signals for all supported markets/timeframes.
+"""MiND-Shot-inspired VWAP mean-reversion signals for supported markets on 15m candles only.
 
 The source project validates this strategy on ETH 4h only. This adaptation
 generalizes its disclosed rules to our market universe; it is not the original
@@ -6,7 +6,7 @@ project's complete engine or ML model. Entries use closed candles only.
 """
 import math
 
-TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
+TIMEFRAMES = ("15m",)
 PROFILES = {
     "spot": {"allow_short": False},
     "alpha": {"allow_short": False},

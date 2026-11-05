@@ -31,27 +31,25 @@ class VWAPReversionTests(unittest.TestCase):
         self.assertEqual(signal["timeframe"], "15m")
 
     def test_short_only_for_markets_that_allow_it(self):
-        signal = analyze("futures", "TEST", candles("SELL"), timeframe="4h")
+        signal = analyze("futures", "TEST", candles("SELL"), timeframe="15m")
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "SELL")
         self.assertGreater(signal["stop"], signal["entry"])
         self.assertGreater(signal["tp1"], signal["tp2"])
         self.assertGreater(signal["tp2"], signal["tp3"])
         for market in ("spot", "alpha", "us-stocks", "saudi"):
-            self.assertIsNone(analyze(market, "TEST", candles("SELL"), timeframe="4h"))
+            self.assertIsNone(analyze(market, "TEST", candles("SELL"), timeframe="15m"))
 
     def test_cash_markets_can_generate_long_signals(self):
         for market in ("spot", "alpha", "us-stocks", "saudi"):
-            signal = analyze(market, "TEST", candles("BUY"), timeframe="1d")
+            signal = analyze(market, "TEST", candles("BUY"), timeframe="15m")
             self.assertIsNotNone(signal, market)
             self.assertEqual(signal["side"], "BUY")
 
-    def test_all_six_timeframes_are_registered(self):
-        self.assertEqual(TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
-        for frame in TIMEFRAMES:
-            signal = analyze("futures", "TEST", candles("BUY"), timeframe=frame)
-            self.assertIsNotNone(signal, frame)
-            self.assertEqual(signal["timeframe"], frame)
+    def test_only_15m_is_registered(self):
+        self.assertEqual(TIMEFRAMES, ("15m",))
+        self.assertIsNotNone(analyze("futures", "TEST", candles("BUY"), timeframe="15m"))
+        self.assertIsNone(analyze("futures", "TEST", candles("BUY"), timeframe="1h"))
 
     def test_zero_volume_feed_uses_explicit_price_proxy(self):
         rows = candles("BUY")
