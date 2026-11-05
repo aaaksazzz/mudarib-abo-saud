@@ -367,6 +367,50 @@ def build_signal(market,item,timeframe):
         app.logger.exception("VWAP REVERSION analysis failed for %s %s %s",market,symbol,timeframe)
         return None
 
+def filter_fresh_signals(signals, universe, now=None):
+    """Drop setups whose closed candle or live-price move makes the entry stale."""
+    now=now or utcnow()
+    now_ms=int(now.timestamp()*1000)
+    interval_ms={"15m":900000,"1h":3600000,"4h":14400000,
+                 "1d":86400000,"1w":604800000,"1M":2592000000}
+    live_prices={item["symbol"]:float(item.get("price") or 0)
+                 for item in universe if item.get("symbol") and float(item.get("price") or 0)>0}
+    fresh=[]
+    rejected_old=0
+    rejected_moved=0
+    for signal in signals:
+        frame=signal.get("timeframe")
+        duration=interval_ms.get(frame)
+        candle_time=int(signal.get("signal_candle_time") or 0)
+        # signal_candle_time is the open time of the last fully closed candle.
+        if not duration or not candle_time or now_ms-(candle_time+duration)>duration*1.5+120000:
+            rejected_old+=1
+            continue
+        current=live_prices.get(signal.get("symbol"))
+        entry=float(signal.get("entry") or 0)
+        stop=float(signal.get("stop") or 0)
+        tp1=float(signal.get("tp1") or 0)
+        direction=1.0 if signal.get("side")=="BUY" else -1.0
+        if current is None or entry<=0 or stop<=0 or tp1<=0:
+            rejected_moved+=1
+            continue
+        target_distance=abs(tp1-entry)
+        favorable_move=(current-entry)*direction
+        risk=abs(entry-stop)
+        # Never publish a setup after TP1 has traded, or when most of the
+        # first-target distance has already elapsed before the user sees it.
+        if target_distance<=0 or favorable_move>=target_distance*0.80:
+            rejected_moved+=1
+            continue
+        # The quoted entry is the closed-candle price. If live price has
+        # drifted materially away from it, the displayed entry is no longer usable.
+        if risk<=0 or abs(current-entry)>max(risk*0.35,target_distance*0.50):
+            rejected_moved+=1
+            continue
+        fresh.append(signal)
+    return fresh,{"rejected_stale_candle":rejected_old,"rejected_late_price":rejected_moved}
+
+
 def expire_stale_trades(market=None):
     now=utcnow()
     query=Trade.query.filter(Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at<=now)
@@ -457,6 +501,9 @@ def run_market_scan(market,force=False):
                 app.logger.exception("multi-timeframe signal analysis failed for %s",market)
     if completed<max(1,math.ceil(len(futures)*0.8)):
         raise RuntimeError(f"Insufficient candle data: {completed}/{len(futures)} analyses completed")
+    found,freshness=filter_fresh_signals(found,universe,now)
+    app.logger.info("signal freshness filter: market=%s accepted=%s stale_candles=%s late_prices=%s",
+                    market,len(found),freshness["rejected_stale_candle"],freshness["rejected_late_price"])
     # VWAP mean reversion is intentionally counter-trend; do not veto it using 24h breadth.
     # Keep an existing trade while its signal candle is still the latest closed
     # candle for that timeframe. This prevents a weekly/monthly setup from being
