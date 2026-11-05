@@ -1,21 +1,28 @@
 # Open-source and public-data notices
 
-## DIVE Into Crypto indicator engine
+## Strategy references and implementation boundaries
 
-The complete upstream `engine/` package from **Dive Into Crypto** is vendored under `dive_engine/engine/` and used by DIVE QUANT PRO.
+SMART TRADING PRO is a manual market-analysis terminal. It does not execute orders or embed a third-party trading bot.
 
-- Upstream: https://github.com/nazmiefearmutcu/dive-into-crypto
-- License: MIT; the upstream license is included as `DIVE_INTO_CRYPTO_LICENSE`.
-- The vendored engine includes the upstream 60-indicator signal service, weighted consensus scorer, confidence/risk assessment and regime-adaptive weighting.
-- This platform intentionally runs the engine on closed 15-minute candles only. The upstream Android/desktop scanner's 12-timeframe universe workflow is not enabled here.
-- Binance Futures microstructure (open interest, top-trader/global long-short, taker buy/sell and funding) is an additive filter/annotation in `quant_engine.py`. Missing optional inputs remain unavailable and are never fabricated.
-- Entry/stop/targets are platform-specific: one structural stop and TP1/TP2/TP3 at 1R/2R/3R.
+- **NostalgiaForInfinity** — https://github.com/iterativv/NostalgiaForInfinity  
+  Upstream license: GPL-3.0. Its public documentation recommends a 5-minute Freqtrade setup and points to commit-level backtest notes. This application does not vendor NFI source files or claim to reproduce the complete NFI strategy. The new signal ensemble uses only general, independently implemented ideas for volume/momentum confirmation and market-regime filtering.
+
+- **Freqtrade Strategies That Work** — https://github.com/paulcpk/freqtrade-strategies-that-work  
+  Upstream license: MIT. Its published EMA, MACD and RSI trend conditions are represented as independent votes in this application's clean-room implementation. The upstream README reports historical 1-hour tests from 2018-03-01 to 2020-03-01; those figures are not results for SMART TRADING PRO and are not a verified live win rate.
+
+- **Freqtrade** — https://github.com/freqtrade/freqtrade  
+  Upstream license: GPL-3.0. Freqtrade is a bot and backtesting framework, not a single trading strategy. It is not installed as an application dependency and no automatic order execution is enabled here.
+
+## Current strategy engine
+
+- Every supported market and timeframe is evaluated independently using closed candles.
+- The ensemble uses EMA trend, MACD trend, RSI trend and an NFI-inspired volume breakout vote. At least two aligned votes are required.
+- Stop distance is 1 ATR; staged targets are 1R, 2R and 3R.
+- The displayed strength is a confluence score, not a probability of profit or verified win rate.
+- No strategy is guaranteed profitable. Fees, spread, slippage, provider delays and market regime can materially change results.
 
 ## Public market-data endpoints
 
-- Binance Spot / USD-M Futures / Alpha public endpoints: no account API key is used.
-- Yahoo Finance public chart and screener endpoints: no API key is used by this application. These endpoints are unofficial and may be delayed, rate-limited, geo-restricted, changed, or withdrawn.
-- The Saudi and US equity symbol lists are currently discovered through Yahoo's public screener. The screener response is bounded, so it does not prove every TASI or US listing is present.
-- The scanner analyzes the 30 highest-24h-traded-value candidates per market in each scheduled cycle; Binance Futures positioning calls are limited to the top 12 candidates to control upstream rate limits.
-
-All confidence values are model scores, not probabilities of profit. Signals are analytical estimates, not guaranteed returns or financial advice.
+- Binance Spot, USD-M Futures and Alpha public market-data endpoints are used without personal account API keys.
+- Yahoo Finance public chart and screener endpoints are used without an API key. These endpoints are unofficial and may be delayed, rate-limited, geo-restricted, changed or withdrawn.
+- The Saudi and US equity symbol lists are discovered through Yahoo's public screener. Screener responses are bounded and do not prove every listing is present.
