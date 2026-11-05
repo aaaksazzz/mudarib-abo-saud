@@ -182,11 +182,11 @@ def market_tickers(market):
     raise ValueError("Unsupported external market "+str(market))
 
 def klines(market,symbol,interval="15m",limit=100):
-    supported=("15m",)
+    supported=("15m","1h","4h","1d","1w","1M")
     if interval not in supported:
         raise ValueError("Unsupported timeframe "+str(interval))
     if market=="alpha":
-        alpha_map={"15m":"INTERVAL_15M"}
+        alpha_map={"15m":"INTERVAL_15M","1h":"INTERVAL_1H","4h":"INTERVAL_4H","1d":"INTERVAL_1D","1w":"INTERVAL_1W","1M":"INTERVAL_1M"}
         payload=_get(BINANCE_ALPHA+"/bapi/defi/v1/public/alpha-trade/klines",{"symbol":symbol,"interval":alpha_map[interval],"limit":limit})
         data=payload.get("data") or []
         rows=[]
@@ -194,5 +194,20 @@ def klines(market,symbol,interval="15m",limit=100):
             vals=[item.get(k) for k in ("openTime","open","high","low","close","volume")] if isinstance(item,dict) else item
             if vals and len(vals)>=6:
                 rows.append([int(float(vals[0])),*[float(v or 0) for v in vals[1:6]]])
+        if not rows:
+            raise ValueError("Binance Alpha returned no "+interval+" candles for "+symbol)
         return rows[-limit:]
-    return _chart(symbol,"15m")[-limit:]
+    yahoo_interval={"15m":"15m","1h":"60m","4h":"60m","1d":"1d","1w":"1wk","1M":"1mo"}[interval]
+    period={"15m":"5d","1h":"3mo","4h":"3mo","1d":"2y","1w":"5y","1M":"10y"}[interval]
+    rows=_chart(symbol,yahoo_interval,period=period)
+    if interval=="4h":
+        buckets={}
+        for row in rows:
+            bucket=(int(row[0])//14400000)*14400000
+            if bucket not in buckets:
+                buckets[bucket]=[bucket,row[1],row[2],row[3],row[4],row[5]]
+            else:
+                bar=buckets[bucket]
+                bar[2]=max(bar[2],row[2]); bar[3]=min(bar[3],row[3]); bar[4]=row[4]; bar[5]+=row[5]
+        rows=[buckets[k] for k in sorted(buckets)]
+    return rows[-limit:]

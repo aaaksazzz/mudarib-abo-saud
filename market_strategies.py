@@ -1,4 +1,4 @@
-"""Inverse VWAP mean-reversion signals for supported markets on 15m candles only.
+"""Inverse VWAP mean-reversion signals for supported markets across selectable timeframes.
 
 The source project validates this strategy on ETH 4h only. This adaptation
 generalizes its disclosed rules to our market universe; it is not the original
@@ -6,7 +6,7 @@ project's complete engine or ML model. Entries use closed candles only.
 """
 import math
 
-TIMEFRAMES = ("15m",)
+TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 PROFILES = {
     "spot": {"allow_short": False},
     "alpha": {"allow_short": False},
@@ -97,7 +97,7 @@ def _vwap_z(highs, lows, closes, volumes, period=20):
 
 
 def analyze(market, symbol, rows, timeframe="15m", include_micro=False):
-    """Return a fully inverted VWAP mean-reversion setup, or None.
+    """Return a fully inverted VWAP mean-reversion setup on the requested timeframe, or None.
 
     Inverse rule: buy upper extremes and sell lower extremes when shorting is supported; ADX < 25,
     stop 1.5 ATR and take-profit 0.75 ATR. TP2/TP3 are optional staged

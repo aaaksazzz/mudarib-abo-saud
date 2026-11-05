@@ -368,10 +368,10 @@ def build_signal(market,item,timeframe):
     return setup
 
 def filter_fresh_signals(signals, universe, now=None):
-    """Reject old 15m candles and entries that have materially moved before publication."""
+    """Reject stale candles and entries that have materially moved before publication."""
     now=now or utcnow()
     now_ms=int(now.timestamp()*1000)
-    interval_ms=900000
+    intervals={"15m":900000,"1h":3600000,"4h":14400000,"1d":86400000,"1w":604800000,"1M":2592000000}
     live_prices={}
     for item in universe:
         try:
@@ -385,13 +385,14 @@ def filter_fresh_signals(signals, universe, now=None):
     rejected_moved=0
     for signal in signals:
         try:
+            interval_ms=intervals.get(signal.get("timeframe"))
             candle_time=int(signal.get("signal_candle_time") or 0)
             entry=float(signal.get("entry") or 0)
             stop=float(signal.get("stop") or 0)
             tp1=float(signal.get("tp1") or 0)
             current=live_prices.get(signal.get("symbol"))
             direction=1.0 if signal.get("side")=="BUY" else -1.0
-            if signal.get("timeframe")!="15m" or not candle_time or now_ms-(candle_time+interval_ms)>interval_ms*1.5+120000:
+            if not interval_ms or not candle_time or now_ms-(candle_time+interval_ms)>interval_ms*1.5+120000:
                 rejected_old+=1
                 continue
             if current is None or min(entry,stop,tp1)<=0:
@@ -410,7 +411,6 @@ def filter_fresh_signals(signals, universe, now=None):
         except (TypeError,ValueError,OverflowError):
             rejected_moved+=1
     return accepted,{"rejected_stale_candle":rejected_old,"rejected_late_price":rejected_moved}
-
 
 def expire_stale_trades(market=None):
     now=utcnow()
@@ -474,7 +474,7 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("INVERSE VWAP REVERSION%"),Trade.timeframe=="15m").order_by(Trade.score.desc()).limit(3).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("INVERSE VWAP REVERSION%")).order_by(Trade.score.desc()).limit(18).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
                     meta=json.loads(meta_row.value) if meta_row else {}
@@ -590,7 +590,7 @@ def run_market_scan(market,force=False):
     else:
         cursor_row.value=str(next_cursor)
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.timeframe=="15m").order_by(Trade.score.desc()).limit(3).all()
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(Trade.score.desc()).limit(18).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
             "scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
             "analysis_completed":completed,"analysis_failed":failed,"strategy_matches":strategy_matches,
@@ -609,7 +609,10 @@ def signals(market):
         # Keep this endpoint read-only. The single scheduler expires trades;
         # writing from page requests races with scheduled scans on SQLite.
         row=db.session.get(Setting,"scan:"+market)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("INVERSE VWAP REVERSION%"),Trade.timeframe=="15m").order_by(Trade.score.desc()).limit(3).all()
+        timeframe=request.args.get("timeframe","15m")
+        if timeframe not in TIMEFRAMES:
+            return json_error("الفريم غير مدعوم",400)
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("INVERSE VWAP REVERSION%"),Trade.timeframe==timeframe).order_by(Trade.score.desc()).limit(3).all()
         updated=row.value if row else None
         meta_row=db.session.get(Setting,"scan-meta:"+market)
         try:
@@ -622,8 +625,8 @@ def signals(market):
                 stale=aware(datetime.fromisoformat(updated))<utcnow()-timedelta(minutes=20)
             except (ValueError,TypeError):
                 stale=True
-        # Never present an old batch as current opportunities when the
-        # 15-minute scanner has stopped or fallen behind.
+        # The scan timestamp applies to all stored timeframe batches. Each
+        # selected timeframe is filtered independently above.
         return jsonify({"ok":True,"market":market,"signals":[trade_json(x) for x in active] if not stale else [],"updated_at":updated,"cached":True,"stale":stale,"scan_ready":bool(updated),**meta})
     except Exception:
         app.logger.exception("signal retrieval failed")

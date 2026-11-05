@@ -48,10 +48,14 @@ class InverseVWAPTests(unittest.TestCase):
             self.assertIsNotNone(signal, market)
             self.assertEqual(signal["side"], "BUY")
 
-    def test_only_15m_is_registered(self):
-        self.assertEqual(TIMEFRAMES, ("15m",))
-        self.assertIsNotNone(analyze("futures", "TEST", candles("HIGH"), timeframe="15m"))
-        self.assertIsNone(analyze("futures", "TEST", candles("HIGH"), timeframe="1h"))
+    def test_all_six_timeframes_are_registered_and_use_same_inverse_rules(self):
+        self.assertEqual(TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
+        for timeframe in TIMEFRAMES:
+            signal = analyze("futures", "TEST", candles("HIGH"), timeframe=timeframe)
+            self.assertIsNotNone(signal, timeframe)
+            self.assertEqual(signal["side"], "BUY")
+            self.assertEqual(signal["timeframe"], timeframe)
+        self.assertIsNone(analyze("futures", "TEST", candles("HIGH"), timeframe="3m"))
 
     def test_zero_volume_feed_uses_explicit_price_proxy(self):
         rows = candles("HIGH")
