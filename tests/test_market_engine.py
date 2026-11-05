@@ -139,6 +139,36 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["trades"][0]["status"], "expired")
 
+    def test_buy_stop_is_below_ema14(self):
+        import market_strategies
+        rows = [[i * 900000, 100, 100.2, 99.8, 100, 1000]
+                for i in range(44)]
+        rows[-1] = [43 * 900000, 100, 100.6, 99.9, 100.5, 3000]
+        rows.append([44 * 900000, 100.5, 100.7, 100.3, 100.5, 1000])
+        setup = market_strategies.analyze("spot", "TESTUSDT", rows)
+        self.assertIsNotNone(setup)
+        self.assertEqual(setup["side"], "BUY")
+        self.assertLess(setup["stop"], setup["ema14"])
+        self.assertAlmostEqual(setup["stop"], setup["ema14"] - max(
+            market_strategies._atr(
+                [float(x[2]) for x in rows[:-1]],
+                [float(x[3]) for x in rows[:-1]],
+                [float(x[4]) for x in rows[:-1]], 14
+            ) * 0.03,
+            setup["entry"] * 0.00005
+        ), places=7)
+
+    def test_sell_stop_is_above_ema14(self):
+        import market_strategies
+        rows = [[i * 900000, 100, 100.2, 99.8, 100, 1000]
+                for i in range(44)]
+        rows[-1] = [43 * 900000, 100, 100.1, 99.4, 99.5, 3000]
+        rows.append([44 * 900000, 99.5, 99.7, 99.3, 99.5, 1000])
+        setup = market_strategies.analyze("futures", "TESTUSDT", rows)
+        self.assertIsNotNone(setup)
+        self.assertEqual(setup["side"], "SELL")
+        self.assertGreater(setup["stop"], setup["ema14"])
+
     def test_market_volume_strategy_preserves_dive_atr_levels(self):
         rows = [[i * 900000, 100, 101, 99, 100, 1000] for i in range(120)]
         setup = {"side":"BUY","entry":100.0,"stop":97.0,"tp1":102.0,"tp2":104.0,
