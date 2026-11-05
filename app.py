@@ -591,7 +591,13 @@ def run_market_scan(market,force=False):
         cursor_row.value=str(next_cursor)
     db.session.commit()
     active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.timeframe=="15m").order_by(Trade.score.desc()).limit(3).all()
-    return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(candidates),"analysis_completed":completed,"analysis_failed":failed,"market_bias":market_bias,"timeframes":list(TIMEFRAMES)}
+    return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
+            "scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
+            "analysis_completed":completed,"analysis_failed":failed,"strategy_matches":strategy_matches,
+            "fresh_matches":fresh_matches,"direction_rejected":direction_rejected,"accepted_signals":len(found),
+            "rejected_stale_candle":freshness["rejected_stale_candle"],
+            "rejected_late_price":freshness["rejected_late_price"],
+            "market_bias":market_bias,"timeframes":list(TIMEFRAMES)}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
     if market not in MARKETS:
