@@ -50,6 +50,10 @@ class MarketStrategyTests(unittest.TestCase):
         self.assertEqual(signal["side"], "BUY")
         self.assertLess(signal["stop"], signal["entry"])
         self.assertGreater(signal["tp1"], signal["entry"])
+        self.assertEqual(signal["stop"], 99.5)
+        self.assertEqual(signal["tp1"], 100.2)
+        self.assertEqual(signal["stop"], signal["volume_candle_low"])
+        self.assertEqual(signal["tp1"], signal["volume_candle_high"])
         self.assertEqual(signal["tp1"], signal["tp2"])
         self.assertEqual(signal["tp2"], signal["tp3"])
         self.assertEqual(signal["timeframe"], "15m / 1m entry")
@@ -63,6 +67,10 @@ class MarketStrategyTests(unittest.TestCase):
         self.assertEqual(signal["side"], "SELL")
         self.assertGreater(signal["stop"], signal["entry"])
         self.assertLess(signal["tp1"], signal["entry"])
+        self.assertEqual(signal["stop"], 100.5)
+        self.assertEqual(signal["tp1"], 99.8)
+        self.assertEqual(signal["stop"], signal["volume_candle_high"])
+        self.assertEqual(signal["tp1"], signal["volume_candle_low"])
 
     def test_cash_markets_are_long_only(self):
         self.assertIsNone(analyze("spot", "TEST", market_rows("SELL"),
