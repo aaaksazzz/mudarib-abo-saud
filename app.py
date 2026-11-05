@@ -351,21 +351,20 @@ def klines(market,symbol,interval,limit=120):
     base=BINANCE_FUTURES if market=="futures" else BINANCE_SPOT
     path="/fapi/v1/klines" if market=="futures" else "/api/v3/klines"
     return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit})
-TIMEFRAMES=("15m",)
-BINANCE_INTERVALS={"15m":"15m"}
+TIMEFRAMES=market_strategies.TIMEFRAMES
 
 def build_signal(market,item,timeframe):
     symbol=item["symbol"]
     try:
-        rows=klines(market,symbol,"15m",120)
-        setup=market_strategies.analyze(market,symbol,rows,include_micro=item.get("include_microstructure",False))
+        rows=klines(market,symbol,timeframe,250)
+        setup=market_strategies.analyze(market,symbol,rows,timeframe=timeframe,include_micro=item.get("include_microstructure",False))
         if not setup:
             return None
         setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
-                      "status":"active","timeframe":"15m"})
+                      "status":"active","timeframe":timeframe})
         return setup
     except Exception:
-        app.logger.exception("DONCHIAN BREAKOUT analysis failed for %s %s",market,symbol)
+        app.logger.exception("VWAP REVERSION analysis failed for %s %s %s",market,symbol,timeframe)
         return None
 
 def expire_stale_trades(market=None):
@@ -418,7 +417,7 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("DONCHIAN BREAKOUT%")).order_by(Trade.score.desc()).limit(3).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("VWAP REVERSION%")).order_by(Trade.score.desc()).limit(18).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
                     meta=json.loads(meta_row.value) if meta_row else {}
@@ -436,17 +435,16 @@ def run_market_scan(market,force=False):
     # Update outcomes first, then keep the previous signal batch visible until
     # this scan has successfully analysed enough fresh candles.
     update_trade_outcomes(market,universe)
-    # Scan liquid candidates on the single 15-minute timeframe.
-    # Prioritize fast movers first; use traded value as the liquidity tie-breaker.
-    # Scan a wider candidate set so the volume-only cutoff does not hide movers.
-    candidates=sorted(universe,key=lambda x:(abs(float(x.get("change_pct") or 0)),float(x.get("quote_volume") or 0)),reverse=True)[:60]
+    # Scan the most liquid eligible candidates independently on each timeframe.
+    # Six independent intervals multiply data requests, so cap the candidate set.
+    candidates=sorted(universe,key=lambda x:(float(x.get("quote_volume") or 0),abs(float(x.get("change_pct") or 0))),reverse=True)[:20]
     for index,item in enumerate(candidates):
         item["include_microstructure"]=(market=="futures" and index<12)
     jobs=[]
     found=[]
     completed=0
     failed=0
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=8) as pool:
         futures=[pool.submit(build_signal,market,item,frame) for item in candidates for frame in TIMEFRAMES]
         for future in as_completed(futures):
             try:
@@ -459,8 +457,7 @@ def run_market_scan(market,force=False):
                 app.logger.exception("15-minute signal analysis failed for %s",market)
     if completed<max(1,math.ceil(len(futures)*0.8)):
         raise RuntimeError(f"Insufficient candle data: {completed}/{len(futures)} analyses completed")
-    # Only publish signals aligned with the market-wide direction.
-    found=[x for x in found if market_bias and x["side"]==market_bias]
+    # VWAP mean reversion is intentionally counter-trend; do not veto it using 24h breadth.
     # A successful 15m scan replaces the complete previous signal batch.
     # Keep historical rows, but never let old coins remain in the live feed.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES)).update(
@@ -483,7 +480,7 @@ def run_market_scan(market,force=False):
     else:
         meta_row.value=meta_value
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(Trade.score.desc()).limit(3).all()
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now).order_by(Trade.score.desc()).limit(18).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),"scan_universe":len(candidates),"analysis_completed":completed,"analysis_failed":failed,"market_bias":market_bias,"timeframes":list(TIMEFRAMES)}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
@@ -496,7 +493,7 @@ def signals(market):
         # Keep this endpoint read-only. The single scheduler expires trades;
         # writing from page requests races with scheduled scans on SQLite.
         row=db.session.get(Setting,"scan:"+market)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("DONCHIAN BREAKOUT%")).order_by(func.abs(Trade.change_15m_pct).desc()).limit(60).all()
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("VWAP REVERSION%")).order_by(Trade.score.desc()).limit(60).all()
         updated=row.value if row else None
         meta_row=db.session.get(Setting,"scan-meta:"+market)
         try:
@@ -682,7 +679,7 @@ def scheduled_market_scan():
         for market in MARKETS:
             try:
                 result=run_market_scan(market,force=True)
-                app.logger.info("scheduled scan completed: market=%s signals=%s universe=%s failures=%s",market,len(result.get("signals",[])),result.get("scan_universe"),result.get("analysis_failed",0))
+                app.logger.info("scheduled scan completed: market=%s signals=%s universe=%s frames=%s failures=%s",market,len(result.get("signals",[])),result.get("scan_universe"),result.get("timeframes"),result.get("analysis_failed",0))
             except Exception:
                 db.session.rollback()
                 app.logger.exception("scheduled scan failed: %s",market)
