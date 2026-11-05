@@ -1,4 +1,5 @@
 import math
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from functools import lru_cache
 
@@ -19,7 +20,16 @@ def _get(url,params=None):
 def _chart(symbol,interval="15m",period=None):
     periods={"15m":"5d","30m":"1mo","60m":"3mo","1d":"2y","1wk":"5y","1mo":"10y"}
     period=period or periods.get(interval,"5d")
-    payload=_get(YAHOO+"/v8/finance/chart/"+symbol,{"interval":interval,"range":period})
+    payload=None
+    errors=[]
+    for host in YAHOO_HOSTS:
+        try:
+            payload=_get(host+"/v8/finance/chart/"+symbol,{"interval":interval,"range":period})
+            break
+        except Exception as exc:
+            errors.append(str(exc))
+    if payload is None:
+        raise ValueError("Yahoo chart failed for "+symbol+": "+"; ".join(errors))
     chart=payload.get("chart") or {}
     if chart.get("error"): raise ValueError(str(chart["error"]))
     results=chart.get("result") or []
@@ -130,29 +140,43 @@ def market_tickers(market):
             raise ValueError("Yahoo returned no eligible Saudi-listed quotes (.SR)")
         return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
     if market in ("us-contracts","forex"):
-        out=[]
-        for symbol in sorted(market_symbols(market)):
+        symbols=sorted(market_symbols(market))
+        def fetch_quote(symbol):
             try:
                 rows=_chart(symbol)
-                if len(rows)<2: continue
-                last=rows[-1]; prev=rows[-97] if len(rows)>=97 else rows[0]
+                if len(rows)<2: return None
+                last=rows[-1]
+                prev=rows[-97] if len(rows)>=97 else rows[0]
                 change=(last[4]/prev[4]-1)*100 if prev[4] else 0
                 volume=sum(max(0,x[5]) for x in rows[-96:])
-                row=_row(symbol,last[4],change,volume)
-                if row: out.append(row)
-            except Exception: continue
+                return _row(symbol,last[4],change,volume)
+            except Exception:
+                return None
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            out=[row for row in pool.map(fetch_quote,symbols) if row]
         if not out: raise ValueError("Yahoo returned no live market quotes")
         return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
     if market=="alpha":
-        out=[]
-        for symbol in sorted(market_symbols("alpha")):
+        symbols=sorted(market_symbols("alpha"))
+        def fetch_alpha_quote(symbol):
             try:
                 payload=_get(BINANCE_ALPHA+"/bapi/defi/v1/public/alpha-trade/ticker",{"symbol":symbol})
                 data=payload.get("data") or {}
                 if isinstance(data,list): data=data[0] if data else {}
-                row=_row(symbol,data.get("lastPrice") or data.get("price"),data.get("priceChangePercent") or data.get("priceChange"),data.get("volume") or data.get("quoteVolume"))
-                if row and row["quote_volume"]>=1000000: out.append(row)
-            except Exception: continue
+                # quoteVolume is already quote-denominated; do not multiply it by price again.
+                if data.get("quoteVolume") not in (None,""):
+                    quote_volume=float(data["quoteVolume"])
+                    price=float(data.get("lastPrice") or data.get("price") or 0)
+                    change=float(data.get("priceChangePercent") or data.get("priceChange") or 0)
+                    if price>0 and all(math.isfinite(x) for x in (price,change,quote_volume)) and quote_volume>=1000000:
+                        return {"symbol":symbol,"price":price,"change_pct":change,"quote_volume":quote_volume}
+                    return None
+                row=_row(symbol,data.get("lastPrice") or data.get("price"),data.get("priceChangePercent") or data.get("priceChange"),data.get("volume"))
+                return row if row and row["quote_volume"]>=1000000 else None
+            except Exception:
+                return None
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            out=[row for row in pool.map(fetch_alpha_quote,symbols) if row]
         if not out: raise ValueError("Binance Alpha returned no eligible live tickers")
         return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
     raise ValueError("Unsupported external market "+str(market))
