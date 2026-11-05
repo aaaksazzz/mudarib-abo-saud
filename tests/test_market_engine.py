@@ -139,20 +139,36 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["trades"][0]["status"], "expired")
 
-    def test_market_volume_strategy_preserves_dive_atr_levels(self):
+    def test_market_volume_strategy_uses_one_three_r_target(self):
         rows = [[i * 900000, 100, 101, 99, 100, 1000] for i in range(120)]
-        setup = {"side":"BUY","entry":100.0,"stop":97.0,"tp1":102.0,"tp2":104.0,
-                 "tp3":106.0,"score":84.0,"timeframe":"15m","change_pct":0.5,
+        setup = {"side":"BUY","entry":100.0,"stop":97.0,"tp1":109.0,"tp2":109.0,
+                 "tp3":109.0,"score":84.0,"timeframe":"15m","change_pct":0.5,
                  "change_15m_pct":0.5,"reason":"VOLUME IMPULSE spot: high volume candle"}
         with patch.object(platform, "klines", return_value=rows), patch.object(platform.market_strategies, "analyze", return_value=setup):
             signal = platform.build_signal("spot", {"symbol":"BTCUSDT","quote_volume":50000000}, "15m")
         self.assertEqual(signal["side"], "BUY")
         risk = signal["entry"] - signal["stop"]
-        atr = risk / 1.5
-        self.assertAlmostEqual(signal["tp1"] - signal["entry"], atr)
-        self.assertAlmostEqual(signal["tp2"] - signal["entry"], 2 * atr)
-        self.assertAlmostEqual(signal["tp3"] - signal["entry"], 3 * atr)
+        self.assertAlmostEqual(signal["tp1"] - signal["entry"], 3 * risk)
+        self.assertEqual(signal["tp1"], signal["tp2"])
+        self.assertEqual(signal["tp2"], signal["tp3"])
         self.assertIn("VOLUME IMPULSE", signal["reason"])
+
+    def test_all_markets_can_emit_bearish_impulse_signals(self):
+        for market in platform.MARKETS:
+            rows = [[i * 900000, 100, 101, 99, 100, 1000] for i in range(120)]
+            # The last row is an in-progress candle; row -2 is the closed impulse.
+            rows[-2] = [118 * 900000, 100.0, 101.0, 97.0, 97.5, 2000.0]
+            setup = platform.market_strategies.analyze(market, "TEST", rows)
+            self.assertIsNotNone(setup, market)
+            self.assertEqual(setup["side"], "SELL", market)
+            self.assertAlmostEqual(setup["reward_risk"], 3.0)
+            self.assertAlmostEqual(setup["tp1"], setup["tp3"])
+
+    def test_zero_volume_feed_never_fabricates_volume_signals(self):
+        rows = [[i * 900000, 100, 101, 99, 100, 0] for i in range(120)]
+        rows[-2] = [118 * 900000, 100.0, 101.0, 97.0, 97.5, 0.0]
+        for market in platform.MARKETS:
+            self.assertIsNone(platform.market_strategies.analyze(market, "TEST", rows), market)
 
     def test_only_15m_timeframe_is_scanned_and_returned(self):
         self.assertEqual(platform.TIMEFRAMES, ("15m",))
