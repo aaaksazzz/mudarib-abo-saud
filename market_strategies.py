@@ -95,9 +95,6 @@ def analyze(market, symbol, rows, include_micro=False, micro_rows=None,
             if baseline <= 0 or hi <= lo:
                 continue
             ratio = volume / baseline
-            if enable_volume and ratio < profile["volume_ratio"]:
-                continue
-
             # Bullish OB: high-volume bearish candle, then strong upward
             # displacement through its high within the next four candles.
             if close < op:
