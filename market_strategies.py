@@ -6,7 +6,7 @@ project's complete engine or ML model. Entries use closed candles only.
 """
 import math
 
-TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
+TIMEFRAMES = ("15m",)
 PROFILES = {
     "spot": {"allow_short": False},
     "alpha": {"allow_short": False},
