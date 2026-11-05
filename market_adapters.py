@@ -1,6 +1,7 @@
 import math
 import requests
 from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
 
 YAHOO_HOSTS=("https://query1.finance.yahoo.com","https://query2.finance.yahoo.com")
 YAHOO=YAHOO_HOSTS[0]
@@ -130,29 +131,40 @@ def market_tickers(market):
             raise ValueError("Yahoo returned no eligible Saudi-listed quotes (.SR)")
         return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
     if market in ("us-contracts","forex"):
-        out=[]
-        for symbol in sorted(market_symbols(market)):
+        symbols=sorted(market_symbols(market))
+        def quote(symbol):
             try:
                 rows=_chart(symbol)
-                if len(rows)<2: continue
+                if len(rows)<2: return None
                 last=rows[-1]; prev=rows[-97] if len(rows)>=97 else rows[0]
                 change=(last[4]/prev[4]-1)*100 if prev[4] else 0
                 volume=sum(max(0,x[5]) for x in rows[-96:])
-                row=_row(symbol,last[4],change,volume)
-                if row: out.append(row)
-            except Exception: continue
+                return _row(symbol,last[4],change,volume)
+            except Exception:
+                return None
+        # Bounded concurrency avoids serial Yahoo requests starving the scan cycle.
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            out=[row for row in pool.map(quote,symbols) if row]
         if not out: raise ValueError("Yahoo returned no live market quotes")
         return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
     if market=="alpha":
-        out=[]
-        for symbol in sorted(market_symbols("alpha")):
+        symbols=sorted(market_symbols("alpha"))
+        def quote(symbol):
             try:
                 payload=_get(BINANCE_ALPHA+"/bapi/defi/v1/public/alpha-trade/ticker",{"symbol":symbol})
                 data=payload.get("data") or {}
                 if isinstance(data,list): data=data[0] if data else {}
-                row=_row(symbol,data.get("lastPrice") or data.get("price"),data.get("priceChangePercent") or data.get("priceChange"),data.get("volume") or data.get("quoteVolume"))
-                if row and row["quote_volume"]>=1000000: out.append(row)
-            except Exception: continue
+                price=data.get("lastPrice") or data.get("price")
+                quote_volume=data.get("quoteVolume")
+                # quoteVolume is already notional turnover; normalize it to
+                # base volume before _row computes quote-currency turnover.
+                volume=(float(quote_volume)/float(price)) if quote_volume and price else data.get("volume",0)
+                row=_row(symbol,price,data.get("priceChangePercent") or data.get("priceChange"),volume)
+                return row if row and row["quote_volume"]>=1000000 else None
+            except Exception:
+                return None
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            out=[row for row in pool.map(quote,symbols) if row]
         if not out: raise ValueError("Binance Alpha returned no eligible live tickers")
         return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
     raise ValueError("Unsupported external market "+str(market))
