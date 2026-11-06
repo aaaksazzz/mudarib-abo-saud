@@ -1,201 +1,189 @@
-"""Independent, closed-candle strategy ensemble for SMART TRADING PRO.
+"""SMART FLOW QUANT: price-structure and volume-flow signal engine.
 
-Methodology references:
-- NFI: volume/momentum confirmation and regime-aware filtering (adapted conceptually).
-- Paul Csapak's MIT-licensed Freqtrade strategy examples: EMA, MACD and RSI trend rules.
-This is a clean-room implementation, not a vendored copy of either trading bot.
-Scores are confluence scores, not probabilities of profit.
+No EMA, MACD, RSI, or legacy VWAP strategy votes are used. Candle-derived
+pressure is available across supported markets. Real public trade-flow and
+order-book context is optional and currently supported only for Binance
+Spot and USD-M Futures. Scores rank confluence; they are not win probabilities.
 """
 import math
 
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
-INTERVAL_MS = {
-    "15m": 900_000,
-    "1h": 3_600_000,
-    "4h": 14_400_000,
-    "1d": 86_400_000,
-    "1w": 604_800_000,
-    "1M": 2_592_000_000,
-}
+INTERVAL_MS = {"15m": 900_000, "1h": 3_600_000, "4h": 14_400_000,
+               "1d": 86_400_000, "1w": 604_800_000, "1M": 2_592_000_000}
 PROFILES = {
-    "spot": {"allow_short": False},
-    "alpha": {"allow_short": False},
-    "futures": {"allow_short": True},
-    "us-stocks": {"allow_short": False},
-    "us-contracts": {"allow_short": True},
-    "saudi": {"allow_short": False},
+    "spot": {"allow_short": False}, "alpha": {"allow_short": False},
+    "futures": {"allow_short": True}, "us-stocks": {"allow_short": False},
+    "us-contracts": {"allow_short": True}, "saudi": {"allow_short": False},
     "forex": {"allow_short": True},
 }
 
 
-def _ema(values, period):
-    out = [None] * len(values)
-    if not values:
-        return out
-    alpha = 2.0 / (period + 1.0)
-    seed = None
-    for i, value in enumerate(values):
-        seed = value if seed is None else alpha * value + (1.0 - alpha) * seed
-        out[i] = seed
-    return out
-
-
-def _rsi(values, period=14):
-    out = [None] * len(values)
-    if len(values) <= period:
-        return out
-    gains = [0.0] * len(values)
-    losses = [0.0] * len(values)
-    for i in range(1, len(values)):
-        change = values[i] - values[i - 1]
-        gains[i] = max(change, 0.0)
-        losses[i] = max(-change, 0.0)
-    avg_gain = sum(gains[1:period + 1]) / period
-    avg_loss = sum(losses[1:period + 1]) / period
-    for i in range(period, len(values)):
-        if i > period:
-            avg_gain = ((period - 1) * avg_gain + gains[i]) / period
-            avg_loss = ((period - 1) * avg_loss + losses[i]) / period
-        rs = avg_gain / avg_loss if avg_loss else float("inf")
-        out[i] = 100.0 - 100.0 / (1.0 + rs)
-    return out
-
-
 def _atr(highs, lows, closes, period=14):
-    out = [None] * len(closes)
-    if not closes:
-        return out
-    tr = [highs[0] - lows[0]]
-    for i in range(1, len(closes)):
-        tr.append(max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]),
-                      abs(lows[i] - closes[i - 1])))
-    alpha = 1.0 / period
-    value = None
-    for i, item in enumerate(tr):
-        value = item if value is None else value + alpha * (item - value)
-        out[i] = value
-    return out
+    true_ranges = []
+    for i in range(len(closes)):
+        previous = closes[i - 1] if i else closes[i]
+        true_ranges.append(max(highs[i] - lows[i], abs(highs[i] - previous),
+                               abs(lows[i] - previous)))
+    sample = true_ranges[-period:]
+    return sum(sample) / len(sample) if sample else 0.0
 
 
-def _macd(values):
-    fast, slow = _ema(values, 12), _ema(values, 26)
-    line = [a - b for a, b in zip(fast, slow)]
-    signal = _ema(line, 9)
-    return line, signal
+def _finite_rows(rows):
+    bars = rows[:-1]  # Ignore a provider's potentially-forming candle.
+    parsed = []
+    for row in bars:
+        if not isinstance(row, (list, tuple)) or len(row) < 6:
+            return None
+        try:
+            stamp = int(float(row[0]))
+            op, hi, lo, close, volume = (float(row[i] or 0) for i in range(1, 6))
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if not all(math.isfinite(x) for x in (op, hi, lo, close, volume)):
+            return None
+        if min(op, hi, lo, close) <= 0 or volume < 0 or hi < max(op, close) or lo > min(op, close) or hi < lo:
+            return None
+        parsed.append((stamp, op, hi, lo, close, volume))
+    return parsed
 
 
-def _volume_breakout_vote(highs, lows, closes, volumes, index):
-    if index < 21:
+def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_micro=False):
+    """Analyze one market/timeframe using closed candles and optional live flow."""
+    profile = PROFILES.get(market)
+    if not profile or timeframe not in TIMEFRAMES or not isinstance(rows, list):
         return None
-    sample = volumes[index - 20:index]
-    positive = [v for v in sample if v > 0]
-    current_volume = volumes[index]
-    if not positive or current_volume <= 0:
+    bars = _finite_rows(rows)
+    if not bars or len(bars) < 55:
         return None
-    average = sum(positive) / len(positive)
-    if average <= 0 or current_volume / average < 1.35:
+
+    opens = [x[1] for x in bars]
+    highs = [x[2] for x in bars]
+    lows = [x[3] for x in bars]
+    closes = [x[4] for x in bars]
+    volumes = [x[5] for x in bars]
+    i = len(bars) - 1
+    entry = closes[i]
+    atr = _atr(highs, lows, closes)
+    if not math.isfinite(atr) or atr <= 0 or atr / entry > 0.12:
         return None
-    candle_range = highs[index] - lows[index]
+
+    candle_range = highs[i] - lows[i]
     if candle_range <= 0:
         return None
-    close_location = (closes[index] - lows[index]) / candle_range
-    prior_high = max(highs[index - 20:index])
-    prior_low = min(lows[index - 20:index])
-    if closes[index] > prior_high and close_location >= 0.70:
-        return "BUY"
-    if closes[index] < prior_low and close_location <= 0.30:
-        return "SELL"
-    return None
+    close_location = (closes[i] - lows[i]) / candle_range
+    body_ratio = abs(closes[i] - opens[i]) / candle_range
+    prior_high = max(highs[i - 20:i])
+    prior_low = min(lows[i - 20:i])
+    prior_ranges = [highs[j] - lows[j] for j in range(i - 20, i)]
+    avg_range = sum(prior_ranges) / len(prior_ranges) if prior_ranges else 0.0
+    range_expansion = candle_range / avg_range if avg_range > 0 else 0.0
 
+    up_votes, down_votes = {}, {}
+    momentum_3 = closes[i] - closes[i - 3]
+    momentum_8 = closes[i] - closes[i - 8]
+    if momentum_3 > atr * 0.15 and momentum_8 > atr * 0.35:
+        up_votes["price momentum"] = 1
+    elif momentum_3 < -atr * 0.15 and momentum_8 < -atr * 0.35:
+        down_votes["price momentum"] = 1
 
-def analyze(market, symbol, rows, timeframe="15m", include_micro=False):
-    """Analyze one market and one timeframe independently; only closed candles count."""
-    profile = PROFILES.get(market)
-    if not profile or timeframe not in TIMEFRAMES or not isinstance(rows, list) or len(rows) < 55:
+    if closes[i] > prior_high and close_location >= 0.65:
+        up_votes["structure breakout"] = 1
+    elif closes[i] < prior_low and close_location <= 0.35:
+        down_votes["structure breakout"] = 1
+
+    if closes[i] > opens[i] and close_location >= 0.72 and body_ratio >= 0.45:
+        up_votes["buyer pressure"] = 1
+    elif closes[i] < opens[i] and close_location <= 0.28 and body_ratio >= 0.45:
+        down_votes["seller pressure"] = 1
+
+    prior_volumes = [v for v in volumes[i - 20:i] if v > 0]
+    volume_ratio = None
+    if len(prior_volumes) >= 10 and volumes[i] > 0:
+        baseline = sum(prior_volumes) / len(prior_volumes)
+        if baseline > 0:
+            volume_ratio = volumes[i] / baseline
+            if volume_ratio >= 1.35 and close_location >= 0.65 and closes[i] > opens[i]:
+                up_votes["volume expansion"] = 1
+            elif volume_ratio >= 1.35 and close_location <= 0.35 and closes[i] < opens[i]:
+                down_votes["volume expansion"] = 1
+
+    if range_expansion >= 1.25 and body_ratio >= 0.55:
+        if closes[i] > opens[i] and close_location >= 0.68:
+            up_votes["range expansion"] = 1
+        elif closes[i] < opens[i] and close_location <= 0.32:
+            down_votes["range expansion"] = 1
+
+    flow_delta = book_imbalance = None
+    if isinstance(microstructure, dict):
+        try:
+            value = float(microstructure.get("taker_delta_ratio"))
+            if math.isfinite(value):
+                flow_delta = max(-1.0, min(1.0, value))
+        except (TypeError, ValueError):
+            pass
+        try:
+            value = float(microstructure.get("book_imbalance"))
+            if math.isfinite(value):
+                book_imbalance = max(-1.0, min(1.0, value))
+        except (TypeError, ValueError):
+            pass
+        if flow_delta is not None:
+            if flow_delta >= 0.12:
+                up_votes["aggressive trade flow"] = 1
+            elif flow_delta <= -0.12:
+                down_votes["aggressive trade flow"] = 1
+        if book_imbalance is not None:
+            if book_imbalance >= 0.15:
+                up_votes["order-book imbalance"] = 1
+            elif book_imbalance <= -0.15:
+                down_votes["order-book imbalance"] = 1
+
+    buys, sells = len(up_votes), len(down_votes)
+    if buys >= 3 and buys - sells >= 2:
+        side, aligned, opposing = "BUY", up_votes, sells
+    elif sells >= 3 and sells - buys >= 2 and profile["allow_short"]:
+        side, aligned, opposing = "SELL", down_votes, buys
+    else:
         return None
-    try:
-        bars = rows[:-1]  # Exclude the provider's potentially-forming candle.
-        if len(bars) < 50:
-            return None
-        o = [float(x[1]) for x in bars]
-        h = [float(x[2]) for x in bars]
-        l = [float(x[3]) for x in bars]
-        c = [float(x[4]) for x in bars]
-        v = [float(x[5] or 0) for x in bars]
-        if not all(math.isfinite(z) for seq in (o, h, l, c, v) for z in seq):
-            return None
-        if any(x <= 0 for x in c[-55:]) or any(x < 0 for x in v[-55:]):
-            return None
-        i = len(bars) - 1
-        atr_values = _atr(h, l, c, 14)
-        atr = atr_values[i]
-        if atr is None or atr <= 0:
-            return None
 
-        fast = _ema(c, 9)
-        slow = _ema(c, 21)
-        trend_period = min(100, max(30, len(c) // 2))
-        trend = _ema(c, trend_period)
-        macd_line, macd_signal = _macd(c)
-        rsi = _rsi(c, 14)
-        if any(x is None for x in (fast[i], slow[i], trend[i], macd_line[i],
-                                    macd_signal[i], rsi[i])):
-            return None
-
-        votes = {}
-        if fast[i] > slow[i] and c[i] > trend[i]:
-            votes["EMA trend"] = "BUY"
-        elif fast[i] < slow[i] and c[i] < trend[i]:
-            votes["EMA trend"] = "SELL"
-
-        if macd_line[i] > macd_signal[i] and c[i] > trend[i]:
-            votes["MACD trend"] = "BUY"
-        elif macd_line[i] < macd_signal[i] and c[i] < trend[i]:
-            votes["MACD trend"] = "SELL"
-
-        if rsi[i] >= 52 and c[i] > trend[i]:
-            votes["RSI trend"] = "BUY"
-        elif rsi[i] <= 48 and c[i] < trend[i]:
-            votes["RSI trend"] = "SELL"
-
-        volume_vote = _volume_breakout_vote(h, l, c, v, i)
-        if volume_vote:
-            votes["NFI-style volume breakout"] = volume_vote
-
-        buys = sum(1 for side in votes.values() if side == "BUY")
-        sells = sum(1 for side in votes.values() if side == "SELL")
-        if buys >= 2 and buys > sells:
-            side, confirmations = "BUY", buys
-        elif sells >= 2 and sells > buys and profile["allow_short"]:
-            side, confirmations = "SELL", sells
-        else:
-            return None
-
-        entry = c[i]
-        risk = atr
-        direction = 1.0 if side == "BUY" else -1.0
+    direction = 1.0 if side == "BUY" else -1.0
+    swing_low, swing_high = min(lows[i - 2:i + 1]), max(highs[i - 2:i + 1])
+    buffer = max(atr * 0.12, entry * 0.0002)
+    stop = swing_low - buffer if side == "BUY" else swing_high + buffer
+    risk = abs(entry - stop)
+    if risk < atr * 0.55:
+        risk = atr * 0.75
         stop = entry - direction * risk
-        tp1 = entry + direction * risk
-        tp2 = entry + direction * risk * 2.0
-        tp3 = entry + direction * risk * 3.0
-        if min(entry, stop, tp1, tp2, tp3) <= 0:
-            return None
-
-        aligned = [name for name, vote in votes.items() if vote == side]
-        score = min(96.0, 60.0 + confirmations * 8.0 + (5.0 if volume_vote == side else 0.0))
-        previous_close = c[i - 1] if i > 0 else entry
-        return {
-            "side": side, "entry": entry, "stop": stop,
-            "tp1": tp1, "tp2": tp2, "tp3": tp3,
-            "score": round(score, 1), "timeframe": timeframe,
-            "change_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
-            "change_15m_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
-            "reason": "OPEN_SOURCE ENSEMBLE: " + " + ".join(aligned) + "; ATR(14) stop 1R, targets 1R/2R/3R",
-            "signal_candle_time": int(float(bars[-1][0])),
-            "risk_atr": 1.0, "reward_risk": 3.0,
-            "atr": atr, "confirmations": confirmations,
-            "strategy_votes": votes,
-            "strategy": "OPEN_SOURCE_ENSEMBLE_" + market.upper() + "_" + timeframe,
-        }
-    except (IndexError, TypeError, ValueError, ZeroDivisionError, OverflowError):
+    if risk > atr * 2.5 or risk <= 0:
         return None
+
+    tp1, tp2, tp3 = (entry + direction * risk * multiple for multiple in (1.0, 2.0, 3.0))
+    if min(entry, stop, tp1, tp2, tp3) <= 0:
+        return None
+
+    score = min(96.0, 52.0 + len(aligned) * 7.0 - opposing * 3.0)
+    if flow_delta is not None and ((side == "BUY" and flow_delta >= 0.12) or (side == "SELL" and flow_delta <= -0.12)):
+        score = min(96.0, score + 3.0)
+    if book_imbalance is not None and ((side == "BUY" and book_imbalance >= 0.15) or (side == "SELL" and book_imbalance <= -0.15)):
+        score = min(96.0, score + 2.0)
+
+    previous_close = closes[i - 1]
+    labels = list(aligned.keys())
+    if flow_delta is not None:
+        labels.append("Binance trade-flow data")
+    if book_imbalance is not None:
+        labels.append("Binance order-book data")
+    return {
+        "side": side, "entry": entry, "stop": stop, "tp1": tp1, "tp2": tp2, "tp3": tp3,
+        "score": round(score, 1), "timeframe": timeframe,
+        "change_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
+        "change_15m_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
+        "reason": "SMART FLOW QUANT: " + " + ".join(labels) + "; structural stop; targets 1R/2R/3R",
+        "signal_candle_time": bars[-1][0], "risk_atr": round(risk / atr, 3), "reward_risk": 3.0,
+        "atr": atr, "confirmations": len(aligned),
+        "volume_ratio": round(volume_ratio, 3) if volume_ratio is not None else None,
+        "range_expansion": round(range_expansion, 3),
+        "taker_delta_ratio": flow_delta, "book_imbalance": book_imbalance,
+        "strategy_votes": {"BUY": list(up_votes), "SELL": list(down_votes)},
+        "strategy": "SMART_FLOW_QUANT_" + market.upper() + "_" + timeframe,
+    }
