@@ -175,13 +175,66 @@ def _tradingview_saudi_quotes():
     raise ValueError("TASI universe unavailable from Yahoo and TradingView ("+"; ".join(errors)+")")
 
 
+
+@lru_cache(maxsize=2)
+def _saudi_exchange_symbols_cached(cache_bucket):
+    """Fetch the official Saudi Exchange listed-equity universe (TASI)."""
+    url="https://www.saudiexchange.sa/tadawul.eportal.theme.helper/ThemeSearchUtilityServlet"
+    response=requests.get(url,headers={**HEADERS,"Referer":"https://www.saudiexchange.sa/"},timeout=(5,15))
+    response.raise_for_status()
+    payload=response.json()
+    if isinstance(payload,dict):
+        payload=payload.get("data") or payload.get("results") or payload.get("companies") or []
+    if not isinstance(payload,list):
+        raise ValueError("Saudi Exchange returned an unexpected securities payload")
+    symbols=set()
+    for item in payload:
+        if not isinstance(item,dict):
+            continue
+        code=str(item.get("symbol") or item.get("companySymbol") or item.get("company_symbol") or "").strip()
+        market_type=str(item.get("market_type") or item.get("marketType") or "M").upper()
+        if market_type in ("M","MAIN","TASI") and code.isdigit() and len(code)==4:
+            symbols.add(code+".SR")
+    if not symbols:
+        raise ValueError("Saudi Exchange returned no TASI equity symbols")
+    return tuple(sorted(symbols))
+
+
+def _saudi_exchange_symbols():
+    return set(_saudi_exchange_symbols_cached(int(time.time()//1800)))
+
+
+def _saudi_chart_quotes(symbols):
+    def fetch(symbol):
+        try:
+            candles=_chart(symbol,"1d","5d")
+            if not candles:
+                return None
+            last=candles[-1]
+            previous=candles[-2] if len(candles)>1 else last
+            change=(last[4]/previous[4]-1)*100 if previous[4] else 0.0
+            return _row(symbol,last[4],change,last[5],"SAR")
+        except Exception:
+            return None
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        return [row for row in pool.map(fetch,sorted(symbols)) if row]
+
+
 def market_symbols(market):
     if market=="alpha": return _alpha_symbols()
     if market=="us-stocks": return {x["symbol"] for x in _screener_quotes("US") if x.get("symbol")}
     if market=="saudi":
-        source=_screener_quotes("SA")
-        symbols={normalized for x in source if (normalized:=_saudi_symbol(x.get("symbol")))}
-        return symbols or {row["symbol"] for row in _tradingview_saudi_quotes()}
+        try:
+            source=_screener_quotes("SA")
+            symbols={normalized for x in source if (normalized:=_saudi_symbol(x.get("symbol")))}
+            if symbols:
+                return symbols
+        except Exception:
+            pass
+        try:
+            return _saudi_exchange_symbols()
+        except Exception:
+            return {row["symbol"] for row in _tradingview_saudi_quotes()}
     if market=="us-contracts": return set(US_CONTRACTS)
     if market=="forex": return set(FX_SYMBOLS)
     return set()
@@ -189,12 +242,31 @@ def market_symbols(market):
 def market_tickers(market):
     if market in ("us-stocks","saudi"):
         out=[]
-        source_rows=_screener_quotes("US") if market=="us-stocks" else _screener_quotes("SA")
+        if market=="us-stocks":
+            source_rows=_screener_quotes("US")
+        else:
+            try:
+                source_rows=_screener_quotes("SA")
+            except Exception:
+                source_rows=[]
         if market=="saudi" and not source_rows:
             # Yahoo's SA predefined screeners can return an empty universe with HTTP 200.
             # Use TradingView's public Saudi exchange scanner to recover the full stock list.
-            fallback=_tradingview_saudi_quotes()
-            return sorted(fallback,key=lambda x:x["quote_volume"],reverse=True)
+            errors=[]
+            try:
+                symbols=_saudi_exchange_symbols()
+                out=_saudi_chart_quotes(symbols)
+                if out:
+                    return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
+                errors.append("Saudi Exchange symbols were found but Yahoo returned no chart quotes")
+            except Exception as exc:
+                errors.append("Saudi Exchange: "+str(exc))
+            try:
+                fallback=_tradingview_saudi_quotes()
+                return sorted(fallback,key=lambda x:x["quote_volume"],reverse=True)
+            except Exception as exc:
+                errors.append("TradingView: "+str(exc))
+            raise ValueError("Saudi market data unavailable ("+"; ".join(errors)+")")
         for x in source_rows:
             symbol=_saudi_symbol(x.get("symbol")) if market=="saudi" else x.get("symbol")
             if not symbol: continue
@@ -224,6 +296,11 @@ def market_tickers(market):
             if not out:
                 # A populated Yahoo symbol list can still have unusable chart quotes.
                 # Retry the complete TASI universe through TradingView before failing.
+                try:
+                    out=_saudi_chart_quotes(_saudi_exchange_symbols())
+                except Exception:
+                    out=[]
+            if not out:
                 out=_tradingview_saudi_quotes()
             if not out:
                 raise ValueError(
