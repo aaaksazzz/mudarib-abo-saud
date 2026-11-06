@@ -144,7 +144,6 @@ def _saudi_symbol(value):
 
 def _tradingview_saudi_quotes():
     """Public TASI equity universe fallback when Yahoo's SA screener is empty."""
-    url="https://scanner.tradingview.com/sa/scan"
     body={
         "columns":["name","close","change","volume"],
         "filter":[{"left":"type","operation":"equal","right":"stock"}],
@@ -222,6 +221,10 @@ def market_tickers(market):
             if candidates:
                 with ThreadPoolExecutor(max_workers=8) as pool:
                     out=[row for row in pool.map(fetch_saudi_chart_quote,candidates) if row]
+            if not out:
+                # A populated Yahoo symbol list can still have unusable chart quotes.
+                # Retry the complete TASI universe through TradingView before failing.
+                out=_tradingview_saudi_quotes()
             if not out:
                 raise ValueError(
                     "Yahoo Saudi screener returned no priced TASI symbols; "
