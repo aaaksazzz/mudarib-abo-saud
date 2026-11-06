@@ -75,8 +75,8 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
     else:
         if entry >= opens[i] or close_location > 0.45 or body_ratio < 0.25:
             return None
-    swing_low = min(lows[max(0, i - 2):i + 1])
-    swing_high = max(highs[max(0, i - 2):i + 1])
+    swing_low = min(lows[max(0, i - 1):i + 1])
+    swing_high = max(highs[max(0, i - 1):i + 1])
     buffer = max(atr * 0.15, entry * 0.0002)
     stop = swing_low - buffer if side == "BUY" else swing_high + buffer
     risk = abs(entry - stop)
