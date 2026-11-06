@@ -7,7 +7,7 @@ def candles(direction="UP", volume=True, count=220):
     rows = []
     price = 100.0
     for i in range(count):
-        step = 0.08 if direction == "UP" else -0.08
+        step = 0.06 if direction == "UP" else -0.06
         previous = price
         price += step
         op = previous
