@@ -355,6 +355,32 @@ def klines(market,symbol,interval,limit=120):
     return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit})
 TIMEFRAMES=market_strategies.TIMEFRAMES
 
+STRATEGY_FINGERPRINT="SMART_FLOW_QUANT_SFQ_2026_11_06"
+@app.get("/api/strategy-status")
+def strategy_status():
+    current_active=Trade.query.filter(
+        Trade.status.in_(OPEN_TRADE_STATUSES),
+        Trade.expires_at>utcnow(),
+        Trade.reason.like("SMART FLOW QUANT:%")
+    ).count()
+    legacy_active=Trade.query.filter(
+        Trade.status.in_(OPEN_TRADE_STATUSES),
+        Trade.expires_at>utcnow(),
+        Trade.reason.not_like("SMART FLOW QUANT:%")
+    ).count()
+    return jsonify({
+        "ok":True,
+        "engine":"SMART FLOW QUANT",
+        "fingerprint":STRATEGY_FINGERPRINT,
+        "markets":list(MARKETS),
+        "timeframes":list(TIMEFRAMES),
+        "current_active":current_active,
+        "legacy_active":legacy_active,
+        "legacy_removed":legacy_active==0,
+        "manual_only":True,
+    })
+
+
 def build_signal(market,item,timeframe):
     # Let provider/transport failures reach the scan coordinator. Returning None
     # for both "no setup" and "data unavailable" made failed feeds look healthy.
