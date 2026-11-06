@@ -171,3 +171,21 @@ body[dir="ltr"] .nav-item.active{box-shadow:inset 2px 0 #55dfb7,0 7px 20px #0002
 .timeframe-tab.active{border-color:#43d6ad;background:linear-gradient(135deg,#174438,#102b2c);color:#8df0ce;box-shadow:inset 0 0 0 1px #43d6ad25,0 6px 18px #0003}
 .timeframe-tab:focus-visible{outline:2px solid #75a7ff;outline-offset:2px}
 @media(max-width:700px){.timeframe-tabs{gap:6px;margin:10px 0 3px}.timeframe-tab{min-width:62px;padding:8px 10px;font-size:10px}}
+
+/* Professional trade journal */
+.journal-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.journal-stat{min-width:0;padding:17px;border:1px solid #263a50;border-radius:14px;background:linear-gradient(145deg,#142538,#0b1521)}
+.journal-stat small,.journal-stat span{display:block;color:#91a4b9;font-size:10px}
+.journal-stat strong{display:block;margin:8px 0;font-size:25px;color:#f3f7fb;font-variant-numeric:tabular-nums}
+.journal-section{margin-top:15px}
+.journal-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.journal-trade{min-width:0;padding:13px 14px;border:1px solid #25394d;border-radius:12px;background:#0d1926}
+.journal-trade-top,.journal-trade-top>div,.journal-trade-meta,.journal-trade-bottom{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.journal-trade-top>div{justify-content:flex-start;min-width:0}
+.journal-trade-top b{overflow-wrap:anywhere;color:#edf4fb;font-size:13px}
+.journal-trade-top strong{font-size:14px;font-variant-numeric:tabular-nums}
+.journal-trade-meta{justify-content:flex-start;flex-wrap:wrap;margin:10px 0;color:#8296ab;font-size:9px}
+.journal-trade-bottom{padding-top:9px;border-top:1px solid #ffffff12;color:#b7c6d5;font-size:10px}
+@media(max-width:700px){.journal-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.journal-stat{padding:13px}.journal-stat strong{font-size:22px}.journal-list{grid-template-columns:1fr}}
+body.light .journal-stat,body.light .journal-trade{background:#fff;border-color:#dbe4ed}
+body.light .journal-stat strong,body.light .journal-trade-top b{color:#17283a}

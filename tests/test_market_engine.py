@@ -198,6 +198,29 @@ class MarketEngineTests(unittest.TestCase):
             trade = platform.db.session.get(platform.Trade, trade_id)
             self.assertEqual(trade.status, "active")
 
+    def test_journal_summary_excludes_replaced_and_expired_and_deduplicates_live(self):
+        with platform.app.app_context():
+            now=platform.utcnow()
+            rows=[
+                platform.Trade(market="spot",symbol="BTCUSDT",side="BUY",entry=100,stop=97,tp1=103,tp2=106,tp3=109,score=80,timeframe="15m",reason="SMART FLOW QUANT: current",status="active",expires_at=now+timedelta(hours=2)),
+                platform.Trade(market="spot",symbol="BTCUSDT",side="BUY",entry=101,stop=98,tp1=104,tp2=107,tp3=110,score=81,timeframe="15m",reason="SMART FLOW QUANT: duplicate",status="active",expires_at=now+timedelta(hours=2)),
+                platform.Trade(market="futures",symbol="ETHUSDT",side="SELL",entry=100,stop=103,tp1=97,tp2=94,tp3=91,score=82,timeframe="15m",reason="SMART FLOW QUANT: win",status="tp3_hit",expires_at=now),
+                platform.Trade(market="futures",symbol="SOLUSDT",side="SELL",entry=100,stop=103,tp1=97,tp2=94,tp3=91,score=82,timeframe="15m",reason="SMART FLOW QUANT: loss",status="stopped",expires_at=now),
+                platform.Trade(market="spot",symbol="OLDUSDT",side="BUY",entry=100,stop=97,tp1=103,tp2=106,tp3=109,score=70,timeframe="15m",reason="legacy",status="superseded",expires_at=now),
+            ]
+            platform.db.session.add_all(rows)
+            platform.db.session.commit()
+        data=self.client.get("/api/trades").get_json()
+        self.assertEqual(data["summary"]["active"],1)
+        self.assertEqual(data["summary"]["buy_active"],1)
+        self.assertEqual(data["summary"]["sell_active"],0)
+        self.assertEqual(data["summary"]["wins"],1)
+        self.assertEqual(data["summary"]["losses"],1)
+        self.assertEqual(data["summary"]["win_rate"],50.0)
+        self.assertEqual(len(data["active_trades"]),1)
+        self.assertEqual(len(data["completed_trades"]),2)
+        self.assertNotIn("superseded",[x["status"] for x in data["trades"]])
+
     def test_journal_expires_old_active_trades(self):
         with platform.app.app_context():
             trade = platform.Trade(
@@ -210,7 +233,10 @@ class MarketEngineTests(unittest.TestCase):
             platform.db.session.commit()
         response = self.client.get("/api/trades")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["trades"][0]["status"], "expired")
+        self.assertEqual(response.get_json()["trades"], [])
+        with platform.app.app_context():
+            expired = platform.Trade.query.filter_by(symbol="BTCUSDT").one()
+            self.assertEqual(expired.status, "expired")
 
     def test_market_volume_strategy_preserves_dive_atr_levels(self):
         rows = [[i * 900000, 100, 101, 99, 100, 1000] for i in range(120)]
