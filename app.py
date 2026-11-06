@@ -362,7 +362,7 @@ TIMEFRAMES=market_strategies.TIMEFRAMES
 
 STRATEGY_FINGERPRINT="SMART_FLOW_QUANT_SFQ_2026_11_06"
 @app.get("/api/strategy-status")
-def strategy_status():
+def strategy_status_summary():
     current_active=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.expires_at>utcnow(),
