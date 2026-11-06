@@ -53,6 +53,13 @@ class MA200OnlyTests(unittest.TestCase):
         self.assertEqual(signal["reward_risk"], 3.0)
         self.assertEqual(signal["strategy"], "MA200_ONLY_FUTURES_15m")
 
+    def test_structural_stop_uses_recent_two_closed_candles(self):
+        rows = candles("UP")
+        signal = analyze("futures", "TEST", rows, timeframe="15m")
+        self.assertIsNotNone(signal)
+        self.assertLess(signal["stop"], signal["entry"])
+        self.assertLessEqual(signal["risk_atr"], 2.5)
+
     def test_zero_volume_feed_does_not_fabricate_volume(self):
         signal = analyze("forex", "EURUSD=X", candles("UP", volume=False), timeframe="15m")
         self.assertIsNotNone(signal)
