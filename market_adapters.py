@@ -3,6 +3,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 import requests
 from functools import lru_cache
+from saudi_market_data import official_saudi_quotes
 
 YAHOO_HOSTS=("https://query1.finance.yahoo.com","https://query2.finance.yahoo.com")
 YAHOO=YAHOO_HOSTS[0]
@@ -244,6 +245,19 @@ def market_symbols(market):
 def market_tickers(market):
     if market in ("us-stocks","saudi"):
         out=[]
+        if market=="saudi":
+            # Prefer the Saudi Exchange's own public market-watch feed. Keep
+            # Yahoo and TradingView as fallbacks so a vendor outage is isolated.
+            try:
+                try:
+                    allowed_symbols=_saudi_exchange_symbols()
+                except Exception:
+                    allowed_symbols=None
+                official_rows=official_saudi_quotes(allowed_symbols)
+                if official_rows:
+                    return sorted(official_rows,key=lambda x:x["quote_volume"],reverse=True)
+            except Exception as exc:
+                print("Saudi Exchange live feed unavailable; trying fallbacks: "+str(exc))
         if market=="us-stocks":
             source_rows=_screener_quotes("US")
         else:
