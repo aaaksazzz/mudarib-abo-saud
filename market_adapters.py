@@ -160,7 +160,31 @@ def market_tickers(market):
             row=_row(symbol,x.get("regularMarketPrice"),x.get("regularMarketChangePercent"),x.get("regularMarketVolume"),x.get("currency"))
             if row and (market=="saudi" or row["quote_volume"]>=1000000): out.append(row)
         if market=="saudi" and not out:
-            raise ValueError("Yahoo returned no eligible Saudi-listed quotes (.SR)")
+            # Yahoo's Saudi screener can return symbols without regularMarketPrice
+            # (or transiently omit quote fields). Recover prices from the public
+            # chart endpoint rather than aborting the entire scheduled TASI scan.
+            candidates=sorted({_saudi_symbol(x.get("symbol")) for x in source_rows
+                               if _saudi_symbol(x.get("symbol"))})
+            def fetch_saudi_chart_quote(symbol):
+                try:
+                    candles=_chart(symbol,"1d","5d")
+                    if not candles:
+                        return None
+                    last=candles[-1]
+                    previous=candles[-2] if len(candles)>1 else last
+                    change=(last[4]/previous[4]-1)*100 if previous[4] else 0.0
+                    volume=max(0.0,float(last[5] or 0))
+                    return _row(symbol,last[4],change,volume,"SAR")
+                except Exception:
+                    return None
+            if candidates:
+                with ThreadPoolExecutor(max_workers=8) as pool:
+                    out=[row for row in pool.map(fetch_saudi_chart_quote,candidates) if row]
+            if not out:
+                raise ValueError(
+                    "Yahoo Saudi screener returned no priced TASI symbols; "
+                    f"chart fallback checked {len(candidates)} symbols"
+                )
         return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
     if market in ("us-contracts","forex"):
         symbols=sorted(market_symbols(market))
