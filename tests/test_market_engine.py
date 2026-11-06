@@ -233,7 +233,10 @@ class MarketEngineTests(unittest.TestCase):
             platform.db.session.commit()
         response = self.client.get("/api/trades")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["trades"][0]["status"], "expired")
+        self.assertEqual(response.get_json()["trades"], [])
+        with platform.app.app_context():
+            expired = platform.Trade.query.filter_by(symbol="BTCUSDT").one()
+            self.assertEqual(expired.status, "expired")
 
     def test_market_volume_strategy_preserves_dive_atr_levels(self):
         rows = [[i * 900000, 100, 101, 99, 100, 1000] for i in range(120)]
