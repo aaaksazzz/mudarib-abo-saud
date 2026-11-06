@@ -32,13 +32,16 @@ def _key(value):
 def _number(value):
     if value is None:
         return None
-    if isinstance(value, (int, float)):
-        result = float(value)
-    else:
-        raw = str(value).strip().replace(",", "").replace("%", "")
-        if not raw or raw in ("-", "--", "N/A", "null"):
-            return None
-        result = float(raw)
+    try:
+        if isinstance(value, (int, float)):
+            result = float(value)
+        else:
+            raw = str(value).strip().replace(",", "").replace("%", "")
+            if not raw or raw.lower() in ("-", "--", "n/a", "null"):
+                return None
+            result = float(raw)
+    except (TypeError, ValueError, OverflowError):
+        return None
     return result if math.isfinite(result) else None
 
 
