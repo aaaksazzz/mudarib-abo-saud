@@ -717,9 +717,10 @@ def trade_history():
         Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.expires_at>utcnow()
     ).order_by(Trade.created_at.desc()).all()
-    completed_rows=Trade.query.filter(
+    completed_all=Trade.query.filter(
         Trade.status.in_(("tp3_hit","stopped","stopped_after_tp1","stopped_after_tp2"))
-    ).order_by(Trade.created_at.desc()).limit(200).all()
+    ).order_by(Trade.created_at.desc()).all()
+    completed_rows=completed_all[:200]
 
     # Keep only the newest live setup for each instrument/timeframe.
     unique_open=[]
@@ -731,8 +732,8 @@ def trade_history():
         seen.add(key)
         unique_open.append(trade)
 
-    wins=sum(1 for trade in completed_rows if trade.status in ("tp3_hit","stopped_after_tp1","stopped_after_tp2"))
-    losses=sum(1 for trade in completed_rows if trade.status=="stopped")
+    wins=sum(1 for trade in completed_all if trade.status in ("tp3_hit","stopped_after_tp1","stopped_after_tp2"))
+    losses=sum(1 for trade in completed_all if trade.status=="stopped")
     completed=wins+losses
     buys=sum(1 for trade in unique_open if trade.side=="BUY")
     sells=sum(1 for trade in unique_open if trade.side=="SELL")
@@ -740,8 +741,8 @@ def trade_history():
         "active":len(unique_open),"buy_active":buys,"sell_active":sells,
         "completed":completed,"wins":wins,"losses":losses,
         "win_rate":round(wins/completed*100,1) if completed else None,
-        "tp3":sum(1 for trade in completed_rows if trade.status=="tp3_hit"),
-        "stopped_after_target":sum(1 for trade in completed_rows if trade.status in ("stopped_after_tp1","stopped_after_tp2")),
+        "tp3":sum(1 for trade in completed_all if trade.status=="tp3_hit"),
+        "stopped_after_target":sum(1 for trade in completed_all if trade.status in ("stopped_after_tp1","stopped_after_tp2")),
     }
     return jsonify({
         "ok":True,"summary":summary,
