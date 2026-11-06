@@ -142,10 +142,47 @@ def _saudi_symbol(value):
         return symbol+".SR"
     return None
 
+def _tradingview_saudi_quotes():
+    """Public TASI equity universe fallback when Yahoo's SA screener is empty."""
+    url="https://scanner.tradingview.com/sa/scan"
+    body={
+        "columns":["name","close","change","volume"],
+        "filter":[{"left":"type","operation":"equal","right":"stock"}],
+        "options":{"lang":"en"},
+        "range":[0,500],
+        "sort":{"sortBy":"volume","sortOrder":"desc"},
+    }
+    errors=[]
+    for host in ("https://scanner.tradingview.com",):
+        try:
+            response=requests.post(host+"/sa/scan",json=body,headers=HEADERS,timeout=(4,12))
+            response.raise_for_status()
+            payload=response.json()
+            data=payload.get("data") if isinstance(payload,dict) else None
+            rows=[]
+            for item in data or []:
+                ticker=str(item.get("s") or "").split(":")[-1].strip()
+                values=item.get("d") or []
+                if len(values)<4 or not ticker.isdigit() or len(ticker)!=4:
+                    continue
+                row=_row(ticker+".SR",values[1],values[2],values[3],"SAR")
+                if row:
+                    rows.append(row)
+            if rows:
+                return rows
+            errors.append("TradingView returned no valid TASI equity rows")
+        except Exception as exc:
+            errors.append(str(exc))
+    raise ValueError("TASI universe unavailable from Yahoo and TradingView ("+"; ".join(errors)+")")
+
+
 def market_symbols(market):
     if market=="alpha": return _alpha_symbols()
     if market=="us-stocks": return {x["symbol"] for x in _screener_quotes("US") if x.get("symbol")}
-    if market=="saudi": return {normalized for x in _screener_quotes("SA") if (normalized:=_saudi_symbol(x.get("symbol")))}
+    if market=="saudi":
+        source=_screener_quotes("SA")
+        symbols={normalized for x in source if (normalized:=_saudi_symbol(x.get("symbol")))}
+        return symbols or {row["symbol"] for row in _tradingview_saudi_quotes()}
     if market=="us-contracts": return set(US_CONTRACTS)
     if market=="forex": return set(FX_SYMBOLS)
     return set()
@@ -154,6 +191,11 @@ def market_tickers(market):
     if market in ("us-stocks","saudi"):
         out=[]
         source_rows=_screener_quotes("US") if market=="us-stocks" else _screener_quotes("SA")
+        if market=="saudi" and not source_rows:
+            # Yahoo's SA predefined screeners can return an empty universe with HTTP 200.
+            # Use TradingView's public Saudi exchange scanner to recover the full stock list.
+            fallback=_tradingview_saudi_quotes()
+            return sorted(fallback,key=lambda x:x["quote_volume"],reverse=True)
         for x in source_rows:
             symbol=_saudi_symbol(x.get("symbol")) if market=="saudi" else x.get("symbol")
             if not symbol: continue
