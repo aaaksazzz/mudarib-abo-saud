@@ -14,15 +14,14 @@ Production-oriented market intelligence terminal.
 - **Binance Alpha:** public Alpha symbol, ticker and candle endpoints.
 - **US stocks / US contracts / Tadawul / Forex & Gold:** Yahoo Finance public screener and candle adapters for 15m, 1h, 4h (aggregated from hourly candles), 1d, 1w and 1M; US stocks apply the configured $1M traded-value floor and Tadawul does not.
 
-## Open-source-inspired multi-strategy ensemble
-- Market pages provide six independent analysis timeframes: **15m, 1h, 4h, 1d, 1w and 1M**. Each timeframe has its own closed-candle analysis, signal batch, entry, stop and targets.
-- The ensemble combines independent EMA-trend, MACD-trend and RSI-trend votes with an NFI-inspired volume-breakout confirmation. A signal requires at least two aligned votes; this is a ranking/filtering design, not a verified win-rate model.
-- Stop distance is **1 ATR (1R)** with staged targets at **1R, 2R and 3R**. Displayed confluence scores are not probabilities of profit.
-- Spot, Alpha, US stocks and Tadawul remain long-only. Futures, US contracts and FX/metals can produce long and short signals.
-- Binance Spot, USD-M Futures and Alpha use native candle intervals. Yahoo 4h candles are aggregated from hourly data; Yahoo chart history and interval availability vary by asset and may be delayed or rate-limited.
-- Each timeframe is scanned on its own candle-close cadence: 15m, hourly, 4-hourly, daily, weekly and monthly. The scanner rotates a bounded candidate batch to limit provider load; coverage diagnostics report the universe and batch scanned.
-- The engine uses completed candles only, checks signal freshness against each timeframe and preserves the market-wide direction filter. It does not claim to reproduce the complete NostalgiaForInfinity strategy or embed the Freqtrade bot framework.
-- See [OPEN_SOURCE_NOTICES.md](OPEN_SOURCE_NOTICES.md) for source attribution, licenses and implementation boundaries. No upstream backtest result is represented as a SMART TRADING PRO performance result. Validate with out-of-sample tests, fees, spread and slippage before relying on signals.
+## SMART FLOW QUANT engine
+- Replaces the prior EMA/MACD/RSI/NFI-inspired strategy votes with price-structure, momentum, candle-pressure, relative-volume and range-expansion analysis.
+- Optional Binance public aggTrades and order-book imbalance context is sampled for a limited number of leading Spot/Futures candidates; other markets use only their available provider data.
+- The six independent analysis timeframes remain available: **15m, 1h, 4h, 1d, 1w and 1M**.
+- Stops use recent swing structure with a volatility buffer; targets are 1R, 2R and 3R. Scores are confluence rankings, not probabilities.
+- No private exchange API keys or automatic order execution are required. Market coverage and data quality depend on each provider.
+- See [OPEN_SOURCE_NOTICES.md](OPEN_SOURCE_NOTICES.md) for data and methodology boundaries. Validate out of sample with fees, spread and slippage.
+
 ## Signal engine
 - Each successful timeframe scan replaces that timeframe's live batch, keeping up to three opportunities per market per timeframe. Previous rows remain in trade history and expire after 24 hours.
 - Market-page requests only read committed results and never launch heavy scans synchronously.

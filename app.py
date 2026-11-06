@@ -360,7 +360,10 @@ def build_signal(market,item,timeframe):
     # for both "no setup" and "data unavailable" made failed feeds look healthy.
     symbol=item["symbol"]
     rows=klines(market,symbol,timeframe,250)
-    setup=market_strategies.analyze(market,symbol,rows,timeframe=timeframe,include_micro=item.get("include_microstructure",False))
+    flow=None
+    if item.get("include_microstructure") and market in ("spot","futures"):
+        flow=market_adapters.microstructure(market,symbol)
+    setup=market_strategies.analyze(market,symbol,rows,timeframe=timeframe,microstructure=flow)
     if not setup:
         return None
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
@@ -492,8 +495,11 @@ def run_market_scan(market,force=False):
     if scan_row and not force:
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
-            if last>now-timedelta(minutes=15):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("OPEN_SOURCE ENSEMBLE%")).order_by(Trade.timeframe.asc(),Trade.score.desc()).limit(18).all()
+            if last>now-timedelta(minutes=15) and Trade.query.filter(
+                Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
+                Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")
+            ).count():
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")).order_by(Trade.timeframe.asc(),Trade.score.desc()).limit(18).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
                     meta=json.loads(meta_row.value) if meta_row else {}
@@ -507,7 +513,7 @@ def run_market_scan(market,force=False):
     for frame in TIMEFRAMES:
         bucket=timeframe_bucket(frame,now)
         frame_buckets[frame]=bucket
-        frame_row=db.session.get(Setting,f"scan-frame:{market}:{frame}")
+        frame_row=db.session.get(Setting,f"scan-frame:smart-flow-quant:{market}:{frame}")
         if frame_row is None or frame_row.value!=str(bucket):
             frames_to_scan.append(frame)
     if not frames_to_scan:
@@ -531,7 +537,7 @@ def run_market_scan(market,force=False):
         cursor=0
     candidates,next_cursor,scan_offset=select_scan_candidates(universe,cursor,80)
     for index,item in enumerate(candidates):
-        item["include_microstructure"]=(market=="futures" and index<12)
+        item["include_microstructure"]=(market in ("spot","futures") and index<12)
     found=[]
     completed=0
     failed=0
@@ -560,7 +566,7 @@ def run_market_scan(market,force=False):
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("OPEN_SOURCE ENSEMBLE%"),
+        Trade.reason.like("SMART FLOW QUANT:%"),
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
@@ -579,7 +585,7 @@ def run_market_scan(market,force=False):
         for signal in frame_signals[:3]:
             marker=str(signal["signal_candle_time"])
             key=(signal["symbol"],frame,marker)
-            setting_key=f"signal-candle:{market}:{signal['symbol']}:{frame}"
+            setting_key=f"signal-candle:smart-flow-quant:{market}:{signal['symbol']}:{frame}"
             candle_row=db.session.get(Setting,setting_key)
             previous=existing_by_key.get(key)
             if candle_row and candle_row.value==marker:
@@ -592,7 +598,11 @@ def run_market_scan(market,force=False):
                 candle_row.value=marker
             signal["reason"]=signal["reason"]+" | bar_ts="+marker
             new_signals.append(signal)
-    active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(frames_to_scan))
+    # Retire every active trade from the replaced strategy only after the new scan succeeded.
+    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
+        Trade.reason.not_like("SMART FLOW QUANT:%")).update({"status":"superseded"},synchronize_session=False)
+    active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
+        Trade.timeframe.in_(frames_to_scan),Trade.reason.like("SMART FLOW QUANT:%"))
     if retained_ids:
         active_query=active_query.filter(~Trade.id.in_(retained_ids))
     active_query.update({"status":"superseded"},synchronize_session=False)
@@ -620,7 +630,7 @@ def run_market_scan(market,force=False):
     else:
         cursor_row.value=str(next_cursor)
     for frame in frames_to_scan:
-        frame_key=f"scan-frame:{market}:{frame}"
+        frame_key=f"scan-frame:smart-flow-quant:{market}:{frame}"
         frame_row=db.session.get(Setting,frame_key)
         bucket_value=str(frame_buckets[frame])
         if frame_row is None:
@@ -628,7 +638,7 @@ def run_market_scan(market,force=False):
         else:
             frame_row.value=bucket_value
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("OPEN_SOURCE ENSEMBLE%")).order_by(Trade.timeframe.asc(),Trade.score.desc()).limit(18).all()
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")).order_by(Trade.timeframe.asc(),Trade.score.desc()).limit(18).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
             "scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
             "analysis_completed":completed,"analysis_failed":failed,"strategy_matches":strategy_matches,
@@ -650,7 +660,7 @@ def signals(market):
         timeframe=request.args.get("timeframe","15m")
         if timeframe not in TIMEFRAMES:
             return json_error("الفريم غير مدعوم",400)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("OPEN_SOURCE ENSEMBLE%"),Trade.timeframe==timeframe).order_by(Trade.score.desc()).limit(3).all()
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("SMART FLOW QUANT:%"),Trade.timeframe==timeframe).order_by(Trade.score.desc()).limit(3).all()
         updated=row.value if row else None
         meta_row=db.session.get(Setting,"scan-meta:"+market)
         try:

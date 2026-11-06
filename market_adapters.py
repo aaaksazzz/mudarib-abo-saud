@@ -92,7 +92,7 @@ def _screener_quotes_cached(region,cache_bucket):
     for scr_id in screeners:
         for page in range(page_limit):
             try:
-                batch=_screener(region,scr_id,page*250)
+                batch=_screener(region,scr_id) if page==0 else _screener(region,scr_id,page*250)
                 for item in batch:
                     symbol=str(item.get("symbol") or "")
                     if symbol:
@@ -203,6 +203,50 @@ def market_tickers(market):
         if not out: raise ValueError("Binance Alpha returned no eligible live tickers")
         return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
     raise ValueError("Unsupported external market "+str(market))
+
+
+@lru_cache(maxsize=256)
+def _binance_microstructure_cached(market,symbol,cache_bucket):
+    """Public Binance trade-flow and depth snapshot; no account credentials."""
+    if market not in ("spot","futures"):
+        return None
+    base="https://fapi.binance.com" if market=="futures" else "https://api.binance.com"
+    prefix="/fapi/v1" if market=="futures" else "/api/v3"
+    try:
+        trades=_get(base+prefix+"/aggTrades",{"symbol":symbol,"limit":100})
+        depth=_get(base+prefix+"/depth",{"symbol":symbol,"limit":20})
+        if not isinstance(trades,list) or not isinstance(depth,dict):
+            return None
+        buyer=seller=0.0
+        for trade in trades:
+            qty=float(trade.get("q") or 0)
+            if qty<=0 or not math.isfinite(qty):
+                continue
+            # m=True means buyer was maker, so the seller was the taker.
+            if trade.get("m") is True:
+                seller+=qty
+            else:
+                buyer+=qty
+        total=buyer+seller
+        bids=depth.get("bids") or []
+        asks=depth.get("asks") or []
+        bid_notional=sum(float(level[0])*float(level[1]) for level in bids if len(level)>=2)
+        ask_notional=sum(float(level[0])*float(level[1]) for level in asks if len(level)>=2)
+        book_total=bid_notional+ask_notional
+        if total<=0 or book_total<=0:
+            return None
+        return {"taker_delta_ratio":(buyer-seller)/total,
+                "book_imbalance":(bid_notional-ask_notional)/book_total,
+                "trade_count":len(trades),"depth_levels":min(len(bids),len(asks)),
+                "source":"Binance public aggTrades and depth"}
+    except Exception:
+        return None
+
+
+def microstructure(market,symbol):
+    # A one-minute cache avoids repeating requests for each timeframe.
+    return _binance_microstructure_cached(market,symbol,int(time.time()//60))
+
 
 def _aggregate_4h(rows):
     buckets={}
