@@ -91,8 +91,8 @@ class MarketEngineTests(unittest.TestCase):
         response = self.client.get("/api/strategy-status")
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertEqual(data["fingerprint"], "SMART_FLOW_QUANT_SFQ_2026_11_06")
-        self.assertEqual(data["engine"], "SMART FLOW QUANT")
+        self.assertEqual(data["fingerprint"], "MA200_ONLY_ALL_MARKETS_ALL_TIMEFRAMES_2026_11_06")
+        self.assertEqual(data["engine"], "MA200 ONLY")
         self.assertEqual(data["timeframes"], ["15m", "1h", "4h", "1d", "1w", "1M"])
         self.assertEqual(len(data["markets"]), 7)
         self.assertTrue(data["legacy_removed"])
@@ -252,7 +252,7 @@ class MarketEngineTests(unittest.TestCase):
         self.assertAlmostEqual(signal["tp3"] - signal["entry"], 3 * risk)
         self.assertIn("SMART FLOW QUANT:", signal["reason"])
 
-    def test_only_15m_is_returned(self):
+    def test_default_signal_view_is_15m_and_other_timeframes_remain_queryable(self):
         self.assertEqual(platform.TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
         with platform.app.app_context():
             now = platform.utcnow()
@@ -337,8 +337,10 @@ class MarketEngineTests(unittest.TestCase):
             ]), patch.object(platform, "build_signal", side_effect=per_frame):
                 result = platform.run_market_scan("futures", force=True)
                 self.assertEqual(result["market_bias"], "SELL")
-                self.assertEqual(len(result["signals"]), 0)
-                self.assertEqual(platform.Trade.query.count(), 0)
+                # Signal side is determined by each symbol's MA200, not the market-wide 24h bias.
+                self.assertGreater(len(result["signals"]), 0)
+                self.assertTrue(all(item["side"] == "BUY" for item in result["signals"]))
+                self.assertEqual(platform.Trade.query.count(), len(result["signals"]))
 
     def test_same_15m_candle_does_not_create_duplicate_trades(self):
         now_ms=int(platform.utcnow().timestamp()*1000)
@@ -419,7 +421,7 @@ class MarketEngineTests(unittest.TestCase):
             rows = platform.market_tickers("spot")
         self.assertEqual(rows, [])
 
-    def test_strategy_exposes_only_15m(self):
+    def test_strategy_exposes_all_six_timeframes(self):
         self.assertEqual(platform.TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
         self.assertEqual(platform.provider_status("spot")["timeframes"], list(platform.TIMEFRAMES))
 
