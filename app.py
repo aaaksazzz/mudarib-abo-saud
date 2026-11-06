@@ -290,7 +290,7 @@ def market_list():
     return jsonify({"ok":True,"markets":[{"id":m,"enabled":section_enabled(m),"provider":provider_status(m)} for m in MARKETS]})
 def provider_status(m):
     sources={"spot":"Binance Spot public API","futures":"Binance USD-M Futures public API","alpha":"Binance Alpha public market API","us-stocks":"Yahoo Finance US equity screener","us-contracts":"Yahoo Finance US futures quotes","saudi":"Yahoo Finance Saudi-listed shares screener","forex":"Yahoo Finance FX and metals quotes"}
-    return {"configured":m in sources,"source":sources.get(m,"غير معروف"),"timeframe":"15m","timeframes":list(market_strategies.TIMEFRAMES),"requires_api_key":False,"access":"public_no_key"}
+    return {"configured":m in sources,"source":sources.get(m,"غير معروف"),"timeframe":"all","timeframes":list(market_strategies.TIMEFRAMES),"requires_api_key":False,"access":"public_no_key"}
 def fetch_json(url,params=None):
     last_error=None
     for attempt in range(3):
@@ -355,7 +355,7 @@ def klines(market,symbol,interval,limit=120):
     return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit})
 TIMEFRAMES=market_strategies.TIMEFRAMES
 
-STRATEGY_FINGERPRINT="SMART_FLOW_QUANT_SFQ_2026_11_06"
+STRATEGY_FINGERPRINT="MA200_ONLY_ALL_MARKETS_ALL_TIMEFRAMES_2026_11_06"
 @app.get("/api/strategy-status")
 def strategy_status():
     current_active=Trade.query.filter(
@@ -370,7 +370,7 @@ def strategy_status():
     ).count()
     return jsonify({
         "ok":True,
-        "engine":"SMART FLOW QUANT",
+        "engine":"MA200 ONLY",
         "fingerprint":STRATEGY_FINGERPRINT,
         "markets":list(MARKETS),
         "timeframes":list(TIMEFRAMES),
@@ -583,8 +583,7 @@ def run_market_scan(market,force=False):
     strategy_matches=len(found)
     found,freshness=filter_fresh_signals(found,universe,utcnow())
     fresh_matches=len(found)
-    direction_rejected=sum(1 for signal in found if signal.get("side")!=market_bias)
-    found=[signal for signal in found if signal.get("side")==market_bias]
+    direction_rejected=0  # MA200 alone determines BUY versus SELL; no market-wide bias override.
     app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s direction_rejected=%s accepted=%s stale=%s late=%s direction=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,direction_rejected,len(found),
                     freshness["rejected_stale_candle"],freshness["rejected_late_price"],market_bias)
@@ -894,6 +893,16 @@ def provision_admin_from_env():
 
 with app.app_context():
     db.create_all()
+    # Retire all signals from the replaced strategy exactly once on strategy-version change.
+    strategy_row=db.session.get(Setting,"active-strategy-fingerprint")
+    if not strategy_row or strategy_row.value!=STRATEGY_FINGERPRINT:
+        Trade.query.filter(Trade.status.in_(OPEN_TRADE_STATUSES)).update({"status":"superseded"},synchronize_session=False)
+        if strategy_row is None:
+            strategy_row=Setting(key="active-strategy-fingerprint",value=STRATEGY_FINGERPRINT)
+            db.session.add(strategy_row)
+        else:
+            strategy_row.value=STRATEGY_FINGERPRINT
+        db.session.commit()
     # Forward-only schema migration for existing production databases.
     trade_columns={column["name"] for column in inspect(db.engine).get_columns(Trade.__tablename__)}
     if "change_15m_pct" not in trade_columns:
