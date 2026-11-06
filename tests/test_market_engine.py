@@ -116,6 +116,7 @@ class MarketEngineTests(unittest.TestCase):
                 {"symbol":"AAPL","regularMarketPrice":200,"regularMarketChangePercent":1.0,"regularMarketVolume":1000,"currency":"USD"},
             ],
         }
+        platform.market_adapters._screener_quotes_cached.cache_clear()
         with patch.object(platform.market_adapters, "_screener",
                           side_effect=lambda region, scr_id: lists[scr_id]) as screener:
             rows = platform.market_adapters.market_tickers("saudi")
@@ -222,6 +223,10 @@ class MarketEngineTests(unittest.TestCase):
         with platform.app.app_context():
             row = platform.Setting(key="scan:spot", value=platform.iso(platform.utcnow()))
             platform.db.session.add(row)
+            platform.db.session.add(platform.Trade(market="spot",symbol="CACHEUSDT",side="BUY",
+                entry=100,stop=99,tp1=101,tp2=102,tp3=103,score=80,timeframe="15m",
+                reason="SMART FLOW QUANT: existing current-engine signal",
+                expires_at=platform.utcnow()+timedelta(hours=1)))
             platform.db.session.commit()
             with patch.object(platform, "market_tickers", return_value=[
                 {"symbol": "BTCUSDT", "price": 60000, "change_pct": 2, "quote_volume": 5000000}
