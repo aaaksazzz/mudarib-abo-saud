@@ -7,6 +7,7 @@ Spot and USD-M Futures. Scores rank confluence; they are not win probabilities.
 """
 import math
 
+STRATEGY_FINGERPRINT = "SMART-FLOW-SMA200-V1-20261107"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 INTERVAL_MS = {"15m": 900_000, "1h": 3_600_000, "4h": 14_400_000,
                "1d": 86_400_000, "1w": 604_800_000, "1M": 2_592_000_000}
@@ -45,6 +46,30 @@ def _finite_rows(rows):
             return None
         parsed.append((stamp, op, hi, lo, close, volume))
     return parsed
+
+
+def sma200_allows(side, price, ma200):
+    """Shared trend gate used by the live analyzer and diagnostic self-test."""
+    try:
+        price, ma200 = float(price), float(ma200)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    if not math.isfinite(price) or not math.isfinite(ma200) or price <= 0 or ma200 <= 0:
+        return False
+    return (side == "BUY" and price > ma200) or (side == "SELL" and price < ma200)
+
+
+def diagnostic_self_test():
+    """Exercise the exact SMA200 gate used by every timeframe analyzer."""
+    cases = {
+        "buy_above": sma200_allows("BUY", 101.0, 100.0),
+        "buy_below": not sma200_allows("BUY", 99.0, 100.0),
+        "sell_below": sma200_allows("SELL", 99.0, 100.0),
+        "sell_above": not sma200_allows("SELL", 101.0, 100.0),
+        "equal_rejected": not sma200_allows("BUY", 100.0, 100.0) and not sma200_allows("SELL", 100.0, 100.0),
+    }
+    return {"fingerprint": STRATEGY_FINGERPRINT, "ok": all(cases.values()), "checks": cases,
+            "timeframes": list(TIMEFRAMES), "rule": "BUY only above same-timeframe SMA200; SELL only below"}
 
 
 def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_micro=False):
@@ -150,9 +175,7 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         return None
 
     # Long setups must trade above the same-timeframe SMA200; shorts below it.
-    if side == "BUY" and entry <= ma200:
-        return None
-    if side == "SELL" and entry >= ma200:
+    if not sma200_allows(side, entry, ma200):
         return None
 
     direction = 1.0 if side == "BUY" else -1.0
@@ -195,4 +218,5 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         "taker_delta_ratio": flow_delta, "book_imbalance": book_imbalance,
         "strategy_votes": {"BUY": list(up_votes), "SELL": list(down_votes)},
         "strategy": "SMART_FLOW_QUANT_" + market.upper() + "_" + timeframe,
+        "strategy_fingerprint": STRATEGY_FINGERPRINT,
     }
