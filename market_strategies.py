@@ -147,7 +147,7 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         return None
 
     direction = 1.0 if side == "BUY" else -1.0
-    swing_low, swing_high = min(lows[i - 2:i + 1]), max(highs[i - 2:i + 1])
+    swing_low, swing_high = min(lows[i - 1:i + 1]), max(highs[i - 1:i + 1])
     buffer = max(atr * 0.12, entry * 0.0002)
     stop = swing_low - buffer if side == "BUY" else swing_high + buffer
     risk = abs(entry - stop)
