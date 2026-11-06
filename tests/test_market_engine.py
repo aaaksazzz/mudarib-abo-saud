@@ -175,7 +175,7 @@ class MarketEngineTests(unittest.TestCase):
         rows = [[i * 900000, 100, 101, 99, 100, 1000] for i in range(120)]
         setup = {"side":"BUY","entry":100.0,"stop":97.0,"tp1":103.0,"tp2":106.0,
                  "tp3":109.0,"score":84.0,"timeframe":"15m","change_pct":0.5,
-                 "change_15m_pct":0.5,"reason":"OPEN_SOURCE ENSEMBLE: EMA + MACD"}
+                 "change_15m_pct":0.5,"reason":"SMART FLOW QUANT:: structure breakout"}
         with patch.object(platform, "klines", return_value=rows), patch.object(platform.market_strategies, "analyze", return_value=setup):
             signal = platform.build_signal("spot", {"symbol":"BTCUSDT","quote_volume":50000000}, "15m")
         self.assertEqual(signal["side"], "BUY")
@@ -183,7 +183,7 @@ class MarketEngineTests(unittest.TestCase):
         self.assertAlmostEqual(signal["tp1"] - signal["entry"], risk)
         self.assertAlmostEqual(signal["tp2"] - signal["entry"], 2 * risk)
         self.assertAlmostEqual(signal["tp3"] - signal["entry"], 3 * risk)
-        self.assertIn("OPEN_SOURCE ENSEMBLE", signal["reason"])
+        self.assertIn("SMART FLOW QUANT:", signal["reason"])
 
     def test_only_15m_is_returned(self):
         self.assertEqual(platform.TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
@@ -192,10 +192,10 @@ class MarketEngineTests(unittest.TestCase):
             platform.db.session.add_all([
                 platform.Trade(market="spot", symbol="OLDUSDT", side="BUY", entry=100, stop=95,
                     tp1=105, tp2=110, tp3=115, score=80, timeframe="1h",
-                    reason="OPEN_SOURCE ENSEMBLE: old frame", expires_at=now + timedelta(hours=1)),
+                    reason="SMART FLOW QUANT:: old frame", expires_at=now + timedelta(hours=1)),
                 platform.Trade(market="spot", symbol="NEWUSDT", side="BUY", entry=100, stop=95,
                     tp1=105, tp2=110, tp3=115, score=85, timeframe="15m",
-                    reason="OPEN_SOURCE ENSEMBLE: current frame | bar_ts=123", expires_at=now + timedelta(hours=1)),
+                    reason="SMART FLOW QUANT:: current frame | bar_ts=123", expires_at=now + timedelta(hours=1)),
                 platform.Setting(key="scan:spot", value=platform.iso(now)),
             ])
             platform.db.session.commit()
@@ -255,7 +255,7 @@ class MarketEngineTests(unittest.TestCase):
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":99.0,
             "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,
             "change_pct":1.2,"timeframe":"15m","signal_candle_time":now_ms-900000-1000,
-            "reason":"OPEN_SOURCE ENSEMBLE: confirmed."
+            "reason":"SMART FLOW QUANT:: confirmed."
         }
         def per_frame(market, item, timeframe):
             interval=platform.market_strategies.INTERVAL_MS[timeframe]
@@ -275,7 +275,7 @@ class MarketEngineTests(unittest.TestCase):
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":99.0,
             "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,
             "change_pct":1.2,"timeframe":"15m","signal_candle_time":now_ms-900000-1000,
-            "reason":"OPEN_SOURCE ENSEMBLE: confirmed."
+            "reason":"SMART FLOW QUANT:: confirmed."
         }
         candle_time={}
         def per_frame(market, item, timeframe):
