@@ -53,7 +53,7 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
     if not profile or timeframe not in TIMEFRAMES or not isinstance(rows, list):
         return None
     bars = _finite_rows(rows)
-    if not bars or len(bars) < 55:
+    if not bars or len(bars) < 200:
         return None
 
     opens = [x[1] for x in bars]
@@ -63,6 +63,9 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
     volumes = [x[5] for x in bars]
     i = len(bars) - 1
     entry = closes[i]
+    ma200 = sum(closes[-200:]) / 200.0
+    if not math.isfinite(ma200) or ma200 <= 0:
+        return None
     atr = _atr(highs, lows, closes)
     if not math.isfinite(atr) or atr <= 0 or atr / entry > 0.12:
         return None
@@ -146,6 +149,12 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
     else:
         return None
 
+    # Long setups must trade above the same-timeframe SMA200; shorts below it.
+    if side == "BUY" and entry <= ma200:
+        return None
+    if side == "SELL" and entry >= ma200:
+        return None
+
     direction = 1.0 if side == "BUY" else -1.0
     swing_low, swing_high = min(lows[i - 1:i + 1]), max(highs[i - 1:i + 1])
     buffer = max(atr * 0.12, entry * 0.0002)
@@ -178,9 +187,9 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         "score": round(score, 1), "timeframe": timeframe,
         "change_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
         "change_15m_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
-        "reason": "SMART FLOW QUANT: " + " + ".join(labels) + "; structural stop; targets 1R/2R/3R",
+        "reason": "SMART FLOW QUANT: " + " + ".join(labels) + "; SMA200 trend filter passed; structural stop; targets 1R/2R/3R",
         "signal_candle_time": bars[-1][0], "risk_atr": round(risk / atr, 3), "reward_risk": 3.0,
-        "atr": atr, "confirmations": len(aligned),
+        "atr": atr, "ma200": ma200, "ma200_distance_pct": round((entry / ma200 - 1.0) * 100.0, 4), "confirmations": len(aligned),
         "volume_ratio": round(volume_ratio, 3) if volume_ratio is not None else None,
         "range_expansion": round(range_expansion, 3),
         "taker_delta_ratio": flow_delta, "book_imbalance": book_imbalance,
