@@ -146,7 +146,10 @@ def _tradingview_saudi_quotes():
     """Public TASI equity universe fallback when Yahoo's SA screener is empty."""
     body={
         "columns":["name","close","change","volume"],
-        "filter":[{"left":"type","operation":"equal","right":"stock"}],
+        "filter":[
+            {"left":"exchange","operation":"equal","right":"TADAWUL"},
+            {"left":"type","operation":"equal","right":"stock"},
+        ],
         "options":{"lang":"en"},
         "range":[0,500],
         "sort":{"sortBy":"volume","sortOrder":"desc"},
@@ -154,7 +157,9 @@ def _tradingview_saudi_quotes():
     errors=[]
     for host in ("https://scanner.tradingview.com",):
         try:
-            response=requests.post(host+"/sa/scan",json=body,headers=HEADERS,timeout=(4,12))
+            # TradingView's regional /sa route returns 404. Use the global
+            # scanner and constrain the request to the TADAWUL exchange.
+            response=requests.post(host+"/global/scan",json=body,headers=HEADERS,timeout=(4,12))
             response.raise_for_status()
             payload=response.json()
             data=payload.get("data") if isinstance(payload,dict) else None
