@@ -209,6 +209,11 @@ def platform_script(): return send_from_directory(".", "platform.js")
 def pro_theme(): return send_from_directory(".", "pro-theme.css")
 @app.get("/compat.css")
 def compat_styles(): return send_from_directory(".", "compat.css")
+@app.get("/api/strategy/status")
+def strategy_status():
+    diagnostic=market_strategies.diagnostic_self_test()
+    return jsonify({"ok":diagnostic["ok"],"strategy": "SMART FLOW QUANT + SMA200", **diagnostic}), 200 if diagnostic["ok"] else 500
+
 @app.get("/health")
 def health():
     return jsonify({"ok":True,"service":"SMART TRADING PRO","time":iso(utcnow())})
