@@ -92,7 +92,7 @@ def _screener_quotes_cached(region,cache_bucket):
     for scr_id in screeners:
         for page in range(page_limit):
             try:
-                batch=_screener(region,scr_id,page*250)
+                batch=_screener(region,scr_id) if page==0 else _screener(region,scr_id,page*250)
                 for item in batch:
                     symbol=str(item.get("symbol") or "")
                     if symbol:
