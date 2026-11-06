@@ -87,6 +87,46 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(counts["rejected_late_price"], 1)
         self.assertEqual(counts["rejected_stale_candle"], 1)
 
+    def test_strategy_fingerprint_confirms_all_timeframes_and_legacy_retirement(self):
+        response = self.client.get("/api/strategy-status")
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(data["fingerprint"], "SMART_FLOW_QUANT_SFQ_2026_11_06")
+        self.assertEqual(data["engine"], "SMART FLOW QUANT")
+        self.assertEqual(data["timeframes"], ["15m", "1h", "4h", "1d", "1w", "1M"])
+        self.assertEqual(len(data["markets"]), 7)
+        self.assertTrue(data["legacy_removed"])
+        self.assertTrue(data["manual_only"])
+
+        with platform.app.app_context():
+            legacy = platform.Trade(
+                market="spot", symbol="OLDUSDT", side="BUY", entry=100,
+                stop=97, tp1=103, tp2=106, tp3=109, score=70,
+                timeframe="15m", reason="OPEN_SOURCE ENSEMBLE: old signal",
+                expires_at=platform.utcnow() + timedelta(hours=1),
+            )
+            current = platform.Trade(
+                market="spot", symbol="NEWUSDT", side="BUY", entry=100,
+                stop=97, tp1=103, tp2=106, tp3=109, score=70,
+                timeframe="1h", reason="SMART FLOW QUANT: new signal",
+                expires_at=platform.utcnow() + timedelta(hours=1),
+            )
+            platform.db.session.add_all([legacy, current])
+            platform.db.session.commit()
+            legacy_id = legacy.id
+
+        status = self.client.get("/api/strategy-status").get_json()
+        self.assertEqual(status["legacy_active"], 1)
+        self.assertEqual(status["current_active"], 1)
+        self.assertFalse(status["legacy_removed"])
+
+        with platform.app.app_context():
+            platform.db.session.get(platform.Trade, legacy_id).status = "superseded"
+            platform.db.session.commit()
+        status = self.client.get("/api/strategy-status").get_json()
+        self.assertTrue(status["legacy_removed"])
+        self.assertEqual(status["legacy_active"], 0)
+
     def test_public_signal_read_does_not_start_synchronous_scan(self):
         with patch.object(platform, "run_market_scan", side_effect=AssertionError("HTTP request must not scan")) as scan:
             response = self.client.get("/api/markets/spot/signals")
