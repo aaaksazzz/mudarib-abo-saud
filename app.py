@@ -384,14 +384,10 @@ def strategy_status():
 def build_signal(market,item,timeframe):
     # Let provider/transport failures reach the scan coordinator. Returning None
     # for both "no setup" and "data unavailable" made failed feeds look healthy.
+    # Let provider/transport failures reach the scan coordinator. Returning None
+    # for both "no setup" and "data unavailable" made failed feeds look healthy.
     symbol=item["symbol"]
-    try:
-        rows=klines(market,symbol,timeframe,250)
-    except Exception as exc:
-        # A delisted/unsupported ticker must not poison the market-wide scan.
-        app.logger.warning("Skipping symbol with unavailable candle feed: market=%s symbol=%s timeframe=%s error=%s",
-                           market,symbol,timeframe,exc)
-        return None
+    rows=klines(market,symbol,timeframe,250)
     flow=None
     if item.get("include_microstructure") and market in ("spot","futures"):
         flow=market_adapters.microstructure(market,symbol)
