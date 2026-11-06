@@ -224,17 +224,19 @@ def market_symbols(market):
     if market=="alpha": return _alpha_symbols()
     if market=="us-stocks": return {x["symbol"] for x in _screener_quotes("US") if x.get("symbol")}
     if market=="saudi":
+        symbols=set()
         try:
-            source=_screener_quotes("SA")
-            symbols={normalized for x in source if (normalized:=_saudi_symbol(x.get("symbol")))}
-            if symbols:
-                return symbols
+            symbols={normalized for x in _screener_quotes("SA") if (normalized:=_saudi_symbol(x.get("symbol")))}
         except Exception:
             pass
         try:
-            return _saudi_exchange_symbols()
+            symbols.update(_saudi_exchange_symbols())
         except Exception:
-            return {row["symbol"] for row in _tradingview_saudi_quotes()}
+            if not symbols:
+                return {row["symbol"] for row in _tradingview_saudi_quotes()}
+        if symbols:
+            return symbols
+        return {row["symbol"] for row in _tradingview_saudi_quotes()}
     if market=="us-contracts": return set(US_CONTRACTS)
     if market=="forex": return set(FX_SYMBOLS)
     return set()
@@ -251,7 +253,7 @@ def market_tickers(market):
                 source_rows=[]
         if market=="saudi" and not source_rows:
             # Yahoo's SA predefined screeners can return an empty universe with HTTP 200.
-            # Use TradingView's public Saudi exchange scanner to recover the full stock list.
+            # Use the official Saudi Exchange equity list, then obtain quotes from Yahoo charts.
             errors=[]
             try:
                 symbols=_saudi_exchange_symbols()
@@ -272,6 +274,15 @@ def market_tickers(market):
             if not symbol: continue
             row=_row(symbol,x.get("regularMarketPrice"),x.get("regularMarketChangePercent"),x.get("regularMarketVolume"),x.get("currency"))
             if row and (market=="saudi" or row["quote_volume"]>=1000000): out.append(row)
+        if market=="saudi" and out:
+            # Complete Yahoo's partial screener with the official TASI equity universe.
+            try:
+                known={row["symbol"] for row in out}
+                missing=_saudi_exchange_symbols()-known
+                if missing:
+                    out.extend(_saudi_chart_quotes(missing))
+            except Exception:
+                pass
         if market=="saudi" and not out:
             # Yahoo's Saudi screener can return symbols without regularMarketPrice
             # (or transiently omit quote fields). Recover prices from the public
@@ -295,7 +306,7 @@ def market_tickers(market):
                     out=[row for row in pool.map(fetch_saudi_chart_quote,candidates) if row]
             if not out:
                 # A populated Yahoo symbol list can still have unusable chart quotes.
-                # Retry the complete TASI universe through TradingView before failing.
+                # Retry the official TASI universe before using the legacy TradingView fallback.
                 try:
                     out=_saudi_chart_quotes(_saudi_exchange_symbols())
                 except Exception:
