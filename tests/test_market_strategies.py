@@ -11,8 +11,8 @@ def candles(direction="UP", volume=True, count=220):
         previous = price
         price += step
         op = previous
-        high = max(op, price) + 0.04
-        low = min(op, price) - 0.04
+        high = max(op, price) + 0.01
+        low = min(op, price) - 0.01
         vol = 3200.0 if i == count - 1 else 1000.0
         rows.append([i * 900000, op, high, low, price, vol if volume else 0.0])
     # Last row represents the still-forming candle and must be ignored.
