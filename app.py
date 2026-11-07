@@ -492,7 +492,8 @@ def evaluate_trade_outcome_from_bars(trade,rows,now_ms=None):
     interval_ms=market_strategies.INTERVAL_MS["15m"]
     try:
         created=aware(trade.created_at)
-        first_bar=(int(created.timestamp()*1000)//interval_ms)*interval_ms
+        created_ms=int(created.timestamp()*1000)
+        first_bar=((created_ms+interval_ms-1)//interval_ms)*interval_ms
     except (AttributeError,TypeError,ValueError,OverflowError):
         return trade.status,0
     status=trade.status
