@@ -22,7 +22,7 @@ def candles(direction="UP", volume=True, count=220):
 
 class Sma200StrategyTests(unittest.TestCase):
     def test_fingerprint_and_timeframes(self):
-        self.assertEqual(STRATEGY_FINGERPRINT, "SMART-FLOW-SMA200-V1-20261107")
+        self.assertEqual(STRATEGY_FINGERPRINT, "SMART-FLOW-SMA200-FLOW-V2-20261107")
         self.assertEqual(TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
         self.assertEqual(len(PROFILES), 7)
 
@@ -73,6 +73,14 @@ class Sma200StrategyTests(unittest.TestCase):
         self.assertIsNotNone(signal)
         self.assertIsNone(signal["volume_ratio"])
         self.assertNotIn("volume expansion", signal["strategy_votes"]["BUY"])
+
+    def test_directional_strength_and_volume_pressure_are_reported(self):
+        signal = analyze("futures", "TEST", candles("UP"), timeframe="15m")
+        self.assertIsNotNone(signal)
+        self.assertGreaterEqual(signal["adx"], 20.0)
+        self.assertGreater(signal["plus_di"], signal["minus_di"])
+        self.assertGreater(signal["obv_pressure"], 0.0)
+        self.assertGreater(signal["speed_score"], 0.0)
 
     def test_binance_flow_is_optional_and_additive(self):
         flow = {"taker_delta_ratio": 0.45, "book_imbalance": 0.35}
