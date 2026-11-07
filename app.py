@@ -866,8 +866,8 @@ def timeframe_bucket(frame,now):
 
 
 def market_scan_timeframes(market):
-    """Use every timeframe exposed by the market UI for each supported market."""
-    return TIMEFRAMES
+    """All markets use the single supported 15-minute strategy timeframe."""
+    return ("15m",)
 
 
 def run_market_scan(market,force=False):
@@ -881,10 +881,10 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             if last>now-timedelta(minutes=15) and Trade.query.filter(
-                Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
+                Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe=="15m",
                 Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")
             ).count():
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")).order_by(Trade.timeframe.asc(),Trade.score.desc()).limit(18).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe=="15m",Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")).order_by(Trade.score.desc()).limit(3).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
                     meta=json.loads(meta_row.value) if meta_row else {}
@@ -1010,9 +1010,13 @@ def run_market_scan(market,force=False):
                 candle_row.value=marker
             signal["reason"]=signal["reason"]+" | bar_ts="+marker
             new_signals.append(signal)
-    # Retire every active trade from the replaced strategy only after the new scan succeeded.
+    # Retire legacy strategies and every non-15m trade after a successful 15m scan.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.reason.not_like("SMART FLOW QUANT:%")).update({"status":"superseded"},synchronize_session=False)
+    Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
+        Trade.reason.like("SMART FLOW QUANT:%"),Trade.timeframe!="15m").update(
+            {"status":"superseded"},synchronize_session=False
+        )
     active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.timeframe.in_(frames_to_scan),Trade.reason.like("SMART FLOW QUANT:%"))
     if retained_ids:
@@ -1050,7 +1054,7 @@ def run_market_scan(market,force=False):
         else:
             frame_row.value=bucket_value
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")).order_by(Trade.timeframe.asc(),Trade.score.desc()).limit(18).all()
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe=="15m",Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")).order_by(Trade.score.desc()).limit(3).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
             "scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
             "analysis_completed":completed,"analysis_failed":failed,"strategy_matches":strategy_matches,
@@ -1069,9 +1073,12 @@ def signals(market):
         # Keep this endpoint read-only. The single scheduler expires trades;
         # writing from page requests races with scheduled scans on SQLite.
         row=db.session.get(Setting,"scan:"+market)
-        timeframe=request.args.get("timeframe","15m")
-        if timeframe not in TIMEFRAMES:
+        # Normalize previously supported frames from cached clients to 15m.
+        requested_timeframe=request.args.get("timeframe","15m")
+        legacy_timeframes=("1h","4h","1d","1w","1M")
+        if requested_timeframe not in TIMEFRAMES and requested_timeframe not in legacy_timeframes:
             return json_error("الفريم غير مدعوم",400)
+        timeframe="15m"
         active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("SMART FLOW QUANT:%"),Trade.timeframe==timeframe).order_by(Trade.score.desc()).limit(3).all()
         updated=row.value if row else None
         meta_row=db.session.get(Setting,"scan-meta:"+market)
@@ -1100,7 +1107,7 @@ def signals(market):
         return jsonify({"ok":True,"market":market,"timeframe":timeframe,"timeframes":list(TIMEFRAMES),
                         "signals":[trade_json(x) for x in active] if not stale and not market_closed else [],
                         "updated_at":updated,"cached":True,"stale":stale,"scan_ready":bool(updated),
-                        **meta,
+                        **meta,"timeframes":["15m"],"scanned_timeframes":["15m"],
                         "scan_error":scan_error,"market_closed":market_closed,
                         "engine":"SMART FLOW QUANT","fingerprint":STRATEGY_FINGERPRINT})
     except Exception:

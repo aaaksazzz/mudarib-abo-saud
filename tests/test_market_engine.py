@@ -108,15 +108,15 @@ class MarketEngineTests(unittest.TestCase):
     def test_all_markets_scan_every_exposed_timeframe(self):
         for market in platform.MARKETS:
             with self.subTest(market=market):
-                self.assertEqual(platform.market_scan_timeframes(market), platform.TIMEFRAMES)
+                self.assertEqual(platform.market_scan_timeframes(market), ("15m",))
 
     def test_strategy_fingerprint_confirms_all_timeframes_and_legacy_retirement(self):
         response = self.client.get("/api/strategy-status")
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertEqual(data["fingerprint"], "SMART-FLOW-SMA200-V1-20261107")
+        self.assertEqual(data["fingerprint"], "SMART-FLOW-SMA200-15M-V2-20261107")
         self.assertEqual(data["engine"], "SMART FLOW QUANT")
-        self.assertEqual(data["timeframes"], ["15m", "1h", "4h", "1d", "1w", "1M"])
+        self.assertEqual(data["timeframes"], ["15m"])
         self.assertEqual(len(data["markets"]), 7)
         self.assertTrue(data["legacy_removed"])
         self.assertTrue(data["manual_only"])
@@ -425,7 +425,7 @@ class MarketEngineTests(unittest.TestCase):
         self.assertIn("SMART FLOW QUANT:", signal["reason"])
 
     def test_only_15m_is_returned(self):
-        self.assertEqual(platform.TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
+        self.assertEqual(platform.TIMEFRAMES, ("15m",))
         with platform.app.app_context():
             now = platform.utcnow()
             platform.db.session.add_all([
@@ -443,7 +443,7 @@ class MarketEngineTests(unittest.TestCase):
         signals = response.get_json()["signals"]
         self.assertEqual([x["symbol"] for x in signals], ["NEWUSDT"])
         hourly = self.client.get("/api/markets/spot/signals?timeframe=1h").get_json()["signals"]
-        self.assertEqual([x["symbol"] for x in hourly], ["OLDUSDT"])
+        self.assertEqual([x["symbol"] for x in hourly], ["NEWUSDT"])
 
     def test_public_routes_do_not_disclose_strategy_details(self):
         self.assertEqual(self.client.get("/api/strategies").status_code, 404)
@@ -488,9 +488,9 @@ class MarketEngineTests(unittest.TestCase):
                 result=platform.run_market_scan("futures",force=True)
         self.assertEqual(result["scan_universe"],70)
         self.assertEqual(result["scan_batch_size"],70)
-        self.assertEqual(len(visited),70*len(platform.TIMEFRAMES))
+        self.assertEqual(len(visited),70)
         self.assertEqual({symbol for symbol, _ in visited}, {f"COIN{i}USDT" for i in range(70)})
-        self.assertEqual({frame for _, frame in visited}, set(platform.TIMEFRAMES))
+        self.assertEqual({frame for _, frame in visited}, {"15m"})
 
     def test_signals_must_match_market_direction(self):
         now_ms=int(platform.utcnow().timestamp()*1000)
@@ -533,18 +533,18 @@ class MarketEngineTests(unittest.TestCase):
                 side_effect=lambda signals, universe, now=None: (signals, {"rejected_stale_candle": 0, "rejected_late_price": 0})
             ):
                 first = platform.run_market_scan("spot", force=True)
-                self.assertEqual(len(first["signals"]), len(platform.TIMEFRAMES))
-                self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
+                self.assertEqual(len(first["signals"]), 1)
+                self.assertEqual(platform.Trade.query.count(), 1)
                 second = platform.run_market_scan("spot", force=True)
-                self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
-                self.assertEqual(len(second["signals"]), len(platform.TIMEFRAMES))
+                self.assertEqual(platform.Trade.query.count(), 1)
+                self.assertEqual(len(second["signals"]), 1)
                 self.assertTrue(all(x.status == "active" for x in platform.Trade.query.all()))
                 candle_time["15m"] += 1
                 third = platform.run_market_scan("spot", force=True)
                 trades = platform.Trade.query.order_by(platform.Trade.id.asc()).all()
-                self.assertEqual(len(trades), len(platform.TIMEFRAMES)+1)
+                self.assertEqual(len(trades), 2)
                 self.assertEqual(sum(x.status == "superseded" for x in trades), 1)
-                self.assertEqual(len(third["signals"]), len(platform.TIMEFRAMES))
+                self.assertEqual(len(third["signals"]), 1)
 
     def test_stale_scan_hides_old_opportunities_instead_of_showing_stuck_coins(self):
         with platform.app.app_context():
@@ -595,7 +595,7 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(rows, [])
 
     def test_strategy_exposes_only_15m(self):
-        self.assertEqual(platform.TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
+        self.assertEqual(platform.TIMEFRAMES, ("15m",))
         self.assertEqual(platform.provider_status("spot")["timeframes"], list(platform.TIMEFRAMES))
 
     def test_registration_accepts_unicode_letters_and_digits(self):

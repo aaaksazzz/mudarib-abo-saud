@@ -22,8 +22,8 @@ def candles(direction="UP", volume=True, count=220):
 
 class Sma200StrategyTests(unittest.TestCase):
     def test_fingerprint_and_timeframes(self):
-        self.assertEqual(STRATEGY_FINGERPRINT, "SMART-FLOW-SMA200-V1-20261107")
-        self.assertEqual(TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
+        self.assertEqual(STRATEGY_FINGERPRINT, "SMART-FLOW-SMA200-15M-V2-20261107")
+        self.assertEqual(TIMEFRAMES, ("15m",))
         self.assertEqual(len(PROFILES), 7)
 
     def test_sma200_gate_allows_only_matching_direction(self):
@@ -33,12 +33,13 @@ class Sma200StrategyTests(unittest.TestCase):
         self.assertFalse(sma200_allows("SELL", 101, 100))
         self.assertFalse(sma200_allows("BUY", 100, 100))
 
-    def test_all_timeframes_are_analyzed_independently(self):
-        for frame in TIMEFRAMES:
-            signal = analyze("futures", "TEST", candles("UP"), timeframe=frame)
-            self.assertIsNotNone(signal, frame)
-            self.assertEqual(signal["timeframe"], frame)
-            self.assertGreater(signal["entry"], signal["ma200"])
+    def test_only_15m_is_analyzed(self):
+        signal = analyze("futures", "TEST", candles("UP"), timeframe="15m")
+        self.assertIsNotNone(signal)
+        self.assertEqual(signal["timeframe"], "15m")
+        self.assertGreater(signal["entry"], signal["ma200"])
+        for legacy_frame in ("1h", "4h", "1d", "1w", "1M"):
+            self.assertIsNone(analyze("futures", "TEST", candles("UP"), timeframe=legacy_frame))
 
     def test_buy_signal_has_structural_stop_and_three_r_targets(self):
         signal = analyze("futures", "TEST", candles("UP"), timeframe="15m")
@@ -53,7 +54,7 @@ class Sma200StrategyTests(unittest.TestCase):
         self.assertLessEqual(signal["score"], 100)
 
     def test_sell_signal_requires_short_capable_market_and_below_sma200(self):
-        signal = analyze("futures", "TEST", candles("DOWN"), timeframe="1h")
+        signal = analyze("futures", "TEST", candles("DOWN"), timeframe="15m")
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "SELL")
         self.assertLess(signal["entry"], signal["ma200"])
@@ -64,7 +65,7 @@ class Sma200StrategyTests(unittest.TestCase):
 
     def test_cash_markets_can_generate_long_signals_above_sma200(self):
         for market in ("spot", "alpha", "us-stocks", "saudi"):
-            signal = analyze(market, "TEST", candles("UP"), timeframe="4h")
+            signal = analyze(market, "TEST", candles("UP"), timeframe="15m")
             self.assertIsNotNone(signal, market)
             self.assertEqual(signal["side"], "BUY")
 
@@ -84,9 +85,9 @@ class Sma200StrategyTests(unittest.TestCase):
 
     def test_forming_candle_does_not_change_signal(self):
         rows = candles("UP")
-        original = analyze("futures", "TEST", rows, timeframe="1d")
+        original = analyze("futures", "TEST", rows, timeframe="15m")
         rows[-1] = [rows[-1][0], 1000, 5000, 1, 2, 1e12]
-        changed = analyze("futures", "TEST", rows, timeframe="1d")
+        changed = analyze("futures", "TEST", rows, timeframe="15m")
         self.assertEqual(original, changed)
 
     def test_insufficient_history_is_rejected(self):
