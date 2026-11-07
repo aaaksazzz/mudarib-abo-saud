@@ -105,9 +105,10 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(counts["rejected_stale_candle"], 1)
 
 
-    def test_saudi_scanner_uses_only_live_15m_session(self):
-        self.assertEqual(platform.market_scan_timeframes("saudi"), ("15m",))
-        self.assertEqual(platform.market_scan_timeframes("futures"), platform.TIMEFRAMES)
+    def test_all_markets_scan_every_exposed_timeframe(self):
+        for market in platform.MARKETS:
+            with self.subTest(market=market):
+                self.assertEqual(platform.market_scan_timeframes(market), platform.TIMEFRAMES)
 
     def test_strategy_fingerprint_confirms_all_timeframes_and_legacy_retirement(self):
         response = self.client.get("/api/strategy-status")
