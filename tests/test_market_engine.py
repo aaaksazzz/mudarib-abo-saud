@@ -197,7 +197,8 @@ class MarketEngineTests(unittest.TestCase):
             self.assertEqual(record["status"], "error")
             self.assertEqual(record["last_error_code"], "insufficient_candle_data")
             self.assertIsNotNone(record["last_attempt_at"])
-            with patch.object(platform, "saudi_market_is_open", return_value=True):
+            scheduler_stub = type("SchedulerStub", (), {"running": True})()
+            with patch.object(platform, "saudi_market_is_open", return_value=True), patch.object(platform, "AUTO_SCAN_ENABLED", True), patch.object(platform, "scheduler", scheduler_stub):
                 response = self.client.get("/api/markets/saudi/signals").get_json()
                 status = self.client.get("/api/system/status").get_json()
             self.assertIn("تعذر", response["scan_error"])
