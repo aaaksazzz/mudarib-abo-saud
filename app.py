@@ -466,7 +466,7 @@ def snapshot(market):
     if blocked: return blocked
     try:
         rows=market_tickers(market); up=sum(1 for x in rows if x["change_pct"]>0); down=sum(1 for x in rows if x["change_pct"]<0)
-        return jsonify({"ok":True,"market":market,"direction":"صاعد" if up>down else "هابط" if down>up else "متعادل","direction_basis":"تغير السعر خلال 24 ساعة","up":up,"down":down,"total":len(rows),"assets":rows[:40],"updated_at":iso(utcnow())})
+        return jsonify({"ok":True,"market":market,"direction":"صاعد" if up>down else "هابط" if down>up else "متعادل","side":"BUY" if up>down else "SELL" if down>up else "NEUTRAL","direction_basis":"اتساع السوق حسب تغير السعر خلال 24 ساعة","up":up,"down":down,"total":len(rows),"up_pct":round(up/len(rows)*100,1) if rows else 0,"down_pct":round(down/len(rows)*100,1) if rows else 0,"assets":rows[:40],"updated_at":iso(utcnow())})
     except Exception as e:
         app.logger.exception("snapshot failed"); return json_error("تعذر جلب بيانات السوق من المصدر حالياً",502)
 def klines(market,symbol,interval,limit=120):
@@ -1003,6 +1003,8 @@ def _cached_google_news(language, bucket):
 
 @app.get("/api/news")
 def live_news():
+    blocked=gate_section("news")
+    if blocked: return blocked
     language=(request.args.get("lang","ar").strip().lower() or "ar")
     if language not in ("ar","en","es","de","id","pt","tr","fr","hi"):
         language="en"
