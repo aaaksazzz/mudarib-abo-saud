@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 import html
 import market_adapters
 import market_strategies
+import technical_200
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -647,6 +648,26 @@ def build_signal(market,item,timeframe):
     setup=market_strategies.analyze(market,symbol,rows,timeframe=timeframe,microstructure=flow)
     if not setup:
         return None
+    # 200 technical checks rank and refine the existing setup; they are not
+    # mandatory gates, so a neutral technical reading cannot erase a valid setup.
+    technical=technical_200.analyze_200(
+        rows,setup.get("side"),setup.get("entry"),setup.get("stop"),setup.get("atr")
+    )
+    if technical:
+        base_score=float(setup.get("score") or 50.0)
+        technical_score=float(technical.get("agreement_pct") or 50.0)
+        setup["score"]=round(min(96.0,max(50.0,base_score*0.65+technical_score*0.35)),1)
+        setup.update({
+            "stop":technical["stop"],"tp1":technical["tp1"],
+            "tp2":technical["tp2"],"tp3":technical["tp3"],
+            "risk_atr":technical["risk_atr"],
+            "technical_200":technical,
+        })
+        setup["reason"] += (
+            "; 200-rule technical confluence "
+            + str(technical["rules_aligned"]) + "/"
+            + str(technical["rules_total"]) + " aligned"
+        )
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
