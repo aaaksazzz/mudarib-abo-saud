@@ -38,7 +38,28 @@ function pageFromHash(){const key=location.hash.replace(/^#\/?/,"").split(/[/?]/
 function pageFromLocation(){const path=location.pathname.replace(/\/$/,"")||"/";const route=Object.entries(pagePaths).find(([,url])=>url===path);return route?route[0]:pageFromHash()}
 function openPage(page,{pushHistory=true}={}){if(!validPages.has(page))page="overview";if(pushHistory&&pageFromLocation()!==page)history.pushState({page},"",pagePaths[page]||"/");document.querySelectorAll("[data-page]").forEach(b=>{const active=b.dataset.page===page;b.classList.toggle("active",active);if(active)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});$("#sidebar").classList.remove("open");$("#scrim").classList.remove("show");renderPage(page)}
 function renderPage(page){if(!validPages.has(page))page="overview";currentPage=page;const version=++renderVersion;setTitle(page);const root=$("#dynamicContent");root.innerHTML='<div class="loading-state">جارٍ تحميل البيانات...</div>';if(page==="overview")return overview(root);if(page==="plans")return plansPage(root);if(marketNames[page])return marketPage(root,page,version);if(page==="admin")return adminPage(root);if(page==="journal")return journalPage(root);if(page==="blog"||page==="news")return contentPage(root,page)}
-async function overview(root){try{const [markets,signals]=await Promise.all([api("/api/markets"),Promise.all(["spot","futures"].map(m=>api("/api/markets/"+m+"/snapshot").catch(()=>null)))]);root.innerHTML='<div class="notice-bar"><span class="notice-symbol">!</span><span>الأسعار والصفقات لا تظهر إلا من مصدر متصل. الأسواق غير المربوطة ستبقى معلّمة بوضوح.</span></div><div class="market-grid">'+markets.markets.map(m=>'<article class="market-card market-open" data-open="'+m.id+'"><div class="market-card-top"><span class="market-type">'+esc(m.id.toUpperCase())+'</span><span class="status-pending">'+(m.enabled?"مفتوح":"موقوف")+'</span></div><h3>'+esc(marketNames[m.id])+'</h3><p>'+esc(m.provider.configured?m.provider.source:"مصدر البيانات غير مهيأ")+'</p><div class="market-card-bottom"><span class="empty-status">'+(m.provider.configured?"مصدر مهيأ":"بانتظار الربط")+'</span><span class="arrow">↙</span></div></article>').join("")+'</div><div class="lower-grid"><section class="panel"><div class="panel-head"><h2>اتجاه الأسواق المتاحة</h2></div><div class="status-list">'+signals.filter(Boolean).map(x=>'<div><span>'+esc(marketNames[x.market])+'</span><b class="'+(x.direction==="صاعد"?"positive":"negative")+'">'+esc(x.direction)+' · '+x.up+' صاعد / '+x.down+' هابط</b></div>').join("")+'</div></section><section class="panel"><div class="panel-head"><h2>حالة حسابك</h2></div><div class="empty-state"><b>'+esc(currentUser?currentUser.email:"زائر")+'</b><p>'+esc(currentUser?(currentUser.subscribed?"اشتراكك فعال":"لا يوجد اشتراك فعال — اطلب تفعيل باقة من الإدارة"):"تصفح الأسواق والصفقات مباشرة دون تسجيل الدخول")+'</p><button class="login-btn" id="homeAccount">'+(currentUser?"إدارة الحساب":"تسجيل الدخول")+'</button></div></section></div>';root.querySelectorAll("[data-open]").forEach(x=>x.addEventListener("click",()=>openPage(x.dataset.open)));$("#homeAccount").onclick=()=>currentUser?accountMenu():authModal()}catch(e){root.innerHTML='<div class="panel empty-state">'+esc(e.message)+'</div>'}}
+function overviewMarketCard(m,s){
+ const ready=!!(s&&s.ready!==false&&s.direction&&Number.isFinite(Number(s.total)));
+ const direction=ready?s.direction:"غير متاح";
+ const tone=direction==="صاعد"?"positive":direction==="هابط"?"negative":"muted-label";
+ const breadth=ready?(Number(s.up||0)+" صاعد / "+Number(s.down||0)+" هابط"):"بيانات الاتجاه غير متاحة";
+ const status=ready?"بيانات محدثة":(m.provider.configured?"بانتظار بيانات موثوقة":"مصدر البيانات غير مهيأ");
+ return '<article class="market-card market-open" data-open="'+esc(m.id)+'"><div class="market-card-top"><span class="market-type">'+esc(m.id.toUpperCase())+'</span><span class="status-pending">'+(m.enabled?"مفتوح":"موقوف")+'</span></div><h3>'+esc(marketNames[m.id])+'</h3><p>'+esc(m.provider.configured?m.provider.source:"مصدر البيانات غير مهيأ")+'</p><div class="market-overview-direction"><span>الاتجاه <b class="'+tone+'">'+esc(direction)+'</b></span><small>'+esc(breadth)+'</small></div><div class="market-card-bottom"><span class="empty-status">'+status+'</span><span class="arrow">↙</span></div></article>';
+}
+async function overview(root){
+ try{
+  const marketIds=["spot","futures","alpha","us-stocks","us-contracts","saudi","forex"];
+  const [markets,snapshots]=await Promise.all([
+   api("/api/markets"),
+   Promise.all(marketIds.map(m=>api("/api/markets/"+m+"/snapshot").catch(()=>null)))
+  ]);
+  const byMarket=Object.fromEntries(snapshots.filter(Boolean).map(x=>[x.market,x]));
+  root.innerHTML='<div class="notice-bar"><span class="notice-symbol">!</span><span>لوحة موحدة لاتجاهات الأسواق السبعة. لا تُعرض أرقام أو اتجاهات عند غياب مصدر بيانات موثوق.</span></div><div class="market-grid">'+markets.markets.map(m=>overviewMarketCard(m,byMarket[m.id])).join("")+'</div><p class="market-overview-footnote">الاتجاهات مبنية على اتساع السوق خلال 24 ساعة. افتح بطاقة السوق لعرض التحليل والفرص المؤكدة بشكل مستقل.</p>';
+  root.querySelectorAll("[data-open]").forEach(x=>x.addEventListener("click",()=>openPage(x.dataset.open)));
+ }catch(e){
+  root.innerHTML='<div class="panel empty-state">'+esc(e.message)+'</div>';
+ }
+}
 async function marketPage(root,market,version=renderVersion){
  try{
   const timeframe=selectedTimeframes[market]||"15m";
