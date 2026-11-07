@@ -18,6 +18,7 @@ function accountMenu(){if(confirm("هل تريد تسجيل الخروج؟"))api
 $("#authClose").addEventListener("click",closeAuth);
 $("#authMode").addEventListener("click",()=>{
  const reg=$("#authSubmit").dataset.mode!=="register";
+ const errorBox=$("#authError");if(errorBox){errorBox.hidden=true;errorBox.textContent=""}
  $("#authSubmit").dataset.mode=reg?"register":"login";
  $("#authSubmit").textContent=reg?"إنشاء الحساب":"تسجيل الدخول";
  $("#authMode").textContent=reg?"لديك حساب؟ تسجيل الدخول":"مستخدم جديد؟ إنشاء حساب";
@@ -38,7 +39,7 @@ $("#authForm").addEventListener("submit",async event=>{
   if(location.pathname==="/login"||location.pathname==="/register")history.replaceState({page:"overview"},"","/");
   toast(mode==="login"?"تم تسجيل الدخول":"تم إنشاء الحساب");
   renderPage(currentPage);
- }catch(e){toast(e.message)}
+ }catch(e){const errorBox=$("#authError");if(errorBox){errorBox.textContent=e.message;errorBox.hidden=false}toast(e.message)}
  finally{
   authBusy=false;submit.disabled=false;toggle.disabled=false;
   submit.textContent=submit.dataset.mode==="register"?"إنشاء الحساب":"تسجيل الدخول";
