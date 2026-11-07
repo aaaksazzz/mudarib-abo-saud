@@ -37,3 +37,5 @@ body.light .timeframe-tab.active{background:#e4f7ef;color:#13795d;border-color:#
 .engine-fingerprint .engine-pending{color:#f0c777}
 body.light .engine-fingerprint{background:#effaf5;color:#225c48;border-color:#b7ddcb}
 @media(max-width:600px){.engine-fingerprint{gap:6px;font-size:9px}.engine-fingerprint>span:last-child{margin-right:0}}
+
+.auth-error{margin:10px 0;padding:10px 12px;border:1px solid rgba(239,68,68,.45);border-radius:12px;background:rgba(239,68,68,.10);color:#fecaca;font-size:13px;line-height:1.6}.light .auth-error{color:#991b1b;background:#fef2f2}
