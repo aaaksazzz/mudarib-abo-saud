@@ -664,9 +664,11 @@ def build_signal(market,item,timeframe):
             "technical_200":technical,
         })
         setup["reason"] += (
-            "; 200-rule technical confluence "
-            + str(technical["rules_aligned"]) + "/"
-            + str(technical["rules_total"]) + " aligned"
+            "; 200-rule technical analysis: "
+            + str(technical["rules_aligned"]) + " aligned, "
+            + str(technical["rules_opposed"]) + " opposed, "
+            + str(technical["rules_total"]-technical["rules_active"]) + " neutral; "
+            + str(technical["agreement_pct"]) + "% agreement"
         )
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
