@@ -166,6 +166,47 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(signals["signals"], [])
         self.assertFalse(signals["scan_ready"])
 
+    def test_saudi_session_calendar_uses_riyadh_time_and_weekdays(self):
+        riyadh = timezone(timedelta(hours=3))
+        self.assertFalse(platform.saudi_market_is_open(datetime(2026, 11, 7, 12, 0, tzinfo=riyadh)))  # Saturday
+        self.assertFalse(platform.saudi_market_is_open(datetime(2026, 11, 8, 9, 29, tzinfo=riyadh)))
+        self.assertTrue(platform.saudi_market_is_open(datetime(2026, 11, 8, 9, 30, tzinfo=riyadh)))
+        self.assertTrue(platform.saudi_market_is_open(datetime(2026, 11, 12, 15, 19, tzinfo=riyadh)))
+        self.assertFalse(platform.saudi_market_is_open(datetime(2026, 11, 12, 15, 20, tzinfo=riyadh)))
+
+    def test_scheduled_saudi_scan_is_skipped_while_exchange_is_closed(self):
+        with platform.app.app_context():
+            with patch.object(platform, "saudi_market_is_open", return_value=False), patch.object(
+                platform, "run_market_scan", side_effect=AssertionError("closed market must not scan")
+            ) as scan:
+                platform.scheduled_market_scan("saudi")
+                scan.assert_not_called()
+            row = platform.db.session.get(platform.Setting, "scan-runtime:saudi")
+            record = __import__("json").loads(row.value)
+            self.assertEqual(record["status"], "market_closed")
+            self.assertIsNotNone(record["last_finished_at"])
+
+    def test_scheduled_scan_failure_is_persisted_for_diagnostics(self):
+        with platform.app.app_context():
+            with patch.object(platform, "saudi_market_is_open", return_value=True), patch.object(
+                platform, "run_market_scan", side_effect=RuntimeError("Insufficient candle data: 4/80 analyses completed")
+            ):
+                platform.scheduled_market_scan("saudi")
+            row = platform.db.session.get(platform.Setting, "scan-runtime:saudi")
+            record = __import__("json").loads(row.value)
+            self.assertEqual(record["status"], "error")
+            self.assertEqual(record["last_error_code"], "insufficient_candle_data")
+            self.assertIsNotNone(record["last_attempt_at"])
+            response = self.client.get("/api/markets/saudi/signals").get_json()
+            self.assertIn("تعذر", response["scan_error"])
+            status = self.client.get("/api/system/status").get_json()
+            self.assertEqual(status["scanner_runtime"]["saudi"]["last_error_code"], "insufficient_candle_data")
+
+    def test_signals_endpoint_reports_engine_fingerprint_as_a_fallback(self):
+        response = self.client.get("/api/markets/saudi/signals").get_json()
+        self.assertEqual(response["engine"], "SMART FLOW QUANT")
+        self.assertEqual(response["fingerprint"], platform.STRATEGY_FINGERPRINT)
+
     def test_saudi_screener_merges_yahoo_lists_and_keeps_all_tasi_volumes(self):
         lists = {
             "most_actives": [
