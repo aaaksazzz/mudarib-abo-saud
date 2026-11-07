@@ -60,6 +60,12 @@ SECTION_DEFAULTS={k:True for k in ("overview",)+MARKETS+("strategies","journal",
 BINANCE_SPOT="https://api.binance.com"
 BINANCE_FUTURES="https://fapi.binance.com"
 STABLES={"USDT","USDC","BUSD","FDUSD","TUSD","USDP","DAI","USDE","USDS","USTC"}
+# Continuous, rotating scan configuration. Keep concurrency bounded for the
+# small production container while allowing each market to progress every cycle.
+SCAN_BATCH_SIZE=max(1,int(os.environ.get("SCAN_BATCH_SIZE","20")))
+SCAN_INTERVAL_SECONDS=max(60,int(os.environ.get("SCAN_INTERVAL_SECONDS","180")))
+SCAN_SYMBOL_WORKERS=max(1,min(6,int(os.environ.get("SCAN_SYMBOL_WORKERS","4"))))
+SCAN_MARKET_WORKERS=max(1,min(4,int(os.environ.get("SCAN_MARKET_WORKERS","3"))))
 OPEN_TRADE_STATUSES=("active","tp1_hit","tp2_hit")
 PAYMENT_PLANS=[
     {"id":"monthly","name":"شهري","months":1,"price_usd":30.0,"discount_pct":0,"total_usd":30.0},
@@ -481,12 +487,23 @@ def provider_status(m):
     sources={"spot":"Binance Spot public API","futures":"Binance USD-M Futures public API","alpha":"Binance Alpha public market API","us-stocks":"Yahoo Finance US equity screener","us-contracts":"Yahoo Finance US futures quotes","saudi":"Yahoo Finance Saudi-listed shares screener","forex":"Yahoo Finance FX and metals quotes"}
     return {"configured":m in sources,"source":sources.get(m,"غير معروف"),"timeframe":"15m","timeframes":list(market_strategies.TIMEFRAMES),"requires_api_key":False,"access":"public_no_key"}
 def fetch_json(url,params=None):
+    # Public Binance endpoints have alternate hosts. Rotate across them when
+    # one edge is unavailable or rate-limited instead of failing the market.
+    hosts=(
+        (BINANCE_SPOT,"https://api1.binance.com","https://api2.binance.com","https://api3.binance.com")
+        if url.startswith(BINANCE_SPOT) else
+        (BINANCE_FUTURES,"https://fapi1.binance.com","https://fapi2.binance.com","https://fapi3.binance.com")
+        if url.startswith(BINANCE_FUTURES) else (None,)
+    )
+    base=hosts[0]
+    path=url[len(base):] if base and url.startswith(base) else url
+    urls=[host+path for host in hosts] if base else [url]
     last_error=None
-    for attempt in range(3):
+    attempts=max(3,len(urls))
+    for attempt in range(attempts):
+        candidate=urls[attempt%len(urls)]
         try:
-            response=requests.get(url,params=params,timeout=(3.05,8),headers={"User-Agent":"SMART-TRADING-PRO/1.1"})
-            if response.status_code==429 or response.status_code>=500:
-                response.raise_for_status()
+            response=requests.get(candidate,params=params,timeout=(3.05,8),headers={"User-Agent":"SMART-TRADING-PRO/1.1"})
             response.raise_for_status()
             payload=response.json()
             if not isinstance(payload,(dict,list)):
@@ -495,12 +512,12 @@ def fetch_json(url,params=None):
         except (requests.Timeout,requests.ConnectionError,requests.HTTPError,ValueError) as exc:
             last_error=exc
             status=getattr(getattr(exc,"response",None),"status_code",None)
-            if attempt==2 or (status is not None and status<500 and status!=429):
+            if attempt==attempts-1 or (status is not None and status<500 and status!=429):
                 raise
-            time.sleep(0.25*(attempt+1))
+            time.sleep(0.2*(attempt+1))
     raise last_error
-@lru_cache(maxsize=2)
-def market_symbols(market):
+@lru_cache(maxsize=14)
+def _market_symbols_cached(market,cache_bucket):
     if market=="spot":
         info=fetch_json(BINANCE_SPOT+"/api/v3/exchangeInfo")
         return {x["symbol"] for x in info.get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("isSpotTradingAllowed",True) and x.get("baseAsset") not in STABLES}
@@ -508,6 +525,11 @@ def market_symbols(market):
         info=fetch_json(BINANCE_FUTURES+"/fapi/v1/exchangeInfo")
         return {x["symbol"] for x in info.get("symbols",[]) if x.get("status")=="TRADING" and x.get("quoteAsset")=="USDT" and x.get("contractType")=="PERPETUAL" and x.get("baseAsset") not in STABLES}
     return market_adapters.market_symbols(market)
+
+def market_symbols(market):
+    # Refresh exchange listings every 30 minutes so newly listed/delisted
+    # symbols are reflected without restarting the service.
+    return _market_symbols_cached(market,int(time.time()//1800))
 
 def market_tickers(market):
     if market not in ("spot","futures"):
@@ -834,17 +856,17 @@ def update_trade_outcomes(market,tickers):
     db.session.commit()
     return changed
 
-def select_scan_candidates(universe,offset=0,batch_size=80):
-    """Rotate through the full eligible universe without changing signal rules."""
-    # Prioritise fast-moving assets first (largest absolute 24h move), then liquidity.
-    # Cursor rotation continues into slower assets on subsequent 15m scan cycles.
+def select_scan_candidates(universe,offset=0,batch_size=SCAN_BATCH_SIZE):
+    """Return one full rotating batch, wrapping at the end of the universe."""
+    # Prioritise fast movers first, then liquidity; every eligible symbol gets
+    # its turn because the cursor wraps instead of repeatedly stopping at the tail.
     ranked=sorted(universe,key=lambda x:(abs(float(x.get("change_pct") or 0)),float(x.get("quote_volume") or 0)),reverse=True)
     if not ranked:
         return [],0,0
     start=int(offset or 0)%len(ranked)
-    size=min(max(1,int(batch_size)),len(ranked)-start)
-    selected=ranked[start:start+size]
-    next_offset=0 if start+size>=len(ranked) else start+size
+    size=min(max(1,int(batch_size)),len(ranked))
+    selected=[ranked[(start+i)%len(ranked)] for i in range(size)]
+    next_offset=(start+size)%len(ranked)
     return selected,next_offset,start
 
 
@@ -924,13 +946,13 @@ def run_market_scan(market,force=False):
         cursor=int(cursor_row.value) if cursor_row else 0
     except (TypeError,ValueError):
         cursor=0
-    candidates,next_cursor,scan_offset=select_scan_candidates(universe,cursor,80)
+    candidates,next_cursor,scan_offset=select_scan_candidates(universe,cursor,SCAN_BATCH_SIZE)
     for index,item in enumerate(candidates):
-        item["include_microstructure"]=(market in ("spot","futures") and index<12)
+        item["include_microstructure"]=(market in ("spot","futures") and index<min(5,len(candidates)))
     found=[]
     completed=0
     failed=0
-    with ThreadPoolExecutor(max_workers=8) as pool:
+    with ThreadPoolExecutor(max_workers=min(SCAN_SYMBOL_WORKERS,max(1,len(candidates)))) as pool:
         futures=[pool.submit(build_signal,market,item,frame) for item in candidates for frame in frames_to_scan]
         for future in as_completed(futures):
             try:
@@ -1479,14 +1501,17 @@ scheduler=None
 if AUTO_SCAN_ENABLED:
     scheduler=BackgroundScheduler(
         timezone="UTC",
-        executors={"default":{"type":"threadpool","max_workers":2}},
+        executors={"default":{"type":"threadpool","max_workers":SCAN_MARKET_WORKERS}},
         job_defaults={"coalesce":True,"max_instances":1},
     )
-    for market in MARKETS:
+    # Stagger markets to avoid a seven-market request burst. Each market gets
+    # a fresh 20-symbol batch every cycle; spare scheduler workers pick up
+    # other markets while one provider is slow or temporarily unavailable.
+    for market_index,market in enumerate(MARKETS):
         scheduler.add_job(
-            scheduled_market_scan,"interval",minutes=15,id="market-scan-"+market,
+            scheduled_market_scan,"interval",seconds=SCAN_INTERVAL_SECONDS,id="market-scan-"+market,
             args=[market],max_instances=1,coalesce=True,
-            next_run_time=utcnow()+timedelta(seconds=30)
+            next_run_time=utcnow()+timedelta(seconds=10+market_index*15)
         )
     scheduler.start()
 
