@@ -1,3 +1,5 @@
+import csv
+import io
 import math
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -205,6 +207,36 @@ def _saudi_exchange_symbols():
     return set(_saudi_exchange_symbols_cached(int(time.time()//1800)))
 
 
+@lru_cache(maxsize=2)
+def _saudi_dataset_symbols_cached(cache_bucket):
+    """Fallback TASI universe from a public CC0 ticker dataset; no API key."""
+    url = (
+        "https://huggingface.co/datasets/"
+        "kjhq/Saudi-Arabia-Stock-Symbols-and-Metadata/resolve/main/ksa.csv"
+    )
+    response = requests.get(
+        url, headers={**HEADERS, "Accept": "text/csv,*/*"}, timeout=(5, 20)
+    )
+    response.raise_for_status()
+    reader = csv.DictReader(io.StringIO(response.text))
+    symbols = set()
+    for item in reader:
+        if str(item.get("market") or "").strip().upper() != "TADAWUL":
+            continue
+        ticker = str(item.get("ticker") or "").strip()
+        # 9xxx symbols belong to the parallel market (Nomu), not TASI.
+        if len(ticker) == 4 and ticker.isdigit() and not ticker.startswith("9"):
+            symbols.add(ticker + ".SR")
+    if not symbols:
+        raise ValueError("Public Saudi ticker dataset returned no main-market symbols")
+    return tuple(sorted(symbols))
+
+
+def _saudi_dataset_symbols():
+    # Dataset publisher updates the directory weekly; cache it for six hours.
+    return set(_saudi_dataset_symbols_cached(int(time.time() // 21600)))
+
+
 def _saudi_chart_quotes(symbols):
     def fetch(symbol):
         try:
@@ -233,8 +265,12 @@ def market_symbols(market):
         try:
             symbols.update(_saudi_exchange_symbols())
         except Exception:
-            if not symbols:
-                return {row["symbol"] for row in _tradingview_saudi_quotes()}
+            pass
+        if not symbols:
+            try:
+                symbols.update(_saudi_dataset_symbols())
+            except Exception as exc:
+                print("Saudi public ticker directory unavailable: " + str(exc))
         if symbols:
             return symbols
         return {row["symbol"] for row in _tradingview_saudi_quotes()}
@@ -277,6 +313,16 @@ def market_tickers(market):
                 errors.append("Saudi Exchange symbols were found but Yahoo returned no chart quotes")
             except Exception as exc:
                 errors.append("Saudi Exchange: "+str(exc))
+            try:
+                symbols=_saudi_dataset_symbols()
+                out=_saudi_chart_quotes(symbols)
+                if out:
+                    print("Saudi quotes loaded from Yahoo charts using public TASI directory: "
+                          + str(len(out)) + "/" + str(len(symbols)))
+                    return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
+                errors.append("Public TASI directory loaded but Yahoo returned no chart quotes")
+            except Exception as exc:
+                errors.append("Public TASI directory: "+str(exc))
             try:
                 fallback=_tradingview_saudi_quotes()
                 return sorted(fallback,key=lambda x:x["quote_volume"],reverse=True)
@@ -323,6 +369,11 @@ def market_tickers(market):
                 # Retry the official TASI universe before using the legacy TradingView fallback.
                 try:
                     out=_saudi_chart_quotes(_saudi_exchange_symbols())
+                except Exception:
+                    out=[]
+            if not out:
+                try:
+                    out=_saudi_chart_quotes(_saudi_dataset_symbols())
                 except Exception:
                     out=[]
             if not out:
