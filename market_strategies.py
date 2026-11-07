@@ -7,7 +7,7 @@ Spot and USD-M Futures. Scores rank confluence; they are not win probabilities.
 """
 import math
 
-STRATEGY_FINGERPRINT = "SMART-FLOW-SMA200-V1-20261107"
+STRATEGY_FINGERPRINT = "SMART-FLOW-SMA200-FLOW-V2-20261107"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 INTERVAL_MS = {"15m": 900_000, "1h": 3_600_000, "4h": 14_400_000,
                "1d": 86_400_000, "1w": 604_800_000, "1M": 2_592_000_000}
@@ -47,6 +47,51 @@ def _finite_rows(rows):
         parsed.append((stamp, op, hi, lo, close, volume))
     return parsed
 
+
+
+def _directional_strength(highs, lows, closes, period=14):
+    """Return ADX and directional indicators from completed OHLC candles."""
+    if len(closes) < period * 2 + 1:
+        return 0.0, 0.0, 0.0
+    true_ranges, plus_moves, minus_moves = [], [], []
+    for i in range(1, len(closes)):
+        up_move = highs[i] - highs[i - 1]
+        down_move = lows[i - 1] - lows[i]
+        plus_moves.append(up_move if up_move > down_move and up_move > 0 else 0.0)
+        minus_moves.append(down_move if down_move > up_move and down_move > 0 else 0.0)
+        true_ranges.append(max(highs[i] - lows[i],
+                               abs(highs[i] - closes[i - 1]),
+                               abs(lows[i] - closes[i - 1])))
+    dx_values = []
+    last_plus = last_minus = 0.0
+    for end in range(period, len(true_ranges) + 1):
+        start = end - period
+        tr_sum = sum(true_ranges[start:end])
+        plus_sum = sum(plus_moves[start:end])
+        minus_sum = sum(minus_moves[start:end])
+        if tr_sum <= 0:
+            continue
+        plus_di = 100.0 * plus_sum / tr_sum
+        minus_di = 100.0 * minus_sum / tr_sum
+        denominator = plus_di + minus_di
+        dx_values.append(100.0 * abs(plus_di - minus_di) / denominator if denominator else 0.0)
+        last_plus, last_minus = plus_di, minus_di
+    adx = sum(dx_values[-period:]) / min(period, len(dx_values)) if dx_values else 0.0
+    return adx, last_plus, last_minus
+
+
+def _obv_pressure(closes, volumes, period=20):
+    """Signed-volume pressure, normalized to [-1, 1]."""
+    signed = total = 0.0
+    start = max(1, len(closes) - period)
+    for i in range(start, len(closes)):
+        volume = max(0.0, volumes[i])
+        total += volume
+        if closes[i] > closes[i - 1]:
+            signed += volume
+        elif closes[i] < closes[i - 1]:
+            signed -= volume
+    return signed / total if total > 0 else None
 
 def sma200_allows(side, price, ma200):
     """Shared trend gate used by the live analyzer and diagnostic self-test."""
@@ -141,6 +186,27 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         elif closes[i] < opens[i] and close_location <= 0.32:
             down_votes["range expansion"] = 1
 
+    adx, plus_di, minus_di = _directional_strength(highs, lows, closes)
+    obv_pressure = _obv_pressure(closes, volumes)
+    if adx >= 20.0:
+        if plus_di >= minus_di * 1.15 and plus_di - minus_di >= 5.0:
+            up_votes["ADX directional trend"] = 1
+        elif minus_di >= plus_di * 1.15 and minus_di - plus_di >= 5.0:
+            down_votes["ADX directional trend"] = 1
+    if obv_pressure is not None:
+        if obv_pressure >= 0.25:
+            up_votes["OBV signed-volume pressure"] = 1
+        elif obv_pressure <= -0.25:
+            down_votes["OBV signed-volume pressure"] = 1
+
+    recent_velocity = (closes[i] - closes[i - 3]) / 3.0
+    prior_velocity = (closes[i - 3] - closes[i - 8]) / 5.0
+    velocity_acceleration = (recent_velocity - prior_velocity) / atr
+    if velocity_acceleration >= 0.04:
+        up_votes["price velocity acceleration"] = 1
+    elif velocity_acceleration <= -0.04:
+        down_votes["price velocity acceleration"] = 1
+
     flow_delta = book_imbalance = None
     if isinstance(microstructure, dict):
         try:
@@ -194,6 +260,12 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         return None
 
     score = min(96.0, 52.0 + len(aligned) * 7.0 - opposing * 3.0)
+    # Small ranking bonus for directional trend quality and observed movement speed.
+    if adx >= 25.0 and ((side == "BUY" and plus_di > minus_di) or (side == "SELL" and minus_di > plus_di)):
+        score = min(96.0, score + 2.0)
+    if obv_pressure is not None and ((side == "BUY" and obv_pressure >= 0.25) or (side == "SELL" and obv_pressure <= -0.25)):
+        score = min(96.0, score + 2.0)
+    speed_score = min(5.0, abs(momentum_3) / atr * 1.5 + (atr / entry) * 100.0)
     if flow_delta is not None and ((side == "BUY" and flow_delta >= 0.12) or (side == "SELL" and flow_delta <= -0.12)):
         score = min(96.0, score + 3.0)
     if book_imbalance is not None and ((side == "BUY" and book_imbalance >= 0.15) or (side == "SELL" and book_imbalance <= -0.15)):
@@ -214,6 +286,10 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         "signal_candle_time": bars[-1][0], "risk_atr": round(risk / atr, 3), "reward_risk": 3.0,
         "atr": atr, "ma200": ma200, "ma200_distance_pct": round((entry / ma200 - 1.0) * 100.0, 4), "confirmations": len(aligned),
         "volume_ratio": round(volume_ratio, 3) if volume_ratio is not None else None,
+        "adx": round(adx, 2), "plus_di": round(plus_di, 2), "minus_di": round(minus_di, 2),
+        "obv_pressure": round(obv_pressure, 4) if obv_pressure is not None else None,
+        "velocity_acceleration": round(velocity_acceleration, 4),
+        "speed_score": round(speed_score, 2),
         "range_expansion": round(range_expansion, 3),
         "taker_delta_ratio": flow_delta, "book_imbalance": book_imbalance,
         "strategy_votes": {"BUY": list(up_votes), "SELL": list(down_votes)},
