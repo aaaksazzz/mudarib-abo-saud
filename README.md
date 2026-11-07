@@ -32,7 +32,7 @@ Production-oriented market intelligence terminal.
 - Python runtime is pinned by `.python-version` to 3.12.
 - Buildpack startup uses `Procfile`; Docker deployment is also supported.
 - Expose port 8080.
-- Configure a persistent PostgreSQL database through `DATABASE_URL`; SQLite is for CI/local checks only.
+- Prefer a persistent PostgreSQL database through `DATABASE_URL`. SQLite is acceptable only when `DATA_DIR` points to a persistent mounted volume; the default local SQLite path is not production-durable.
 - Configure a persistent random `SECRET_KEY`, `COOKIE_SECURE=true`, and `ENABLE_AUTO_SCAN=true`.
 - Keep one Gunicorn worker while APScheduler runs in-process. Scans are scheduled independently per market with bounded cross-market concurrency; do not increase web workers until scanning is moved to a separate worker with a distributed lock.
 - `/ready` requires a durable database configuration (PostgreSQL or an explicitly configured `DATA_DIR` volume), a persistent `SECRET_KEY`, and the market scheduler.
