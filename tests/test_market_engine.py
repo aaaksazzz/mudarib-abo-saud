@@ -439,7 +439,10 @@ class MarketEngineTests(unittest.TestCase):
         with platform.app.app_context():
             with patch.object(platform, "market_tickers", return_value=[
                 {"symbol":"BTCUSDT","price":100.0,"change_pct":1.2,"quote_volume":5000000}
-            ]), patch.object(platform, "build_signal", side_effect=per_frame):
+            ]), patch.object(platform, "build_signal", side_effect=per_frame), patch.object(
+                platform, "filter_fresh_signals",
+                side_effect=lambda signals, universe, now=None: (signals, {"rejected_stale_candle": 0, "rejected_late_price": 0})
+            ):
                 first = platform.run_market_scan("spot", force=True)
                 self.assertEqual(len(first["signals"]), len(platform.TIMEFRAMES))
                 self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
