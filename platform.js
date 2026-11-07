@@ -44,7 +44,7 @@ function overviewMarketCard(m,s){
  const tone=direction==="صاعد"?"positive":direction==="هابط"?"negative":"muted-label";
  const breadth=ready?(Number(s.up||0)+" صاعد / "+Number(s.down||0)+" هابط"):"بيانات الاتجاه غير متاحة";
  const status=ready?"بيانات محدثة":(m.provider.configured?"بانتظار بيانات موثوقة":"مصدر البيانات غير مهيأ");
- return '<article class="market-card market-open" data-open="'+esc(m.id)+'"><div class="market-card-top"><span class="market-type">'+esc(m.id.toUpperCase())+'</span><span class="status-pending">'+(m.enabled?"مفتوح":"موقوف")+'</span></div><h3>'+esc(marketNames[m.id])+'</h3><p>'+esc(m.provider.configured?m.provider.source:"مصدر البيانات غير مهيأ")+'</p><div class="market-overview-direction"><span>الاتجاه <b class="'+tone+'">'+esc(direction)+'</b></span><small>'+esc(breadth)+'</small></div><div class="market-card-bottom"><span class="empty-status">'+status+'</span><span class="arrow">↙</span></div></article>';
+ return '<article class="market-card market-open" role="button" tabindex="0" data-open="'+esc(m.id)+'"><div class="market-card-top"><span class="market-type">'+esc(m.id.toUpperCase())+'</span><span class="status-pending">'+(m.enabled?"مفتوح":"موقوف")+'</span></div><h3>'+esc(marketNames[m.id])+'</h3><p>'+esc(m.provider.configured?m.provider.source:"مصدر البيانات غير مهيأ")+'</p><div class="market-overview-direction"><span>الاتجاه <b class="'+tone+'">'+esc(direction)+'</b></span><small>'+esc(breadth)+'</small></div><div class="market-card-bottom"><span class="empty-status">'+status+'</span><span class="arrow">↙</span></div></article>';
 }
 async function overview(root){
  try{
@@ -55,7 +55,7 @@ async function overview(root){
   ]);
   const byMarket=Object.fromEntries(snapshots.filter(Boolean).map(x=>[x.market,x]));
   root.innerHTML='<div class="notice-bar"><span class="notice-symbol">!</span><span>لوحة موحدة لاتجاهات الأسواق السبعة. لا تُعرض أرقام أو اتجاهات عند غياب مصدر بيانات موثوق.</span></div><div class="market-grid">'+markets.markets.map(m=>overviewMarketCard(m,byMarket[m.id])).join("")+'</div><p class="market-overview-footnote">الاتجاهات مبنية على اتساع السوق خلال 24 ساعة. افتح بطاقة السوق لعرض التحليل والفرص المؤكدة بشكل مستقل.</p>';
-  root.querySelectorAll("[data-open]").forEach(x=>x.addEventListener("click",()=>openPage(x.dataset.open)));
+  root.querySelectorAll("[data-open]").forEach(x=>{x.addEventListener("click",()=>openPage(x.dataset.open));x.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openPage(x.dataset.open)}})});
  }catch(e){
   root.innerHTML='<div class="panel empty-state">'+esc(e.message)+'</div>';
  }
