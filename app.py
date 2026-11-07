@@ -360,7 +360,7 @@ def klines(market,symbol,interval,limit=120):
     return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit})
 TIMEFRAMES=market_strategies.TIMEFRAMES
 
-STRATEGY_FINGERPRINT="SMART_FLOW_QUANT_SFQ_2026_11_06"
+STRATEGY_FINGERPRINT=market_strategies.STRATEGY_FINGERPRINT
 @app.get("/api/strategy-status")
 def strategy_status_summary():
     current_active=Trade.query.filter(
