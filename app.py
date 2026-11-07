@@ -1073,8 +1073,11 @@ def signals(market):
         # Keep this endpoint read-only. The single scheduler expires trades;
         # writing from page requests races with scheduled scans on SQLite.
         row=db.session.get(Setting,"scan:"+market)
-        # Older cached clients may still request 1h/4h/etc.; normalize them
-        # to the only supported strategy timeframe instead of exposing stale frames.
+        # Normalize previously supported frames from cached clients to 15m.
+        requested_timeframe=request.args.get("timeframe","15m")
+        legacy_timeframes=("1h","4h","1d","1w","1M")
+        if requested_timeframe not in TIMEFRAMES and requested_timeframe not in legacy_timeframes:
+            return json_error("الفريم غير مدعوم",400)
         timeframe="15m"
         active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("SMART FLOW QUANT:%"),Trade.timeframe==timeframe).order_by(Trade.score.desc()).limit(3).all()
         updated=row.value if row else None
