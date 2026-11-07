@@ -201,7 +201,7 @@ class MarketEngineTests(unittest.TestCase):
             with patch.object(platform, "saudi_market_is_open", return_value=True), patch.object(platform, "AUTO_SCAN_ENABLED", True), patch.object(platform, "scheduler", scheduler_stub):
                 response = self.client.get("/api/markets/saudi/signals").get_json()
                 status = self.client.get("/api/system/status").get_json()
-            self.assertIn("تعذر", response["scan_error"])
+            self.assertIn("الشموع المكتملة", response["scan_error"])
             self.assertEqual(status["scanner_runtime"]["saudi"]["last_error_code"], "insufficient_candle_data")
 
     def test_signals_endpoint_reports_engine_fingerprint_as_a_fallback(self):
