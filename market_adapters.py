@@ -32,7 +32,7 @@ def _get(url,params=None):
     return payload
 
 def _chart(symbol,interval="15m",period=None):
-    periods={"15m":"5d","30m":"1mo","60m":"6mo","1d":"2y","1wk":"5y","1mo":"10y"}
+    periods={"15m":"60d","30m":"1mo","60m":"6mo","1d":"2y","1wk":"5y","1mo":"max"}
     period=period or periods.get(interval,"5d")
     payload=None
     errors=[]
