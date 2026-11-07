@@ -396,8 +396,14 @@ def market_tickers(market):
                 last=rows[-1]
                 prev=rows[-97] if len(rows)>=97 else rows[0]
                 change=(last[4]/prev[4]-1)*100 if prev[4] else 0
+                # Use the last 96 fifteen-minute bars as a rolling daily
+                # activity window. Apply the 1M notional proxy floor to US
+                # futures contracts; keep FX/metals quotes unrestricted.
                 volume=sum(max(0,x[5]) for x in rows[-96:])
-                return _row(symbol,last[4],change,volume)
+                row=_row(symbol,last[4],change,volume)
+                if market=="us-contracts" and (not row or row["quote_volume"]<1_000_000):
+                    return None
+                return row
             except Exception:
                 return None
         with ThreadPoolExecutor(max_workers=8) as pool:
