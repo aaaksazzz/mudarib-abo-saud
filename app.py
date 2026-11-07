@@ -486,33 +486,109 @@ def expire_stale_trades(market=None):
         db.session.commit()
     return changed
 
+def evaluate_trade_outcome_from_bars(trade,rows,now_ms=None):
+    """Replay completed 15m OHLC bars after entry; resolve same-bar ambiguity conservatively."""
+    now_ms=now_ms if now_ms is not None else int(utcnow().timestamp()*1000)
+    interval_ms=market_strategies.INTERVAL_MS["15m"]
+    try:
+        created=aware(trade.created_at)
+        first_bar=(int(created.timestamp()*1000)//interval_ms)*interval_ms
+    except (AttributeError,TypeError,ValueError,OverflowError):
+        return trade.status,0
+    status=trade.status
+    completed=0
+    parsed=[]
+    for row in rows or []:
+        try:
+            if not isinstance(row,(list,tuple)) or len(row)<6:
+                continue
+            stamp=int(float(row[0]))
+            high=float(row[2])
+            low=float(row[3])
+            if not all(math.isfinite(value) for value in (high,low)) or high<=0 or low<=0 or high<low:
+                continue
+            if stamp<first_bar or stamp+interval_ms>now_ms:
+                continue
+            parsed.append((stamp,high,low))
+        except (TypeError,ValueError,OverflowError):
+            continue
+    for _,high,low in sorted(parsed):
+        completed+=1
+        if trade.side=="BUY":
+            stop_hit=low<=trade.stop
+            tp1_hit=high>=trade.tp1
+            tp2_hit=high>=trade.tp2
+            tp3_hit=high>=trade.tp3
+        else:
+            stop_hit=high>=trade.stop
+            tp1_hit=low<=trade.tp1
+            tp2_hit=low<=trade.tp2
+            tp3_hit=low<=trade.tp3
+        # OHLC cannot reveal which extreme came first inside one candle.
+        # Stop-first is the conservative, non-inflated outcome.
+        if stop_hit:
+            status="stopped_after_tp2" if status=="tp2_hit" else "stopped_after_tp1" if status=="tp1_hit" else "stopped"
+            break
+        if tp3_hit:
+            status="tp3_hit"
+            break
+        if tp2_hit:
+            status="tp2_hit"
+        elif tp1_hit and status=="active":
+            status="tp1_hit"
+    return status,completed
+
+
 def update_trade_outcomes(market,tickers):
-    prices={item["symbol"]:float(item["price"]) for item in tickers if item.get("symbol") and float(item.get("price") or 0)>0}
+    prices={}
+    for item in tickers:
+        try:
+            symbol=item.get("symbol")
+            price=float(item.get("price") or 0)
+            if symbol and math.isfinite(price) and price>0:
+                prices[symbol]=price
+        except (TypeError,ValueError,OverflowError):
+            continue
     trades=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES)).all()
+    if not trades:
+        return 0
+    symbols=sorted({trade.symbol for trade in trades if trade.symbol})
+    def fetch_trade_bars(symbol):
+        try:
+            return symbol,klines(market,symbol,"15m",100)
+        except Exception:
+            return symbol,[]
+    with ThreadPoolExecutor(max_workers=min(8,max(1,len(symbols)))) as pool:
+        bars_by_symbol=dict(pool.map(fetch_trade_bars,symbols))
     changed=0
+    now_ms=int(utcnow().timestamp()*1000)
     for trade in trades:
         price=prices.get(trade.symbol)
-        if price is None or trade.entry<=0:
-            continue
-        direction=1 if trade.side=="BUY" else -1
-        trade.result_pct=round((price/trade.entry-1)*direction*100,4)
-        stop_hit=price<=trade.stop if trade.side=="BUY" else price>=trade.stop
-        tp1_hit=price>=trade.tp1 if trade.side=="BUY" else price<=trade.tp1
-        tp2_hit=price>=trade.tp2 if trade.side=="BUY" else price<=trade.tp2
-        tp3_hit=price>=trade.tp3 if trade.side=="BUY" else price<=trade.tp3
+        if price is not None and trade.entry>0:
+            direction=1 if trade.side=="BUY" else -1
+            trade.result_pct=round((price/trade.entry-1)*direction*100,4)
         previous=trade.status
-        if stop_hit:
-            trade.status="stopped_after_tp2" if previous=="tp2_hit" else "stopped_after_tp1" if previous=="tp1_hit" else "stopped"
-        elif tp3_hit:
-            trade.status="tp3_hit"
-        elif tp2_hit:
-            trade.status="tp2_hit"
-        elif tp1_hit and previous=="active":
-            trade.status="tp1_hit"
+        rows=bars_by_symbol.get(trade.symbol) or []
+        status,completed=evaluate_trade_outcome_from_bars(trade,rows,now_ms)
+        if completed==0 and price is not None and trade.entry>0:
+            # Provider fallback: preserve live-price tracking when no completed
+            # post-entry candle is available, without fabricating OHLC history.
+            stop_hit=price<=trade.stop if trade.side=="BUY" else price>=trade.stop
+            tp1_hit=price>=trade.tp1 if trade.side=="BUY" else price<=trade.tp1
+            tp2_hit=price>=trade.tp2 if trade.side=="BUY" else price<=trade.tp2
+            tp3_hit=price>=trade.tp3 if trade.side=="BUY" else price<=trade.tp3
+            if stop_hit:
+                status="stopped_after_tp2" if previous=="tp2_hit" else "stopped_after_tp1" if previous=="tp1_hit" else "stopped"
+            elif tp3_hit:
+                status="tp3_hit"
+            elif tp2_hit:
+                status="tp2_hit"
+            elif tp1_hit and previous=="active":
+                status="tp1_hit"
+        trade.status=status
         if trade.status!=previous:
             changed+=1
-    if trades:
-        db.session.commit()
+    db.session.commit()
     return changed
 
 def select_scan_candidates(universe,offset=0,batch_size=80):
