@@ -7,10 +7,9 @@ Spot and USD-M Futures. Scores rank confluence; they are not win probabilities.
 """
 import math
 
-STRATEGY_FINGERPRINT = "SMART-FLOW-SMA200-V1-20261107"
-TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
-INTERVAL_MS = {"15m": 900_000, "1h": 3_600_000, "4h": 14_400_000,
-               "1d": 86_400_000, "1w": 604_800_000, "1M": 2_592_000_000}
+STRATEGY_FINGERPRINT = "SMART-FLOW-SMA200-15M-V2-20261107"
+TIMEFRAMES = ("15m",)
+INTERVAL_MS = {"15m": 900_000}
 PROFILES = {
     "spot": {"allow_short": False}, "alpha": {"allow_short": False},
     "futures": {"allow_short": True}, "us-stocks": {"allow_short": False},
