@@ -1,5 +1,5 @@
 const $=s=>document.querySelector(s);
-let csrf="",currentUser=null,currentPage="overview",boot={sections:{}},selectedTimeframes={};
+let csrf="",currentUser=null,currentPage="overview",boot={sections:{}},selectedTimeframes={},authBusy=false;
 const timeframeOptions=[["15m","15 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
 const marketNames={spot:"Binance Spot",futures:"Binance Futures",alpha:"Binance Alpha","us-stocks":"الأسهم الأمريكية","us-contracts":"العقود الأمريكية",saudi:"السوق السعودي",forex:"الفوركس والذهب"};
 const pages={overview:"نظرة عامة",...marketNames,plans:"الاشتراكات والدفع",journal:"سجل الصفقات",blog:"المدونة",news:"الأخبار المهمة",admin:"لوحة الإدارة"};
@@ -14,10 +14,36 @@ function renderUser(){$("#loginBtn").textContent=currentUser?currentUser.email.s
 function authModal(){const modal=$("#authModal");modal.hidden=false;$("#authEmail").focus()}
 function closeAuth(){$("#authModal").hidden=true}
 $("#loginBtn").addEventListener("click",()=>currentUser?accountMenu():authModal());
-function accountMenu(){if(confirm("هل تريد تسجيل الخروج؟"))api("/api/auth/logout",{method:"POST"}).then(()=>{currentUser=null;renderUser();toast("تم تسجيل الخروج")}).catch(e=>toast(e.message))}
+function accountMenu(){if(confirm("هل تريد تسجيل الخروج؟"))api("/api/auth/logout",{method:"POST"}).then(()=>{currentUser=null;csrf="";renderUser();toast("تم تسجيل الخروج");if(currentPage==="admin")openPage("overview")}).catch(e=>toast(e.message))}
 $("#authClose").addEventListener("click",closeAuth);
-$("#authMode").addEventListener("click",()=>{const reg=$("#authSubmit").dataset.mode!=="register";$("#authSubmit").dataset.mode=reg?"register":"login";$("#authSubmit").textContent=reg?"إنشاء الحساب":"تسجيل الدخول";$("#authMode").textContent=reg?"لديك حساب؟ تسجيل الدخول":"مستخدم جديد؟ إنشاء حساب";$("#authPassword").autocomplete=reg?"new-password":"current-password";$("#authPassword").placeholder=reg?"12 خانة أو أكثر، حروف وأرقام":"كلمة المرور"});
-$("#authSubmit").addEventListener("click",async()=>{const mode=$("#authSubmit").dataset.mode||"login";try{const d=await api("/api/auth/"+mode,{method:"POST",body:JSON.stringify({email:$("#authEmail").value,password:$("#authPassword").value})});csrf=d.csrf;currentUser=d.user;renderUser();closeAuth();toast(mode==="login"?"تم تسجيل الدخول":"تم إنشاء الحساب");renderPage(currentPage)}catch(e){toast(e.message)}});
+$("#authMode").addEventListener("click",()=>{
+ const reg=$("#authSubmit").dataset.mode!=="register";
+ $("#authSubmit").dataset.mode=reg?"register":"login";
+ $("#authSubmit").textContent=reg?"إنشاء الحساب":"تسجيل الدخول";
+ $("#authMode").textContent=reg?"لديك حساب؟ تسجيل الدخول":"مستخدم جديد؟ إنشاء حساب";
+ $("#authPassword").autocomplete=reg?"new-password":"current-password";
+ $("#authPassword").minLength=reg?12:0;
+ $("#authPassword").placeholder=reg?"12 خانة أو أكثر، حروف وأرقام":"كلمة المرور";
+});
+$("#authForm").addEventListener("submit",async event=>{
+ event.preventDefault();
+ if(authBusy||!$("#authForm").reportValidity())return;
+ const mode=$("#authSubmit").dataset.mode||"login";
+ const submit=$("#authSubmit"),toggle=$("#authMode");
+ authBusy=true;submit.disabled=true;toggle.disabled=true;
+ submit.textContent=mode==="register"?"جارٍ إنشاء الحساب...":"جارٍ تسجيل الدخول...";
+ try{
+  const d=await api("/api/auth/"+mode,{method:"POST",body:JSON.stringify({email:$("#authEmail").value.trim(),password:$("#authPassword").value})});
+  csrf=d.csrf;currentUser=d.user;renderUser();closeAuth();
+  if(location.pathname==="/login"||location.pathname==="/register")history.replaceState({page:"overview"},"","/");
+  toast(mode==="login"?"تم تسجيل الدخول":"تم إنشاء الحساب");
+  renderPage(currentPage);
+ }catch(e){toast(e.message)}
+ finally{
+  authBusy=false;submit.disabled=false;toggle.disabled=false;
+  submit.textContent=submit.dataset.mode==="register"?"إنشاء الحساب":"تسجيل الدخول";
+ }
+});
 $("#menuToggle").addEventListener("click",()=>{$("#sidebar").classList.toggle("open");$("#scrim").classList.toggle("show")});
 $("#scrim").addEventListener("click",()=>{$("#sidebar").classList.remove("open");$("#scrim").classList.remove("show")});
 $("#themeToggle").addEventListener("click",()=>{document.body.classList.toggle("light");localStorage.setItem("stp-theme",document.body.classList.contains("light")?"light":"dark")});
