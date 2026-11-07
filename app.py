@@ -387,10 +387,10 @@ def public_plans():
     return jsonify({"ok":True,"currency":"USD","plans":PAYMENT_PLANS,"payment_methods":PAYMENT_METHODS,"contact_url":admin_contact_url(),"contact_label":"تواصل مع الإدارة"})
 
 def saudi_market_is_open(now=None):
-    """Saudi main-market session: Sun-Thu, 09:30-15:20 Asia/Riyadh."""
+    """Saudi main-market continuous trading: Sun-Thu, 10:00-15:00 Asia/Riyadh."""
     local=(aware(now) or utcnow()).astimezone(ZoneInfo("Asia/Riyadh"))
     minute_of_day=local.hour*60+local.minute
-    return local.weekday() not in (4,5) and 9*60+30 <= minute_of_day < 15*60+20
+    return local.weekday() not in (4,5) and 10*60 <= minute_of_day < 15*60
 
 
 def read_scan_runtime(market):
@@ -1020,9 +1020,15 @@ def signals(market):
         # Never present an old batch or a closed-session quote as a live entry.
         market_closed=(market=="saudi" and not saudi_market_is_open())
         runtime=read_scan_runtime(market)
-        scan_error=scan_error_message(runtime.get("last_error_code")) if (
-            not market_closed and runtime.get("status")=="error"
-        ) else None
+        scan_error=None
+        if not market_closed:
+            active_scheduler=globals().get("scheduler")
+            if not globals().get("AUTO_SCAN_ENABLED",False):
+                scan_error="الفحص التلقائي غير مفعّل على الخادم؛ يلزم تفعيل ENABLE_AUTO_SCAN."
+            elif not active_scheduler or not active_scheduler.running:
+                scan_error="المجدول الخلفي غير نشط داخل الخدمة."
+            elif runtime.get("status")=="error":
+                scan_error=scan_error_message(runtime.get("last_error_code"))
         return jsonify({"ok":True,"market":market,"timeframe":timeframe,"timeframes":list(TIMEFRAMES),
                         "signals":[trade_json(x) for x in active] if not stale and not market_closed else [],
                         "updated_at":updated,"cached":True,"stale":stale,"scan_ready":bool(updated),
