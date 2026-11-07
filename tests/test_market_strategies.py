@@ -41,6 +41,20 @@ class Sma200StrategyTests(unittest.TestCase):
         for legacy_frame in ("1h", "4h", "1d", "1w", "1M"):
             self.assertIsNone(analyze("futures", "TEST", candles("UP"), timeframe=legacy_frame))
 
+    def test_two_independent_candle_confirmations_can_generate_a_signal(self):
+        rows = candles("UP", volume=False)
+        # Keep momentum and buyer pressure, but remove the breakout vote.
+        previous_close = rows[-3][4]
+        rows[-2] = [
+            rows[-2][0], previous_close - 0.25, previous_close + 0.30,
+            previous_close - 0.30, previous_close + 0.25, 0.0
+        ]
+        signal = analyze("futures", "TWO-VOTES", rows, timeframe="15m")
+        self.assertIsNotNone(signal)
+        self.assertEqual(signal["side"], "BUY")
+        self.assertGreaterEqual(signal["confirmations"], 2)
+        self.assertLess(signal["entry"], signal["ma200"] * 1.10)
+
     def test_buy_signal_has_structural_stop_and_three_r_targets(self):
         signal = analyze("futures", "TEST", candles("UP"), timeframe="15m")
         self.assertIsNotNone(signal)
