@@ -1006,6 +1006,22 @@ def trade_history():
 def strategies():
     # Strategy documentation is private operational logic, not a customer-facing endpoint.
     return json_error("غير متاح",404)
+def classify_news_headline(title):
+    """Conservative headline-only sentiment; never presents a headline as a verified trade signal."""
+    text_value=str(title or "").casefold()
+    negative=("هبوط","انخفاض","تراجع","خسائر","أزمة","تحذير","انكماش","تضخم","رفع الفائدة","تشديد","بيع مكثف","اختراق أمني","إفلاس","تصفية","bearish","drop","falls","falling","decline","losses","crash","crisis","warning","recession","inflation","rate hike","selloff","hack","bankruptcy","liquidation","caída","bajada","pérdidas","crise","rückgang","verluste","einbruch","penurunan","kerugian","düşüş","kayıp","baisse","pertes","गिरावट","नुकसान")
+    positive=("ارتفاع","صعود","مكاسب","نمو","انتعاش","تخفيف","خفض الفائدة","شراء قوي","bullish","surge","rally","gains","growth","rebound","recovery","rate cut","inflows","breakout","subida","ganancias","hausse","gewinne","anstieg","kenaikan","pertumbuhan","yükseliş","artış","hausse","croissance","वृद्धि","लाभ")
+    neg=sum(1 for word in negative if word in text_value)
+    pos=sum(1 for word in positive if word in text_value)
+    if neg > pos:
+        sentiment,direction,label="negative","SELL","سلبي · ضغط بيعي"
+    elif pos > neg:
+        sentiment,direction,label="positive","BUY","إيجابي · ضغط شرائي"
+    else:
+        sentiment,direction,label="neutral","NEUTRAL","محايد · لا اتجاه واضح"
+    return {"sentiment":sentiment,"direction":direction,"sentiment_label":label,
+            "sentiment_basis":"headline_only","sentiment_confidence":"low" if sentiment=="neutral" else "limited"}
+
 @lru_cache(maxsize=8)
 def _cached_google_news(language, bucket):
     queries={"ar":"أسواق المال تداول العملات الرقمية الأسهم الفوركس الذهب","en":"financial markets trading cryptocurrency stocks forex gold",
@@ -1028,7 +1044,8 @@ def _cached_google_news(language, bucket):
         source_name=(source.text or "").strip() if source is not None else ""
         published=(item.findtext("pubDate") or "").strip()
         if title and link.startswith("https://"):
-            items.append({"title":title,"url":link,"source":source_name,"published_at":published})
+            classified=classify_news_headline(title)
+            items.append({"title":title,"source":source_name,"published_at":published,**classified})
     return items
 
 @app.get("/api/news")
@@ -1039,8 +1056,16 @@ def live_news():
     if language not in ("ar","en","es","de","id","pt","tr","fr","hi"):
         language="en"
     try:
-        items=_cached_google_news(language,int(time.time()//300))
-        return jsonify({"ok":True,"provider":"Google News RSS","language":language,"items":items,"updated_at":iso(utcnow())})
+        source_items=_cached_google_news(language,int(time.time()//300))
+        items=[]
+        for item in source_items:
+            title=str(item.get("title") or "").strip()
+            if not title:
+                continue
+            source=classify_news_headline(title)
+            items.append({"title":title[:500],"source":str(item.get("source") or "")[:120],
+                          "published_at":str(item.get("published_at") or "")[:100],**source})
+        return jsonify({"ok":True,"provider":"Google News RSS","language":language,"items":items,"updated_at":iso(utcnow()),"delivery":"in_app_only"})
     except Exception:
         app.logger.exception("live news feed failed")
         return jsonify({"ok":False,"provider":"Google News RSS","language":language,"items":[],"error":"تعذر جلب الأخبار الحية من المصدر حالياً","updated_at":iso(utcnow())}),502

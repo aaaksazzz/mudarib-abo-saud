@@ -80,7 +80,22 @@ class AccountNewsSeoTests(unittest.TestCase):
         with patch.object(platform_app, "_cached_google_news", return_value=[item]):
             response = self.client.get("/api/news?lang=en", base_url=self.base_url)
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()["items"][0]["title"], "Market update")
+        item = response.get_json()["items"][0]
+        self.assertEqual(item["title"], "Market update")
+        self.assertNotIn("url", item)
+        self.assertIn(item["direction"], ("BUY", "SELL", "NEUTRAL"))
+        self.assertEqual(response.get_json()["delivery"], "in_app_only")
+
+    def test_news_headline_sentiment_distinguishes_negative_positive_and_neutral(self):
+        negative = platform_app.classify_news_headline("Bitcoin price crash as market losses deepen")
+        positive = platform_app.classify_news_headline("Bitcoin rally brings strong gains to crypto market")
+        neutral = platform_app.classify_news_headline("Central bank publishes weekly market calendar")
+        self.assertEqual(negative["direction"], "SELL")
+        self.assertEqual(negative["sentiment"], "negative")
+        self.assertEqual(positive["direction"], "BUY")
+        self.assertEqual(positive["sentiment"], "positive")
+        self.assertEqual(neutral["direction"], "NEUTRAL")
+        self.assertEqual(neutral["sentiment"], "neutral")
 
     def test_blog_article_has_search_metadata_and_is_in_sitemap(self):
         self.slug = "seo-test-" + uuid.uuid4().hex
