@@ -1028,7 +1028,15 @@ def live_news():
     if language not in ("ar","en","es","de","id","pt","tr","fr","hi"):
         language="en"
     try:
-        items=_cached_google_news(language,int(time.time()//300))
+        source_items=_cached_google_news(language,int(time.time()//300))
+        items=[]
+        for item in source_items:
+            title=str(item.get("title") or "").strip()
+            if not title:
+                continue
+            source=classify_news_headline(title)
+            items.append({"title":title[:500],"source":str(item.get("source") or "")[:120],
+                          "published_at":str(item.get("published_at") or "")[:100],**source})
         return jsonify({"ok":True,"provider":"Google News RSS","language":language,"items":items,"updated_at":iso(utcnow()),"delivery":"in_app_only"})
     except Exception:
         app.logger.exception("live news feed failed")
