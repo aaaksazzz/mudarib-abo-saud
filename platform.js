@@ -192,8 +192,7 @@ async function adminPage(root){
  if(!currentUser||currentUser.role!=="admin"){
   try{
    const status=await api("/api/system/status");
-   root.innerHTML='<section class="panel empty-state"><h2>الدخول إلى لوحة الإدارة</h2><p>سجّل الدخول بحساب المدير المعرّف في إعدادات Northflank.</p><p>'+(status.admin_exists?"يوجد حساب مدير مسجل.":"لا يوجد حساب مدير حتى الآن.")+'</p><p>'+(status.admin_login_configured?"بيانات دخول المدير مهيأة في إعدادات الخدمة.":"يلزم ضبط ADMIN_EMAIL و ADMIN_PASSWORD في إعدادات Northflank.")+'</p><p>'+(status.persistent_secret_configured?"مفتاح الجلسات الدائم مهيأ.":"تحذير: SECRET_KEY الدائم غير مهيأ؛ قد تنتهي الجلسات بعد إعادة التشغيل.")+'</p><button class="login-btn" id="adminLoginNow">تسجيل دخول المدير</button></section>';
-   $("#adminLoginNow").onclick=authModal;
+   root.innerHTML='<section class="panel empty-state admin-login-panel"><a class="auth-brand" href="/">SMART TRADING PRO</a><h2>لوحة الإدارة</h2><p>هذه الصفحة مخصصة لحساب المدير فقط.</p><p>'+(status.admin_exists?"يوجد حساب مدير مسجل.":"لا يوجد حساب مدير حتى الآن.")+'</p><p>'+(status.admin_login_configured?"بيانات دخول المدير مهيأة.":"يلزم ضبط بيانات المدير في إعدادات الخدمة.")+'</p><p>'+(status.persistent_secret_configured?"مفتاح الجلسات الدائم مهيأ.":"تحذير: مفتاح الجلسات الدائم غير مهيأ.")+'</p><a class="login-btn admin-login-link" href="/login">تسجيل دخول المدير</a><a class="auth-home-link" href="/">العودة إلى المنصة</a></section>';
   }catch(e){root.innerHTML='<div class="panel empty-state">'+esc(e.message)+'</div>'}
   return;
  }
