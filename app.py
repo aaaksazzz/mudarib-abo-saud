@@ -521,7 +521,7 @@ def build_signal(market,item,timeframe):
     return setup
 
 def filter_fresh_signals(signals, universe, now=None):
-    """Reject stale candles and entries that have materially moved on each timeframe."""
+    """Reject stale/moved setups and anchor execution levels to the live quote."""
     now=now or utcnow()
     now_ms=int(now.timestamp()*1000)
     live_prices={}
@@ -538,27 +538,49 @@ def filter_fresh_signals(signals, universe, now=None):
     for signal in signals:
         try:
             candle_time=int(signal.get("signal_candle_time") or 0)
-            entry=float(signal.get("entry") or 0)
+            candle_entry=float(signal.get("entry") or 0)
             stop=float(signal.get("stop") or 0)
-            tp1=float(signal.get("tp1") or 0)
+            old_tp1=float(signal.get("tp1") or 0)
             current=live_prices.get(signal.get("symbol"))
-            direction=1.0 if signal.get("side")=="BUY" else -1.0
+            side=signal.get("side")
+            direction=1.0 if side=="BUY" else -1.0
             interval_ms=market_strategies.INTERVAL_MS.get(signal.get("timeframe"))
             if not interval_ms or not candle_time or now_ms-(candle_time+interval_ms)>interval_ms*1.5+120000:
                 rejected_old+=1
                 continue
-            if current is None or min(entry,stop,tp1)<=0:
+            if current is None or min(candle_entry,stop,old_tp1)<=0 or side not in ("BUY","SELL"):
                 rejected_moved+=1
                 continue
-            target_distance=abs(tp1-entry)
-            risk=abs(entry-stop)
-            favorable_move=(current-entry)*direction
-            if target_distance<=0 or risk<=0 or favorable_move>=target_distance*0.80:
+            old_target_distance=abs(old_tp1-candle_entry)
+            old_risk=abs(candle_entry-stop)
+            favorable_move=(current-candle_entry)*direction
+            # A setup is invalid if price has already consumed most of its target,
+            # moved too far from the signal candle, or crossed its structural stop.
+            if old_target_distance<=0 or old_risk<=0 or favorable_move>=old_target_distance*0.80:
                 rejected_moved+=1
                 continue
-            if abs(current-entry)>max(risk*0.35,target_distance*0.50):
+            if abs(current-candle_entry)>max(old_risk*0.35,old_target_distance*0.50):
                 rejected_moved+=1
                 continue
+            if (side=="BUY" and current<=stop) or (side=="SELL" and current>=stop):
+                rejected_moved+=1
+                continue
+            live_risk=abs(current-stop)
+            atr=float(signal.get("atr") or 0)
+            if not math.isfinite(live_risk) or live_risk<=0 or not math.isfinite(atr) or atr<=0:
+                rejected_moved+=1
+                continue
+            if live_risk>atr*2.5 or live_risk<atr*0.20:
+                rejected_moved+=1
+                continue
+            # The published entry is the actual quote at approval time, not the
+            # previous candle close. Rebuild all R-multiple targets from that entry.
+            signal["entry"]=current
+            signal["tp1"]=current+direction*live_risk
+            signal["tp2"]=current+direction*live_risk*2.0
+            signal["tp3"]=current+direction*live_risk*3.0
+            signal["risk_distance"]=live_risk
+            signal["entry_price_source"]="live_market_quote"
             accepted.append(signal)
         except (TypeError,ValueError,OverflowError):
             rejected_moved+=1
@@ -712,6 +734,11 @@ def timeframe_bucket(frame,now):
     raise ValueError("Unsupported timeframe "+str(frame))
 
 
+def market_scan_timeframes(market):
+    """Saudi equities use the live 15-minute session only; other markets retain their configured frames."""
+    return ("15m",) if market=="saudi" else TIMEFRAMES
+
+
 def run_market_scan(market,force=False):
     if market not in MARKETS:
         raise ValueError("Unknown market "+str(market))
@@ -737,7 +764,8 @@ def run_market_scan(market,force=False):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
     frames_to_scan=[]
     frame_buckets={}
-    for frame in TIMEFRAMES:
+    scan_frames=market_scan_timeframes(market)
+    for frame in scan_frames:
         bucket=timeframe_bucket(frame,now)
         frame_buckets[frame]=bucket
         frame_row=db.session.get(Setting,f"scan-frame:smart-flow-quant:{market}:{frame}")

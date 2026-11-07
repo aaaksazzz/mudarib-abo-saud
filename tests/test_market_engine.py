@@ -92,7 +92,7 @@ class MarketEngineTests(unittest.TestCase):
         now = platform.utcnow()
         current = int(now.timestamp() * 1000)
         good = {"symbol":"BTCUSDT","timeframe":"15m","signal_candle_time":current-900000,
-                "side":"BUY","entry":100.0,"stop":98.0,"tp1":103.0}
+                "side":"BUY","entry":100.0,"stop":98.0,"tp1":103.0,"atr":2.0}
         late = {**good,"symbol":"LATEUSDT"}
         old = {**good,"symbol":"OLDUSDT","signal_candle_time":current-3600000}
         accepted, counts = platform.filter_fresh_signals(
@@ -103,6 +103,11 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual([item["symbol"] for item in accepted], ["BTCUSDT"])
         self.assertEqual(counts["rejected_late_price"], 1)
         self.assertEqual(counts["rejected_stale_candle"], 1)
+
+
+    def test_saudi_scanner_uses_only_live_15m_session(self):
+        self.assertEqual(platform.market_scan_timeframes("saudi"), ("15m",))
+        self.assertEqual(platform.market_scan_timeframes("futures"), platform.TIMEFRAMES)
 
     def test_strategy_fingerprint_confirms_all_timeframes_and_legacy_retirement(self):
         response = self.client.get("/api/strategy-status")
@@ -402,9 +407,9 @@ class MarketEngineTests(unittest.TestCase):
         now_ms=int(platform.utcnow().timestamp()*1000)
         signal = {
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":99.0,
-            "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,
+            "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,"atr":0.5,
             "change_pct":1.2,"timeframe":"15m","signal_candle_time":now_ms-900000-1000,
-            "reason":"SMART FLOW QUANT:: confirmed."
+            "reason":"SMART FLOW QUANT:: confirmed.","atr":1.0
         }
         def per_frame(market, item, timeframe):
             interval=platform.market_strategies.INTERVAL_MS[timeframe]
@@ -422,7 +427,7 @@ class MarketEngineTests(unittest.TestCase):
         now_ms=int(platform.utcnow().timestamp()*1000)
         signal = {
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":99.0,
-            "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,
+            "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,"atr":1.0,
             "change_pct":1.2,"timeframe":"15m","signal_candle_time":now_ms-900000-1000,
             "reason":"SMART FLOW QUANT:: confirmed."
         }
@@ -434,7 +439,10 @@ class MarketEngineTests(unittest.TestCase):
         with platform.app.app_context():
             with patch.object(platform, "market_tickers", return_value=[
                 {"symbol":"BTCUSDT","price":100.0,"change_pct":1.2,"quote_volume":5000000}
-            ]), patch.object(platform, "build_signal", side_effect=per_frame):
+            ]), patch.object(platform, "build_signal", side_effect=per_frame), patch.object(
+                platform, "filter_fresh_signals",
+                side_effect=lambda signals, universe, now=None: (signals, {"rejected_stale_candle": 0, "rejected_late_price": 0})
+            ):
                 first = platform.run_market_scan("spot", force=True)
                 self.assertEqual(len(first["signals"]), len(platform.TIMEFRAMES))
                 self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
