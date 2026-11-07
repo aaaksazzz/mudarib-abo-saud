@@ -144,7 +144,9 @@ def analyze_200(rows, side, entry, original_stop, atr):
     aligned = sum(1 for vote in votes if vote == direction)
     opposed = sum(1 for vote in votes if vote == -direction)
     active = aligned + opposed
-    agreement = round(100.0 * aligned / active, 1) if active else 50.0
+    # Neutral checks remain neutral; they must not inflate agreement when only
+    # one or two of the 200 checks happen to produce a directional vote.
+    agreement = round(50.0 + 50.0 * (aligned - opposed) / 200.0, 1)
 
     # Structure-based stop from recent completed candles, bounded by the existing risk guardrails.
     look = min(20, len(c))
