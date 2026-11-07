@@ -39,3 +39,25 @@ body.light .engine-fingerprint{background:#effaf5;color:#225c48;border-color:#b7
 @media(max-width:600px){.engine-fingerprint{gap:6px;font-size:9px}.engine-fingerprint>span:last-child{margin-right:0}}
 
 .auth-error{margin:10px 0;padding:10px 12px;border:1px solid rgba(239,68,68,.45);border-radius:12px;background:rgba(239,68,68,.10);color:#fecaca;font-size:13px;line-height:1.6}.light .auth-error{color:#991b1b;background:#fef2f2}
+
+/* Dedicated account and administrator pages */
+body.auth-standalone .sidebar,body.auth-standalone .topbar,body.auth-standalone .welcome-row,
+body.admin-standalone .sidebar,body.admin-standalone .topbar,body.admin-standalone .welcome-row{display:none!important}
+body.auth-standalone .main-area,body.admin-standalone .main-area{margin:0;min-height:100vh}
+body.auth-standalone .page-content,body.admin-standalone .page-content{max-width:1100px;padding:32px 18px;margin:0 auto}
+body.auth-standalone .page-content{max-width:520px;min-height:100vh;display:flex;align-items:center}
+.standalone-auth{width:100%;padding:28px;border-radius:18px;display:flex;flex-direction:column;gap:12px}
+.standalone-auth h1{font-size:25px;margin:4px 0}
+.standalone-auth p{color:var(--muted);margin:0 0 8px}
+.auth-brand{font:800 13px Inter,sans-serif;letter-spacing:1.1px;color:var(--accent);text-decoration:none;margin-bottom:12px}
+.standalone-auth form{display:flex;flex-direction:column;gap:9px}
+.standalone-auth label{font-size:12px;color:#aebdd0;margin-top:7px}
+.standalone-auth input{width:100%;min-height:46px;border:1px solid var(--line);border-radius:11px;background:#091321;color:var(--text);padding:11px 13px;font:inherit}
+.standalone-auth small{color:var(--muted);line-height:1.7}
+.standalone-auth .login-btn{min-height:46px;margin-top:8px}
+.auth-page-switch{text-align:center;margin-top:8px!important}
+.auth-page-switch a{color:var(--accent);font-weight:700;text-decoration:none}
+.auth-home-link{color:var(--muted);text-decoration:none;text-align:center;font-size:12px;margin-top:7px}
+.admin-login-panel{max-width:560px;margin:8vh auto;padding:28px}
+.admin-login-link{display:inline-flex;text-decoration:none;margin-top:12px}
+@media(max-width:600px){body.auth-standalone .page-content{padding:16px}.standalone-auth{padding:22px}.admin-login-panel{margin:3vh auto}}
