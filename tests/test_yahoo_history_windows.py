@@ -29,7 +29,9 @@ class YahooHistoryWindowTests(unittest.TestCase):
         get.return_value = self.payload
         rows = market_adapters._chart("2222.SR", "15m")
         self.assertEqual(len(rows), 1)
-        self.assertEqual(get.call_args.args[1].split("/")[2], "chart")
+        params = get.call_args.args[1]
+        self.assertEqual(params["interval"], "15m")
+        self.assertEqual(params["range"], "60d")
 
     @patch("market_adapters._get")
     def test_monthly_requests_maximum_available_history(self, get):
