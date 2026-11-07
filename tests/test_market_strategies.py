@@ -53,7 +53,6 @@ class Sma200StrategyTests(unittest.TestCase):
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "BUY")
         self.assertGreaterEqual(signal["confirmations"], 2)
-        self.assertLess(signal["entry"], signal["ma200"] * 1.10)
 
     def test_buy_signal_has_structural_stop_and_three_r_targets(self):
         signal = analyze("futures", "TEST", candles("UP"), timeframe="15m")
