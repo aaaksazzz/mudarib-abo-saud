@@ -76,12 +76,8 @@ function overviewMarketCard(m,s){
 }
 async function overview(root,version=renderVersion){
  lastOverviewRefresh=Date.now();
- try{
-  const marketIds=["spot","futures","alpha","us-stocks","us-contracts","saudi","forex"];
-  const [markets,snapshots]=await Promise.all([
-   api("/api/markets"),
-   Promise.all(marketIds.map(m=>api("/api/markets/"+m+"/snapshot").catch(()=>null)))
-  ]);
+ const marketIds=["spot","futures","alpha","us-stocks","us-contracts","saudi","forex"];
+ const paint=(markets,snapshots,loading=false)=>{
   if(version!==renderVersion||currentPage!=="overview")return;
   const byMarket=Object.fromEntries(snapshots.filter(Boolean).map(x=>[x.market,x]));
   const cards=markets.markets.map(m=>overviewMarketCard(m,byMarket[m.id])).join("");
@@ -89,9 +85,16 @@ async function overview(root,version=renderVersion){
   const stale=snapshots.filter(x=>x&&x.stale).length;
   const updated=snapshots.map(x=>x&&Date.parse(x.updated_at)).filter(Number.isFinite);
   const latest=updated.length?new Date(Math.min(...updated)).toLocaleString(document.documentElement.lang==="en"?"en-US":"ar-SA",{dateStyle:"medium",timeStyle:"short"}):"—";
-  const message=failed?"تعذر جلب بعض الأسواق؛ نعرض آخر بيانات محفوظة عند توفرها.":stale?"بعض الأسواق تعرض آخر نسخة محفوظة بسبب تعذر التحديث.":"بيانات الأسواق محفوظة تلقائيًا وتتحدث كل 15 دقيقة. آخر تحديث: "+latest;
+  const message=loading?"تم فتح المنصة؛ جارٍ تحديث مؤشرات الأسواق...":failed?"تعذر جلب بعض الأسواق؛ نعرض آخر بيانات محفوظة عند توفرها.":stale?"بعض الأسواق تعرض آخر نسخة محفوظة بسبب تعذر التحديث.":"بيانات الأسواق محفوظة تلقائيًا وتتحدث كل 15 دقيقة. آخر تحديث: "+latest;
   root.innerHTML='<div class="notice-bar"><span class="notice-symbol">!</span><span>'+esc(message)+'</span></div><div class="market-grid">'+cards+'</div><p class="market-overview-footnote">الاتجاهات مبنية على اتساع السوق خلال 24 ساعة. البيانات محفوظة في قاعدة البيانات وتتحدث كل 15 دقيقة.</p>';
   root.querySelectorAll("[data-open]").forEach(x=>{x.addEventListener("click",()=>openPage(x.dataset.open));x.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openPage(x.dataset.open)}})});
+ };
+ try{
+  const markets=await api("/api/markets");
+  if(version!==renderVersion||currentPage!=="overview")return;
+  paint(markets,[],true);
+  const snapshots=await Promise.all(marketIds.map(m=>api("/api/markets/"+m+"/snapshot").catch(()=>null)));
+  paint(markets,snapshots,false);
  }catch(e){
   if(version!==renderVersion||currentPage!=="overview")return;
   root.innerHTML='<div class="panel empty-state"><b>تعذر تحميل إعدادات لوحة الأسواق</b><p>'+esc(e.message)+'</p><button class="login-btn" id="retryOverview">إعادة المحاولة</button></div>';
