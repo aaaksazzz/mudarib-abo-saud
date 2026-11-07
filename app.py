@@ -131,7 +131,7 @@ def csrf_token():
 def valid_email(value):
     if not isinstance(value,str):
         return False
-    return bool(re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+",value.strip()))
+    return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",value.strip()))
 
 def valid_password(value,minimum=12):
     return (
