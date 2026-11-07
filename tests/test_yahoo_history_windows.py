@@ -34,6 +34,15 @@ class YahooHistoryWindowTests(unittest.TestCase):
         self.assertEqual(params["range"], "60d")
 
     @patch("market_adapters._get")
+    def test_empty_primary_host_falls_back_to_secondary_host(self, get):
+        empty = {"chart": {"result": [], "error": None}}
+        get.side_effect = [empty, self.payload]
+        rows = market_adapters._chart("2222.SR", "15m")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(get.call_count, 2)
+
+
+    @patch("market_adapters._get")
     def test_monthly_requests_maximum_available_history(self, get):
         get.return_value = self.payload
         market_adapters._chart("2222.SR", "1mo")
