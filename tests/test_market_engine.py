@@ -166,6 +166,48 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(signals["signals"], [])
         self.assertFalse(signals["scan_ready"])
 
+    def test_market_snapshot_is_persisted_and_reused_for_15_minutes(self):
+        rows = [
+            {"symbol":"AAA","price":10.0,"change_pct":2.0,"quote_volume":2_000_000},
+            {"symbol":"BBB","price":8.0,"change_pct":-1.0,"quote_volume":1_500_000},
+            {"symbol":"CCC","price":5.0,"change_pct":1.0,"quote_volume":1_200_000},
+        ]
+        with patch.object(platform, "market_tickers", return_value=rows) as provider:
+            first = self.client.get("/api/markets/saudi/snapshot")
+            second = self.client.get("/api/markets/saudi/snapshot")
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(first.get_json()["total"], 3)
+        self.assertEqual(first.get_json()["direction"], "صاعد")
+        self.assertEqual(second.get_json()["cache_status"], "fresh")
+        provider.assert_called_once()
+        with platform.app.app_context():
+            saved = platform.db.session.get(platform.Setting, "market-snapshot:saudi")
+            self.assertIsNotNone(saved)
+            self.assertEqual(__import__("json").loads(saved.value)["total"], 3)
+
+    def test_market_snapshot_falls_back_to_persisted_data_when_provider_fails(self):
+        rows = [
+            {"symbol":"AAA","price":10.0,"change_pct":2.0,"quote_volume":2_000_000},
+            {"symbol":"BBB","price":8.0,"change_pct":-1.0,"quote_volume":1_500_000},
+        ]
+        with patch.object(platform, "market_tickers", return_value=rows):
+            first = self.client.get("/api/markets/saudi/snapshot")
+        with platform.app.app_context():
+            saved = platform.db.session.get(platform.Setting, "market-snapshot:saudi")
+            payload = __import__("json").loads(saved.value)
+            payload["updated_at"] = platform.iso(platform.utcnow()-timedelta(minutes=16))
+            saved.value = __import__("json").dumps(payload,ensure_ascii=False)
+            platform.db.session.commit()
+        with patch.object(platform, "market_tickers", side_effect=RuntimeError("provider unavailable")):
+            fallback = self.client.get("/api/markets/saudi/snapshot")
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(fallback.status_code, 200)
+        self.assertTrue(fallback.get_json()["stale"])
+        self.assertEqual(fallback.get_json()["cache_status"], "stale_fallback")
+        self.assertEqual(fallback.get_json()["total"], 2)
+
+
     def test_saudi_session_calendar_uses_riyadh_time_and_weekdays(self):
         riyadh = timezone(timedelta(hours=3))
         self.assertFalse(platform.saudi_market_is_open(datetime(2026, 11, 7, 12, 0, tzinfo=riyadh)))  # Saturday

@@ -526,16 +526,82 @@ def market_tickers(market):
             out.append({"symbol":t["symbol"],"price":price,"change_pct":change,"quote_volume":vol})
         except (ValueError,TypeError): continue
     return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
+SNAPSHOT_CACHE_TTL=timedelta(minutes=15)
+
+
+def build_market_snapshot(market,rows,updated_at=None,stale=False):
+    up=sum(1 for item in rows if float(item.get("change_pct",0))>0)
+    down=sum(1 for item in rows if float(item.get("change_pct",0))<0)
+    stamp=iso(updated_at or utcnow())
+    return {"ok":True,"ready":True,"market":market,
+            "direction":"صاعد" if up>down else "هابط" if down>up else "متعادل",
+            "side":"BUY" if up>down else "SELL" if down>up else "NEUTRAL",
+            "direction_basis":"اتساع السوق حسب تغير السعر خلال 24 ساعة",
+            "up":up,"down":down,"total":len(rows),
+            "up_pct":round(up/len(rows)*100,1) if rows else 0,
+            "down_pct":round(down/len(rows)*100,1) if rows else 0,
+            "assets":rows[:40],"updated_at":stamp,"stale":bool(stale),
+            "cache_ttl_minutes":15}
+
+
+def read_market_snapshot(market):
+    row=db.session.get(Setting,"market-snapshot:"+market)
+    if not row:
+        return None
+    try:
+        payload=json.loads(row.value)
+        if not isinstance(payload,dict) or payload.get("market")!=market:
+            return None
+        updated=aware(datetime.fromisoformat(payload.get("updated_at","")))
+        if updated is None:
+            return None
+        payload["stale"]=(utcnow()-updated)>SNAPSHOT_CACHE_TTL
+        payload["cache_age_seconds"]=max(0,int((utcnow()-updated).total_seconds()))
+        payload["cache_ttl_minutes"]=15
+        payload["cache_status"]="stale" if payload["stale"] else "fresh"
+        return payload
+    except (TypeError,ValueError):
+        app.logger.warning("Invalid persisted market snapshot: %s",market)
+        return None
+
+
+def persist_market_snapshot(market,rows,updated_at=None):
+    if not rows:
+        raise ValueError("Cannot persist an empty market snapshot")
+    payload=build_market_snapshot(market,rows,updated_at)
+    key="market-snapshot:"+market
+    row=db.session.get(Setting,key)
+    value=json.dumps(payload,ensure_ascii=False,allow_nan=False)
+    if row is None:
+        db.session.add(Setting(key=key,value=value))
+    else:
+        row.value=value
+    db.session.commit()
+    return payload
+
+
 @app.get("/api/markets/<market>/snapshot")
 def snapshot(market):
     if market not in MARKETS: return json_error("السوق غير معروف",404)
     blocked=gate_section(market)
     if blocked: return blocked
+    cached=read_market_snapshot(market)
+    if cached and not cached["stale"]:
+        return jsonify(cached)
     try:
-        rows=market_tickers(market); up=sum(1 for x in rows if x["change_pct"]>0); down=sum(1 for x in rows if x["change_pct"]<0)
-        return jsonify({"ok":True,"market":market,"direction":"صاعد" if up>down else "هابط" if down>up else "متعادل","side":"BUY" if up>down else "SELL" if down>up else "NEUTRAL","direction_basis":"اتساع السوق حسب تغير السعر خلال 24 ساعة","up":up,"down":down,"total":len(rows),"up_pct":round(up/len(rows)*100,1) if rows else 0,"down_pct":round(down/len(rows)*100,1) if rows else 0,"assets":rows[:40],"updated_at":iso(utcnow())})
-    except Exception as e:
-        app.logger.exception("snapshot failed"); return json_error("تعذر جلب بيانات السوق من المصدر حالياً",502)
+        rows=market_tickers(market)
+        fresh=persist_market_snapshot(market,rows)
+        fresh["cache_status"]="refreshed"
+        fresh["cache_age_seconds"]=0
+        return jsonify(fresh)
+    except Exception:
+        app.logger.exception("snapshot refresh failed: %s",market)
+        if cached:
+            cached["stale"]=True
+            cached["cache_status"]="stale_fallback"
+            cached["warning"]="تعذر تحديث المصدر؛ يتم عرض آخر بيانات محفوظة."
+            return jsonify(cached)
+        return json_error("لا توجد بيانات محفوظة، وتعذر جلب بيانات السوق من المصدر حالياً",502)
 def klines(market,symbol,interval,limit=120):
     if market not in ("spot","futures"):
         return market_adapters.klines(market,symbol,interval,limit)
@@ -841,6 +907,9 @@ def run_market_scan(market,force=False):
     universe=market_tickers(market)
     if not universe:
         raise RuntimeError("Market provider returned an empty eligible universe")
+    # Persist the real market breadth before candle analysis; a candle failure
+    # must not discard a usable overview snapshot.
+    persist_market_snapshot(market,universe,now)
     market_up=sum(1 for item in universe if item.get("change_pct",0)>0)
     market_down=sum(1 for item in universe if item.get("change_pct",0)<0)
     market_bias="BUY" if market_up>market_down else "SELL" if market_down>market_up else None
