@@ -7,8 +7,8 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const money=n=>Number(n).toLocaleString("en-US",{maximumFractionDigits:8});
 const pct=(entry,target,side)=>{const v=(target/entry-1)*100*(side==="BUY"?1:-1);return (v>=0?"+":"")+v.toFixed(2)+"%"};
 function toast(s){const t=$("#toast");t.textContent=s;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2800)}
-async function api(path,opts={}){const method=(opts.method||"GET").toUpperCase();if(method!=="GET"&&!csrf){const bootResponse=await fetch("/api/bootstrap",{credentials:"same-origin",cache:"no-store"});if(bootResponse.ok){const bootData=await bootResponse.json();csrf=bootData.csrf||csrf;}}const send=()=>{const headers={"Content-Type":"application/json",...(opts.headers||{})};if(method!=="GET"&&csrf)headers["X-CSRF-Token"]=csrf;return fetch(path,{...opts,headers,credentials:"same-origin",cache:"no-store"})};let r=await send(),d={};try{d=await r.json()}catch{}if(r.status===403&&method!=="GET"&&String(d.error||"").toLowerCase().includes("csrf")){const fresh=await fetch("/api/bootstrap",{credentials:"same-origin",cache:"no-store"});if(fresh.ok){const b=await fresh.json();csrf=b.csrf||csrf;r=await send();d={};try{d=await r.json()}catch{}}}if(!r.ok)throw Error(d.error||"تعذر تنفيذ الطلب");return d}
-async function init(){try{const [b,p]=await Promise.all([api("/api/bootstrap"),api("/api/plans")]);boot=b;csrf=b.csrf;currentUser=b.user;configureAdminContact(p);renderUser();}catch(e){toast(e.message)}renderPage(pageFromLocation());if(location.pathname==="/login"||location.pathname==="/register"){authModal();if(location.pathname==="/register"&&$("#authSubmit").dataset.mode!=="register")$("#authMode").click()}}
+async function api(path,opts={}){const method=(opts.method||"GET").toUpperCase();if(method!=="GET"&&!csrf){const bootResponse=await fetch("/api/bootstrap",{credentials:"same-origin",cache:"no-store"});if(bootResponse.ok){const bootData=await bootResponse.json();csrf=bootData.csrf||csrf;}}const controller=new AbortController();const requestTimeout=setTimeout(()=>controller.abort(),9000);const send=()=>{const headers={"Content-Type":"application/json",...(opts.headers||{})};if(method!=="GET"&&csrf)headers["X-CSRF-Token"]=csrf;return fetch(path,{...opts,signal:controller.signal,headers,credentials:"same-origin",cache:"no-store"})};let r;try{r=await send()}finally{clearTimeout(requestTimeout)}let d={};try{d=await r.json()}catch{}if(r.status===403&&method!=="GET"&&String(d.error||"").toLowerCase().includes("csrf")){const fresh=await fetch("/api/bootstrap",{credentials:"same-origin",cache:"no-store"});if(fresh.ok){const b=await fresh.json();csrf=b.csrf||csrf;r=await send();d={};try{d=await r.json()}catch{}}}if(!r.ok)throw Error(d.error||"تعذر تنفيذ الطلب");return d}
+async function init(){renderPage(pageFromLocation());try{const [b,p]=await Promise.all([api("/api/bootstrap"),api("/api/plans")]);boot=b;csrf=b.csrf;currentUser=b.user;configureAdminContact(p);renderUser();}catch(e){toast(e.message)}if(location.pathname==="/login"||location.pathname==="/register"){authModal();if(location.pathname==="/register"&&$("#authSubmit").dataset.mode!=="register")$("#authMode").click()}}
 function configureAdminContact(config){const link=$("#adminContact");if(!link)return;if(config.contact_url){link.href=config.contact_url;link.hidden=false}else{link.hidden=true}}
 function renderUser(){$("#loginBtn").textContent=currentUser?currentUser.email.split("@")[0]:(document.documentElement.lang==="en"?"Sign in / Register":"دخول / حساب جديد");$("#accountStatus").textContent=currentUser?(currentUser.role==="admin"?"مدير النظام":currentUser.subscribed?"مشترك":"حساب مجاني"):"زائر";$("#adminNav").hidden=!(currentUser&&currentUser.role==="admin")}
 function authModal(){const modal=$("#authModal");modal.hidden=false;$("#authEmail").focus()}
@@ -76,12 +76,8 @@ function overviewMarketCard(m,s){
 }
 async function overview(root,version=renderVersion){
  lastOverviewRefresh=Date.now();
- try{
-  const marketIds=["spot","futures","alpha","us-stocks","us-contracts","saudi","forex"];
-  const [markets,snapshots]=await Promise.all([
-   api("/api/markets"),
-   Promise.all(marketIds.map(m=>api("/api/markets/"+m+"/snapshot").catch(()=>null)))
-  ]);
+ const marketIds=["spot","futures","alpha","us-stocks","us-contracts","saudi","forex"];
+ const paint=(markets,snapshots,loading=false)=>{
   if(version!==renderVersion||currentPage!=="overview")return;
   const byMarket=Object.fromEntries(snapshots.filter(Boolean).map(x=>[x.market,x]));
   const cards=markets.markets.map(m=>overviewMarketCard(m,byMarket[m.id])).join("");
@@ -89,9 +85,16 @@ async function overview(root,version=renderVersion){
   const stale=snapshots.filter(x=>x&&x.stale).length;
   const updated=snapshots.map(x=>x&&Date.parse(x.updated_at)).filter(Number.isFinite);
   const latest=updated.length?new Date(Math.min(...updated)).toLocaleString(document.documentElement.lang==="en"?"en-US":"ar-SA",{dateStyle:"medium",timeStyle:"short"}):"—";
-  const message=failed?"تعذر جلب بعض الأسواق؛ نعرض آخر بيانات محفوظة عند توفرها.":stale?"بعض الأسواق تعرض آخر نسخة محفوظة بسبب تعذر التحديث.":"بيانات الأسواق محفوظة تلقائيًا وتتحدث كل 15 دقيقة. آخر تحديث: "+latest;
+  const message=loading?"تم فتح المنصة؛ جارٍ تحديث مؤشرات الأسواق...":failed?"تعذر جلب بعض الأسواق؛ نعرض آخر بيانات محفوظة عند توفرها.":stale?"بعض الأسواق تعرض آخر نسخة محفوظة بسبب تعذر التحديث.":"بيانات الأسواق محفوظة تلقائيًا وتتحدث كل 15 دقيقة. آخر تحديث: "+latest;
   root.innerHTML='<div class="notice-bar"><span class="notice-symbol">!</span><span>'+esc(message)+'</span></div><div class="market-grid">'+cards+'</div><p class="market-overview-footnote">الاتجاهات مبنية على اتساع السوق خلال 24 ساعة. البيانات محفوظة في قاعدة البيانات وتتحدث كل 15 دقيقة.</p>';
   root.querySelectorAll("[data-open]").forEach(x=>{x.addEventListener("click",()=>openPage(x.dataset.open));x.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openPage(x.dataset.open)}})});
+ };
+ try{
+  const markets=await api("/api/markets");
+  if(version!==renderVersion||currentPage!=="overview")return;
+  paint(markets,[],true);
+  const snapshots=await Promise.all(marketIds.map(m=>api("/api/markets/"+m+"/snapshot").catch(()=>null)));
+  paint(markets,snapshots,false);
  }catch(e){
   if(version!==renderVersion||currentPage!=="overview")return;
   root.innerHTML='<div class="panel empty-state"><b>تعذر تحميل إعدادات لوحة الأسواق</b><p>'+esc(e.message)+'</p><button class="login-btn" id="retryOverview">إعادة المحاولة</button></div>';
