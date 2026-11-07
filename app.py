@@ -227,7 +227,7 @@ def public_article_page(slug):
         return json_error("المقال غير موجود",404)
     title=html.escape(article.meta_title or article.title)
     description=html.escape(article.meta_description or article.summary)
-    body="".join("<p>"+html.escape(part.strip())+"</p>" for part in (article.body or "").split("\\n\\n") if part.strip())
+    body="".join("<p>"+html.escape(part.strip())+"</p>" for part in (article.body or "").split("\n\n") if part.strip())
     base=os.environ.get("PUBLIC_BASE_URL",request.url_root.rstrip("/")).rstrip("/")
     canonical=base+"/blog/"+article.slug
     locale=(article.language or "ar").replace("_","-")
@@ -244,7 +244,7 @@ def sitemap_xml():
 @app.get("/robots.txt")
 def robots_txt():
     base=os.environ.get("PUBLIC_BASE_URL",request.url_root.rstrip("/")).rstrip("/")
-    return "User-agent: *\\nAllow: /\\nDisallow: /admin\\nDisallow: /api/\\nSitemap: "+base+"/sitemap.xml\\n",200,{"Content-Type":"text/plain; charset=utf-8"}
+    return "User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nSitemap: "+base+"/sitemap.xml\n",200,{"Content-Type":"text/plain; charset=utf-8"}
 
 @app.get("/plans")
 @app.get("/journal")
