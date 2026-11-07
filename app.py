@@ -734,6 +734,11 @@ def timeframe_bucket(frame,now):
     raise ValueError("Unsupported timeframe "+str(frame))
 
 
+def market_scan_timeframes(market):
+    """Saudi equities use the live 15-minute session only; other markets retain their configured frames."""
+    return ("15m",) if market=="saudi" else TIMEFRAMES
+
+
 def run_market_scan(market,force=False):
     if market not in MARKETS:
         raise ValueError("Unknown market "+str(market))
@@ -759,7 +764,8 @@ def run_market_scan(market,force=False):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
     frames_to_scan=[]
     frame_buckets={}
-    for frame in TIMEFRAMES:
+    scan_frames=market_scan_timeframes(market)
+    for frame in scan_frames:
         bucket=timeframe_bucket(frame,now)
         frame_buckets[frame]=bucket
         frame_row=db.session.get(Setting,f"scan-frame:smart-flow-quant:{market}:{frame}")
