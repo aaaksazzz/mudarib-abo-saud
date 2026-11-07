@@ -1,5 +1,6 @@
 import os, re, secrets, hashlib, hmac, time, json, math, shutil
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from functools import wraps, lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
@@ -385,12 +386,77 @@ def admin_contact_url():
 def public_plans():
     return jsonify({"ok":True,"currency":"USD","plans":PAYMENT_PLANS,"payment_methods":PAYMENT_METHODS,"contact_url":admin_contact_url(),"contact_label":"تواصل مع الإدارة"})
 
+def saudi_market_is_open(now=None):
+    """Saudi main-market session: Sun-Thu, 09:30-15:20 Asia/Riyadh."""
+    local=(aware(now) or utcnow()).astimezone(ZoneInfo("Asia/Riyadh"))
+    minute_of_day=local.hour*60+local.minute
+    return local.weekday() not in (4,5) and 9*60+30 <= minute_of_day < 15*60+20
+
+
+def read_scan_runtime(market):
+    row=db.session.get(Setting,"scan-runtime:"+market)
+    if not row:
+        return {}
+    try:
+        value=json.loads(row.value)
+        return value if isinstance(value,dict) else {}
+    except (TypeError,ValueError):
+        return {}
+
+
+def scan_error_code(exc):
+    if isinstance(exc,requests.Timeout):
+        return "provider_timeout"
+    status=getattr(getattr(exc,"response",None),"status_code",None)
+    if status==429:
+        return "provider_rate_limited"
+    if status:
+        return "provider_http_"+str(status)
+    message=str(exc).lower()
+    if "insufficient candle data" in message:
+        return "insufficient_candle_data"
+    if isinstance(exc,(requests.ConnectionError,ConnectionError)):
+        return "provider_connection_error"
+    if isinstance(exc,ValueError):
+        return "provider_data_unavailable"
+    return "scan_failed"
+
+
+def scan_error_message(code):
+    messages={
+        "provider_timeout":"تأخر مزود بيانات السوق عن الرد في آخر فحص.",
+        "provider_rate_limited":"مزود البيانات حدّ من الطلبات؛ يلزم تخفيف الضغط أو انتظار إعادة المحاولة.",
+        "provider_connection_error":"تعذر الاتصال بمزود بيانات السوق في آخر فحص.",
+        "insufficient_candle_data":"بيانات الشموع المكتملة لم تكفِ لاعتماد آخر دورة فحص.",
+        "provider_data_unavailable":"مزود السوق أعاد بيانات غير مكتملة أو غير صالحة.",
+    }
+    if str(code or "").startswith("provider_http_"):
+        return "مزود بيانات السوق أعاد خطأ HTTP في آخر فحص."
+    return messages.get(code,"تعذر إكمال آخر دورة فحص مجدولة.")
+
+
 @app.get("/api/system/status")
 def system_status():
     admin=User.query.filter_by(role="admin").first()
+    auto_scan_enabled=bool(globals().get("AUTO_SCAN_ENABLED",False))
+    active_scheduler=globals().get("scheduler")
+    runtime={}
+    for market in MARKETS:
+        item=read_scan_runtime(market)
+        runtime[market]={
+            "status":item.get("status","unknown"),
+            "last_attempt_at":item.get("last_attempt_at"),
+            "last_finished_at":item.get("last_finished_at"),
+            "last_success_at":item.get("last_success_at"),
+            "last_error_code":item.get("last_error_code"),
+            "duration_seconds":item.get("duration_seconds"),
+        }
     return jsonify({"ok":True,"admin_exists":bool(admin),"admin_login_configured":bool(os.environ.get("ADMIN_EMAIL","").strip() and os.environ.get("ADMIN_PASSWORD")),
                     "persistent_secret_configured":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-                    "database":"connected","time":iso(utcnow())})
+                    "database":"connected","time":iso(utcnow()),
+                    "auto_scan_enabled":auto_scan_enabled,
+                    "scheduler_running":bool(active_scheduler and active_scheduler.running),
+                    "scanner_runtime":runtime})
 
 @app.put("/api/admin/contact")
 @login_required
@@ -951,9 +1017,18 @@ def signals(market):
                 stale=aware(datetime.fromisoformat(updated))<utcnow()-timedelta(minutes=20)
             except (ValueError,TypeError):
                 stale=True
-        # Never present an old batch as current opportunities when the
-        # 15-minute scanner has stopped or fallen behind.
-        return jsonify({"ok":True,"market":market,"timeframe":timeframe,"timeframes":list(TIMEFRAMES),"signals":[trade_json(x) for x in active] if not stale else [],"updated_at":updated,"cached":True,"stale":stale,"scan_ready":bool(updated),**meta})
+        # Never present an old batch or a closed-session quote as a live entry.
+        market_closed=(market=="saudi" and not saudi_market_is_open())
+        runtime=read_scan_runtime(market)
+        scan_error=scan_error_message(runtime.get("last_error_code")) if (
+            not market_closed and runtime.get("status")=="error"
+        ) else None
+        return jsonify({"ok":True,"market":market,"timeframe":timeframe,"timeframes":list(TIMEFRAMES),
+                        "signals":[trade_json(x) for x in active] if not stale and not market_closed else [],
+                        "updated_at":updated,"cached":True,"stale":stale,"scan_ready":bool(updated),
+                        **meta,
+                        "scan_error":scan_error,"market_closed":market_closed,
+                        "engine":"SMART FLOW QUANT","fingerprint":STRATEGY_FINGERPRINT})
     except Exception:
         app.logger.exception("signal retrieval failed")
         return json_error("تعذر قراءة نتائج الفحص المحفوظة حالياً",503)
@@ -1250,25 +1325,77 @@ with app.app_context():
     provision_admin_from_env()
 
 
+def write_scan_runtime(market,status,started_at=None,finished_at=None,result=None,error_code=None):
+    key="scan-runtime:"+market
+    row=db.session.get(Setting,key)
+    try:
+        record=json.loads(row.value) if row else {}
+        if not isinstance(record,dict):
+            record={}
+    except (TypeError,ValueError):
+        record={}
+    if status in ("running","market_closed"):
+        record["last_attempt_at"]=iso(started_at or utcnow())
+    if status in ("success","error","market_closed"):
+        finished_at=finished_at or utcnow()
+        record["last_finished_at"]=iso(finished_at)
+        if started_at:
+            record["duration_seconds"]=round(max(0.0,(finished_at-started_at).total_seconds()),2)
+    record["status"]=status
+    if status=="success":
+        record["last_success_at"]=iso(finished_at or utcnow())
+        record["last_error_code"]=None
+        if result:
+            for key_name in ("scan_universe","scan_batch_size","analysis_completed","analysis_failed","strategy_matches","accepted_signals"):
+                if key_name in result:
+                    record[key_name]=result[key_name]
+    elif status=="error":
+        record["last_error_code"]=error_code or "scan_failed"
+    elif status=="market_closed":
+        record["last_error_code"]=None
+    payload=json.dumps(record,ensure_ascii=False)
+    if row is None:
+        db.session.add(Setting(key=key,value=payload))
+    else:
+        row.value=payload
+    db.session.commit()
+
+
 def scheduled_market_scan(market):
-    # Isolate each market so one slow or unavailable provider cannot delay the
-    # other six markets. A per-market job also prevents overlapping scans for
-    # the same market while allowing bounded cross-market concurrency.
+    # Persist each attempt so a stale page can distinguish a closed exchange,
+    # an inactive scheduler, and a failed provider/scanner cycle.
     with app.app_context():
+        started=utcnow()
         try:
+            write_scan_runtime(market,"running",started_at=started)
+            if market=="saudi" and not saudi_market_is_open(started):
+                write_scan_runtime(market,"market_closed",started_at=started,finished_at=utcnow())
+                app.logger.info("scheduled scan skipped: market=saudi reason=market_closed")
+                return
             result=run_market_scan(market,force=True)
+            finished=utcnow()
+            write_scan_runtime(market,"success",started_at=started,finished_at=finished,result=result)
             app.logger.info(
                 "scheduled scan completed: market=%s signals=%s universe=%s frames=%s failures=%s",
                 market,len(result.get("signals",[])),result.get("scan_universe"),
                 result.get("timeframes"),result.get("analysis_failed",0)
             )
-        except Exception:
+        except Exception as exc:
             db.session.rollback()
-            app.logger.exception("scheduled scan failed: %s",market)
+            code=scan_error_code(exc)
+            try:
+                write_scan_runtime(market,"error",started_at=started,finished_at=utcnow(),error_code=code)
+            except Exception:
+                db.session.rollback()
+                app.logger.exception("could not persist scanner failure status: %s",market)
+            app.logger.exception("scheduled scan failed: %s code=%s",market,code)
         finally:
             db.session.remove()
 
-if os.environ.get("ENABLE_AUTO_SCAN","true").lower()=="true":
+
+AUTO_SCAN_ENABLED=os.environ.get("ENABLE_AUTO_SCAN","true").lower()=="true"
+scheduler=None
+if AUTO_SCAN_ENABLED:
     scheduler=BackgroundScheduler(
         timezone="UTC",
         executors={"default":{"type":"threadpool","max_workers":2}},
