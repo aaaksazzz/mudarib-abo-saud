@@ -1,6 +1,5 @@
 import os, re, secrets, hashlib, hmac, time, json, math, shutil
 from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
 from functools import wraps, lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
@@ -388,7 +387,7 @@ def public_plans():
 
 def saudi_market_is_open(now=None):
     """Saudi main-market continuous trading: Sun-Thu, 10:00-15:00 Asia/Riyadh."""
-    local=(aware(now) or utcnow()).astimezone(ZoneInfo("Asia/Riyadh"))
+    local=(aware(now) or utcnow()).astimezone(timezone(timedelta(hours=3)))
     minute_of_day=local.hour*60+local.minute
     return local.weekday() not in (4,5) and 10*60 <= minute_of_day < 15*60
 
