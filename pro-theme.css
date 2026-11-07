@@ -189,3 +189,17 @@ body[dir="ltr"] .nav-item.active{box-shadow:inset 2px 0 #55dfb7,0 7px 20px #0002
 @media(max-width:700px){.journal-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.journal-stat{padding:13px}.journal-stat strong{font-size:22px}.journal-list{grid-template-columns:1fr}}
 body.light .journal-stat,body.light .journal-trade{background:#fff;border-color:#dbe4ed}
 body.light .journal-stat strong,body.light .journal-trade-top b{color:#17283a}
+
+
+/* Global market overview: compact breadth context for every supported venue */
+.market-overview-direction{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:11px;padding-top:9px;border-top:1px solid #ffffff10}
+.market-overview-direction>span{display:flex;align-items:center;gap:7px;color:#8fa2b7;font-size:10px}
+.market-overview-direction b{font-size:11px;font-weight:800}
+.market-overview-direction small{color:#91a4b8;font-size:9px;white-space:nowrap}
+.market-overview-footnote{margin:14px 2px 0;color:#8295aa;font-size:10px;line-height:1.8}
+.market-card{min-height:174px}
+body.light .market-overview-direction{border-color:#dce5ed}
+body.light .market-overview-direction>span,body.light .market-overview-direction small,body.light .market-overview-footnote{color:#687b90}
+@media(max-width:600px){.market-card{min-height:169px}.market-overview-direction{gap:5px}.market-overview-direction small{font-size:8px}}
+
+.market-card.market-open:focus-visible{outline:2px solid #65dcb6;outline-offset:3px}

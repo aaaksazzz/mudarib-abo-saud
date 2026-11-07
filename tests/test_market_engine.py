@@ -91,7 +91,7 @@ class MarketEngineTests(unittest.TestCase):
         response = self.client.get("/api/strategy-status")
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertEqual(data["fingerprint"], "SMART_FLOW_QUANT_SFQ_2026_11_06")
+        self.assertEqual(data["fingerprint"], "SMART-FLOW-SMA200-V1-20261107")
         self.assertEqual(data["engine"], "SMART FLOW QUANT")
         self.assertEqual(data["timeframes"], ["15m", "1h", "4h", "1d", "1w", "1M"])
         self.assertEqual(len(data["markets"]), 7)

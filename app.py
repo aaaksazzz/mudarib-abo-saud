@@ -224,7 +224,7 @@ def readiness():
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
-        checks["persistent_database"]=db.engine.dialect.name=="postgresql"
+        checks["persistent_database"]=(db.engine.dialect.name=="postgresql" or bool(os.environ.get("DATA_DIR","").strip()))
     except Exception:
         db.session.rollback()
         app.logger.exception("readiness database check failed")
@@ -360,7 +360,7 @@ def klines(market,symbol,interval,limit=120):
     return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit})
 TIMEFRAMES=market_strategies.TIMEFRAMES
 
-STRATEGY_FINGERPRINT="SMART_FLOW_QUANT_SFQ_2026_11_06"
+STRATEGY_FINGERPRINT=market_strategies.STRATEGY_FINGERPRINT
 @app.get("/api/strategy-status")
 def strategy_status_summary():
     current_active=Trade.query.filter(
@@ -930,21 +930,36 @@ with app.app_context():
     provision_admin_from_env()
 
 
-def scheduled_market_scan():
+def scheduled_market_scan(market):
+    # Isolate each market so one slow or unavailable provider cannot delay the
+    # other six markets. A per-market job also prevents overlapping scans for
+    # the same market while allowing bounded cross-market concurrency.
     with app.app_context():
-        # run_market_scan expires that market's trades before scanning it.
-        # Avoid a duplicate global write before the per-market scan loop.
-        for market in MARKETS:
-            try:
-                result=run_market_scan(market,force=True)
-                app.logger.info("scheduled scan completed: market=%s signals=%s universe=%s frames=%s failures=%s",market,len(result.get("signals",[])),result.get("scan_universe"),result.get("timeframes"),result.get("analysis_failed",0))
-            except Exception:
-                db.session.rollback()
-                app.logger.exception("scheduled scan failed: %s",market)
+        try:
+            result=run_market_scan(market,force=True)
+            app.logger.info(
+                "scheduled scan completed: market=%s signals=%s universe=%s frames=%s failures=%s",
+                market,len(result.get("signals",[])),result.get("scan_universe"),
+                result.get("timeframes"),result.get("analysis_failed",0)
+            )
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("scheduled scan failed: %s",market)
+        finally:
+            db.session.remove()
 
 if os.environ.get("ENABLE_AUTO_SCAN","true").lower()=="true":
-    scheduler=BackgroundScheduler(timezone="UTC")
-    scheduler.add_job(scheduled_market_scan,"interval",minutes=15,id="market-scan-15m",max_instances=1,coalesce=True,next_run_time=utcnow()+timedelta(seconds=30))
+    scheduler=BackgroundScheduler(
+        timezone="UTC",
+        executors={"default":{"type":"threadpool","max_workers":2}},
+        job_defaults={"coalesce":True,"max_instances":1},
+    )
+    for market in MARKETS:
+        scheduler.add_job(
+            scheduled_market_scan,"interval",minutes=15,id="market-scan-"+market,
+            args=[market],max_instances=1,coalesce=True,
+            next_run_time=utcnow()+timedelta(seconds=30)
+        )
     scheduler.start()
 
 if __name__=="__main__":

@@ -14,12 +14,13 @@ Production-oriented market intelligence terminal.
 - **Binance Alpha:** public Alpha symbol, ticker and candle endpoints.
 - **US stocks / US contracts / Tadawul / Forex & Gold:** Yahoo Finance public screener and candle adapters for 15m, 1h, 4h (aggregated from hourly candles), 1d, 1w and 1M; US stocks apply the configured $1M traded-value floor and Tadawul does not.
 
-## SMART FLOW QUANT engine
-- Replaces the prior EMA/MACD/RSI/NFI-inspired strategy votes with price-structure, momentum, candle-pressure, relative-volume and range-expansion analysis.
-- Optional Binance public aggTrades and order-book imbalance context is sampled for a limited number of leading Spot/Futures candidates; other markets use only their available provider data.
-- The six independent analysis timeframes remain available: **15m, 1h, 4h, 1d, 1w and 1M**.
-- Stops use recent swing structure with a volatility buffer; targets are 1R, 2R and 3R. Scores are confluence rankings, not probabilities.
-- No private exchange API keys or automatic order execution are required. Market coverage and data quality depend on each provider.
+## Active strategy: SMART FLOW · SMA200
+- The canonical engine fingerprint is `SMART-FLOW-SMA200-V1-20261107`; the API and browser UI read the same engine version.
+- Every supported market and timeframe uses its own completed-candle history. **BUY is allowed only above that timeframe's SMA200; SELL is allowed only below it**, and short-side SELL signals are limited to short-capable markets.
+- At least 200 valid completed candles are required. Insufficient history, invalid OHLCV, or unavailable providers produce no signal; the platform never fabricates bars or prices.
+- Price momentum, candle pressure, structure, relative volume and optional Binance public trade-flow/order-book context rank candidates. The score is a confluence score out of 100, not a win probability.
+- Stops remain based on recent swing structure with a volatility buffer; targets remain 1R, 2R and 3R. The platform is manual-only and never sends orders.
+- The six independent timeframe choices are **15m, 1h, 4h, 1d, 1w and 1M**. Data-provider history limits can make some newly listed instruments ineligible on longer timeframes.
 - See [OPEN_SOURCE_NOTICES.md](OPEN_SOURCE_NOTICES.md) for data and methodology boundaries. Validate out of sample with fees, spread and slippage.
 
 ## Signal engine
@@ -32,9 +33,10 @@ Production-oriented market intelligence terminal.
 - Python runtime is pinned by `.python-version` to 3.12.
 - Buildpack startup uses `Procfile`; Docker deployment is also supported.
 - Expose port 8080.
-- Configure a persistent PostgreSQL database through `DATABASE_URL`; SQLite is for CI/local checks only.
+- Prefer a persistent PostgreSQL database through `DATABASE_URL`. SQLite is acceptable only when `DATA_DIR` points to a persistent mounted volume; the default local SQLite path is not production-durable.
 - Configure a persistent random `SECRET_KEY`, `COOKIE_SECURE=true`, and `ENABLE_AUTO_SCAN=true`.
-- Keep one Gunicorn worker while APScheduler runs in-process. Do not increase workers until scanning is moved to a separate worker with a distributed lock.
+- Keep one Gunicorn worker while APScheduler runs in-process. Scans are scheduled independently per market with bounded cross-market concurrency; do not increase web workers until scanning is moved to a separate worker with a distributed lock.
+- `/ready` requires a durable database configuration (PostgreSQL or an explicitly configured `DATA_DIR` volume), a persistent `SECRET_KEY`, and the market scheduler.
 - Configure `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` (14+ characters) before first boot if first-admin provisioning is needed.
 - Never commit or share secrets. Rotate credentials after any security incident and update them at the provider and deployment environment.
 
