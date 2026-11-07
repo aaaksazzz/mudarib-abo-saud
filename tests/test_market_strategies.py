@@ -46,8 +46,8 @@ class Sma200StrategyTests(unittest.TestCase):
         # Keep momentum and buyer pressure, but remove the breakout vote.
         previous_close = rows[-3][4]
         rows[-2] = [
-            rows[-2][0], previous_close - 0.25, previous_close + 0.30,
-            previous_close - 0.30, previous_close + 0.25, 0.0
+            rows[-2][0], previous_close - 0.25, previous_close + 0.04,
+            previous_close - 0.30, previous_close + 0.03, 0.0
         ]
         signal = analyze("futures", "TWO-VOTES", rows, timeframe="15m")
         self.assertIsNotNone(signal)
