@@ -3,6 +3,8 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps, lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
+import xml.etree.ElementTree as ET
+import html
 import market_adapters
 import market_strategies
 from flask import Flask, request, jsonify, send_from_directory, session, g
@@ -111,6 +113,10 @@ class Article(db.Model):
     summary=db.Column(db.String(500), nullable=False, default="")
     body=db.Column(db.Text, nullable=False, default="")
     published=db.Column(db.Boolean, nullable=False, default=False)
+    language=db.Column(db.String(8), nullable=False, default="ar", index=True)
+    meta_title=db.Column(db.String(70), nullable=False, default="")
+    meta_description=db.Column(db.String(170), nullable=False, default="")
+    canonical_slug=db.Column(db.String(240), nullable=False, default="", index=True)
     created_at=db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 class Audit(db.Model):
@@ -203,13 +209,42 @@ def gate_section(name):
 def user_json(u):
     return {"id":u.id,"email":u.email,"role":u.role,"active":u.active,"plan":u.subscription_plan,"subscription_until":iso(u.subscription_until),"subscribed":subscription_is_active(u),"lifetime":bool(u.subscription_plan=="lifetime" and u.subscription_until is None)}
 def public_article(a):
-    return {"id":a.id,"kind":a.kind,"title":a.title,"slug":a.slug,"summary":a.summary,"body":a.body,"created_at":iso(a.created_at)}
+    return {"id":a.id,"kind":a.kind,"title":a.title,"slug":a.slug,"summary":a.summary,"body":a.body,
+            "language":a.language or "ar","meta_title":a.meta_title or a.title,
+            "meta_description":a.meta_description or a.summary,"canonical_slug":a.canonical_slug or a.slug,
+            "created_at":iso(a.created_at)}
 @app.get("/")
 def home(): return send_from_directory(".", "index.html")
 @app.get("/market/<market>")
 def market_page_route(market):
     if market not in MARKETS: return json_error("السوق غير معروف",404)
     return send_from_directory(".", "index.html")
+
+@app.get("/blog/<slug>")
+def public_article_page(slug):
+    article=Article.query.filter_by(kind="blog",slug=slug,published=True).first()
+    if not article:
+        return json_error("المقال غير موجود",404)
+    title=html.escape(article.meta_title or article.title)
+    description=html.escape(article.meta_description or article.summary)
+    body="".join("<p>"+html.escape(part.strip())+"</p>" for part in (article.body or "").split("\\n\\n") if part.strip())
+    base=os.environ.get("PUBLIC_BASE_URL",request.url_root.rstrip("/")).rstrip("/")
+    canonical=base+"/blog/"+article.slug
+    locale=(article.language or "ar").replace("_","-")
+    page=f"""<!doctype html><html lang="{html.escape(locale)}" dir="{'rtl' if locale.startswith('ar') else 'ltr'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><meta name="description" content="{description}"><link rel="canonical" href="{html.escape(canonical)}"><meta property="og:type" content="article"><meta property="og:title" content="{title}"><meta property="og:description" content="{description}"><meta property="og:url" content="{html.escape(canonical)}"><meta name="robots" content="index,follow"><script type="application/ld+json">{{"@context":"https://schema.org","@type":"Article","headline":{json.dumps(article.title,ensure_ascii=False)},"description":{json.dumps(article.meta_description or article.summary,ensure_ascii=False)},"datePublished":{json.dumps(iso(article.created_at))},"mainEntityOfPage":{json.dumps(canonical)}}}</script></head><body><main><article><h1>{html.escape(article.title)}</h1><p>{description}</p>{body}</article></main></body></html>"""
+    return page,200,{"Content-Type":"text/html; charset=utf-8","X-Robots-Tag":"index, follow"}
+
+@app.get("/sitemap.xml")
+def sitemap_xml():
+    base=os.environ.get("PUBLIC_BASE_URL",request.url_root.rstrip("/")).rstrip("/")
+    rows=Article.query.filter_by(kind="blog",published=True).order_by(Article.created_at.desc()).limit(5000).all()
+    entries="".join("<url><loc>"+html.escape(base+"/blog/"+html.escape(x.slug))+"</loc><lastmod>"+(x.created_at.date().isoformat() if x.created_at else utcnow().date().isoformat())+"</lastmod></url>" for x in rows)
+    xml='<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+entries+"</urlset>"
+    return xml,200,{"Content-Type":"application/xml; charset=utf-8"}
+@app.get("/robots.txt")
+def robots_txt():
+    base=os.environ.get("PUBLIC_BASE_URL",request.url_root.rstrip("/")).rstrip("/")
+    return "User-agent: *\\nAllow: /\\nDisallow: /admin\\nDisallow: /api/\\nSitemap: "+base+"/sitemap.xml\\n",200,{"Content-Type":"text/plain; charset=utf-8"}
 
 @app.get("/plans")
 @app.get("/journal")
@@ -347,6 +382,13 @@ def admin_contact_url():
 @app.get("/api/plans")
 def public_plans():
     return jsonify({"ok":True,"currency":"USD","plans":PAYMENT_PLANS,"payment_methods":PAYMENT_METHODS,"contact_url":admin_contact_url(),"contact_label":"تواصل مع الإدارة"})
+
+@app.get("/api/system/status")
+def system_status():
+    admin=User.query.filter_by(role="admin").first()
+    return jsonify({"ok":True,"admin_exists":bool(admin),"admin_login_configured":bool(os.environ.get("ADMIN_EMAIL","").strip() and os.environ.get("ADMIN_PASSWORD")),
+                    "persistent_secret_configured":persistent_secret_configured(os.environ.get("SECRET_KEY")),
+                    "database":"connected","time":iso(utcnow())})
 
 @app.put("/api/admin/contact")
 @login_required
@@ -934,12 +976,54 @@ def trade_history():
 def strategies():
     # Strategy documentation is private operational logic, not a customer-facing endpoint.
     return json_error("غير متاح",404)
+@lru_cache(maxsize=8)
+def _cached_google_news(language, bucket):
+    queries={"ar":"أسواق المال تداول العملات الرقمية الأسهم الفوركس الذهب","en":"financial markets trading cryptocurrency stocks forex gold",
+             "es":"mercados financieros trading criptomonedas acciones forex oro","de":"Finanzmärkte Handel Kryptowährungen Aktien Forex Gold",
+             "id":"pasar keuangan trading kripto saham forex emas","pt":"mercados financeiros trading criptomoedas ações forex ouro",
+             "tr":"finans piyasaları kripto para hisse senedi forex altın","fr":"marchés financiers trading cryptomonnaies actions forex or",
+             "hi":"वित्तीय बाजार ट्रेडिंग क्रिप्टो शेयर फॉरेक्स सोना"}
+    query=queries.get(language,queries["en"])
+    locale={"ar":("ar","SA"),"en":("en","US"),"es":("es","ES"),"de":("de","DE"),"id":("id","ID"),"pt":("pt-BR","BR"),"tr":("tr","TR"),"fr":("fr","FR"),"hi":("hi","IN")}.get(language,("en","US"))
+    from urllib.parse import quote
+    url="https://news.google.com/rss/search?q="+quote(query)+"&hl="+locale[0]+"&gl="+locale[1]+"&ceid="+locale[1]+":"+locale[0]
+    response=requests.get(url,headers={"User-Agent":"SMART-TRADING-PRO/1.0 news-reader"},timeout=8)
+    response.raise_for_status()
+    root=ET.fromstring(response.content)
+    items=[]
+    for item in root.findall("./channel/item")[:30]:
+        title=(item.findtext("title") or "").strip()
+        link=(item.findtext("link") or "").strip()
+        source=item.find("source")
+        source_name=(source.text or "").strip() if source is not None else ""
+        published=(item.findtext("pubDate") or "").strip()
+        if title and link.startswith("https://"):
+            items.append({"title":title,"url":link,"source":source_name,"published_at":published})
+    return items
+
+@app.get("/api/news")
+def live_news():
+    language=(request.args.get("lang","ar").strip().lower() or "ar")
+    if language not in ("ar","en","es","de","id","pt","tr","fr","hi"):
+        language="en"
+    try:
+        items=_cached_google_news(language,int(time.time()//300))
+        return jsonify({"ok":True,"provider":"Google News RSS","language":language,"items":items,"updated_at":iso(utcnow())})
+    except Exception:
+        app.logger.exception("live news feed failed")
+        return jsonify({"ok":False,"provider":"Google News RSS","language":language,"items":[],"error":"تعذر جلب الأخبار الحية من المصدر حالياً","updated_at":iso(utcnow())}),502
+
 @app.get("/api/content/<kind>")
 def content_list(kind):
     if kind not in ("blog","news"): return json_error("نوع المحتوى غير معروف",404)
     if not section_enabled(kind): return json_error("القسم متوقف",404)
-    rows=Article.query.filter_by(kind=kind,published=True).order_by(Article.created_at.desc()).limit(50).all()
-    return jsonify({"ok":True,"items":[public_article(x) for x in rows]})
+    language=(request.args.get("lang","ar").strip().lower() or "ar")
+    if language not in ("ar","en","es","de","id","pt","tr","fr","hi"):
+        language="en"
+    rows=Article.query.filter_by(kind=kind,published=True,language=language).order_by(Article.created_at.desc()).limit(100).all()
+    if not rows and language!="ar":
+        rows=Article.query.filter_by(kind=kind,published=True,language="ar").order_by(Article.created_at.desc()).limit(100).all()
+    return jsonify({"ok":True,"language":language,"items":[public_article(x) for x in rows]})
 @app.post("/api/admin/login-bootstrap")
 @limiter.limit("3 per hour")
 def admin_bootstrap():
@@ -1039,10 +1123,14 @@ def update_section(name):
 @admin_required
 def create_content():
     data=request.get_json(silent=True) or {}; kind=data.get("kind","blog"); title=str(data.get("title","")).strip(); body=str(data.get("body","")).strip()
+    language=str(data.get("language","ar")).strip().lower()
+    if language not in ("ar","en","es","de","id","pt","tr","fr","hi"): return json_error("لغة المقال غير مدعومة")
     if kind not in ("blog","news") or not title or not body: return json_error("العنوان والمحتوى مطلوبان")
     slug=re.sub(r"[^a-z0-9\u0600-\u06ff]+","-",title.lower()).strip("-")[:200] or secrets.token_hex(8)
     if Article.query.filter_by(slug=slug).first(): slug+="-"+secrets.token_hex(3)
-    a=Article(kind=kind,title=title[:220],slug=slug,summary=str(data.get("summary",""))[:500],body=body,published=bool(data.get("published",False)))
+    a=Article(kind=kind,title=title[:220],slug=slug,summary=str(data.get("summary",""))[:500],body=body,published=bool(data.get("published",False)),
+              language=language,meta_title=str(data.get("meta_title",title))[:70],meta_description=str(data.get("meta_description",data.get("summary","")))[:170],
+              canonical_slug=str(data.get("canonical_slug",slug))[:240])
     db.session.add(a); audit("content_created",slug); db.session.commit(); return jsonify({"ok":True,"item":public_article(a)}),201
 @app.delete("/api/admin/content/<int:item_id>")
 @login_required
@@ -1095,6 +1183,13 @@ with app.app_context():
     if "change_15m_pct" not in trade_columns:
         with db.engine.begin() as connection:
             connection.execute(text(f"ALTER TABLE {Trade.__tablename__} ADD COLUMN change_15m_pct FLOAT"))
+    article_columns={column["name"] for column in inspect(db.engine).get_columns(Article.__tablename__)}
+    article_migrations={"language":"VARCHAR(8) NOT NULL DEFAULT 'ar'","meta_title":"VARCHAR(70) NOT NULL DEFAULT ''",
+                        "meta_description":"VARCHAR(170) NOT NULL DEFAULT ''","canonical_slug":"VARCHAR(240) NOT NULL DEFAULT ''"}
+    for column_name,column_type in article_migrations.items():
+        if column_name not in article_columns:
+            with db.engine.begin() as connection:
+                connection.execute(text(f"ALTER TABLE {Article.__tablename__} ADD COLUMN {column_name} {column_type}"))
     provision_admin_from_env()
 
 
