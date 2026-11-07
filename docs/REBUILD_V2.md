@@ -76,3 +76,20 @@ The current 0.2 vCPU / 512 MB instance is too small to assume that a web API and
 - Do not merge old open PRs wholesale.
 - Do not deploy partial scaffolding.
 - Do not replace the production service until migration, regression, browser, and load gates pass.
+
+
+## Technology baseline — checked 2026-11-08
+
+Use current stable releases, not alpha/beta/RC builds, for production:
+
+- Python: target 3.15.2 after the full dependency and native-wheel compatibility matrix passes; retain Python 3.14.10 as the production fallback if any critical dependency is not yet certified on 3.15.
+- FastAPI: 0.162.0.
+- Starlette: 1.8.0 (FastAPI's compatible dependency resolver must select and lock the supported version).
+- Node.js: 26 LTS (do not use Node 27 alpha for production builds).
+- React: 19.3.
+- TypeScript: 7.0 stable; do not use the 7.1 beta.
+- Vite: 8.3 stable.
+- PostgreSQL: 18.6 stable; do not deploy PostgreSQL 19 RC in production.
+- Playwright: 1.65.0 for browser end-to-end testing.
+
+Exact patch versions and transitive dependencies must be resolved in CI, committed to lockfiles, scanned for known vulnerabilities, and tested together. Never independently force a Starlette version that conflicts with FastAPI's declared constraints. Upgrade patch releases through automated CI and regression checks, not by floating production dependencies.
