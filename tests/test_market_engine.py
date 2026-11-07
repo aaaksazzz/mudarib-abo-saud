@@ -169,10 +169,10 @@ class MarketEngineTests(unittest.TestCase):
     def test_saudi_session_calendar_uses_riyadh_time_and_weekdays(self):
         riyadh = timezone(timedelta(hours=3))
         self.assertFalse(platform.saudi_market_is_open(datetime(2026, 11, 7, 12, 0, tzinfo=riyadh)))  # Saturday
-        self.assertFalse(platform.saudi_market_is_open(datetime(2026, 11, 8, 9, 29, tzinfo=riyadh)))
-        self.assertTrue(platform.saudi_market_is_open(datetime(2026, 11, 8, 9, 30, tzinfo=riyadh)))
-        self.assertTrue(platform.saudi_market_is_open(datetime(2026, 11, 12, 15, 19, tzinfo=riyadh)))
-        self.assertFalse(platform.saudi_market_is_open(datetime(2026, 11, 12, 15, 20, tzinfo=riyadh)))
+        self.assertFalse(platform.saudi_market_is_open(datetime(2026, 11, 8, 9, 59, tzinfo=riyadh)))
+        self.assertTrue(platform.saudi_market_is_open(datetime(2026, 11, 8, 10, 0, tzinfo=riyadh)))
+        self.assertTrue(platform.saudi_market_is_open(datetime(2026, 11, 12, 14, 59, tzinfo=riyadh)))
+        self.assertFalse(platform.saudi_market_is_open(datetime(2026, 11, 12, 15, 0, tzinfo=riyadh)))
 
     def test_scheduled_saudi_scan_is_skipped_while_exchange_is_closed(self):
         with platform.app.app_context():
@@ -197,9 +197,10 @@ class MarketEngineTests(unittest.TestCase):
             self.assertEqual(record["status"], "error")
             self.assertEqual(record["last_error_code"], "insufficient_candle_data")
             self.assertIsNotNone(record["last_attempt_at"])
-            response = self.client.get("/api/markets/saudi/signals").get_json()
+            with patch.object(platform, "saudi_market_is_open", return_value=True):
+                response = self.client.get("/api/markets/saudi/signals").get_json()
+                status = self.client.get("/api/system/status").get_json()
             self.assertIn("تعذر", response["scan_error"])
-            status = self.client.get("/api/system/status").get_json()
             self.assertEqual(status["scanner_runtime"]["saudi"]["last_error_code"], "insufficient_candle_data")
 
     def test_signals_endpoint_reports_engine_fingerprint_as_a_fallback(self):
