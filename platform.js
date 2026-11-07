@@ -99,7 +99,7 @@ async function marketPage(root,market,version=renderVersion){
   const signals=sig.signals||[];
   const frameLabel=(timeframeOptions.find(x=>x[0]===timeframe)||[])[1]||timeframe;
   const emptyDetails=(()=>{
-   if(marketClosed)return "السوق السعودي يعمل من الأحد إلى الخميس؛ جلسة السوق من 9:30 صباحًا إلى 3:20 مساءً بتوقيت الرياض. لا تُنشأ فرص دخول جديدة أثناء الإغلاق.";
+   if(marketClosed)return "السوق السعودي يعمل من الأحد إلى الخميس؛ التداول المستمر من 10 صباحًا إلى 3 مساءً بتوقيت الرياض. لا تُنشأ فرص دخول جديدة أثناء الإغلاق.";
    if(!sig.updated_at)return "لم يكتمل فحص ناجح لهذا السوق بعد.";
    if(sig.stale)return "نتائج الفحص قديمة؛ لن نعرض فرصاً قديمة على أنها فرص حالية.";
    const completed=Number(sig.analysis_completed||0),failed=Number(sig.analysis_failed||0);
