@@ -166,9 +166,13 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
                 down_votes["order-book imbalance"] = 1
 
     buys, sells = len(up_votes), len(down_votes)
-    if buys >= 3 and buys - sells >= 2:
+    # Two independent confirmations are enough to qualify a setup.
+    # Requiring three votes and a two-vote margin made normal 15m markets
+    # produce almost no candidates, especially when optional Binance flow
+    # data is unavailable. Keep the SMA200 gate below as the trend filter.
+    if buys >= 2 and buys > sells:
         side, aligned, opposing = "BUY", up_votes, sells
-    elif sells >= 3 and sells - buys >= 2 and profile["allow_short"]:
+    elif sells >= 2 and sells > buys and profile["allow_short"]:
         side, aligned, opposing = "SELL", down_votes, buys
     else:
         return None
