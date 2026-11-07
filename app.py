@@ -218,13 +218,43 @@ def strategy_status():
 def health():
     return jsonify({"ok":True,"service":"SMART TRADING PRO","time":iso(utcnow())})
 
+def persistent_database_configured(dialect,database_path,data_dir):
+    """Accept PostgreSQL or SQLite physically located inside an absolute DATA_DIR."""
+    if dialect=="postgresql":
+        return True
+    if dialect!="sqlite" or not data_dir or not database_path:
+        return False
+    if not os.path.isabs(data_dir) or not os.path.isabs(database_path):
+        return False
+    try:
+        root=os.path.realpath(data_dir)
+        target=os.path.realpath(database_path)
+        return (
+            os.path.isdir(root)
+            and os.access(root,os.W_OK)
+            and target!=root
+            and os.path.commonpath((root,target))==root
+        )
+    except (OSError,ValueError):
+        return False
+
+
+def persistent_secret_configured(value):
+    return bool(value and len(str(value).encode("utf-8"))>=32)
+
+
 @app.get("/ready")
 def readiness():
-    checks={"database":False,"persistent_database":False,"persistent_secret":bool(os.environ.get("SECRET_KEY")),"market_scheduler":False}
+    checks={"database":False,"persistent_database":False,
+            "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
+            "market_scheduler":False}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
-        checks["persistent_database"]=(db.engine.dialect.name=="postgresql" or bool(os.environ.get("DATA_DIR","").strip()))
+        checks["persistent_database"]=persistent_database_configured(
+            db.engine.dialect.name,db.engine.url.database,
+            os.environ.get("DATA_DIR","").strip()
+        )
     except Exception:
         db.session.rollback()
         app.logger.exception("readiness database check failed")

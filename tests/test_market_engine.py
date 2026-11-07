@@ -1,4 +1,5 @@
 import os
+import tempfile
 import unittest
 from datetime import timedelta
 from unittest.mock import patch
@@ -55,6 +56,22 @@ class MarketEngineTests(unittest.TestCase):
         self.assertTrue(ready.get_json()["checks"]["persistent_secret"])
         self.assertFalse(ready.get_json()["checks"]["market_scheduler"])
 
+
+    def test_readiness_requires_sqlite_file_inside_absolute_writable_data_dir(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as outside:
+            inside_db=os.path.join(root,"smart_trading_pro.db")
+            outside_db=os.path.join(outside,"smart_trading_pro.db")
+            self.assertTrue(platform.persistent_database_configured("sqlite",inside_db,root))
+            self.assertFalse(platform.persistent_database_configured("sqlite",outside_db,root))
+            self.assertFalse(platform.persistent_database_configured("sqlite","relative.db",root))
+            self.assertFalse(platform.persistent_database_configured("sqlite",inside_db,"relative-data"))
+            self.assertFalse(platform.persistent_database_configured("sqlite",inside_db,os.path.join(root,"missing")))
+            self.assertTrue(platform.persistent_database_configured("postgresql",None,""))
+
+    def test_readiness_requires_a_strong_persistent_secret(self):
+        self.assertTrue(platform.persistent_secret_configured("x"*32))
+        self.assertFalse(platform.persistent_secret_configured("short"))
+        self.assertFalse(platform.persistent_secret_configured(""))
 
     def test_scan_candidate_batches_rotate_across_the_eligible_universe(self):
         universe = [{"symbol":f"COIN{i}","quote_volume":float(1000-i),"change_pct":0.1} for i in range(170)]
