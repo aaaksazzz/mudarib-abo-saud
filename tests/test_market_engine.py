@@ -308,9 +308,11 @@ class MarketEngineTests(unittest.TestCase):
             status="active",
         )
         before=[int((created-timedelta(minutes=20)).timestamp()*1000),100,110,90,100,1000]
-        forming=[int((created+timedelta(minutes=10)).timestamp()*1000),100,110,90,100,1000]
+        partial_entry_bar=[int((created-timedelta(minutes=5)).timestamp()*1000),100,110,90,100,1000]
+        forming=[int((created+timedelta(minutes=25)).timestamp()*1000),100,110,90,100,1000]
         status,count=platform.evaluate_trade_outcome_from_bars(
-            trade,[before,forming],int((created+timedelta(minutes=20)).timestamp()*1000)
+            trade,[before,partial_entry_bar,forming],
+            int((created+timedelta(minutes=35)).timestamp()*1000)
         )
         self.assertEqual((status,count),("active",0))
 
