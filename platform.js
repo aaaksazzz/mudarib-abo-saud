@@ -94,10 +94,12 @@ async function marketPage(root,market,version=renderVersion){
   if(version!==renderVersion||currentPage!==market)return;
   const unavailable=snap.ready===false;
   const stale=sig.stale===true;
-  const warning=unavailable?"":sig.scan_error?'<div class="notice-bar">تعذّر الفحص: '+esc(sig.scan_error)+'</div>':stale&&!sig.updated_at?'<div class="notice-bar">لم يكتمل أول فحص ناجح بعد؛ ننتظر دورة الفحص المجدولة.</div>':stale?'<div class="notice-bar">نتائج الفحص أقدم من 20 دقيقة. ننتظر تحديث الفحص المجدول.</div>':"";
+  const marketClosed=sig.market_closed===true;
+  const warning=unavailable?"":marketClosed?'<div class="notice-bar">السوق السعودي مغلق حاليًا؛ تتوقف فرص الدخول على فريم 15 دقيقة خارج جلسة التداول، وتعود مع الجلسة القادمة.</div>':sig.scan_error?'<div class="notice-bar">تعذّر الفحص: '+esc(sig.scan_error)+'</div>':stale&&!sig.updated_at?'<div class="notice-bar">لم يكتمل أول فحص ناجح بعد؛ ننتظر دورة الفحص المجدولة.</div>':stale?'<div class="notice-bar">نتائج الفحص أقدم من 20 دقيقة. ننتظر تحديث الفحص المجدول.</div>':"";
   const signals=sig.signals||[];
   const frameLabel=(timeframeOptions.find(x=>x[0]===timeframe)||[])[1]||timeframe;
   const emptyDetails=(()=>{
+   if(marketClosed)return "السوق السعودي يعمل من الأحد إلى الخميس؛ جلسة السوق من 9:30 صباحًا إلى 3:20 مساءً بتوقيت الرياض. لا تُنشأ فرص دخول جديدة أثناء الإغلاق.";
    if(!sig.updated_at)return "لم يكتمل فحص ناجح لهذا السوق بعد.";
    if(sig.stale)return "نتائج الفحص قديمة؛ لن نعرض فرصاً قديمة على أنها فرص حالية.";
    const completed=Number(sig.analysis_completed||0),failed=Number(sig.analysis_failed||0);
@@ -112,8 +114,10 @@ async function marketPage(root,market,version=renderVersion){
    return "لا توجد فرصة اجتازت جميع شروط التأكيد حالياً.";
   })();
   const tabs='<div class="timeframe-tabs" role="group" aria-label="اختيار الفريم">'+timeframeOptions.map(([key,label])=>'<button type="button" class="timeframe-tab '+(key===timeframe?"active":"")+'" data-timeframe="'+key+'" aria-pressed="'+(key===timeframe)+'">'+label+'</button>').join("")+'</div>';
-  const installed=engine&&engine.fingerprint==="SMART-FLOW-SMA200-V1-20261107"&&engine.engine==="SMART FLOW QUANT";
-  const engineStamp=installed?'<div class="engine-fingerprint"><span class="engine-led"></span><b>بصمة المحرك: '+esc(engine.fingerprint)+'</b><span>7 أسواق · 6 فريمات</span><span class="'+(engine.legacy_removed?"engine-clean":"engine-pending")+'">'+(engine.legacy_removed?"القديم مستبدل":"جارٍ إيقاف الصفقات القديمة")+'</span></div>':'<div class="engine-fingerprint engine-pending">لم يتم تأكيد بصمة المحرك على الخادم</div>';
+  const engineData=engine||(sig.engine&&sig.fingerprint?{engine:sig.engine,fingerprint:sig.fingerprint}:null);
+  const installed=engineData&&engineData.fingerprint==="SMART-FLOW-SMA200-V1-20261107"&&engineData.engine==="SMART FLOW QUANT";
+  const legacyLabel=engine&&typeof engine.legacy_removed==="boolean"?(engine.legacy_removed?"القديم مستبدل":"جارٍ إيقاف الصفقات القديمة"):"المحرك مطابق";
+  const engineStamp=installed?'<div class="engine-fingerprint"><span class="engine-led"></span><b>بصمة المحرك: '+esc(engineData.fingerprint)+'</b><span>7 أسواق · 6 فريمات</span><span class="'+(engine&&engine.legacy_removed?"engine-clean":"engine-pending")+'">'+legacyLabel+'</span></div>':'<div class="engine-fingerprint engine-pending">تعذر تأكيد بصمة المحرك من واجهات الخادم الحالية</div>';
   root.innerHTML=warning+'<section class="panel market-summary"><div class="panel-head"><div><span class="section-kicker">'+esc(market.toUpperCase())+'</span><h2>'+esc(marketNames[market])+'</h2></div><span class="status-pending">'+(unavailable?"مصدر غير مربوط":"مصدر عام")+'</span></div><div class="direction-row"><div><small>اتجاه السوق · 24 ساعة</small><strong>'+esc(snap.direction||"غير متاح")+(snap.side==="BUY"?" · شراء":snap.side==="SELL"?" · بيع":"") +'</strong></div><div><small>الأصول الصاعدة</small><strong class="positive">'+(snap.up??"—")+'</strong></div><div><small>الأصول الهابطة</small><strong class="negative">'+(snap.down??"—")+'</strong></div><div><small>عدد الأصول</small><strong>'+(snap.total??"—")+'</strong></div></div></section>'+engineStamp+tabs+'<div class="section-head"><div><span class="section-kicker">LIVE OPPORTUNITIES · '+esc(timeframe.toUpperCase())+'</span><h2>الصفقات النشطة · '+esc(frameLabel)+'</h2></div><span class="muted-label">'+(sig.scan_universe==null?"نتائج آخر فحص محفوظة":sig.scan_universe+" أصل في آخر فحص")+'</span></div><div class="trade-grid" id="tradeCards"></div><p class="data-footnote">آخر فحص: '+esc(sig.updated_at||snap.updated_at||"لم يبدأ بعد")+' · الفريم: '+esc(frameLabel)+' · كل فريم له شموعه وحسابه وأهدافه ووقفه المستقل.</p>';
   root.querySelectorAll("[data-timeframe]").forEach(button=>button.addEventListener("click",()=>{selectedTimeframes[market]=button.dataset.timeframe;marketPage(root,market,++renderVersion)}));
   const grid=$("#tradeCards");
