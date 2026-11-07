@@ -34,33 +34,36 @@ def _get(url,params=None):
 def _chart(symbol,interval="15m",period=None):
     periods={"15m":"60d","30m":"1mo","60m":"6mo","1d":"2y","1wk":"5y","1mo":"max"}
     period=period or periods.get(interval,"5d")
-    payload=None
     errors=[]
     for host in YAHOO_HOSTS:
         try:
             payload=_get(host+"/v8/finance/chart/"+symbol,{"interval":interval,"range":period})
-            break
+            chart=payload.get("chart") or {}
+            if chart.get("error"):
+                raise ValueError(str(chart["error"]))
+            results=chart.get("result") or []
+            if not results:
+                raise ValueError("No Yahoo candles returned")
+            result=results[0]
+            quote=((result.get("indicators") or {}).get("quote") or [{}])[0]
+            rows=[]
+            for i,stamp in enumerate(result.get("timestamp") or []):
+                try:
+                    vals=[(quote.get(k) or [])[i] for k in ("open","high","low","close","volume")]
+                    op,hi,lo,cl,vol=vals
+                    if None in (op,hi,lo,cl):
+                        continue
+                    if not all(math.isfinite(float(v)) for v in (op,hi,lo,cl)):
+                        continue
+                    rows.append([int(stamp)*1000,float(op),float(hi),float(lo),float(cl),float(vol or 0)])
+                except (IndexError,TypeError,ValueError):
+                    continue
+            if not rows:
+                raise ValueError("No valid Yahoo candles returned")
+            return rows
         except Exception as exc:
-            errors.append(str(exc))
-    if payload is None:
-        raise ValueError("Yahoo chart failed for "+symbol+": "+"; ".join(errors))
-    chart=payload.get("chart") or {}
-    if chart.get("error"): raise ValueError(str(chart["error"]))
-    results=chart.get("result") or []
-    if not results: raise ValueError("No Yahoo candles for "+symbol)
-    result=results[0]
-    quote=((result.get("indicators") or {}).get("quote") or [{}])[0]
-    rows=[]
-    for i,stamp in enumerate(result.get("timestamp") or []):
-        try:
-            vals=[(quote.get(k) or [])[i] for k in ("open","high","low","close","volume")]
-            op,hi,lo,cl,vol=vals
-            if None in (op,hi,lo,cl): continue
-            if not all(math.isfinite(float(v)) for v in (op,hi,lo,cl)): continue
-            rows.append([int(stamp)*1000,float(op),float(hi),float(lo),float(cl),float(vol or 0)])
-        except (IndexError,TypeError,ValueError): continue
-    if not rows: raise ValueError("No valid Yahoo candles for "+symbol)
-    return rows
+            errors.append(host+": "+str(exc))
+    raise ValueError("Yahoo chart failed for "+symbol+": "+"; ".join(errors))
 
 def _screener(region,scr_id="most_actives",start=0):
     # Yahoo screener pages are capped; request successive pages and retry
