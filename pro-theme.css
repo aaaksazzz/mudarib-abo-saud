@@ -201,3 +201,5 @@ body.light .journal-stat strong,body.light .journal-trade-top b{color:#17283a}
 body.light .market-overview-direction{border-color:#dce5ed}
 body.light .market-overview-direction>span,body.light .market-overview-direction small,body.light .market-overview-footnote{color:#687b90}
 @media(max-width:600px){.market-card{min-height:169px}.market-overview-direction{gap:5px}.market-overview-direction small{font-size:8px}}
+
+.market-card.market-open:focus-visible{outline:2px solid #65dcb6;outline-offset:3px}
