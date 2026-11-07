@@ -866,8 +866,8 @@ def timeframe_bucket(frame,now):
 
 
 def market_scan_timeframes(market):
-    """Use every timeframe exposed by the market UI for each supported market."""
-    return TIMEFRAMES
+    """All markets use the single supported 15-minute strategy timeframe."""
+    return ("15m",)
 
 
 def run_market_scan(market,force=False):
@@ -1069,9 +1069,9 @@ def signals(market):
         # Keep this endpoint read-only. The single scheduler expires trades;
         # writing from page requests races with scheduled scans on SQLite.
         row=db.session.get(Setting,"scan:"+market)
-        timeframe=request.args.get("timeframe","15m")
-        if timeframe not in TIMEFRAMES:
-            return json_error("الفريم غير مدعوم",400)
+        # Older cached clients may still request 1h/4h/etc.; normalize them
+        # to the only supported strategy timeframe instead of exposing stale frames.
+        timeframe="15m"
         active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("SMART FLOW QUANT:%"),Trade.timeframe==timeframe).order_by(Trade.score.desc()).limit(3).all()
         updated=row.value if row else None
         meta_row=db.session.get(Setting,"scan-meta:"+market)
