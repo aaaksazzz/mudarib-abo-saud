@@ -580,11 +580,34 @@ def run_market_scan(market,force=False):
                 completed+=1
                 if signal:
                     found.append(signal)
-            except Exception:
+            except Exception as exc:
                 failed+=1
-                app.logger.exception("multi-timeframe signal analysis failed for %s",market)
-    if completed<max(1,math.ceil(len(futures)*0.8)):
-        raise RuntimeError(f"Insufficient candle data: {completed}/{len(futures)} analyses completed")
+                # Some Saudi tickers are not covered by Yahoo's candle endpoint.
+                # Treat an individual unavailable symbol/frame as a skipped sample,
+                # not as a traceback storm that obscures the market-level result.
+                if market=="saudi":
+                    app.logger.warning(
+                        "candle sample skipped: market=%s error=%s",
+                        market, type(exc).__name__
+                    )
+                else:
+                    app.logger.exception("multi-timeframe signal analysis failed for %s",market)
+    # Saudi public feeds have uneven per-symbol candle coverage. Keep the
+    # stricter 80% completeness rule for other markets, but allow a Saudi scan
+    # to proceed when at least 35% of requested samples completed (minimum 8).
+    required_ratio=0.35 if market=="saudi" else 0.80
+    required_completed=max(8 if market=="saudi" else 1,
+                           math.ceil(len(futures)*required_ratio))
+    if completed<required_completed:
+        raise RuntimeError(
+            f"Insufficient candle data: {completed}/{len(futures)} analyses completed "
+            f"(required={required_completed})"
+        )
+    if failed:
+        app.logger.warning(
+            "market scan partial data: market=%s completed=%s failed=%s requested=%s",
+            market,completed,failed,len(futures)
+        )
     strategy_matches=len(found)
     found,freshness=filter_fresh_signals(found,universe,utcnow())
     fresh_matches=len(found)
