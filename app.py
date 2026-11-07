@@ -9,6 +9,7 @@ from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import func, text, inspect, or_, event
+from sqlalchemy.exc import IntegrityError
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -126,6 +127,26 @@ def json_error(message, code=400): return jsonify({"ok":False,"error":message}),
 def csrf_token():
     if "csrf" not in session: session["csrf"]=secrets.token_urlsafe(32)
     return session["csrf"]
+
+def valid_email(value):
+    if not isinstance(value,str):
+        return False
+    return bool(re.fullmatch(r"[^@\\s]+@[^@\\s]+\\.[^@\\s]+",value.strip()))
+
+def valid_password(value,minimum=12):
+    return (
+        isinstance(value,str)
+        and len(value)>=minimum
+        and any(char.isalpha() for char in value)
+        and any(char.isdigit() for char in value)
+    )
+
+def establish_user_session(user):
+    # Rotate the session ID and CSRF token after every successful authentication.
+    session.clear()
+    session["uid"]=user.id
+    session.permanent=True
+    return csrf_token()
 @app.after_request
 def security_headers(response):
     response.headers["X-Content-Type-Options"]="nosniff"
@@ -268,26 +289,50 @@ def bootstrap():
 @app.post("/api/auth/register")
 @limiter.limit("5 per minute")
 def register():
-    data=request.get_json(silent=True) or {}; email=str(data.get("email","")).strip().lower(); password=str(data.get("password",""))
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",email): return json_error("البريد الإلكتروني غير صحيح")
-    if len(password)<12 or not any(char.isalpha() for char in password) or not any(char.isdigit() for char in password): return json_error("كلمة المرور يجب أن تكون 12 خانة على الأقل وتحتوي حروفاً وأرقاماً")
-    if User.query.filter_by(email=email).first(): return json_error("البريد مسجل مسبقاً",409)
-    u=User(email=email,password_hash=generate_password_hash(password),role="user")
-    db.session.add(u); db.session.commit(); session.clear(); session["uid"]=u.id; session.permanent=True; csrf_token()
-    return jsonify({"ok":True,"user":user_json(u),"csrf":session["csrf"]}),201
+    data=request.get_json(silent=True)
+    if not isinstance(data,dict):
+        return json_error("بيانات إنشاء الحساب غير صحيحة")
+    email_value=data.get("email")
+    email=email_value.strip().casefold() if isinstance(email_value,str) else ""
+    password=data.get("password")
+    if not valid_email(email):
+        return json_error("البريد الإلكتروني غير صحيح")
+    if not valid_password(password,12):
+        return json_error("كلمة المرور يجب أن تكون 12 خانة على الأقل وتحتوي حروفاً وأرقاماً")
+    if User.query.filter_by(email=email).first():
+        return json_error("البريد مسجل مسبقاً",409)
+    user=User(email=email,password_hash=generate_password_hash(password),role="user")
+    db.session.add(user)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return json_error("البريد مسجل مسبقاً",409)
+    token=establish_user_session(user)
+    return jsonify({"ok":True,"user":user_json(user),"csrf":token}),201
+
 @app.post("/api/auth/login")
 @limiter.limit("5 per minute")
 def login():
-    data=request.get_json(silent=True) or {}; login_id=str(data.get("email",data.get("username",""))).strip().lower(); password=str(data.get("password",""))
-    u=User.query.filter_by(email=login_id).first()
+    data=request.get_json(silent=True)
+    if not isinstance(data,dict):
+        return json_error("بيانات تسجيل الدخول غير صحيحة")
+    identifier=data.get("email") or data.get("username") or ""
+    login_id=identifier.strip().casefold() if isinstance(identifier,str) else ""
+    password=data.get("password")
+    if not login_id or not isinstance(password,str) or not password:
+        return json_error("أدخل اسم المستخدم وكلمة المرور")
+    user=User.query.filter_by(email=login_id).first()
     admin_username=os.environ.get("ADMIN_USERNAME","").strip().casefold()
     configured_admin_email=os.environ.get("ADMIN_EMAIL","").strip().casefold()
     admin_aliases={value for value in (admin_username, configured_admin_email.partition("@")[0] if "@" in configured_admin_email else "") if value}
-    if not u and any(hmac.compare_digest(login_id,alias) for alias in admin_aliases):
-        u=User.query.filter_by(role="admin").first()
-    if not u or not check_password_hash(u.password_hash,password) or not u.active: return json_error("بيانات الدخول غير صحيحة",401)
-    session.clear(); session["uid"]=u.id; session.permanent=True; csrf_token()
-    return jsonify({"ok":True,"user":user_json(u),"csrf":session["csrf"]})
+    if not user and any(hmac.compare_digest(login_id,alias) for alias in admin_aliases):
+        user=User.query.filter_by(role="admin").first()
+    if not user or not check_password_hash(user.password_hash,password) or not user.active:
+        return json_error("بيانات الدخول غير صحيحة",401)
+    token=establish_user_session(user)
+    return jsonify({"ok":True,"user":user_json(user),"csrf":token})
+
 @app.post("/api/auth/logout")
 @login_required
 def logout():
@@ -900,14 +945,30 @@ def content_list(kind):
 def admin_bootstrap():
     # One-time bootstrap protected by an out-of-band secret; disabled after first admin exists.
     secret=os.environ.get("ADMIN_BOOTSTRAP_TOKEN","")
-    if not secret or User.query.filter_by(role="admin").first(): return json_error("تهيئة المدير غير متاحة",404)
-    data=request.get_json(silent=True) or {}
-    if not hmac.compare_digest(str(data.get("token","")),secret): return json_error("رمز التهيئة غير صحيح",403)
-    email=str(data.get("email","")).strip().lower(); password=str(data.get("password",""))
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",email) or len(password)<14: return json_error("بيانات المدير غير مستوفية لشروط الأمان")
-    u=User(email=email,password_hash=generate_password_hash(password),role="admin",subscription_plan="admin")
-    db.session.add(u); db.session.commit(); session.clear(); session["uid"]=u.id; session.permanent=True; csrf_token()
-    return jsonify({"ok":True,"user":user_json(u),"csrf":session["csrf"]}),201
+    if not secret or User.query.filter_by(role="admin").first():
+        return json_error("تهيئة المدير غير متاحة",404)
+    data=request.get_json(silent=True)
+    if not isinstance(data,dict):
+        return json_error("بيانات التهيئة غير صحيحة")
+    if not hmac.compare_digest(str(data.get("token","")),secret):
+        return json_error("رمز التهيئة غير صحيح",403)
+    email_value=data.get("email")
+    email=email_value.strip().casefold() if isinstance(email_value,str) else ""
+    password=data.get("password")
+    if not valid_email(email) or not valid_password(password,14):
+        return json_error("كلمة مرور المدير يجب أن تكون 14 خانة على الأقل وتحتوي حروفاً وأرقاماً")
+    if User.query.filter_by(email=email).first():
+        return json_error("البريد مستخدم بالفعل؛ استخدم بريداً آخر أو سجّل الدخول للحساب الموجود",409)
+    user=User(email=email,password_hash=generate_password_hash(password),role="admin",subscription_plan="admin")
+    db.session.add(user)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return json_error("البريد مستخدم بالفعل؛ استخدم بريداً آخر",409)
+    token=establish_user_session(user)
+    return jsonify({"ok":True,"user":user_json(user),"csrf":token}),201
+
 @app.get("/api/admin/overview")
 @login_required
 @admin_required
@@ -1004,7 +1065,7 @@ def provision_admin_from_env():
     admin_password=os.environ.get("ADMIN_PASSWORD","")
     if not admin_email or not admin_password:
         return
-    if len(admin_password)<14 or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+",admin_email):
+    if not valid_email(admin_email) or not valid_password(admin_password,14):
         app.logger.error("ADMIN_EMAIL/ADMIN_PASSWORD are invalid; admin credentials were not changed")
         return
     admin=User.query.filter_by(role="admin").order_by(User.id.asc()).first()
