@@ -87,7 +87,7 @@ class Sma200StrategyTests(unittest.TestCase):
         rows = candles("UP")
         original = analyze("futures", "TEST", rows, timeframe="15m")
         rows[-1] = [rows[-1][0], 1000, 5000, 1, 2, 1e12]
-        changed = analyze("futures", "TEST", rows, timeframe="1d")
+        changed = analyze("futures", "TEST", rows, timeframe="15m")
         self.assertEqual(original, changed)
 
     def test_insufficient_history_is_rejected(self):
