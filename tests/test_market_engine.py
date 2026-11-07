@@ -1,7 +1,7 @@
 import os
 import tempfile
 import unittest
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 os.environ.setdefault("ENABLE_AUTO_SCAN", "false")
@@ -254,6 +254,67 @@ class MarketEngineTests(unittest.TestCase):
         with platform.app.app_context():
             expired = platform.Trade.query.filter_by(symbol="BTCUSDT").one()
             self.assertEqual(expired.status, "expired")
+
+    def test_trade_outcomes_replay_completed_15m_candle_extremes(self):
+        created=datetime(2026,11,7,10,0,tzinfo=timezone.utc)
+        trade=platform.Trade(
+            market="futures",symbol="TESTUSDT",side="BUY",entry=100,stop=97,
+            tp1=103,tp2=106,tp3=109,score=80,timeframe="15m",
+            reason="test",created_at=created,expires_at=created+timedelta(hours=24),
+            status="active",
+        )
+        now_ms=int((created+timedelta(minutes=45)).timestamp()*1000)
+        tp1_then_stop=[
+            [int(created.timestamp()*1000),100,104,99,103,1000],
+            [int((created+timedelta(minutes=15)).timestamp()*1000),103,104,96,98,1000],
+        ]
+        status,count=platform.evaluate_trade_outcome_from_bars(trade,tp1_then_stop,now_ms)
+        self.assertEqual((status,count),("stopped_after_tp1",2))
+
+    def test_same_15m_candle_stop_and_target_is_resolved_stop_first(self):
+        created=datetime(2026,11,7,10,0,tzinfo=timezone.utc)
+        trade=platform.Trade(
+            market="futures",symbol="TESTUSDT",side="BUY",entry=100,stop=97,
+            tp1=103,tp2=106,tp3=109,score=80,timeframe="15m",
+            reason="test",created_at=created,expires_at=created+timedelta(hours=24),
+            status="active",
+        )
+        row=[int(created.timestamp()*1000),100,110,96,105,1000]
+        status,count=platform.evaluate_trade_outcome_from_bars(
+            trade,[row],int((created+timedelta(minutes=15)).timestamp()*1000)
+        )
+        self.assertEqual((status,count),("stopped",1))
+
+    def test_sell_trade_uses_high_for_stop_and_low_for_targets(self):
+        created=datetime(2026,11,7,10,0,tzinfo=timezone.utc)
+        trade=platform.Trade(
+            market="futures",symbol="TESTUSDT",side="SELL",entry=100,stop=103,
+            tp1=97,tp2=94,tp3=91,score=80,timeframe="15m",
+            reason="test",created_at=created,expires_at=created+timedelta(hours=24),
+            status="active",
+        )
+        row=[int(created.timestamp()*1000),100,104,96,98,1000]
+        status,count=platform.evaluate_trade_outcome_from_bars(
+            trade,[row],int((created+timedelta(minutes=15)).timestamp()*1000)
+        )
+        self.assertEqual((status,count),("stopped",1))
+
+    def test_outcome_replay_ignores_pre_entry_and_forming_candles(self):
+        created=datetime(2026,11,7,10,5,tzinfo=timezone.utc)
+        trade=platform.Trade(
+            market="futures",symbol="TESTUSDT",side="BUY",entry=100,stop=97,
+            tp1=103,tp2=106,tp3=109,score=80,timeframe="15m",
+            reason="test",created_at=created,expires_at=created+timedelta(hours=24),
+            status="active",
+        )
+        before=[int((created-timedelta(minutes=20)).timestamp()*1000),100,110,90,100,1000]
+        partial_entry_bar=[int((created-timedelta(minutes=5)).timestamp()*1000),100,110,90,100,1000]
+        forming=[int((created+timedelta(minutes=25)).timestamp()*1000),100,110,90,100,1000]
+        status,count=platform.evaluate_trade_outcome_from_bars(
+            trade,[before,partial_entry_bar,forming],
+            int((created+timedelta(minutes=35)).timestamp()*1000)
+        )
+        self.assertEqual((status,count),("active",0))
 
     def test_market_volume_strategy_preserves_dive_atr_levels(self):
         rows = [[i * 900000, 100, 101, 99, 100, 1000] for i in range(120)]
