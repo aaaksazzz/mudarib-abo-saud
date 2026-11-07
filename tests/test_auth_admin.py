@@ -13,7 +13,9 @@ import app as platform
 class AuthenticationAndAdminTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        platform.app.config.update(TESTING=True, RATELIMIT_ENABLED=False)
+        platform.app.config.update(TESTING=True)
+
+    _ip_counter = 10
 
     def setUp(self):
         with platform.app.app_context():
@@ -21,6 +23,10 @@ class AuthenticationAndAdminTests(unittest.TestCase):
             platform.db.drop_all()
             platform.db.create_all()
         self.client = platform.app.test_client()
+        # Rate-limit counters are keyed by client IP; isolate each test while
+        # leaving production rate limiting enabled and covered by the app.
+        type(self)._ip_counter += 1
+        self.client.environ_base["REMOTE_ADDR"] = f"198.51.100.{type(self)._ip_counter}"
 
     def csrf_headers(self):
         token = self.client.get("/api/bootstrap").get_json()["csrf"]
