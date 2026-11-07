@@ -1,6 +1,6 @@
 const $=s=>document.querySelector(s);
-let csrf="",currentUser=null,currentPage="overview",boot={sections:{}},selectedTimeframes={},authBusy=false;
-const timeframeOptions=[["15m","15 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
+let csrf="",currentUser=null,currentPage="overview",boot={sections:{}},authBusy=false;
+const timeframeOptions=[["15m","15 دقيقة"]];
 const marketNames={spot:"Binance Spot",futures:"Binance Futures",alpha:"Binance Alpha","us-stocks":"الأسهم الأمريكية","us-contracts":"العقود الأمريكية",saudi:"السوق السعودي",forex:"الفوركس والذهب"};
 const pages={overview:"نظرة عامة",...marketNames,plans:"الاشتراكات والدفع",journal:"سجل الصفقات",blog:"المدونة",news:"الأخبار المهمة",admin:"لوحة الإدارة"};
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -100,7 +100,7 @@ async function overview(root,version=renderVersion){
 }
 async function marketPage(root,market,version=renderVersion){
  try{
-  const timeframe=selectedTimeframes[market]||"15m";
+  const timeframe="15m";
   const [snap,sig,engine]=await Promise.all([api("/api/markets/"+market+"/snapshot"),api("/api/markets/"+market+"/signals?timeframe="+encodeURIComponent(timeframe)),api("/api/strategy-status").catch(()=>null)]);
   if(version!==renderVersion||currentPage!==market)return;
   const unavailable=snap.ready===false;
@@ -125,13 +125,12 @@ async function marketPage(root,market,version=renderVersion){
    if(rejected>0&&Number(sig.accepted_signals||0)===0)return "ظهرت "+fresh+" إعدادات، لكن اتجاه السوق العام ("+(sig.market_bias==="BUY"?"صاعد":sig.market_bias==="SELL"?"هابط":"متعادل")+") لم يؤكد اتجاهها.";
    return "لا توجد فرصة اجتازت جميع شروط التأكيد حالياً.";
   })();
-  const tabs='<div class="timeframe-tabs" role="group" aria-label="اختيار الفريم">'+timeframeOptions.map(([key,label])=>'<button type="button" class="timeframe-tab '+(key===timeframe?"active":"")+'" data-timeframe="'+key+'" aria-pressed="'+(key===timeframe)+'">'+label+'</button>').join("")+'</div>';
+  const tabs='<div class="timeframe-fixed-label">فريم التحليل · 15 دقيقة</div>';
   const engineData=engine||(sig.engine&&sig.fingerprint?{engine:sig.engine,fingerprint:sig.fingerprint}:null);
   const installed=engineData&&engineData.fingerprint==="SMART-FLOW-SMA200-V1-20261107"&&engineData.engine==="SMART FLOW QUANT";
   const legacyLabel=engine&&typeof engine.legacy_removed==="boolean"?(engine.legacy_removed?"القديم مستبدل":"جارٍ إيقاف الصفقات القديمة"):"المحرك مطابق";
-  const engineStamp=installed?'<div class="engine-fingerprint"><span class="engine-led"></span><b>بصمة المحرك: '+esc(engineData.fingerprint)+'</b><span>7 أسواق · 6 فريمات</span><span class="'+(engine&&engine.legacy_removed?"engine-clean":"engine-pending")+'">'+legacyLabel+'</span></div>':'<div class="engine-fingerprint engine-pending">تعذر تأكيد بصمة المحرك من واجهات الخادم الحالية</div>';
-  root.innerHTML=warning+'<section class="panel market-summary"><div class="panel-head"><div><span class="section-kicker">'+esc(market.toUpperCase())+'</span><h2>'+esc(marketNames[market])+'</h2></div><span class="status-pending">'+(unavailable?"مصدر غير مربوط":"مصدر عام")+'</span></div><div class="direction-row"><div><small>'+(marketClosed?"اتجاه آخر جلسة · 24 ساعة":"اتجاه السوق · 24 ساعة") +'</small><strong>'+esc(snap.direction||"غير متاح")+(snap.side==="BUY"?" · شراء":snap.side==="SELL"?" · بيع":"") +'</strong></div><div><small>الأصول الصاعدة</small><strong class="positive">'+(snap.up??"—")+'</strong></div><div><small>الأصول الهابطة</small><strong class="negative">'+(snap.down??"—")+'</strong></div><div><small>عدد الأصول</small><strong>'+(snap.total??"—")+'</strong></div></div></section>'+engineStamp+tabs+'<div class="section-head"><div><span class="section-kicker">LIVE OPPORTUNITIES · '+esc(timeframe.toUpperCase())+'</span><h2>الصفقات النشطة · '+esc(frameLabel)+'</h2></div><span class="muted-label">'+esc(scanCoverage)+'</span></div><div class="trade-grid" id="tradeCards"></div><p class="data-footnote">آخر فحص: '+esc(sig.updated_at||snap.updated_at||"لم يبدأ بعد")+' · الفريم: '+esc(frameLabel)+' · كل فريم له شموعه وحسابه وأهدافه ووقفه المستقل.</p>';
-  root.querySelectorAll("[data-timeframe]").forEach(button=>button.addEventListener("click",()=>{selectedTimeframes[market]=button.dataset.timeframe;marketPage(root,market,++renderVersion)}));
+  const engineStamp=installed?'<div class="engine-fingerprint"><span class="engine-led"></span><b>بصمة المحرك: '+esc(engineData.fingerprint)+'</b><span>7 أسواق · فريم 15 دقيقة فقط</span><span class="'+(engine&&engine.legacy_removed?"engine-clean":"engine-pending")+'">'+legacyLabel+'</span></div>':'<div class="engine-fingerprint engine-pending">تعذر تأكيد بصمة المحرك من واجهات الخادم الحالية</div>';
+  root.innerHTML=warning+'<section class="panel market-summary"><div class="panel-head"><div><span class="section-kicker">'+esc(market.toUpperCase())+'</span><h2>'+esc(marketNames[market])+'</h2></div><span class="status-pending">'+(unavailable?"مصدر غير مربوط":"مصدر عام")+'</span></div><div class="direction-row"><div><small>'+(marketClosed?"اتجاه آخر جلسة · 24 ساعة":"اتجاه السوق · 24 ساعة") +'</small><strong>'+esc(snap.direction||"غير متاح")+(snap.side==="BUY"?" · شراء":snap.side==="SELL"?" · بيع":"") +'</strong></div><div><small>الأصول الصاعدة</small><strong class="positive">'+(snap.up??"—")+'</strong></div><div><small>الأصول الهابطة</small><strong class="negative">'+(snap.down??"—")+'</strong></div><div><small>عدد الأصول</small><strong>'+(snap.total??"—")+'</strong></div></div></section>'+engineStamp+tabs+'<div class="section-head"><div><span class="section-kicker">LIVE OPPORTUNITIES · '+esc(timeframe.toUpperCase())+'</span><h2>الصفقات النشطة · '+esc(frameLabel)+'</h2></div><span class="muted-label">'+esc(scanCoverage)+'</span></div><div class="trade-grid" id="tradeCards"></div><p class="data-footnote">آخر فحص: '+esc(sig.updated_at||snap.updated_at||"لم يبدأ بعد")+' · الفريم: '+esc(frameLabel)+' · التحليل والصفقات على شموع 15 دقيقة فقط.</p>';
   const grid=$("#tradeCards");
   if(grid)grid.innerHTML=signals.length?signals.map((t,i)=>tradeCard(t,i)).join(""):'<div class="panel empty-state"><b>لا توجد فرص مؤكدة على هذا الفريم حالياً</b><p>'+esc(emptyDetails)+'</p><small class="data-footnote">تم تنفيذ '+Number(sig.analysis_completed||0)+' تحليل · فشل '+Number(sig.analysis_failed||0)+' · توافق النماذج '+Number(sig.strategy_matches||0)+' · استبعاد الاتجاه '+Number(sig.direction_rejected||0)+' · شموع قديمة '+Number(sig.rejected_stale_candle||0)+' · دخول متأخر '+Number(sig.rejected_late_price||0)+'</small></div>';
  }catch(e){
