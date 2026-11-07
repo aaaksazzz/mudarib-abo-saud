@@ -208,4 +208,4 @@ setInterval(async()=>{
  const version=renderVersion;
  marketRefreshBusy.add(market);
  try{await marketPage(root,market,version)}finally{marketRefreshBusy.delete(market)}
-},30*1000);
+},60*1000);
