@@ -735,8 +735,8 @@ def timeframe_bucket(frame,now):
 
 
 def market_scan_timeframes(market):
-    """Saudi equities use the live 15-minute session only; other markets retain their configured frames."""
-    return ("15m",) if market=="saudi" else TIMEFRAMES
+    """Use every timeframe exposed by the market UI for each supported market."""
+    return TIMEFRAMES
 
 
 def run_market_scan(market,force=False):
