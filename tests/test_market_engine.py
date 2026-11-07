@@ -205,9 +205,12 @@ class MarketEngineTests(unittest.TestCase):
             self.assertEqual(status["scanner_runtime"]["saudi"]["last_error_code"], "insufficient_candle_data")
 
     def test_signals_endpoint_reports_engine_fingerprint_as_a_fallback(self):
-        response = self.client.get("/api/markets/saudi/signals").get_json()
+        with patch.object(platform, "saudi_market_is_open", return_value=False):
+            response = self.client.get("/api/markets/saudi/signals").get_json()
         self.assertEqual(response["engine"], "SMART FLOW QUANT")
         self.assertEqual(response["fingerprint"], platform.STRATEGY_FINGERPRINT)
+        self.assertTrue(response["market_closed"])
+        self.assertEqual(response["signals"], [])
 
     def test_saudi_screener_merges_yahoo_lists_and_keeps_all_tasi_volumes(self):
         lists = {
