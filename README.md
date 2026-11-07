@@ -34,7 +34,8 @@ Production-oriented market intelligence terminal.
 - Expose port 8080.
 - Configure a persistent PostgreSQL database through `DATABASE_URL`; SQLite is for CI/local checks only.
 - Configure a persistent random `SECRET_KEY`, `COOKIE_SECURE=true`, and `ENABLE_AUTO_SCAN=true`.
-- Keep one Gunicorn worker while APScheduler runs in-process. Do not increase workers until scanning is moved to a separate worker with a distributed lock.
+- Keep one Gunicorn worker while APScheduler runs in-process. Scans are scheduled independently per market with bounded cross-market concurrency; do not increase web workers until scanning is moved to a separate worker with a distributed lock.
+- `/ready` requires a durable database configuration (PostgreSQL or an explicitly configured `DATA_DIR` volume), a persistent `SECRET_KEY`, and the market scheduler.
 - Configure `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` (14+ characters) before first boot if first-admin provisioning is needed.
 - Never commit or share secrets. Rotate credentials after any security incident and update them at the provider and deployment environment.
 
