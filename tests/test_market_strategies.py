@@ -26,6 +26,13 @@ class Sma200StrategyTests(unittest.TestCase):
         self.assertEqual(TIMEFRAMES, ("15m","1h","4h","1d","1w","1M"))
         self.assertEqual(len(PROFILES), 7)
 
+    def test_diagnostics_validate_the_live_3r_6r_9r_engine(self):
+        from market_strategies import diagnostic_self_test
+        result = diagnostic_self_test()
+        self.assertTrue(result["ok"], result["checks"])
+        self.assertTrue(result["checks"]["buy_targets_3r_6r_9r"])
+        self.assertTrue(result["checks"]["sell_targets_3r_6r_9r"])
+
     def test_sma200_gate_allows_only_matching_direction(self):
         self.assertTrue(sma200_allows("BUY", 101, 100))
         self.assertFalse(sma200_allows("BUY", 99, 100))
