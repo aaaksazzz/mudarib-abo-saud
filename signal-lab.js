@@ -16,8 +16,8 @@ async function scan(){
  try{
   const response=await fetch("/api/signal-lab/scan",{cache:"no-store"});
   const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||"فشل الفحص");
-  lastSignals=data.signals||[];$("eligible").textContent=Number(data.universe_eligible||0).toLocaleString("en-US");$("checked").textContent=Number(data.universe_checked||0).toLocaleString("en-US");$("found").textContent=lastSignals.length;$("last-check").textContent=new Date(data.checked_at).toLocaleTimeString("ar-SA");$("scan-status").textContent="اكتمل الفحص";render(lastSignals);
-  $("scan-note").textContent="تم فحص أعلى "+data.universe_checked+" عقداً حسب حجم تداول 24 ساعة؛ حد الأهلية 1 مليون USDT.";
+  lastSignals=data.signals||[];$("eligible").textContent=Number(data.universe_eligible||0).toLocaleString("en-US");$("checked").textContent=Number(data.universe_checked||0).toLocaleString("en-US");$("found").textContent=Number(data.signals_found_total??lastSignals.length).toLocaleString("en-US");$("failures").textContent=Number(data.analysis_failed||0).toLocaleString("en-US");$("last-check").textContent=new Date(data.checked_at).toLocaleTimeString("ar-SA");$("scan-status").textContent="اكتمل الفحص";render(lastSignals);
+  $("scan-note").textContent="اكتمل فحص "+data.universe_checked+" من "+data.universe_attempted+" عقداً مؤهلاً؛ فشل "+(data.analysis_failed||0)+" · بيانات غير كافية "+(data.insufficient_data||0)+" · المدة "+(data.scan_duration_seconds||0)+" ثانية. الحد الأدنى للتداول اليومي 1 مليون USDT.";
  }catch(e){$("scan-status").textContent="تعذر الفحص";$("scan-note").textContent=e.message;toast(e.message)}
  finally{busy=false;$("scan").disabled=false;$("scan").textContent="إعادة فحص السوق"}
 }
