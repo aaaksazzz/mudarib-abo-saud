@@ -104,9 +104,9 @@ class MarketEngineTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "provider timeout"):
                 platform.build_signal("spot", {"symbol":"BTCUSDT"}, "15m")
 
-    def test_strategy_targets_are_directional_2_3_5_percent(self):
-        self.assertEqual(platform.market_strategies.target_prices(100.0,"BUY"),(102.0,103.0,105.0))
-        self.assertEqual(platform.market_strategies.target_prices(100.0,"SELL"),(98.0,97.0,95.0))
+    def test_strategy_targets_are_directional_1_2_3R(self):
+        self.assertEqual(platform.market_strategies.target_prices(100.0,"BUY"),(101.0,102.0,103.0))
+        self.assertEqual(platform.market_strategies.target_prices(100.0,"SELL"),(99.0,98.0,97.0))
         self.assertIsNone(platform.market_strategies.target_prices(0,"BUY"))
         self.assertIsNone(platform.market_strategies.target_prices(100,"HOLD"))
 
@@ -116,9 +116,9 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(set(diagnostic["timeframes"]),set(platform.market_strategies.INTERVAL_MS))
 
     def test_build_signal_requests_only_the_selected_timeframe(self):
-        setup={"side":"BUY","entry":100.0,"stop":99.0,"tp1":102.0,"tp2":103.0,
-               "tp3":105.0,"score":80.0,"timeframe":"1h","change_pct":0.5,
-               "reason":"SMART FLOW QUANT: same-frame test"}
+        setup={"side":"BUY","entry":100.0,"stop":99.0,"tp1":101.0,"tp2":102.0,
+               "tp3":103.0,"score":80.0,"timeframe":"1h","change_pct":0.5,
+               "reason":"SMART FLOW QUANT: PRO | same-frame test"}
         with patch.object(platform,"klines",return_value=[[0,100,101,99,100,1000]]*250) as candle_source, patch.object(
             platform.market_strategies,"analyze",return_value=setup
         ) as analyzer:
@@ -154,8 +154,8 @@ class MarketEngineTests(unittest.TestCase):
         response = self.client.get("/api/strategy-status")
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertEqual(data["fingerprint"], "SMART-FLOW-SMA200-MTF-2-3-5-V1-20261108")
-        self.assertEqual(data["engine"], "SMART FLOW QUANT")
+        self.assertEqual(data["fingerprint"], "SMART-FLOW-LIQUIDITY-3R-MTF-V2-20261109")
+        self.assertEqual(data["engine"], "SMART FLOW QUANT PRO")
         self.assertEqual(data["timeframes"], ["15m","1h","4h","1d","1w","1M"])
         self.assertEqual(len(data["markets"]), 7)
         self.assertTrue(data["legacy_removed"])
