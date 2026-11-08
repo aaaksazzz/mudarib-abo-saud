@@ -842,9 +842,12 @@ def select_scan_candidates(universe,offset=0,batch_size=80):
     if not ranked:
         return [],0,0
     start=int(offset or 0)%len(ranked)
-    size=min(max(1,int(batch_size)),len(ranked)-start)
-    selected=ranked[start:start+size]
-    next_offset=0 if start+size>=len(ranked) else start+size
+    # Always fill the requested batch, including when the cursor reaches the
+    # tail of the ranked universe. The old slice returned only the remainder
+    # (for example 27 of 80) and wasted most of that scan cycle.
+    size=min(max(1,int(batch_size)),len(ranked))
+    selected=[ranked[(start+i)%len(ranked)] for i in range(size)]
+    next_offset=(start+size)%len(ranked)
     return selected,next_offset,start
 
 
