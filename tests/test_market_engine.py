@@ -439,8 +439,8 @@ class MarketEngineTests(unittest.TestCase):
 
     def test_market_volume_strategy_preserves_directional_2_3_5_targets(self):
         rows = [[i * 900000, 100, 101, 99, 100, 1000] for i in range(120)]
-        setup = {"side":"BUY","entry":100.0,"stop":97.0,"tp1":103.0,"tp2":106.0,
-                 "tp3":109.0,"score":84.0,"timeframe":"15m","change_pct":0.5,
+        setup = {"side":"BUY","entry":100.0,"stop":97.0,"tp1":102.0,"tp2":103.0,
+                 "tp3":105.0,"score":84.0,"timeframe":"15m","change_pct":0.5,
                  "change_15m_pct":0.5,"reason":"SMART FLOW QUANT:: structure breakout"}
         with patch.object(platform, "klines", return_value=rows), patch.object(platform.market_strategies, "analyze", return_value=setup):
             signal = platform.build_signal("spot", {"symbol":"BTCUSDT","quote_volume":50000000}, "15m")
@@ -561,18 +561,18 @@ class MarketEngineTests(unittest.TestCase):
                 side_effect=lambda signals, universe, now=None: (signals, {"rejected_stale_candle": 0, "rejected_late_price": 0})
             ):
                 first = platform.run_market_scan("spot", force=True)
-                self.assertEqual(len(first["signals"]), 1)
-                self.assertEqual(platform.Trade.query.count(), 1)
+                self.assertEqual(len(first["signals"]), len(platform.TIMEFRAMES))
+                self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
                 second = platform.run_market_scan("spot", force=True)
-                self.assertEqual(platform.Trade.query.count(), 1)
-                self.assertEqual(len(second["signals"]), 1)
+                self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
+                self.assertEqual(len(second["signals"]), len(platform.TIMEFRAMES))
                 self.assertTrue(all(x.status == "active" for x in platform.Trade.query.all()))
                 candle_time["15m"] += 1
                 third = platform.run_market_scan("spot", force=True)
                 trades = platform.Trade.query.order_by(platform.Trade.id.asc()).all()
-                self.assertEqual(len(trades), 2)
+                self.assertEqual(len(trades), len(platform.TIMEFRAMES)+1)
                 self.assertEqual(sum(x.status == "superseded" for x in trades), 1)
-                self.assertEqual(len(third["signals"]), 1)
+                self.assertEqual(len(third["signals"]), len(platform.TIMEFRAMES))
 
     def test_stale_scan_hides_old_opportunities_instead_of_showing_stuck_coins(self):
         with platform.app.app_context():
