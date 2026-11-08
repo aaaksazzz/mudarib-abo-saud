@@ -611,17 +611,18 @@ def klines(market,symbol,interval,limit=120):
 TIMEFRAMES=market_strategies.TIMEFRAMES
 
 STRATEGY_FINGERPRINT=market_strategies.STRATEGY_FINGERPRINT
+CURRENT_STRATEGY_MARKER="strategy_fp="+STRATEGY_FINGERPRINT
 @app.get("/api/strategy-status")
 def strategy_status_summary():
     current_active=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.expires_at>utcnow(),
-        Trade.reason.like("SMART FLOW QUANT:%")
+        Trade.reason.like("%"+CURRENT_STRATEGY_MARKER+"%")
     ).count()
     legacy_active=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.expires_at>utcnow(),
-        Trade.reason.not_like("SMART FLOW QUANT:%")
+        Trade.reason.not_like("%"+CURRENT_STRATEGY_MARKER+"%")
     ).count()
     diagnostics=market_strategies.diagnostic_self_test()
     return jsonify({
@@ -639,19 +640,40 @@ def strategy_status_summary():
     })
 
 
-def build_signal(market,item,timeframe):
-    # Let provider/transport failures reach the scan coordinator. Returning None
-    # for both "no setup" and "data unavailable" made failed feeds look healthy.
+def build_signal(market,item,timeframe,diagnostics=None):
+    # Entries are triggered on closed 15m candles; higher frames confirm direction.
+    diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
+    def reject(reason):
+        diagnostics[reason] = diagnostics.get(reason, 0) + 1
+        return None
     symbol=item["symbol"]
-    rows=klines(market,symbol,timeframe,250)
+    if timeframe != "15m":
+        return reject("unsupported_timeframe")
+    rows=klines(market,symbol,"15m",250)
+    # Every market follows the same hierarchy: 15m entry, then trend
+    # confirmation from 1h, 4h, daily, weekly and monthly candles.
+    higher_frames=("1h","4h","1d","1w","1M")
+    higher_bias={}
+    for higher_frame in higher_frames:
+        higher_rows=klines(market,symbol,higher_frame,250)
+        higher_bias[higher_frame]=market_strategies.trend_direction(higher_rows)
+    confirmed=[higher_bias[frame] for frame in higher_frames]
+    if not confirmed[0] or any(bias != confirmed[0] for bias in confirmed[1:]):
+        return reject("higher_timeframe_rejected")
     flow=None
     if item.get("include_microstructure") and market in ("spot","futures"):
         flow=market_adapters.microstructure(market,symbol)
-    setup=market_strategies.analyze(market,symbol,rows,timeframe=timeframe,microstructure=flow)
+    setup=market_strategies.analyze(market,symbol,rows,timeframe="15m",microstructure=flow)
     if not setup:
-        return None
+        return reject("no_15m_setup")
+    if setup.get("side") != confirmed[0]:
+        return reject("entry_direction_rejected")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
-                  "status":"active","timeframe":timeframe})
+                  "status":"active","timeframe":"15m",
+                  "trend_1h":higher_bias["1h"],"trend_4h":higher_bias["4h"],
+                  "trend_1d":higher_bias["1d"],"trend_1w":higher_bias["1w"],
+                  "trend_1M":higher_bias["1M"],
+                  "trend_confirmation":"15m entry + 1h/4h/1d/1w/1M aligned"})
     return setup
 
 def filter_fresh_signals(signals, universe, now=None):
@@ -704,15 +726,18 @@ def filter_fresh_signals(signals, universe, now=None):
             if not math.isfinite(live_risk) or live_risk<=0 or not math.isfinite(atr) or atr<=0:
                 rejected_moved+=1
                 continue
-            if live_risk>atr*2.5 or live_risk<atr*0.20:
+            # Keep the same structural-risk floor and ceiling used by the 15m analyzer.
+            if live_risk<atr*1.80 or live_risk>atr*16.0:
                 rejected_moved+=1
                 continue
             # The published entry is the actual quote at approval time, not the
             # previous candle close. Rebuild all R-multiple targets from that entry.
-            if live_risk > current * 0.0125:
+            if live_risk > current * 0.04:
                 rejected_moved+=1
                 continue
-            targets=market_strategies.target_prices(current,side)
+            # Recalculate objectives from the live entry and the actual
+            # structural stop distance; do not reset every trade to fixed % levels.
+            targets=market_strategies.adaptive_target_prices(current,side,live_risk)
             if not targets:
                 rejected_moved+=1
                 continue
@@ -880,8 +905,8 @@ def timeframe_bucket(frame,now):
 
 
 def market_scan_timeframes(market):
-    """Expose the same independently-calculated frames for every supported market."""
-    return market_strategies.TIMEFRAMES
+    """Only create 15m entries; all higher timeframes are directional filters."""
+    return ("15m",)
 
 
 def run_market_scan(market,force=False):
@@ -901,9 +926,9 @@ def run_market_scan(market,force=False):
             )
             if last>now-timedelta(minutes=15) and all_frames_current and Trade.query.filter(
                 Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe=="15m",
-                Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")
+                Trade.expires_at>now,Trade.reason.like("%"+CURRENT_STRATEGY_MARKER+"%")
             ).count():
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")).order_by(Trade.score.desc()).limit(18).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("%"+CURRENT_STRATEGY_MARKER+"%")).order_by(Trade.score.desc()).limit(18).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
                     meta=json.loads(meta_row.value) if meta_row else {}
@@ -949,15 +974,22 @@ def run_market_scan(market,force=False):
     found=[]
     completed=0
     failed=0
+    rejection_totals={}
     with ThreadPoolExecutor(max_workers=8) as pool:
         frame_stats={frame:{"completed":0,"failed":0,"matches":0} for frame in frames_to_scan}
-        futures={pool.submit(build_signal,market,item,frame):(item,frame) for item in candidates for frame in frames_to_scan}
+        futures={}
+        for item in candidates:
+            for frame in frames_to_scan:
+                diagnostics={}
+                futures[pool.submit(build_signal,market,item,frame,diagnostics)]=(item,frame,diagnostics)
         for future in as_completed(futures):
-            _,frame=futures[future]
+            _,frame,diagnostics=futures[future]
             try:
                 signal=future.result()
                 completed+=1
                 frame_stats[frame]["completed"]+=1
+                for reason,count in diagnostics.items():
+                    rejection_totals[reason]=rejection_totals.get(reason,0)+count
                 if signal:
                     found.append(signal)
                     frame_stats[frame]["matches"]+=1
@@ -1007,15 +1039,17 @@ def run_market_scan(market,force=False):
     fresh_matches=len(found)
     # Market breadth is informational only. Each symbol is gated by its own
     # same-timeframe SMA200 and directional candle/flow confirmations.
-    direction_rejected=0
-    app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s",
+    direction_rejected=(rejection_totals.get("higher_timeframe_rejected",0)+rejection_totals.get("entry_direction_rejected",0))
+    app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s higher_tf_rejected=%s no_15m_setup=%s entry_direction_rejected=%s market_breadth=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,len(found),
-                    freshness["rejected_stale_candle"],freshness["rejected_late_price"],market_bias)
+                    freshness["rejected_stale_candle"],freshness["rejected_late_price"],
+                    rejection_totals.get("higher_timeframe_rejected",0),rejection_totals.get("no_15m_setup",0),
+                    rejection_totals.get("entry_direction_rejected",0),market_bias)
     # Keep the same 15m candle from being republished every scheduler cycle.
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("SMART FLOW QUANT:%"),
+        Trade.reason.like("%"+CURRENT_STRATEGY_MARKER+"%"),
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
@@ -1045,13 +1079,13 @@ def run_market_scan(market,force=False):
                 db.session.add(Setting(key=setting_key,value=marker))
             else:
                 candle_row.value=marker
-            signal["reason"]=signal["reason"]+" | bar_ts="+marker
+            signal["reason"]=signal["reason"]+" | "+CURRENT_STRATEGY_MARKER+" | bar_ts="+marker
             new_signals.append(signal)
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("SMART FLOW QUANT:%")).update({"status":"superseded"},synchronize_session=False)
+        Trade.reason.not_like("%"+CURRENT_STRATEGY_MARKER+"%")).update({"status":"superseded"},synchronize_session=False)
     active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.timeframe.in_(frames_to_scan),Trade.reason.like("SMART FLOW QUANT:%"))
+        Trade.timeframe.in_(frames_to_scan),Trade.reason.like("%"+CURRENT_STRATEGY_MARKER+"%"))
     if retained_ids:
         active_query=active_query.filter(~Trade.id.in_(retained_ids))
     active_query.update({"status":"superseded"},synchronize_session=False)
@@ -1069,7 +1103,8 @@ def run_market_scan(market,force=False):
                             "fresh_matches":fresh_matches,"direction_rejected":direction_rejected,
                             "accepted_signals":len(found),"rejected_stale_candle":freshness["rejected_stale_candle"],
                             "rejected_late_price":freshness["rejected_late_price"],
-                            "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":frames_to_scan},ensure_ascii=False)
+                            "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":frames_to_scan,
+                             "rejection_reasons":rejection_totals},ensure_ascii=False)
     if not meta_row:
         db.session.add(Setting(key=meta_key,value=meta_value))
     else:
@@ -1111,7 +1146,7 @@ def run_market_scan(market,force=False):
         else:
             frame_meta_row.value=frame_meta
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")).order_by(Trade.score.desc()).limit(18).all()
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("%"+CURRENT_STRATEGY_MARKER+"%")).order_by(Trade.score.desc()).limit(18).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
             "scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
             "analysis_completed":completed,"analysis_failed":failed,"strategy_matches":strategy_matches,
@@ -1139,7 +1174,7 @@ def signals(market):
             row=db.session.get(Setting,"scan:"+market)
         if meta_row is None and timeframe=="15m":
             meta_row=db.session.get(Setting,"scan-meta:"+market)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("SMART FLOW QUANT:%"),Trade.timeframe==timeframe).order_by(Trade.score.desc()).limit(3).all()
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("%"+CURRENT_STRATEGY_MARKER+"%"),Trade.timeframe==timeframe).order_by(Trade.score.desc()).limit(3).all()
         updated=row.value if row else None
         try:
             meta=json.loads(meta_row.value) if meta_row else {}
@@ -1183,7 +1218,8 @@ def trade_history():
     expire_stale_trades()
     open_rows=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.expires_at>utcnow()
+        Trade.expires_at>utcnow(),
+        Trade.reason.like("%"+CURRENT_STRATEGY_MARKER+"%")
     ).order_by(Trade.created_at.desc()).all()
     completed_all=Trade.query.filter(
         Trade.status.in_(("tp3_hit","stopped","stopped_after_tp1","stopped_after_tp2"))
