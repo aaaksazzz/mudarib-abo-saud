@@ -973,17 +973,19 @@ def run_market_scan(market,force=False):
                     )
                 else:
                     app.logger.exception("multi-timeframe signal analysis failed for %s",market)
-    # Saudi public feeds have uneven per-symbol candle coverage. Keep the
-    # stricter 80% completeness rule for other markets, but allow a Saudi scan
-    # to proceed when at least 35% of requested samples completed (minimum 8).
+    # Validate completeness separately for every timeframe. A healthy 15m
+    # feed must never hide a broken daily/monthly candle provider.
     required_ratio=0.35 if market=="saudi" else 0.80
-    required_completed=max(8 if market=="saudi" else 1,
-                           math.ceil(len(futures)*required_ratio))
-    if completed<required_completed:
-        raise RuntimeError(
-            f"Insufficient candle data: {completed}/{len(futures)} analyses completed "
-            f"(required={required_completed})"
-        )
+    incomplete_frames={}
+    for frame in frames_to_scan:
+        required=min(len(candidates),max(8 if market=="saudi" else 1,
+                                       math.ceil(len(candidates)*required_ratio)))
+        actual=frame_stats[frame]["completed"]
+        if actual<required:
+            incomplete_frames[frame]=(actual,required)
+    if incomplete_frames:
+        details=", ".join(f"{frame}={actual}/{required}" for frame,(actual,required) in incomplete_frames.items())
+        raise RuntimeError("Insufficient candle data by timeframe: "+details)
     if failed:
         app.logger.warning(
             "market scan partial data: market=%s completed=%s failed=%s requested=%s",
