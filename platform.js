@@ -118,7 +118,7 @@ async function marketPage(root,market,version=renderVersion){
   const timeframeSelect=$("#marketTimeframe");
   if(timeframeSelect)timeframeSelect.addEventListener("change",()=>{selectedTimeframe=timeframeSelect.value;marketPage(root,market,version)});
   const grid=$("#tradeCards");
-  if(grid)grid.innerHTML=signals.length?signals.map((t,i)=>tradeCard(t,i)).join(""):'<div class="panel empty-state"><b>لا توجد فرص مؤكدة على هذا الفريم حالياً</b><p>'+esc(emptyDetails)+'</p><small class="data-footnote">تم تنفيذ '+Number(sig.analysis_completed||0)+' تحليل · فشل '+Number(sig.analysis_failed||0)+' · توافق النماذج '+Number(sig.strategy_matches||0)+'+' · شموع قديمة '+Number(sig.rejected_stale_candle||0)+' · دخول متأخر '+Number(sig.rejected_late_price||0)+'</small></div>';
+  if(grid)grid.innerHTML=signals.length?signals.map((t,i)=>tradeCard(t,i)).join(""):'<div class="panel empty-state"><b>لا توجد فرص مؤكدة على هذا الفريم حالياً</b><p>'+esc(emptyDetails)+'</p><small class="data-footnote">تم تنفيذ '+Number(sig.analysis_completed||0)+' تحليل · فشل '+Number(sig.analysis_failed||0)+' · توافق النماذج '+Number(sig.strategy_matches||0)+' · شموع قديمة '+Number(sig.rejected_stale_candle||0)+' · دخول متأخر '+Number(sig.rejected_late_price||0)+'</small></div>';
  }catch(e){
   if(version!==renderVersion||currentPage!==market)return;
   root.innerHTML='<div class="panel empty-state"><b>تعذر تحميل بيانات السوق</b><p>'+esc(e.message)+'</p><button class="login-btn" id="retryMarket">إعادة المحاولة</button></div>';
