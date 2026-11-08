@@ -712,7 +712,9 @@ def filter_fresh_signals(signals, universe, now=None):
             if live_risk > current * 0.0125:
                 rejected_moved+=1
                 continue
-            targets=market_strategies.target_prices(current,side)
+            # Recalculate objectives from the live entry and the actual
+            # structural stop distance; do not reset every trade to fixed % levels.
+            targets=market_strategies.adaptive_target_prices(current,side,live_risk)
             if not targets:
                 rejected_moved+=1
                 continue
