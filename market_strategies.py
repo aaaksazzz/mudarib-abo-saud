@@ -7,7 +7,7 @@ Spot and USD-M Futures. Scores rank confluence; they are not win probabilities.
 """
 import math
 
-STRATEGY_FINGERPRINT = "SMART-FLOW-15M-1H-4H-1D-1W-1M-RR-3-6-9-V5-20261108"
+STRATEGY_FINGERPRINT = "SMART-FLOW-15M-1H-4H-1D-1W-1M-RR-3-6-9-WIDE-STOP-V6-20261109"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 INTERVAL_MS = {"15m": 900_000, "1h": 3_600_000, "4h": 14_400_000,
                "1d": 86_400_000, "1w": 604_800_000, "1M": 2_678_400_000}
@@ -227,22 +227,21 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         return None
 
     direction = 1.0 if side == "BUY" else -1.0
-    # Anchor the stop beyond a wider, confirmed 8-candle 15m swing (2 hours),
-    # not the last 3 candles where ordinary wick noise can take it out.
-    # Add a half-ATR cushion and reject invalid/oversized structures rather
-    # than pulling the stop closer to manufacture an acceptable trade.
-    structure_start = max(0, i - 7)
+    # Anchor the stop beyond a 16-candle closed 15m swing (4 hours).
+    # A larger ATR cushion protects against ordinary wick noise. Never pull
+    # a structural stop closer just to force a setup through the risk limits.
+    structure_start = max(0, i - 15)
     swing_low = min(lows[structure_start:i + 1])
     swing_high = max(highs[structure_start:i + 1])
-    buffer = max(atr * 0.50, entry * 0.0008)
+    buffer = max(atr * 0.75, entry * 0.001)
     stop = swing_low - buffer if side == "BUY" else swing_high + buffer
     risk = abs(entry - stop)
 
     # A stop must clear normal 15m noise, while remaining within a practical
     # price-risk ceiling. If the true structure needs more room, skip the setup.
-    if risk < atr * 1.20 or risk > atr * 8.0 or risk <= 0:
+    if risk < atr * 1.80 or risk > atr * 12.0 or risk <= 0:
         return None
-    if risk > entry * 0.02:
+    if risk > entry * 0.03:
         return None
     targets = adaptive_target_prices(entry, side, risk)
     if not targets:
