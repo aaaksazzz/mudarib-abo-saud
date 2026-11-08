@@ -235,10 +235,20 @@ def signal_lab_stylesheet():
 @app.get("/api/signal-lab/scan")
 @limiter.limit("6 per minute")
 def signal_lab_scan():
-    """Paper-only 15m liquidity-sweep scanner for liquid USD-M perpetuals."""
+    """Paper-only 15m liquidity-sweep scanner across every eligible USD-M perpetual."""
+    started=time.monotonic()
     try:
-        tickers=market_tickers("futures")
-        universe=tickers[:35]
+        # market_tickers already enforces active USD-M perpetuals and >= 1M USDT
+        # 24h quote volume, sorted from highest liquidity to lowest.
+        universe=market_tickers("futures")
+        if not universe:
+            return jsonify({
+                "ok":True,"strategy":"LIQUIDITY_SWEEP_15M_V1","timeframe":"15m",
+                "universe_checked":0,"universe_attempted":0,"universe_eligible":0,
+                "analysis_failed":0,"insufficient_data":0,"signals":[],
+                "checked_at":iso(utcnow()),"scan_duration_seconds":round(time.monotonic()-started,2)
+            })
+
         def inspect_symbol(item):
             symbol=item["symbol"]
             try:
@@ -246,59 +256,80 @@ def signal_lab_scan():
                     "symbol":symbol,"interval":"15m","limit":40
                 })
                 if not isinstance(rows,list) or len(rows)<23:
-                    return None
-                # Binance's final row is the still-forming candle; use the last closed candle only.
-                c=rows[-2]
-                op,hi,lo,cl=float(c[1]),float(c[2]),float(c[3]),float(c[4])
-                quote_vol=float(c[7])
-                prior=rows[-22:-2]
-                if len(prior)!=20 or min(op,hi,lo,cl)<=0 or hi<=lo:
-                    return None
+                    return {"status":"insufficient_data","signal":None}
+                # Ignore the live candle. A sweep candle must precede a separate,
+                # fully closed confirmation candle; neither can repaint intrabar.
+                sweep=rows[-3]
+                confirm=rows[-2]
+                sop,shi,slo,scl=float(sweep[1]),float(sweep[2]),float(sweep[3]),float(sweep[4])
+                op,hi,lo,cl=float(confirm[1]),float(confirm[2]),float(confirm[3]),float(confirm[4])
+                quote_vol=float(confirm[7])
+                prior=rows[-23:-3]
+                if len(prior)!=20 or min(sop,shi,slo,scl,op,hi,lo,cl)<=0 or shi<=slo or hi<=lo:
+                    return {"status":"insufficient_data","signal":None}
                 prior_high=max(float(x[2]) for x in prior)
                 prior_low=min(float(x[3]) for x in prior)
                 avg_quote=sum(float(x[7]) for x in prior)/20
                 if avg_quote<=0:
-                    return None
+                    return {"status":"insufficient_data","signal":None}
                 vol_ratio=quote_vol/avg_quote
                 body_ratio=abs(cl-op)/(hi-lo)
-                long_sweep=lo<prior_low and cl>prior_low and cl>op
-                short_sweep=hi>prior_high and cl<prior_high and cl<op
-                if vol_ratio<1.20 or body_ratio<0.45 or not (long_sweep or short_sweep):
-                    return None
-                side="BUY" if long_sweep else "SELL"
+                long_sweep=slo<prior_low and scl>prior_low
+                short_sweep=shi>prior_high and scl<prior_high
+                long_confirm=cl>op and cl>scl
+                short_confirm=cl<op and cl<scl
+                is_long=long_sweep and long_confirm
+                is_short=short_sweep and short_confirm
+                if vol_ratio<1.20 or body_ratio<0.45 or not (is_long or is_short):
+                    return {"status":"checked","signal":None}
+                side="BUY" if is_long else "SELL"
                 entry=cl
-                stop=lo if side=="BUY" else hi
+                stop=slo if side=="BUY" else shi
                 risk=abs(entry-stop)
                 risk_pct=(risk/entry)*100
                 if risk<=0 or risk_pct<0.05 or risk_pct>1.80:
-                    return None
+                    return {"status":"checked","signal":None}
                 sign=1 if side=="BUY" else -1
                 score=min(99,round(55+min(vol_ratio-1.2,2.0)*9+min(body_ratio,1)*15-max(0,risk_pct-0.8)*8))
-                return {
+                signal={
                     "symbol":symbol,"side":side,"entry":round(entry,12),
                     "stop":round(stop,12),"tp1":round(entry+sign*risk*1.5,12),
                     "tp2":round(entry+sign*risk*2.0,12),"tp3":round(entry+sign*risk*3.0,12),
                     "risk_pct":round(risk_pct,3),"volume_ratio":round(vol_ratio,2),
                     "body_ratio":round(body_ratio,2),"score":score,
                     "quote_volume_24h":round(float(item["quote_volume"]),2),
-                    "candle_time":int(c[0]),"timeframe":"15m",
-                    "reason":"سحب سيولة أسفل قاع 20 شمعة ثم إغلاق صاعد بحجم تداول مؤكد" if side=="BUY" else "سحب سيولة أعلى قمة 20 شمعة ثم إغلاق هابط بحجم تداول مؤكد"
+                    "sweep_time":int(sweep[0]),"candle_time":int(confirm[0]),"timeframe":"15m",
+                    "reason":"سحب سيولة أسفل قاع 20 شمعة، ثم شمعة تأكيد صاعدة بحجم تداول مؤكد" if side=="BUY" else "سحب سيولة أعلى قمة 20 شمعة، ثم شمعة تأكيد هابطة بحجم تداول مؤكد"
                 }
+                return {"status":"checked","signal":signal}
             except Exception:
-                app.logger.debug("signal lab scan skipped %s",symbol,exc_info=True)
-                return None
+                app.logger.warning("signal lab scan failed for %s",symbol,exc_info=True)
+                return {"status":"failed","signal":None}
+
         found=[]
-        with ThreadPoolExecutor(max_workers=8) as pool:
+        checked=failed=insufficient=0
+        # Scan the complete eligible universe with bounded concurrency to avoid
+        # burst traffic against Binance and keep the single-worker service stable.
+        with ThreadPoolExecutor(max_workers=6) as pool:
             futures=[pool.submit(inspect_symbol,item) for item in universe]
             for future in as_completed(futures):
-                signal=future.result()
-                if signal:
-                    found.append(signal)
+                result=future.result()
+                if result["status"]=="checked":
+                    checked+=1
+                    if result["signal"]:
+                        found.append(result["signal"])
+                elif result["status"]=="insufficient_data":
+                    insufficient+=1
+                else:
+                    failed+=1
         found.sort(key=lambda x:(x["score"],x["quote_volume_24h"]),reverse=True)
         return jsonify({
             "ok":True,"strategy":"LIQUIDITY_SWEEP_15M_V1","timeframe":"15m",
-            "universe_checked":len(universe),"universe_eligible":len(tickers),
-            "signals":found[:3],"checked_at":iso(utcnow()),
+            "universe_checked":checked,"universe_attempted":len(universe),
+            "universe_eligible":len(universe),"analysis_failed":failed,
+            "insufficient_data":insufficient,"signals":found[:3],
+            "signals_found_total":len(found),"checked_at":iso(utcnow()),
+            "scan_duration_seconds":round(time.monotonic()-started,2),
             "rules":{"lookback":20,"volume_ratio_min":1.2,"body_ratio_min":0.45,"max_risk_pct":1.8}
         })
     except Exception:
