@@ -7,7 +7,7 @@ Spot and USD-M Futures. Scores rank confluence; they are not win probabilities.
 """
 import math
 
-STRATEGY_FINGERPRINT = "SMART-FLOW-15M-1H-4H-TREND-STRUCTURE-V3-20261108"
+STRATEGY_FINGERPRINT = "SMART-FLOW-15M-1H-4H-1D-1W-1M-TREND-V4-20261108"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 INTERVAL_MS = {"15m": 900_000, "1h": 3_600_000, "4h": 14_400_000,
                "1d": 86_400_000, "1w": 604_800_000, "1M": 2_678_400_000}
@@ -59,17 +59,21 @@ def sma200_allows(side, price, ma200):
     return (side == "BUY" and price > ma200) or (side == "SELL" and price < ma200)
 
 
-def trend_direction(rows):
-    """Return BUY/SELL only when price and the SMA200 slope agree."""
+def trend_direction(rows, period=50):
+    """Return BUY/SELL only when price and a higher-timeframe MA slope agree."""
     if not isinstance(rows, list):
         return None
     bars = _finite_rows(rows)
-    if not bars or len(bars) < 221:
+    try:
+        period = int(period)
+    except (TypeError, ValueError):
+        return None
+    if period < 20 or not bars or len(bars) < period + 20:
         return None
     closes = [bar[4] for bar in bars]
     price = closes[-1]
-    current_ma = sum(closes[-200:]) / 200.0
-    prior_ma = sum(closes[-220:-20]) / 200.0
+    current_ma = sum(closes[-period:]) / period
+    prior_ma = sum(closes[-period-20:-20]) / period
     if not all(math.isfinite(x) and x > 0 for x in (price, current_ma, prior_ma)):
         return None
     if price > current_ma and current_ma > prior_ma:
