@@ -7,7 +7,7 @@
 4. Set a persistent random `SECRET_KEY`; changing it on every restart invalidates user sessions.
 5. Set `COOKIE_SECURE=true` when serving over HTTPS.
 6. Set `ENABLE_AUTO_SCAN=true` to run the in-process 15-minute scanner.
-7. Keep exactly one Gunicorn worker while APScheduler is in the web process. More workers create duplicate schedulers and duplicate market scans.
+7. Keep exactly one Gunicorn worker while APScheduler is in the web process. More workers create duplicate schedulers and duplicate market scans. The seven market jobs are staggered across the 15-minute cycle and use one scheduler executor worker to avoid synchronized provider bursts.
 8. Configure first-admin variables only through deployment secrets. Never paste credentials into GitHub, screenshots or chat.
 
 ## Current market adapters
@@ -17,8 +17,8 @@
 - Binance Alpha, US equities, US contracts, Tadawul, Forex and Gold use public Yahoo/Binance adapters without account keys. Their symbol universes are provider-limited; the current Yahoo screeners do not guarantee a complete TASI or US-equity listing. Do not treat these lists as exhaustive.
 
 ## Health checks
-- `GET /health`: process liveness.
-- `GET /ready`: database connectivity, PostgreSQL persistence, a configured persistent secret and actual scheduler-running state. A 503 response means the service is not ready to serve production market data.
+- `GET /health`: process liveness only; HTTP 200 does not prove market scanning is ready.
+- `GET /ready`: database connectivity, durable database configuration, a configured persistent secret and actual scheduler-running state. A 503 response means the service is not ready to serve production market data.
 - GitHub Actions runs regression tests and smoke checks on each pull request.
 
 ## Operational safeguards
