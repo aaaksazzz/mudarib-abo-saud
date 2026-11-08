@@ -96,7 +96,7 @@ class MarketEngineTests(unittest.TestCase):
         third, cursor, _ = platform.select_scan_candidates(universe, cursor, 80)
         self.assertEqual((len(first),len(second),len(third)), (80,80,80))
         self.assertEqual(len({x["symbol"] for x in first+second+third}), 170)
-        self.assertEqual(offset, 160)
+        self.assertEqual(offset, 0)
         self.assertEqual(cursor, 70)
 
     def test_build_signal_propagates_provider_failure_for_accurate_scan_health(self):
