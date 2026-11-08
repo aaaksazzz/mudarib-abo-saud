@@ -517,8 +517,14 @@ class MarketEngineTests(unittest.TestCase):
 
     def test_scheduler_can_force_a_new_scan_inside_cache_window(self):
         with platform.app.app_context():
-            row = platform.Setting(key="scan:spot", value=platform.iso(platform.utcnow()))
+            now=platform.utcnow()
+            row = platform.Setting(key="scan:spot", value=platform.iso(now))
             platform.db.session.add(row)
+            for frame in platform.TIMEFRAMES:
+                platform.db.session.add(platform.Setting(
+                    key=f"scan-frame:smart-flow-quant:spot:{frame}",
+                    value=str(platform.timeframe_bucket(frame,now))
+                ))
             platform.db.session.add(platform.Trade(market="spot",symbol="CACHEUSDT",side="BUY",
                 entry=100,stop=99,tp1=101,tp2=102,tp3=103,score=80,timeframe="15m",
                 reason="SMART FLOW QUANT: existing current-engine signal",
