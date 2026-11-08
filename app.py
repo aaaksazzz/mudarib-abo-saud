@@ -421,7 +421,7 @@ def compat_styles(): return send_from_directory(".", "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
     diagnostic=market_strategies.diagnostic_self_test()
-    return jsonify({"ok":diagnostic["ok"],"strategy": "SMART FLOW QUANT + SMA200", **diagnostic}), 200 if diagnostic["ok"] else 500
+    return jsonify({"ok":diagnostic["ok"],"strategy": "SMART FLOW QUANT PRO", **diagnostic}), 200 if diagnostic["ok"] else 500
 
 @app.get("/health")
 def health():
@@ -777,7 +777,7 @@ def strategy_status_summary():
     diagnostics=market_strategies.diagnostic_self_test()
     return jsonify({
         "ok":diagnostics["ok"],
-        "engine":"SMART FLOW QUANT",
+        "engine":"SMART FLOW QUANT PRO",
         "fingerprint":STRATEGY_FINGERPRINT,
         "markets":list(MARKETS),
         "timeframes":list(TIMEFRAMES),
