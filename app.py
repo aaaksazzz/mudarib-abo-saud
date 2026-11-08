@@ -640,18 +640,27 @@ def strategy_status_summary():
 
 
 def build_signal(market,item,timeframe):
-    # Let provider/transport failures reach the scan coordinator. Returning None
-    # for both "no setup" and "data unavailable" made failed feeds look healthy.
+    # Entries are triggered on closed 15m candles. 1h and 4h are directional filters only.
     symbol=item["symbol"]
-    rows=klines(market,symbol,timeframe,250)
+    if timeframe != "15m":
+        return None
+    rows=klines(market,symbol,"15m",250)
+    hourly_rows=klines(market,symbol,"1h",250)
+    four_hour_rows=klines(market,symbol,"4h",250)
+    hourly_bias=market_strategies.trend_direction(hourly_rows)
+    four_hour_bias=market_strategies.trend_direction(four_hour_rows)
+    if not hourly_bias or hourly_bias != four_hour_bias:
+        return None
     flow=None
     if item.get("include_microstructure") and market in ("spot","futures"):
         flow=market_adapters.microstructure(market,symbol)
-    setup=market_strategies.analyze(market,symbol,rows,timeframe=timeframe,microstructure=flow)
-    if not setup:
+    setup=market_strategies.analyze(market,symbol,rows,timeframe="15m",microstructure=flow)
+    if not setup or setup.get("side") != hourly_bias:
         return None
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
-                  "status":"active","timeframe":timeframe})
+                  "status":"active","timeframe":"15m",
+                  "trend_1h":hourly_bias,"trend_4h":four_hour_bias,
+                  "trend_confirmation":"15m entry + 1h/4h aligned"})
     return setup
 
 def filter_fresh_signals(signals, universe, now=None):
@@ -882,8 +891,8 @@ def timeframe_bucket(frame,now):
 
 
 def market_scan_timeframes(market):
-    """Expose the same independently-calculated frames for every supported market."""
-    return market_strategies.TIMEFRAMES
+    """Only create 15m entries; 1h and 4h are checked as trend filters."""
+    return ("15m",)
 
 
 def run_market_scan(market,force=False):
