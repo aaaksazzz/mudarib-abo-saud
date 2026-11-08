@@ -41,13 +41,15 @@ class Sma200StrategyTests(unittest.TestCase):
                 self.assertEqual(signal["timeframe"], frame)
                 self.assertGreater(signal["entry"], signal["ma200"])
 
-    def test_buy_signal_has_structural_stop_and_2_3_5_percent_targets(self):
+    def test_buy_signal_uses_wider_8_candle_structural_stop_and_targets(self):
         signal = analyze("futures", "TEST", candles("UP"), timeframe="15m")
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "BUY")
         risk = signal["entry"] - signal["stop"]
         self.assertGreater(risk, 0)
-        self.assertLessEqual(risk / signal["entry"], 0.015)
+        self.assertLessEqual(risk / signal["entry"], 0.02)
+        self.assertGreaterEqual(signal["risk_atr"], 1.2)
+        self.assertLessEqual(signal["risk_atr"], 8.0)
         self.assertGreaterEqual((signal["tp1"] / signal["entry"] - 1) * 100, 2.0)
         self.assertGreaterEqual((signal["tp2"] / signal["entry"] - 1) * 100, 3.0)
         self.assertGreaterEqual((signal["tp3"] / signal["entry"] - 1) * 100, 5.0)
