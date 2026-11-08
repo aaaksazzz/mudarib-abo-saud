@@ -227,7 +227,7 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
                 down_votes["order-book imbalance"] = 1
 
     buys, sells = len(up_votes), len(down_votes)
-    # Require two independent candle/flow confirmations with a clear
+    # Require at least one directional candle/flow confirmation with a clear
     # directional majority. Keep the same-timeframe SMA200 and risk checks
     # below; this improves candidate coverage without manufacturing trades.
     if buys >= 1 and buys > sells:
@@ -254,7 +254,7 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
     # Never widen a stop artificially to satisfy a fixed ATR rule. If the
     # structural invalidation is too close (noise) or too far (poor R:R),
     # reject the setup and wait for a cleaner entry.
-    if risk < atr * 0.65 or risk > atr * 2.5 or risk <= 0:
+    if risk < atr * 0.65 or risk > atr * 3.0 or risk <= 0:
         return None
     if risk > entry * 0.015:
         return None
