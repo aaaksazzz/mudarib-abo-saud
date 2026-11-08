@@ -639,11 +639,15 @@ def strategy_status_summary():
     })
 
 
-def build_signal(market,item,timeframe):
-    # Entries are triggered on closed 15m candles. 1h and 4h are directional filters only.
+def build_signal(market,item,timeframe,diagnostics=None):
+    # Entries are triggered on closed 15m candles; higher frames confirm direction.
+    diagnostics = diagnostics if isinstance(diagnostics, dict) else {}
+    def reject(reason):
+        diagnostics[reason] = diagnostics.get(reason, 0) + 1
+        return None
     symbol=item["symbol"]
     if timeframe != "15m":
-        return None
+        return reject("unsupported_timeframe")
     rows=klines(market,symbol,"15m",250)
     # Every market follows the same hierarchy: 15m entry, then trend
     # confirmation from 1h, 4h, daily, weekly and monthly candles.
@@ -654,13 +658,15 @@ def build_signal(market,item,timeframe):
         higher_bias[higher_frame]=market_strategies.trend_direction(higher_rows)
     confirmed=[higher_bias[frame] for frame in higher_frames]
     if not confirmed[0] or any(bias != confirmed[0] for bias in confirmed[1:]):
-        return None
+        return reject("higher_timeframe_rejected")
     flow=None
     if item.get("include_microstructure") and market in ("spot","futures"):
         flow=market_adapters.microstructure(market,symbol)
     setup=market_strategies.analyze(market,symbol,rows,timeframe="15m",microstructure=flow)
-    if not setup or setup.get("side") != confirmed[0]:
-        return None
+    if not setup:
+        return reject("no_15m_setup")
+    if setup.get("side") != confirmed[0]:
+        return reject("entry_direction_rejected")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":"15m",
                   "trend_1h":higher_bias["1h"],"trend_4h":higher_bias["4h"],
@@ -966,15 +972,22 @@ def run_market_scan(market,force=False):
     found=[]
     completed=0
     failed=0
+    rejection_totals={}
     with ThreadPoolExecutor(max_workers=8) as pool:
         frame_stats={frame:{"completed":0,"failed":0,"matches":0} for frame in frames_to_scan}
-        futures={pool.submit(build_signal,market,item,frame):(item,frame) for item in candidates for frame in frames_to_scan}
+        futures={}
+        for item in candidates:
+            for frame in frames_to_scan:
+                diagnostics={}
+                futures[pool.submit(build_signal,market,item,frame,diagnostics)]=(item,frame,diagnostics)
         for future in as_completed(futures):
-            _,frame=futures[future]
+            _,frame,diagnostics=futures[future]
             try:
                 signal=future.result()
                 completed+=1
                 frame_stats[frame]["completed"]+=1
+                for reason,count in diagnostics.items():
+                    rejection_totals[reason]=rejection_totals.get(reason,0)+count
                 if signal:
                     found.append(signal)
                     frame_stats[frame]["matches"]+=1
@@ -1024,10 +1037,12 @@ def run_market_scan(market,force=False):
     fresh_matches=len(found)
     # Market breadth is informational only. Each symbol is gated by its own
     # same-timeframe SMA200 and directional candle/flow confirmations.
-    direction_rejected=0
-    app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s",
+    direction_rejected=(rejection_totals.get("higher_timeframe_rejected",0)+rejection_totals.get("entry_direction_rejected",0))
+    app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s higher_tf_rejected=%s no_15m_setup=%s entry_direction_rejected=%s market_breadth=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,len(found),
-                    freshness["rejected_stale_candle"],freshness["rejected_late_price"],market_bias)
+                    freshness["rejected_stale_candle"],freshness["rejected_late_price"],
+                    rejection_totals.get("higher_timeframe_rejected",0),rejection_totals.get("no_15m_setup",0),
+                    rejection_totals.get("entry_direction_rejected",0),market_bias)
     # Keep the same 15m candle from being republished every scheduler cycle.
     existing_rows=Trade.query.filter(
         Trade.market==market,
@@ -1086,7 +1101,8 @@ def run_market_scan(market,force=False):
                             "fresh_matches":fresh_matches,"direction_rejected":direction_rejected,
                             "accepted_signals":len(found),"rejected_stale_candle":freshness["rejected_stale_candle"],
                             "rejected_late_price":freshness["rejected_late_price"],
-                            "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":frames_to_scan},ensure_ascii=False)
+                            "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":frames_to_scan,
+                             "rejection_reasons":rejection_totals},ensure_ascii=False)
     if not meta_row:
         db.session.add(Setting(key=meta_key,value=meta_value))
     else:
