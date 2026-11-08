@@ -623,8 +623,9 @@ def strategy_status_summary():
         Trade.expires_at>utcnow(),
         Trade.reason.not_like("SMART FLOW QUANT:%")
     ).count()
+    diagnostics=market_strategies.diagnostic_self_test()
     return jsonify({
-        "ok":True,
+        "ok":diagnostics["ok"],
         "engine":"SMART FLOW QUANT",
         "fingerprint":STRATEGY_FINGERPRINT,
         "markets":list(MARKETS),
@@ -633,8 +634,8 @@ def strategy_status_summary():
         "legacy_active":legacy_active,
         "legacy_removed":legacy_active==0,
         "manual_only":True,
-        "diagnostics":market_strategies.diagnostic_self_test(),
-        "strategy_ready":market_strategies.diagnostic_self_test()["ok"],
+        "diagnostics":diagnostics,
+        "strategy_ready":diagnostics["ok"],
     })
 
 
