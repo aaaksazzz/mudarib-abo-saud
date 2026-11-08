@@ -612,8 +612,8 @@ class MarketEngineTests(unittest.TestCase):
     def test_valid_asset_signal_is_not_vetoed_by_market_breadth(self):
         now_ms=int(platform.utcnow().timestamp()*1000)
         signal = {
-            "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":98.5,
-            "tp1":104.5,"tp2":109.0,"tp3":113.5,"score":84.5,"atr":1.0,
+            "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":98.0,
+            "tp1":106.0,"tp2":112.0,"tp3":118.0,"score":84.5,"atr":1.0,
             "change_pct":1.2,"timeframe":"15m","signal_candle_time":now_ms-900000-1000,
             "reason":"SMART FLOW QUANT:: confirmed."
         }
