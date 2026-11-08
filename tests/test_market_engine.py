@@ -124,35 +124,38 @@ class MarketEngineTests(unittest.TestCase):
         self.assertTrue(diagnostic["ok"],diagnostic["checks"])
         self.assertEqual(set(diagnostic["timeframes"]),set(platform.market_strategies.INTERVAL_MS))
 
-    def test_build_signal_requires_aligned_1h_4h_and_15m(self):
+    def test_build_signal_requires_aligned_all_higher_timeframes(self):
         setup={"side":"BUY","entry":100.0,"stop":98.0,"tp1":102.0,"tp2":103.0,
                "tp3":105.0,"score":80.0,"timeframe":"15m","change_pct":0.5,
                "reason":"SMART FLOW QUANT: same-frame test"}
         uptrend=[[i,100+i,101+i,99+i,100+i,1000] for i in range(250)]
-        with patch.object(platform,"klines",side_effect=[uptrend,uptrend,uptrend]) as candle_source, patch.object(
+        with patch.object(platform,"klines",side_effect=[uptrend,uptrend,uptrend,uptrend,uptrend,uptrend]) as candle_source, patch.object(
             platform.market_strategies,"analyze",return_value=setup
         ) as analyzer, patch.object(platform.market_strategies,"trend_direction",return_value="BUY") as trend:
             result=platform.build_signal("futures",{"symbol":"BTCUSDT"},"15m")
         self.assertEqual(candle_source.call_args_list[0].args[2],"15m")
         self.assertEqual(candle_source.call_args_list[1].args[2],"1h")
-        self.assertEqual(candle_source.call_args_list[2].args[2],"4h")
-        self.assertEqual(trend.call_count,2)
+        self.assertEqual([call.args[2] for call in candle_source.call_args_list[1:]], ["1h","4h","1d","1w","1M"])
+        self.assertEqual(trend.call_count,5)
         self.assertEqual(analyzer.call_args.kwargs["timeframe"],"15m")
         self.assertEqual(result["timeframe"],"15m")
         self.assertEqual(result["trend_1h"],"BUY")
         self.assertEqual(result["trend_4h"],"BUY")
+        self.assertEqual(result["trend_1d"],"BUY")
+        self.assertEqual(result["trend_1w"],"BUY")
+        self.assertEqual(result["trend_1M"],"BUY")
 
     def test_build_signal_rejects_mixed_higher_timeframe_trends(self):
         uptrend=[[i,100+i,101+i,99+i,100+i,1000] for i in range(250)]
         downtrend=[[i,350-i,351-i,349-i,350-i,1000] for i in range(250)]
-        with patch.object(platform,"klines",side_effect=[uptrend,uptrend,downtrend]), patch.object(
+        with patch.object(platform,"klines",side_effect=[uptrend,uptrend,uptrend,downtrend,uptrend,uptrend]), patch.object(
             platform.market_strategies,"analyze"
         ) as analyzer:
             result=platform.build_signal("futures",{"symbol":"BTCUSDT"},"15m")
         self.assertIsNone(result)
         analyzer.assert_not_called()
 
-    def test_trend_direction_requires_price_and_sma200_slope_alignment(self):
+    def test_trend_direction_requires_price_and_ma_slope_alignment(self):
         uptrend=[[i,100+i,101+i,99+i,100+i,1000] for i in range(250)]
         downtrend=[[i,350-i,351-i,349-i,350-i,1000] for i in range(250)]
         self.assertEqual(platform.market_strategies.trend_direction(uptrend),"BUY")
