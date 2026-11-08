@@ -10,7 +10,7 @@ import math
 STRATEGY_FINGERPRINT = "SMART-FLOW-SMA200-MTF-2-3-5-V1-20261108"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 INTERVAL_MS = {"15m": 900_000, "1h": 3_600_000, "4h": 14_400_000,
-               "1d": 86_400_000, "1w": 604_800_000, "1M": 2_592_000_000}
+               "1d": 86_400_000, "1w": 604_800_000, "1M": 2_678_400_000}
 PROFILES = {
     "spot": {"allow_short": False}, "alpha": {"allow_short": False},
     "futures": {"allow_short": True}, "us-stocks": {"allow_short": False},
