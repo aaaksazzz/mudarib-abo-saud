@@ -22,7 +22,7 @@ def candles(direction="UP", volume=True, count=220):
 
 class Sma200StrategyTests(unittest.TestCase):
     def test_fingerprint_and_timeframes(self):
-        self.assertEqual(STRATEGY_FINGERPRINT, "SMART-FLOW-SMA200-MTF-2-3-5-V1-20261108")
+        self.assertEqual(STRATEGY_FINGERPRINT, "SMART-FLOW-LIQUIDITY-3R-MTF-V2-20261109")
         self.assertEqual(TIMEFRAMES, ("15m","1h","4h","1d","1w","1M"))
         self.assertEqual(len(PROFILES), 7)
 
@@ -41,16 +41,16 @@ class Sma200StrategyTests(unittest.TestCase):
                 self.assertEqual(signal["timeframe"], frame)
                 self.assertGreater(signal["entry"], signal["ma200"])
 
-    def test_buy_signal_has_structural_stop_and_2_3_5_percent_targets(self):
+    def test_buy_signal_has_structural_stop_and_1r_2r_3r_targets(self):
         signal = analyze("futures", "TEST", candles("UP"), timeframe="15m")
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "BUY")
         risk = signal["entry"] - signal["stop"]
         self.assertGreater(risk, 0)
         self.assertLessEqual(risk / signal["entry"], 0.0125)
-        self.assertAlmostEqual((signal["tp1"] / signal["entry"] - 1) * 100, 2.0)
-        self.assertAlmostEqual((signal["tp2"] / signal["entry"] - 1) * 100, 3.0)
-        self.assertAlmostEqual((signal["tp3"] / signal["entry"] - 1) * 100, 5.0)
+        self.assertAlmostEqual((signal["tp1"] - signal["entry"]) / risk, 1.0)
+        self.assertAlmostEqual((signal["tp2"] - signal["entry"]) / risk, 2.0)
+        self.assertAlmostEqual((signal["tp3"] - signal["entry"]) / risk, 3.0)
         self.assertGreaterEqual(signal["score"], 70)
         self.assertLessEqual(signal["score"], 100)
 
@@ -61,6 +61,10 @@ class Sma200StrategyTests(unittest.TestCase):
         self.assertLess(signal["entry"], signal["ma200"])
         self.assertGreater(signal["stop"], signal["entry"])
         self.assertLess(signal["tp1"], signal["entry"])
+        risk = signal["stop"] - signal["entry"]
+        self.assertAlmostEqual((signal["entry"] - signal["tp1"]) / risk, 1.0)
+        self.assertAlmostEqual((signal["entry"] - signal["tp2"]) / risk, 2.0)
+        self.assertAlmostEqual((signal["entry"] - signal["tp3"]) / risk, 3.0)
         for market in ("spot", "alpha", "us-stocks", "saudi"):
             self.assertIsNone(analyze(market, "TEST", candles("DOWN"), timeframe="1h"))
 
