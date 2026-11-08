@@ -645,11 +645,15 @@ def build_signal(market,item,timeframe):
     if timeframe != "15m":
         return None
     rows=klines(market,symbol,"15m",250)
-    hourly_rows=klines(market,symbol,"1h",250)
-    four_hour_rows=klines(market,symbol,"4h",250)
-    hourly_bias=market_strategies.trend_direction(hourly_rows)
-    four_hour_bias=market_strategies.trend_direction(four_hour_rows)
-    if not hourly_bias or hourly_bias != four_hour_bias:
+    # Every market follows the same hierarchy: 15m entry, then trend
+    # confirmation from 1h, 4h, daily, weekly and monthly candles.
+    higher_frames=("1h","4h","1d","1w","1M")
+    higher_bias={}
+    for higher_frame in higher_frames:
+        higher_rows=klines(market,symbol,higher_frame,250)
+        higher_bias[higher_frame]=market_strategies.trend_direction(higher_rows)
+    confirmed=[higher_bias[frame] for frame in higher_frames]
+    if not confirmed[0] or any(bias != confirmed[0] for bias in confirmed[1:]):
         return None
     flow=None
     if item.get("include_microstructure") and market in ("spot","futures"):
@@ -659,8 +663,10 @@ def build_signal(market,item,timeframe):
         return None
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":"15m",
-                  "trend_1h":hourly_bias,"trend_4h":four_hour_bias,
-                  "trend_confirmation":"15m entry + 1h/4h aligned"})
+                  "trend_1h":higher_bias["1h"],"trend_4h":higher_bias["4h"],
+                  "trend_1d":higher_bias["1d"],"trend_1w":higher_bias["1w"],
+                  "trend_1M":higher_bias["1M"],
+                  "trend_confirmation":"15m entry + 1h/4h/1d/1w/1M aligned"})
     return setup
 
 def filter_fresh_signals(signals, universe, now=None):
@@ -891,7 +897,7 @@ def timeframe_bucket(frame,now):
 
 
 def market_scan_timeframes(market):
-    """Only create 15m entries; 1h and 4h are checked as trend filters."""
+    """Only create 15m entries; all higher timeframes are directional filters."""
     return ("15m",)
 
 
