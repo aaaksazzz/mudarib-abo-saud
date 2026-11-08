@@ -94,10 +94,10 @@ class MarketEngineTests(unittest.TestCase):
         first, cursor, offset = platform.select_scan_candidates(universe, 0, 80)
         second, cursor, _ = platform.select_scan_candidates(universe, cursor, 80)
         third, cursor, _ = platform.select_scan_candidates(universe, cursor, 80)
-        self.assertEqual((len(first),len(second),len(third)), (80,80,10))
+        self.assertEqual((len(first),len(second),len(third)), (80,80,80))
         self.assertEqual(len({x["symbol"] for x in first+second+third}), 170)
-        self.assertEqual(offset, 0)
-        self.assertEqual(cursor, 0)
+        self.assertEqual(offset, 160)
+        self.assertEqual(cursor, 70)
 
     def test_build_signal_propagates_provider_failure_for_accurate_scan_health(self):
         with patch.object(platform, "klines", side_effect=RuntimeError("provider timeout")):
@@ -411,7 +411,7 @@ class MarketEngineTests(unittest.TestCase):
         created=datetime(2026,11,7,10,0,tzinfo=timezone.utc)
         trade=platform.Trade(
             market="futures",symbol="TESTUSDT",side="BUY",entry=100,stop=98,
-            tp1=102,tp2=103,tp3=105,score=80,timeframe="1h",
+            tp1=102,tp2=103.5,tp3=105,score=80,timeframe="1h",
             reason="test",created_at=created,expires_at=created+timedelta(hours=24),
             status="active",
         )
