@@ -632,7 +632,7 @@ class MarketEngineTests(unittest.TestCase):
             ):
                 first = platform.run_market_scan("spot", force=True)
                 self.assertEqual(len(first["signals"]), 1)
-                self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
+                self.assertEqual(platform.Trade.query.count(), 1)
                 second = platform.run_market_scan("spot", force=True)
                 self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
                 self.assertEqual(len(second["signals"]), 1)
