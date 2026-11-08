@@ -110,23 +110,54 @@ class MarketEngineTests(unittest.TestCase):
         self.assertIsNone(platform.market_strategies.target_prices(0,"BUY"))
         self.assertIsNone(platform.market_strategies.target_prices(100,"HOLD"))
 
+    def test_adaptive_targets_scale_with_actual_structural_stop_risk(self):
+        buy = platform.market_strategies.adaptive_target_prices(100.0, "BUY", 1.0)
+        sell = platform.market_strategies.adaptive_target_prices(100.0, "SELL", 1.0)
+        self.assertEqual(buy, (102.0, 103.0, 105.0))
+        self.assertEqual(sell, (98.0, 97.0, 95.0))
+        wider = platform.market_strategies.adaptive_target_prices(100.0, "BUY", 2.0)
+        self.assertEqual(wider, (103.0, 104.5, 107.0))
+        self.assertIsNone(platform.market_strategies.adaptive_target_prices(100, "BUY", 0))
+
     def test_strategy_diagnostic_confirms_sma200_and_all_frames(self):
         diagnostic=platform.market_strategies.diagnostic_self_test()
         self.assertTrue(diagnostic["ok"],diagnostic["checks"])
         self.assertEqual(set(diagnostic["timeframes"]),set(platform.market_strategies.INTERVAL_MS))
 
-    def test_build_signal_requests_only_the_selected_timeframe(self):
-        setup={"side":"BUY","entry":100.0,"stop":99.0,"tp1":102.0,"tp2":103.0,
-               "tp3":105.0,"score":80.0,"timeframe":"1h","change_pct":0.5,
+    def test_build_signal_requires_aligned_1h_4h_and_15m(self):
+        setup={"side":"BUY","entry":100.0,"stop":98.0,"tp1":102.0,"tp2":103.0,
+               "tp3":105.0,"score":80.0,"timeframe":"15m","change_pct":0.5,
                "reason":"SMART FLOW QUANT: same-frame test"}
-        with patch.object(platform,"klines",return_value=[[0,100,101,99,100,1000]]*250) as candle_source, patch.object(
+        uptrend=[[i,100+i,101+i,99+i,100+i,1000] for i in range(250)]
+        with patch.object(platform,"klines",side_effect=[uptrend,uptrend,uptrend]) as candle_source, patch.object(
             platform.market_strategies,"analyze",return_value=setup
+        ) as analyzer, patch.object(platform.market_strategies,"trend_direction",return_value="BUY") as trend:
+            result=platform.build_signal("futures",{"symbol":"BTCUSDT"},"15m")
+        self.assertEqual(candle_source.call_args_list[0].args[2],"15m")
+        self.assertEqual(candle_source.call_args_list[1].args[2],"1h")
+        self.assertEqual(candle_source.call_args_list[2].args[2],"4h")
+        self.assertEqual(trend.call_count,2)
+        self.assertEqual(analyzer.call_args.kwargs["timeframe"],"15m")
+        self.assertEqual(result["timeframe"],"15m")
+        self.assertEqual(result["trend_1h"],"BUY")
+        self.assertEqual(result["trend_4h"],"BUY")
+
+    def test_build_signal_rejects_mixed_higher_timeframe_trends(self):
+        uptrend=[[i,100+i,101+i,99+i,100+i,1000] for i in range(250)]
+        downtrend=[[i,350-i,351-i,349-i,350-i,1000] for i in range(250)]
+        with patch.object(platform,"klines",side_effect=[uptrend,uptrend,downtrend]), patch.object(
+            platform.market_strategies,"analyze"
         ) as analyzer:
-            result=platform.build_signal("futures",{"symbol":"BTCUSDT"},"1h")
-        candle_source.assert_called_once_with("futures","BTCUSDT","1h",250)
-        analyzer.assert_called_once()
-        self.assertEqual(analyzer.call_args.kwargs["timeframe"],"1h")
-        self.assertEqual(result["timeframe"],"1h")
+            result=platform.build_signal("futures",{"symbol":"BTCUSDT"},"15m")
+        self.assertIsNone(result)
+        analyzer.assert_not_called()
+
+    def test_trend_direction_requires_price_and_sma200_slope_alignment(self):
+        uptrend=[[i,100+i,101+i,99+i,100+i,1000] for i in range(250)]
+        downtrend=[[i,350-i,351-i,349-i,350-i,1000] for i in range(250)]
+        self.assertEqual(platform.market_strategies.trend_direction(uptrend),"BUY")
+        self.assertEqual(platform.market_strategies.trend_direction(downtrend),"SELL")
+        self.assertIsNone(platform.market_strategies.trend_direction([]))
 
     def test_freshness_filter_rejects_late_or_old_entries(self):
         now = platform.utcnow()
@@ -148,7 +179,7 @@ class MarketEngineTests(unittest.TestCase):
     def test_all_markets_scan_every_exposed_timeframe(self):
         for market in platform.MARKETS:
             with self.subTest(market=market):
-                self.assertEqual(platform.market_scan_timeframes(market), ("15m","1h","4h","1d","1w","1M"))
+                self.assertEqual(platform.market_scan_timeframes(market), ("15m",))
 
     def test_strategy_fingerprint_confirms_all_timeframes_and_legacy_retirement(self):
         response = self.client.get("/api/strategy-status")
@@ -554,9 +585,9 @@ class MarketEngineTests(unittest.TestCase):
                 result=platform.run_market_scan("futures",force=True)
         self.assertEqual(result["scan_universe"],70)
         self.assertEqual(result["scan_batch_size"],70)
-        self.assertEqual(len(visited),70*len(platform.TIMEFRAMES))
+        self.assertEqual(len(visited),70)
         self.assertEqual({symbol for symbol, _ in visited}, {f"COIN{i}USDT" for i in range(70)})
-        self.assertEqual({frame for _, frame in visited}, set(platform.TIMEFRAMES))
+        self.assertEqual({frame for _, frame in visited}, {"15m"})
 
     def test_valid_asset_signal_is_not_vetoed_by_market_breadth(self):
         now_ms=int(platform.utcnow().timestamp()*1000)
@@ -575,8 +606,8 @@ class MarketEngineTests(unittest.TestCase):
             ]), patch.object(platform, "build_signal", side_effect=per_frame):
                 result = platform.run_market_scan("futures", force=True)
                 self.assertEqual(result["market_bias"], "SELL")
-                self.assertEqual(len(result["signals"]), len(platform.TIMEFRAMES))
-                self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
+                self.assertEqual(len(result["signals"]), 1)
+                self.assertEqual(platform.Trade.query.count(), 1)
                 self.assertTrue(all(trade.side=="BUY" for trade in platform.Trade.query.all()))
 
     def test_same_candle_does_not_create_duplicate_trades_per_timeframe(self):
@@ -600,18 +631,18 @@ class MarketEngineTests(unittest.TestCase):
                 side_effect=lambda signals, universe, now=None: (signals, {"rejected_stale_candle": 0, "rejected_late_price": 0})
             ):
                 first = platform.run_market_scan("spot", force=True)
-                self.assertEqual(len(first["signals"]), len(platform.TIMEFRAMES))
-                self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
+                self.assertEqual(len(first["signals"]), 1)
+                self.assertEqual(platform.Trade.query.count(), 1)
                 second = platform.run_market_scan("spot", force=True)
                 self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
-                self.assertEqual(len(second["signals"]), len(platform.TIMEFRAMES))
+                self.assertEqual(len(second["signals"]), 1)
                 self.assertTrue(all(x.status == "active" for x in platform.Trade.query.all()))
                 candle_time["15m"] += 1
                 third = platform.run_market_scan("spot", force=True)
                 trades = platform.Trade.query.order_by(platform.Trade.id.asc()).all()
-                self.assertEqual(len(trades), len(platform.TIMEFRAMES)+1)
+                self.assertEqual(len(trades), 2)
                 self.assertEqual(sum(x.status == "superseded" for x in trades), 1)
-                self.assertEqual(len(third["signals"]), len(platform.TIMEFRAMES))
+                self.assertEqual(len(third["signals"]), 1)
 
     def test_stale_scan_hides_old_opportunities_instead_of_showing_stuck_coins(self):
         with platform.app.app_context():
