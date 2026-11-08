@@ -972,9 +972,12 @@ def run_market_scan(market,force=False):
     strategy_matches=len(found)
     found,freshness=filter_fresh_signals(found,universe,utcnow())
     fresh_matches=len(found)
-    direction_rejected=sum(1 for signal in found if signal.get("side")!=market_bias)
-    found=[signal for signal in found if signal.get("side")==market_bias]
-    app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s direction_rejected=%s accepted=%s stale=%s late=%s direction=%s",
+    # The 24h breadth snapshot is context for the market overview, not a
+    # same-timeframe confirmation. Do not let a 24h majority veto a valid
+    # closed-15m setup that already passed its own SMA200 and flow/structure
+    # confirmations. This avoids mixing 24h and 15m horizons.
+    direction_rejected=0
+    app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s direction_rejected=%s accepted=%s stale=%s late=%s breadth_24h=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,direction_rejected,len(found),
                     freshness["rejected_stale_candle"],freshness["rejected_late_price"],market_bias)
     # Keep the same 15m candle from being republished every scheduler cycle.

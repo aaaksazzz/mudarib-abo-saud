@@ -94,10 +94,10 @@ class MarketEngineTests(unittest.TestCase):
         first, cursor, offset = platform.select_scan_candidates(universe, 0, 80)
         second, cursor, _ = platform.select_scan_candidates(universe, cursor, 80)
         third, cursor, _ = platform.select_scan_candidates(universe, cursor, 80)
-        self.assertEqual((len(first),len(second),len(third)), (80,80,10))
+        self.assertEqual((len(first),len(second),len(third)), (80,80,80))
         self.assertEqual(len({x["symbol"] for x in first+second+third}), 170)
         self.assertEqual(offset, 0)
-        self.assertEqual(cursor, 0)
+        self.assertEqual(cursor, 70)
 
     def test_build_signal_propagates_provider_failure_for_accurate_scan_health(self):
         with patch.object(platform, "klines", side_effect=RuntimeError("provider timeout")):
@@ -508,13 +508,13 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual({symbol for symbol, _ in visited}, {f"COIN{i}USDT" for i in range(70)})
         self.assertEqual({frame for _, frame in visited}, {"15m"})
 
-    def test_signals_must_match_market_direction(self):
+    def test_valid_15m_setup_is_not_vetoed_by_opposite_24h_market_breadth(self):
         now_ms=int(platform.utcnow().timestamp()*1000)
         signal = {
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":99.0,
-            "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,"atr":0.5,
+            "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,"atr":1.0,
             "change_pct":1.2,"timeframe":"15m","signal_candle_time":now_ms-900000-1000,
-            "reason":"SMART FLOW QUANT:: confirmed.","atr":1.0
+            "reason":"SMART FLOW QUANT: confirmed."
         }
         def per_frame(market, item, timeframe):
             interval=platform.market_strategies.INTERVAL_MS[timeframe]
@@ -522,11 +522,16 @@ class MarketEngineTests(unittest.TestCase):
         with platform.app.app_context():
             with patch.object(platform, "market_tickers", return_value=[
                 {"symbol":"BTCUSDT","price":100.0,"change_pct":-2.0,"quote_volume":5000000}
-            ]), patch.object(platform, "build_signal", side_effect=per_frame):
+            ]), patch.object(platform, "build_signal", side_effect=per_frame), patch.object(
+                platform, "filter_fresh_signals",
+                side_effect=lambda signals, universe, now=None: (signals, {"rejected_stale_candle": 0, "rejected_late_price": 0})
+            ):
                 result = platform.run_market_scan("futures", force=True)
                 self.assertEqual(result["market_bias"], "SELL")
-                self.assertEqual(len(result["signals"]), 0)
-                self.assertEqual(platform.Trade.query.count(), 0)
+                self.assertEqual(result["direction_rejected"], 0)
+                self.assertEqual(len(result["signals"]), 1)
+                self.assertEqual(result["signals"][0]["side"], "BUY")
+                self.assertEqual(platform.Trade.query.count(), 1)
 
     def test_same_15m_candle_does_not_create_duplicate_trades(self):
         now_ms=int(platform.utcnow().timestamp()*1000)
