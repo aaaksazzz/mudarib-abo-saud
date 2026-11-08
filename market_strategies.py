@@ -244,7 +244,7 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
     direction = 1.0 if side == "BUY" else -1.0
     # Use a meaningful recent structure, not just the last two candles. A small
     # ATR cushion helps avoid stops sitting directly inside routine wick noise.
-    structure_start = max(0, i - 9)
+    structure_start = max(0, i - 4)
     swing_low = min(lows[structure_start:i + 1])
     swing_high = max(highs[structure_start:i + 1])
     buffer = max(atr * 0.30, entry * 0.0005)
