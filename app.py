@@ -611,17 +611,18 @@ def klines(market,symbol,interval,limit=120):
 TIMEFRAMES=market_strategies.TIMEFRAMES
 
 STRATEGY_FINGERPRINT=market_strategies.STRATEGY_FINGERPRINT
+CURRENT_STRATEGY_MARKER="strategy_fp="+STRATEGY_FINGERPRINT
 @app.get("/api/strategy-status")
 def strategy_status_summary():
     current_active=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.expires_at>utcnow(),
-        Trade.reason.like("SMART FLOW QUANT:%")
+        Trade.reason.like("%"+CURRENT_STRATEGY_MARKER+"%")
     ).count()
     legacy_active=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.expires_at>utcnow(),
-        Trade.reason.not_like("SMART FLOW QUANT:%")
+        Trade.reason.not_like("%"+CURRENT_STRATEGY_MARKER+"%")
     ).count()
     diagnostics=market_strategies.diagnostic_self_test()
     return jsonify({
@@ -725,12 +726,13 @@ def filter_fresh_signals(signals, universe, now=None):
             if not math.isfinite(live_risk) or live_risk<=0 or not math.isfinite(atr) or atr<=0:
                 rejected_moved+=1
                 continue
-            if live_risk>atr*2.5 or live_risk<atr*0.20:
+            # Keep the same structural-risk floor and ceiling used by the 15m analyzer.
+            if live_risk<atr*1.20 or live_risk>atr*8.0:
                 rejected_moved+=1
                 continue
             # The published entry is the actual quote at approval time, not the
             # previous candle close. Rebuild all R-multiple targets from that entry.
-            if live_risk > current * 0.015:
+            if live_risk > current * 0.02:
                 rejected_moved+=1
                 continue
             # Recalculate objectives from the live entry and the actual
@@ -924,7 +926,7 @@ def run_market_scan(market,force=False):
             )
             if last>now-timedelta(minutes=15) and all_frames_current and Trade.query.filter(
                 Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe=="15m",
-                Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")
+                Trade.expires_at>now,Trade.reason.like("%"+CURRENT_STRATEGY_MARKER+"%")
             ).count():
                 active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")).order_by(Trade.score.desc()).limit(18).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
@@ -1047,7 +1049,7 @@ def run_market_scan(market,force=False):
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("SMART FLOW QUANT:%"),
+        Trade.reason.like("%"+CURRENT_STRATEGY_MARKER+"%"),
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
@@ -1077,13 +1079,13 @@ def run_market_scan(market,force=False):
                 db.session.add(Setting(key=setting_key,value=marker))
             else:
                 candle_row.value=marker
-            signal["reason"]=signal["reason"]+" | bar_ts="+marker
+            signal["reason"]=signal["reason"]+" | "+CURRENT_STRATEGY_MARKER+" | bar_ts="+marker
             new_signals.append(signal)
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("SMART FLOW QUANT:%")).update({"status":"superseded"},synchronize_session=False)
+        Trade.reason.not_like("%"+CURRENT_STRATEGY_MARKER+"%")).update({"status":"superseded"},synchronize_session=False)
     active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.timeframe.in_(frames_to_scan),Trade.reason.like("SMART FLOW QUANT:%"))
+        Trade.timeframe.in_(frames_to_scan),Trade.reason.like("%"+CURRENT_STRATEGY_MARKER+"%"))
     if retained_ids:
         active_query=active_query.filter(~Trade.id.in_(retained_ids))
     active_query.update({"status":"superseded"},synchronize_session=False)
@@ -1172,7 +1174,7 @@ def signals(market):
             row=db.session.get(Setting,"scan:"+market)
         if meta_row is None and timeframe=="15m":
             meta_row=db.session.get(Setting,"scan-meta:"+market)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("SMART FLOW QUANT:%"),Trade.timeframe==timeframe).order_by(Trade.score.desc()).limit(3).all()
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("%"+CURRENT_STRATEGY_MARKER+"%"),Trade.timeframe==timeframe).order_by(Trade.score.desc()).limit(3).all()
         updated=row.value if row else None
         try:
             meta=json.loads(meta_row.value) if meta_row else {}
