@@ -942,15 +942,20 @@ def run_market_scan(market,force=False):
     completed=0
     failed=0
     with ThreadPoolExecutor(max_workers=8) as pool:
-        futures=[pool.submit(build_signal,market,item,frame) for item in candidates for frame in frames_to_scan]
+        frame_stats={frame:{"completed":0,"failed":0,"matches":0} for frame in frames_to_scan}
+    futures={pool.submit(build_signal,market,item,frame):(item,frame) for item in candidates for frame in frames_to_scan}
         for future in as_completed(futures):
+            _,frame=futures[future]
             try:
                 signal=future.result()
                 completed+=1
+                frame_stats[frame]["completed"]+=1
                 if signal:
                     found.append(signal)
+                    frame_stats[frame]["matches"]+=1
             except Exception as exc:
                 failed+=1
+                frame_stats[frame]["failed"]+=1
                 # Some Saudi tickers are not covered by Yahoo's candle endpoint.
                 # Treat an individual unavailable symbol/frame as a skipped sample,
                 # not as a traceback storm that obscures the market-level result.
@@ -978,7 +983,17 @@ def run_market_scan(market,force=False):
             market,completed,failed,len(futures)
         )
     strategy_matches=len(found)
-    found,freshness=filter_fresh_signals(found,universe,utcnow())
+    raw_found=found
+    found=[]
+    freshness_by_frame={}
+    for frame in frames_to_scan:
+        frame_found,frame_freshness=filter_fresh_signals(
+            [signal for signal in raw_found if signal.get("timeframe")==frame],universe,utcnow()
+        )
+        found.extend(frame_found)
+        freshness_by_frame[frame]=frame_freshness
+    freshness={key:sum(value[key] for value in freshness_by_frame.values())
+               for key in ("rejected_stale_candle","rejected_late_price")}
     fresh_matches=len(found)
     # Market breadth is informational only. Each symbol is gated by its own
     # same-timeframe SMA200 and directional candle/flow confirmations.
@@ -1072,13 +1087,13 @@ def run_market_scan(market,force=False):
         frame_signals=[x for x in found if x.get("timeframe")==frame]
         frame_meta=json.dumps({
             "scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
-            "analysis_completed":completed//max(1,len(frames_to_scan)),
-            "analysis_failed":failed//max(1,len(frames_to_scan)),
-            "strategy_matches":sum(1 for x in found if x.get("timeframe")==frame),
-            "fresh_matches":sum(1 for x in found if x.get("timeframe")==frame),
+            "analysis_completed":frame_stats[frame]["completed"],
+            "analysis_failed":frame_stats[frame]["failed"],
+            "strategy_matches":frame_stats[frame]["matches"],
+            "fresh_matches":len(frame_signals),
             "direction_rejected":0,"accepted_signals":len(frame_signals),
-            "rejected_stale_candle":freshness["rejected_stale_candle"],
-            "rejected_late_price":freshness["rejected_late_price"],
+            "rejected_stale_candle":freshness_by_frame[frame]["rejected_stale_candle"],
+            "rejected_late_price":freshness_by_frame[frame]["rejected_late_price"],
             "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":[frame]
         },ensure_ascii=False)
         if frame_meta_row is None:
