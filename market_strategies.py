@@ -72,6 +72,24 @@ def target_prices(entry, side):
     return targets if all(math.isfinite(x) and x > 0 for x in targets) else None
 
 
+def adaptive_target_prices(entry, side, risk):
+    """Blend minimum 2/3/5% objectives with targets scaled to actual stop risk."""
+    try:
+        entry, risk = float(entry), float(risk)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if (not math.isfinite(entry) or not math.isfinite(risk) or entry <= 0
+            or risk <= 0 or side not in ("BUY", "SELL")):
+        return None
+    direction = 1.0 if side == "BUY" else -1.0
+    r_multiples = (1.5, 2.25, 3.5)
+    minimum_moves = (0.02, 0.03, 0.05)
+    distances = [max(entry * floor, risk * multiple)
+                 for floor, multiple in zip(minimum_moves, r_multiples)]
+    targets = tuple(entry + direction * distance for distance in distances)
+    return targets if all(math.isfinite(x) and x > 0 for x in targets) else None
+
+
 def diagnostic_self_test():
     """Exercise SMA200 direction and target math used by the live analyzer."""
     buy_targets = target_prices(100.0, "BUY")
@@ -200,21 +218,23 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         return None
 
     direction = 1.0 if side == "BUY" else -1.0
-    swing_low, swing_high = min(lows[i - 1:i + 1]), max(highs[i - 1:i + 1])
-    buffer = max(atr * 0.12, entry * 0.0002)
+    # Use a meaningful recent structure, not just the last two candles. A small
+    # ATR cushion helps avoid stops sitting directly inside routine wick noise.
+    structure_start = max(0, i - 9)
+    swing_low = min(lows[structure_start:i + 1])
+    swing_high = max(highs[structure_start:i + 1])
+    buffer = max(atr * 0.30, entry * 0.0005)
     stop = swing_low - buffer if side == "BUY" else swing_high + buffer
     risk = abs(entry - stop)
-    if risk < atr * 0.55:
-        risk = atr * 0.75
-        stop = entry - direction * risk
-    if risk > atr * 2.5 or risk <= 0:
-        return None
 
-    # Keep the structural invalidation close; reject wide-stop setups instead
-    # of disguising excessive risk with distant R-multiple targets.
-    if risk > entry * 0.0125:
+    # Never widen a stop artificially to satisfy a fixed ATR rule. If the
+    # structural invalidation is too close (noise) or too far (poor R:R),
+    # reject the setup and wait for a cleaner entry.
+    if risk < atr * 0.65 or risk > atr * 2.5 or risk <= 0:
         return None
-    targets = target_prices(entry, side)
+    if risk > entry * 0.015:
+        return None
+    targets = adaptive_target_prices(entry, side, risk)
     if not targets:
         return None
     tp1, tp2, tp3 = targets
