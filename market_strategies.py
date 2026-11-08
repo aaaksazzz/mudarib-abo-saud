@@ -166,9 +166,12 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
                 down_votes["order-book imbalance"] = 1
 
     buys, sells = len(up_votes), len(down_votes)
-    if buys >= 3 and buys - sells >= 2:
+    # Require two independent candle/flow confirmations with a clear
+    # directional majority. Keep the same-timeframe SMA200 and risk checks
+    # below; this improves candidate coverage without manufacturing trades.
+    if buys >= 2 and buys > sells:
         side, aligned, opposing = "BUY", up_votes, sells
-    elif sells >= 3 and sells - buys >= 2 and profile["allow_short"]:
+    elif sells >= 2 and sells > buys and profile["allow_short"]:
         side, aligned, opposing = "SELL", down_votes, buys
     else:
         return None
