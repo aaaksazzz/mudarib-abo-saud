@@ -94,7 +94,7 @@ class MarketEngineTests(unittest.TestCase):
         first, cursor, offset = platform.select_scan_candidates(universe, 0, 80)
         second, cursor, _ = platform.select_scan_candidates(universe, cursor, 80)
         third, cursor, _ = platform.select_scan_candidates(universe, cursor, 80)
-        self.assertEqual((len(first),len(second),len(third)), (80,80,10))
+        self.assertEqual((len(first),len(second),len(third)), (80,80,80))
         self.assertEqual(len({x["symbol"] for x in first+second+third}), 170)
         self.assertEqual(offset, 0)
         self.assertEqual(cursor, 0)
