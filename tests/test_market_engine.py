@@ -104,11 +104,22 @@ class MarketEngineTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "provider timeout"):
                 platform.build_signal("spot", {"symbol":"BTCUSDT"}, "15m")
 
+    def test_strategy_targets_are_directional_2_3_5_percent(self):
+        self.assertEqual(platform.market_strategies.target_prices(100.0,"BUY"),(102.0,103.0,105.0))
+        self.assertEqual(platform.market_strategies.target_prices(100.0,"SELL"),(98.0,97.0,95.0))
+        self.assertIsNone(platform.market_strategies.target_prices(0,"BUY"))
+        self.assertIsNone(platform.market_strategies.target_prices(100,"HOLD"))
+
+    def test_strategy_diagnostic_confirms_sma200_and_all_frames(self):
+        diagnostic=platform.market_strategies.diagnostic_self_test()
+        self.assertTrue(diagnostic["ok"],diagnostic["checks"])
+        self.assertEqual(set(diagnostic["timeframes"]),set(platform.market_strategies.INTERVAL_MS))
+
     def test_freshness_filter_rejects_late_or_old_entries(self):
         now = platform.utcnow()
         current = int(now.timestamp() * 1000)
         good = {"symbol":"BTCUSDT","timeframe":"15m","signal_candle_time":current-900000,
-                "side":"BUY","entry":100.0,"stop":98.0,"tp1":103.0,"atr":2.0}
+                "side":"BUY","entry":100.0,"stop":99.0,"tp1":102.0,"atr":2.0}
         late = {**good,"symbol":"LATEUSDT"}
         old = {**good,"symbol":"OLDUSDT","signal_candle_time":current-3600000}
         accepted, counts = platform.filter_fresh_signals(
@@ -124,15 +135,15 @@ class MarketEngineTests(unittest.TestCase):
     def test_all_markets_scan_every_exposed_timeframe(self):
         for market in platform.MARKETS:
             with self.subTest(market=market):
-                self.assertEqual(platform.market_scan_timeframes(market), ("15m",))
+                self.assertEqual(platform.market_scan_timeframes(market), ("15m","1h","4h","1d","1w","1M"))
 
     def test_strategy_fingerprint_confirms_all_timeframes_and_legacy_retirement(self):
         response = self.client.get("/api/strategy-status")
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertEqual(data["fingerprint"], "SMART-FLOW-SMA200-15M-V2-20261107")
+        self.assertEqual(data["fingerprint"], "SMART-FLOW-SMA200-MTF-2-3-5-V1-20261108")
         self.assertEqual(data["engine"], "SMART FLOW QUANT")
-        self.assertEqual(data["timeframes"], ["15m"])
+        self.assertEqual(data["timeframes"], ["15m","1h","4h","1d","1w","1M"])
         self.assertEqual(len(data["markets"]), 7)
         self.assertTrue(data["legacy_removed"])
         self.assertTrue(data["manual_only"])
