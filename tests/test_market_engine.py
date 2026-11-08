@@ -400,8 +400,8 @@ class MarketEngineTests(unittest.TestCase):
         with platform.app.app_context():
             now=platform.utcnow()
             rows=[
-                platform.Trade(market="spot",symbol="BTCUSDT",side="BUY",entry=100,stop=97,tp1=103,tp2=106,tp3=109,score=80,timeframe="15m",reason="SMART FLOW QUANT: current",status="active",expires_at=now+timedelta(hours=2)),
-                platform.Trade(market="spot",symbol="BTCUSDT",side="BUY",entry=101,stop=98,tp1=104,tp2=107,tp3=110,score=81,timeframe="15m",reason="SMART FLOW QUANT: duplicate",status="active",expires_at=now+timedelta(hours=2)),
+                platform.Trade(market="spot",symbol="BTCUSDT",side="BUY",entry=100,stop=97,tp1=103,tp2=106,tp3=109,score=80,timeframe="15m",reason="SMART FLOW QUANT: current | strategy_fp="+platform.STRATEGY_FINGERPRINT,status="active",expires_at=now+timedelta(hours=2)),
+                platform.Trade(market="spot",symbol="BTCUSDT",side="BUY",entry=101,stop=98,tp1=104,tp2=107,tp3=110,score=81,timeframe="15m",reason="SMART FLOW QUANT: duplicate | strategy_fp="+platform.STRATEGY_FINGERPRINT,status="active",expires_at=now+timedelta(hours=2)),
                 platform.Trade(market="futures",symbol="ETHUSDT",side="SELL",entry=100,stop=103,tp1=97,tp2=94,tp3=91,score=82,timeframe="15m",reason="SMART FLOW QUANT: win",status="tp3_hit",expires_at=now),
                 platform.Trade(market="futures",symbol="SOLUSDT",side="SELL",entry=100,stop=103,tp1=97,tp2=94,tp3=91,score=82,timeframe="15m",reason="SMART FLOW QUANT: loss",status="stopped",expires_at=now),
                 platform.Trade(market="spot",symbol="OLDUSDT",side="BUY",entry=100,stop=97,tp1=103,tp2=106,tp3=109,score=70,timeframe="15m",reason="legacy",status="superseded",expires_at=now),
