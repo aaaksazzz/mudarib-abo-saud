@@ -659,7 +659,7 @@ def build_signal(market,item,timeframe):
     if item.get("include_microstructure") and market in ("spot","futures"):
         flow=market_adapters.microstructure(market,symbol)
     setup=market_strategies.analyze(market,symbol,rows,timeframe="15m",microstructure=flow)
-    if not setup or setup.get("side") != hourly_bias:
+    if not setup or setup.get("side") != confirmed[0]:
         return None
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":"15m",
