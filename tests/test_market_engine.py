@@ -110,6 +110,15 @@ class MarketEngineTests(unittest.TestCase):
         self.assertIsNone(platform.market_strategies.target_prices(0,"BUY"))
         self.assertIsNone(platform.market_strategies.target_prices(100,"HOLD"))
 
+    def test_adaptive_targets_scale_with_actual_structural_stop_risk(self):
+        buy = platform.market_strategies.adaptive_target_prices(100.0, "BUY", 1.0)
+        sell = platform.market_strategies.adaptive_target_prices(100.0, "SELL", 1.0)
+        self.assertEqual(buy, (102.0, 103.0, 105.0))
+        self.assertEqual(sell, (98.0, 97.0, 95.0))
+        wider = platform.market_strategies.adaptive_target_prices(100.0, "BUY", 2.0)
+        self.assertEqual(wider, (103.0, 104.5, 107.0))
+        self.assertIsNone(platform.market_strategies.adaptive_target_prices(100, "BUY", 0))
+
     def test_strategy_diagnostic_confirms_sma200_and_all_frames(self):
         diagnostic=platform.market_strategies.diagnostic_self_test()
         self.assertTrue(diagnostic["ok"],diagnostic["checks"])
