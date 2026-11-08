@@ -242,21 +242,22 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         return None
 
     direction = 1.0 if side == "BUY" else -1.0
-    # Use a meaningful recent structure, not just the last two candles. A small
-    # ATR cushion helps avoid stops sitting directly inside routine wick noise.
-    structure_start = max(0, i - 2)
+    # Anchor the stop beyond a wider, confirmed 8-candle 15m swing (2 hours),
+    # not the last 3 candles where ordinary wick noise can take it out.
+    # Add a half-ATR cushion and reject invalid/oversized structures rather
+    # than pulling the stop closer to manufacture an acceptable trade.
+    structure_start = max(0, i - 7)
     swing_low = min(lows[structure_start:i + 1])
     swing_high = max(highs[structure_start:i + 1])
-    buffer = max(atr * 0.25, entry * 0.0005)
+    buffer = max(atr * 0.50, entry * 0.0008)
     stop = swing_low - buffer if side == "BUY" else swing_high + buffer
     risk = abs(entry - stop)
 
-    # Never widen a stop artificially to satisfy a fixed ATR rule. If the
-    # structural invalidation is too close (noise) or too far (poor R:R),
-    # reject the setup and wait for a cleaner entry.
-    if risk < atr * 0.65 or risk > atr * 3.0 or risk <= 0:
+    # A stop must clear normal 15m noise, while remaining within a practical
+    # price-risk ceiling. If the true structure needs more room, skip the setup.
+    if risk < atr * 1.20 or risk > atr * 8.0 or risk <= 0:
         return None
-    if risk > entry * 0.015:
+    if risk > entry * 0.02:
         return None
     targets = adaptive_target_prices(entry, side, risk)
     if not targets:
