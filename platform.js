@@ -1,6 +1,6 @@
 const $=s=>document.querySelector(s);
-let csrf="",currentUser=null,currentPage="overview",boot={sections:{}},authBusy=false;
-const timeframeOptions=[["15m","15 دقيقة"]];
+let csrf="",currentUser=null,currentPage="overview",boot={sections:{}},authBusy=false,selectedTimeframe="15m";
+const timeframeOptions=[["15m","15 دقيقة"],["1h","ساعة"],["4h","4 ساعات"],["1d","يومي"],["1w","أسبوعي"],["1M","شهري"]];
 const marketNames={spot:"Binance Spot",futures:"Binance Futures",alpha:"Binance Alpha","us-stocks":"الأسهم الأمريكية","us-contracts":"العقود الأمريكية",saudi:"السوق السعودي",forex:"الفوركس والذهب"};
 const pages={overview:"نظرة عامة",...marketNames,plans:"الاشتراكات والدفع",journal:"سجل الصفقات",blog:"المدونة",news:"الأخبار المهمة",admin:"لوحة الإدارة"};
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -84,7 +84,7 @@ async function overview(root,version=renderVersion){
 }
 async function marketPage(root,market,version=renderVersion){
  try{
-  const timeframe="15m";
+  const timeframe=selectedTimeframe;
   const [snap,sig,engine]=await Promise.all([api("/api/markets/"+market+"/snapshot"),api("/api/markets/"+market+"/signals?timeframe="+encodeURIComponent(timeframe)),api("/api/strategy-status").catch(()=>null)]);
   if(version!==renderVersion||currentPage!==market)return;
   const unavailable=snap.ready===false;
@@ -106,15 +106,17 @@ async function marketPage(root,market,version=renderVersion){
    if(failed>0&&completed<failed)return "بعض طلبات الشموع فشلت؛ راجع اتصال مزود البيانات.";
    if(matches===0)return "اكتمل فحص "+completed+" تحليل، لكن لم تتوافق شروط النماذج على شمعة مغلقة.";
    if(fresh===0)return "ظهرت "+matches+" إعدادات، لكنها استُبعدت بسبب قدم الشمعة أو ابتعاد السعر عن الدخول.";
-   if(rejected>0&&Number(sig.accepted_signals||0)===0)return "ظهرت "+fresh+" إعدادات، لكن اتجاه السوق العام ("+(sig.market_bias==="BUY"?"صاعد":sig.market_bias==="SELL"?"هابط":"متعادل")+") لم يؤكد اتجاهها.";
+
    return "لا توجد فرصة اجتازت جميع شروط التأكيد حالياً.";
   })();
-  const tabs='<div class="timeframe-fixed-label">فريم التحليل · 15 دقيقة</div>';
+  const tabs='<div class="timeframe-fixed-label">فريم التحليل · <select id="marketTimeframe" aria-label="فريم التحليل">'+timeframeOptions.map(([value,label])=>'<option value="'+value+'"'+(value===timeframe?' selected':'')+'>'+label+'</option>').join('')+'</select></div>';
   const engineData=engine||(sig.engine&&sig.fingerprint?{engine:sig.engine,fingerprint:sig.fingerprint}:null);
-  const installed=engineData&&engineData.fingerprint==="SMART-FLOW-SMA200-15M-V2-20261107"&&engineData.engine==="SMART FLOW QUANT";
+  const installed=engineData&&engineData.fingerprint==="SMART-FLOW-SMA200-MTF-2-3-5-V1-20261108"&&engineData.engine==="SMART FLOW QUANT";
   const legacyLabel=engine&&typeof engine.legacy_removed==="boolean"?(engine.legacy_removed?"القديم مستبدل":"جارٍ إيقاف الصفقات القديمة"):"المحرك مطابق";
-  const engineStamp=installed?'<div class="engine-fingerprint"><span class="engine-led"></span><b>بصمة المحرك: '+esc(engineData.fingerprint)+'</b><span>7 أسواق · فريم 15 دقيقة فقط</span><span class="'+(engine&&engine.legacy_removed?"engine-clean":"engine-pending")+'">'+legacyLabel+'</span></div>':'<div class="engine-fingerprint engine-pending">تعذر تأكيد بصمة المحرك من واجهات الخادم الحالية</div>';
-  root.innerHTML=warning+'<section class="panel market-summary"><div class="panel-head"><div><span class="section-kicker">'+esc(market.toUpperCase())+'</span><h2>'+esc(marketNames[market])+'</h2></div><span class="status-pending">'+(unavailable?"مصدر غير مربوط":"مصدر عام")+'</span></div><div class="direction-row"><div><small>'+(marketClosed?"اتجاه آخر جلسة · 24 ساعة":"اتجاه السوق · 24 ساعة") +'</small><strong>'+esc(snap.direction||"غير متاح")+(snap.side==="BUY"?" · شراء":snap.side==="SELL"?" · بيع":"") +'</strong></div><div><small>الأصول الصاعدة</small><strong class="positive">'+(snap.up??"—")+'</strong></div><div><small>الأصول الهابطة</small><strong class="negative">'+(snap.down??"—")+'</strong></div><div><small>عدد الأصول</small><strong>'+(snap.total??"—")+'</strong></div></div></section>'+engineStamp+tabs+'<div class="section-head"><div><span class="section-kicker">LIVE OPPORTUNITIES · '+esc(timeframe.toUpperCase())+'</span><h2>الصفقات النشطة · '+esc(frameLabel)+'</h2></div><span class="muted-label">'+esc(scanCoverage)+'</span></div><div class="trade-grid" id="tradeCards"></div><p class="data-footnote">آخر فحص: '+esc(sig.updated_at||snap.updated_at||"لم يبدأ بعد")+' · الفريم: '+esc(frameLabel)+' · التحليل والصفقات على شموع 15 دقيقة فقط.</p>';
+  const engineStamp=installed?'<div class="engine-fingerprint"><span class="engine-led"></span><b>بصمة المحرك: '+esc(engineData.fingerprint)+'</b><span>7 أسواق · 6 فريمات مستقلة</span><span class="'+(engine&&engine.legacy_removed?"engine-clean":"engine-pending")+'">'+legacyLabel+'</span></div>':'<div class="engine-fingerprint engine-pending">تعذر تأكيد بصمة المحرك من واجهات الخادم الحالية</div>';
+  root.innerHTML=warning+'<section class="panel market-summary"><div class="panel-head"><div><span class="section-kicker">'+esc(market.toUpperCase())+'</span><h2>'+esc(marketNames[market])+'</h2></div><span class="status-pending">'+(unavailable?"مصدر غير مربوط":"مصدر عام")+'</span></div><div class="direction-row"><div><small>'+(marketClosed?"اتجاه آخر جلسة · 24 ساعة":"اتجاه السوق · 24 ساعة") +'</small><strong>'+esc(snap.direction||"غير متاح")+(snap.side==="BUY"?" · شراء":snap.side==="SELL"?" · بيع":"") +'</strong></div><div><small>الأصول الصاعدة</small><strong class="positive">'+(snap.up??"—")+'</strong></div><div><small>الأصول الهابطة</small><strong class="negative">'+(snap.down??"—")+'</strong></div><div><small>عدد الأصول</small><strong>'+(snap.total??"—")+'</strong></div></div></section>'+engineStamp+tabs+'<div class="section-head"><div><span class="section-kicker">LIVE OPPORTUNITIES · '+esc(timeframe.toUpperCase())+'</span><h2>الصفقات النشطة · '+esc(frameLabel)+'</h2></div><span class="muted-label">'+esc(scanCoverage)+'</span></div><div class="trade-grid" id="tradeCards"></div><p class="data-footnote">آخر فحص: '+esc(sig.updated_at||snap.updated_at||"لم يبدأ بعد")+' · الفريم: '+esc(frameLabel)+' · كل فريم له شموعه وحسابه وأهدافه ووقفه المستقل.</p>';
+  const timeframeSelect=$("#marketTimeframe");
+  if(timeframeSelect)timeframeSelect.addEventListener("change",()=>{selectedTimeframe=timeframeSelect.value;marketPage(root,market,version)});
   const grid=$("#tradeCards");
   if(grid)grid.innerHTML=signals.length?signals.map((t,i)=>tradeCard(t,i)).join(""):'<div class="panel empty-state"><b>لا توجد فرص مؤكدة على هذا الفريم حالياً</b><p>'+esc(emptyDetails)+'</p><small class="data-footnote">تم تنفيذ '+Number(sig.analysis_completed||0)+' تحليل · فشل '+Number(sig.analysis_failed||0)+' · توافق النماذج '+Number(sig.strategy_matches||0)+' · استبعاد الاتجاه '+Number(sig.direction_rejected||0)+' · شموع قديمة '+Number(sig.rejected_stale_candle||0)+' · دخول متأخر '+Number(sig.rejected_late_price||0)+'</small></div>';
  }catch(e){
@@ -129,7 +131,7 @@ function tradeCard(t,index=99){
  const states={active:"نشطة",tp1_hit:"تحقق الهدف 1",tp2_hit:"تحقق الهدف 2",tp3_hit:"اكتملت الأهداف",stopped:"ضرب وقف الخسارة",stopped_after_tp1:"وقف بعد الهدف 1",stopped_after_tp2:"وقف بعد الهدف 2",expired:"منتهية",superseded:"استُبدلت"};
  const status=states[t.status]||t.status||"—";
  const pnl=t.result_pct==null?"—":(Number(t.result_pct)>0?"+":"")+Number(t.result_pct).toFixed(2)+"%";
- return '<article class="trade-card"><div class="trade-head"><div>'+(medal?'<span class="medal">'+medal+'</span>':"")+'<span class="trade-symbol">'+esc(t.symbol)+'</span><span class="trade-tag '+(buy?"buy":"sell")+'">'+(buy?"شراء":"بيع")+'</span></div><span class="score-tag">درجة التوافق '+Number(t.score).toFixed(0)+'/100</span></div><div class="trade-entry"><small>سعر الدخول</small><strong>'+money(t.entry)+'</strong></div><div class="targets"><div><small>الهدف 1 · 1R</small><b>'+money(t.tp1)+'</b><i>'+pct(t.entry,t.tp1,t.side)+'</i></div><div><small>الهدف 2 · 2R</small><b>'+money(t.tp2)+'</b><i>'+pct(t.entry,t.tp2,t.side)+'</i></div><div><small>الهدف 3 · 3R</small><b>'+money(t.tp3)+'</b><i>'+pct(t.entry,t.tp3,t.side)+'</i></div></div><div class="stop-row"><span>وقف الخسارة</span><b>'+money(t.stop)+'</b><i class="negative">'+pct(t.entry,t.stop,t.side)+'</i></div><div class="trade-foot"><span>'+esc(t.timeframe||"15m")+' · الفريم · تغير الفترة '+(t.change_pct==null?"—":Number(t.change_pct).toFixed(2)+"%")+'</span><span>التغير السعري من الدخول '+pnl+'</span><span class="status-pending">'+esc(status)+'</span></div></article>'
+ return '<article class="trade-card"><div class="trade-head"><div>'+(medal?'<span class="medal">'+medal+'</span>':"")+'<span class="trade-symbol">'+esc(t.symbol)+'</span><span class="trade-tag '+(buy?"buy":"sell")+'">'+(buy?"شراء":"بيع")+'</span></div><span class="score-tag">درجة التوافق '+Number(t.score).toFixed(0)+'/100</span></div><div class="trade-entry"><small>سعر الدخول</small><strong>'+money(t.entry)+'</strong></div><div class="targets"><div><small>الهدف 1 · 2%</small><b>'+money(t.tp1)+'</b><i>'+pct(t.entry,t.tp1,t.side)+'</i></div><div><small>الهدف 2 · 3%</small><b>'+money(t.tp2)+'</b><i>'+pct(t.entry,t.tp2,t.side)+'</i></div><div><small>الهدف 3 · 5%</small><b>'+money(t.tp3)+'</b><i>'+pct(t.entry,t.tp3,t.side)+'</i></div></div><div class="stop-row"><span>وقف الخسارة</span><b>'+money(t.stop)+'</b><i class="negative">'+pct(t.entry,t.stop,t.side)+'</i></div><div class="trade-foot"><span>'+esc(t.timeframe||"15m")+' · الفريم · تغير الفترة '+(t.change_pct==null?"—":Number(t.change_pct).toFixed(2)+"%")+'</span><span>التغير السعري من الدخول '+pnl+'</span><span class="status-pending">'+esc(status)+'</span></div></article>'
 }
 async function plansPage(root){
  try{
