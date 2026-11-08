@@ -220,6 +220,48 @@ def market_page_route(market):
     if market not in MARKETS: return json_error("السوق غير معروف",404)
     return send_from_directory(".", "index.html")
 
+@app.get("/signal-lab")
+def signal_lab_page():
+    return send_from_directory(".", "signal-lab.html")
+
+@app.get("/signal-lab.js")
+def signal_lab_script():
+    return send_from_directory(".", "signal-lab.js")
+
+@app.get("/api/signal-lab/klines")
+@limiter.limit("60 per minute")
+def signal_lab_klines():
+    symbol=str(request.args.get("symbol","")).strip().upper()
+    if not re.fullmatch(r"[A-Z0-9]{2,26}USDT",symbol):
+        return json_error("رمز العملة غير صحيح")
+    try:
+        start_ms=int(request.args.get("startTime",""))
+    except (TypeError,ValueError):
+        return json_error("وقت بداية التوصية غير صحيح")
+    now_ms=int(utcnow().timestamp()*1000)
+    if start_ms<now_ms-10*24*60*60*1000 or start_ms>now_ms:
+        return json_error("المتابعة متاحة للتوصيات التي وصلتنا خلال آخر 10 أيام فقط")
+    try:
+        if symbol not in market_symbols("futures"):
+            return json_error("العملة غير مدرجة في عقود Binance USD-M",404)
+        rows=fetch_json(BINANCE_FUTURES+"/fapi/v1/klines",{
+            "symbol":symbol,"interval":"15m","startTime":start_ms,"limit":1000
+        })
+        candles=[]
+        for row in rows:
+            try:
+                opened=int(row[0]); high=float(row[2]); low=float(row[3]); closed=int(row[6])
+                if not all(math.isfinite(value) for value in (high,low)) or high<=0 or low<=0 or high<low:
+                    continue
+                candles.append([opened,high,low,closed])
+            except (TypeError,ValueError,IndexError,OverflowError):
+                continue
+        return jsonify({"ok":True,"symbol":symbol,"timeframe":"15m","candles":candles,"source":"Binance USD-M public klines","checked_at":iso(utcnow())})
+    except Exception:
+        app.logger.exception("signal lab candle fetch failed: %s",symbol)
+        return json_error("تعذر جلب شموع Binance الآن؛ ستتم إعادة المحاولة لاحقاً",502)
+
+
 @app.get("/blog/<slug>")
 def public_article_page(slug):
     article=Article.query.filter_by(kind="blog",slug=slug,published=True).first()
