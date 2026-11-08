@@ -22,7 +22,7 @@ def candles(direction="UP", volume=True, count=220):
 
 class Sma200StrategyTests(unittest.TestCase):
     def test_fingerprint_and_timeframes(self):
-        self.assertEqual(STRATEGY_FINGERPRINT, "SMART-FLOW-15M-1H-4H-1D-1W-1M-RR-3-6-9-V5-20261108")
+        self.assertEqual(STRATEGY_FINGERPRINT, "SMART-FLOW-15M-1H-4H-1D-1W-1M-RR-3-6-9-WIDE-STOP-V6-20261109")
         self.assertEqual(TIMEFRAMES, ("15m","1h","4h","1d","1w","1M"))
         self.assertEqual(len(PROFILES), 7)
 
@@ -54,9 +54,9 @@ class Sma200StrategyTests(unittest.TestCase):
         self.assertEqual(signal["side"], "BUY")
         risk = signal["entry"] - signal["stop"]
         self.assertGreater(risk, 0)
-        self.assertLessEqual(risk / signal["entry"], 0.02)
-        self.assertGreaterEqual(signal["risk_atr"], 1.2)
-        self.assertLessEqual(signal["risk_atr"], 8.0)
+        self.assertLessEqual(risk / signal["entry"], 0.03)
+        self.assertGreaterEqual(signal["risk_atr"], 1.8)
+        self.assertLessEqual(signal["risk_atr"], 12.0)
         self.assertAlmostEqual(abs(signal["tp1"] - signal["entry"]) / risk, 3.0, places=6)
         self.assertAlmostEqual(abs(signal["tp2"] - signal["entry"]) / risk, 6.0, places=6)
         self.assertAlmostEqual(abs(signal["tp3"] - signal["entry"]) / risk, 9.0, places=6)
