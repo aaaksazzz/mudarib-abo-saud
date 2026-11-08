@@ -12,6 +12,34 @@ YAHOO=YAHOO_HOSTS[0]
 BINANCE_ALPHA="https://www.binance.com"
 HEADERS={"User-Agent":"Mozilla/5.0 (compatible; SMART-TRADING-PRO/1.0)","Accept":"application/json"}
 US_CONTRACTS=["ES=F","MES=F","NQ=F","MNQ=F","YM=F","MYM=F","RTY=F","M2K=F","CL=F","MCL=F","BZ=F","NG=F","RB=F","HO=F","GC=F","MGC=F","SI=F","SIL=F","HG=F","ZC=F","ZW=F","ZS=F","ZM=F","ZL=F","ZO=F","ZR=F","LE=F","HE=F","GF=F","6E=F","6B=F","6J=F","6A=F","6C=F","6S=F","6N=F","6M=F","ZB=F","UB=F","ZN=F","ZF=F","ZT=F"]
+# USD notional per Yahoo price unit and traded contract. Agricultural prices
+# quoted in cents are normalized in the multiplier (e.g. 5,000 bushels / 100).
+US_CONTRACT_MULTIPLIERS={
+    "ES=F":50,"MES=F":5,"NQ=F":20,"MNQ=F":2,"YM=F":5,"MYM=F":0.5,
+    "RTY=F":50,"M2K=F":5,"CL=F":1000,"MCL=F":100,"BZ=F":1000,
+    "NG=F":10000,"RB=F":42000,"HO=F":42000,"GC=F":100,"MGC=F":10,
+    "SI=F":5000,"SIL=F":1000,"HG=F":25000,"ZC=F":50,"ZW=F":50,
+    "ZS=F":50,"ZM=F":100,"ZL=F":600,"ZO=F":50,"ZR=F":2000,
+    "LE=F":400,"HE=F":400,"GF=F":500,"6E=F":125000,"6B=F":62500,
+    "6J=F":12500000,"6A=F":100000,"6C=F":100000,"6S=F":125000,
+    "6N=F":100000,"6M=F":500000,"ZB=F":1000,"UB=F":1000,
+    "ZN=F":1000,"ZF=F":1000,"ZT=F":2000,
+}
+
+
+def contract_notional_usd(symbol, price, contracts):
+    try:
+        price=float(price)
+        contracts=float(contracts)
+        multiplier=US_CONTRACT_MULTIPLIERS.get(str(symbol))
+        if multiplier is None or not all(math.isfinite(x) for x in (price,contracts,multiplier)):
+            return None
+        if price<=0 or contracts<0:
+            return None
+        return price*contracts*multiplier
+    except (TypeError,ValueError,OverflowError):
+        return None
+
 FX_SYMBOLS=[
     "EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X",
     "EURJPY=X","GBPJPY=X","EURGBP=X","AUDJPY=X","CADJPY=X","CHFJPY=X","NZDJPY=X",
@@ -401,8 +429,14 @@ def market_tickers(market):
                 # futures contracts; keep FX/metals quotes unrestricted.
                 volume=sum(max(0,x[5]) for x in rows[-96:])
                 row=_row(symbol,last[4],change,volume)
-                if market=="us-contracts" and (not row or row["quote_volume"]<1_000_000):
-                    return None
+                if market=="us-contracts":
+                    notional=contract_notional_usd(symbol,last[4],volume)
+                    # Yahoo volume is a count of futures contracts, not shares.
+                    # Apply the exchange contract multiplier before the $1M floor.
+                    if not row or notional is None or notional<1_000_000:
+                        return None
+                    row["quote_volume"]=notional
+                    row["notional_basis"]="contract_multiplier_usd"
                 return row
             except Exception:
                 return None
