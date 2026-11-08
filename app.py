@@ -1162,7 +1162,7 @@ def signals(market):
                 scan_error="الفحص التلقائي غير مفعّل على الخادم؛ يلزم تفعيل ENABLE_AUTO_SCAN."
             elif not active_scheduler or not active_scheduler.running:
                 scan_error="المجدول الخلفي غير نشط داخل الخدمة."
-            elif runtime.get("status")=="error":
+            elif stale and runtime.get("status")=="error":
                 scan_error=scan_error_message(runtime.get("last_error_code"))
         return jsonify({"ok":True,"market":market,"timeframe":timeframe,"timeframes":list(TIMEFRAMES),
                         "signals":[trade_json(x) for x in active] if not stale and not market_closed else [],
