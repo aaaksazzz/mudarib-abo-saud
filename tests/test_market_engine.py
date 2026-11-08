@@ -115,6 +115,19 @@ class MarketEngineTests(unittest.TestCase):
         self.assertTrue(diagnostic["ok"],diagnostic["checks"])
         self.assertEqual(set(diagnostic["timeframes"]),set(platform.market_strategies.INTERVAL_MS))
 
+    def test_build_signal_requests_only_the_selected_timeframe(self):
+        setup={"side":"BUY","entry":100.0,"stop":99.0,"tp1":102.0,"tp2":103.0,
+               "tp3":105.0,"score":80.0,"timeframe":"1h","change_pct":0.5,
+               "reason":"SMART FLOW QUANT: same-frame test"}
+        with patch.object(platform,"klines",return_value=[[0,100,101,99,100,1000]]*250) as candle_source, patch.object(
+            platform.market_strategies,"analyze",return_value=setup
+        ) as analyzer:
+            result=platform.build_signal("futures",{"symbol":"BTCUSDT"},"1h")
+        candle_source.assert_called_once_with("futures","BTCUSDT","1h",250)
+        analyzer.assert_called_once()
+        self.assertEqual(analyzer.call_args.kwargs["timeframe"],"1h")
+        self.assertEqual(result["timeframe"],"1h")
+
     def test_freshness_filter_rejects_late_or_old_entries(self):
         now = platform.utcnow()
         current = int(now.timestamp() * 1000)
@@ -391,6 +404,24 @@ class MarketEngineTests(unittest.TestCase):
         ]
         status,count=platform.evaluate_trade_outcome_from_bars(trade,tp1_then_stop,now_ms)
         self.assertEqual((status,count),("stopped_after_tp1",2))
+
+    def test_trade_outcome_replay_uses_the_trade_hourly_interval(self):
+        created=datetime(2026,11,7,10,0,tzinfo=timezone.utc)
+        trade=platform.Trade(
+            market="futures",symbol="TESTUSDT",side="BUY",entry=100,stop=98,
+            tp1=102,tp2=103,tp3=105,score=80,timeframe="1h",
+            reason="test",created_at=created,expires_at=created+timedelta(hours=24),
+            status="active",
+        )
+        row=[int(created.timestamp()*1000),100,103,99,102,1000]
+        before,count_before=platform.evaluate_trade_outcome_from_bars(
+            trade,[row],int((created+timedelta(minutes=59)).timestamp()*1000)
+        )
+        after,count_after=platform.evaluate_trade_outcome_from_bars(
+            trade,[row],int((created+timedelta(hours=1)).timestamp()*1000)
+        )
+        self.assertEqual((before,count_before),("active",0))
+        self.assertEqual((after,count_after),("tp1_hit",1))
 
     def test_same_15m_candle_stop_and_target_is_resolved_stop_first(self):
         created=datetime(2026,11,7,10,0,tzinfo=timezone.utc)
