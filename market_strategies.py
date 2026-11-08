@@ -83,19 +83,6 @@ def trend_direction(rows, period=50):
     return None
 
 
-def target_prices(entry, side):
-    """Return directional gross-price targets at +2%, +3%, and +5%."""
-    try:
-        entry = float(entry)
-    except (TypeError, ValueError, OverflowError):
-        return None
-    if not math.isfinite(entry) or entry <= 0 or side not in ("BUY", "SELL"):
-        return None
-    direction = 1.0 if side == "BUY" else -1.0
-    targets = tuple(entry * (1.0 + direction * pct) for pct in (0.02, 0.03, 0.05))
-    return targets if all(math.isfinite(x) and x > 0 for x in targets) else None
-
-
 def adaptive_target_prices(entry, side, risk):
     """Set TP1/TP2/TP3 at exactly 3R/6R/9R from the structural stop risk."""
     try:
