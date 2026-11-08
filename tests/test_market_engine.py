@@ -179,6 +179,17 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(counts["rejected_stale_candle"], 1)
 
 
+    def test_freshness_filter_rejects_stops_that_are_too_tight(self):
+        now = platform.utcnow()
+        current = int(now.timestamp() * 1000)
+        signal = {"symbol":"TIGHTUSDT","timeframe":"15m","signal_candle_time":current-900000,
+                  "side":"BUY","entry":100.0,"stop":99.5,"tp1":101.5,"atr":1.0}
+        accepted, counts = platform.filter_fresh_signals(
+            [signal], [{"symbol":"TIGHTUSDT","price":100.1}], now=now
+        )
+        self.assertEqual(accepted, [])
+        self.assertEqual(counts["rejected_late_price"], 1)
+
     def test_all_markets_scan_every_exposed_timeframe(self):
         for market in platform.MARKETS:
             with self.subTest(market=market):
@@ -528,8 +539,11 @@ class MarketEngineTests(unittest.TestCase):
                 platform.Trade(market="spot", symbol="OLDUSDT", side="BUY", entry=100, stop=95,
                     tp1=105, tp2=110, tp3=115, score=80, timeframe="1h",
                     reason="SMART FLOW QUANT:: old frame", expires_at=now + timedelta(hours=1)),
+                platform.Trade(market="spot", symbol="OLD15MUSDT", side="BUY", entry=100, stop=99,
+                    tp1=101, tp2=102, tp3=103, score=90, timeframe="15m",
+                    reason="SMART FLOW QUANT: legacy 2/3/5 targets", expires_at=now + timedelta(hours=1)),
                 platform.Trade(market="spot", symbol="NEWUSDT", side="BUY", entry=100, stop=95,
-                    tp1=105, tp2=110, tp3=115, score=85, timeframe="15m",
+                    tp1=115, tp2=130, tp3=145, score=85, timeframe="15m",
                     reason="SMART FLOW QUANT:: current frame | strategy_fp="+platform.STRATEGY_FINGERPRINT+" | bar_ts=123", expires_at=now + timedelta(hours=1)),
                 platform.Setting(key="scan:spot", value=platform.iso(now)),
                 platform.Setting(key="scan:spot:1h", value=platform.iso(now)),
@@ -566,7 +580,7 @@ class MarketEngineTests(unittest.TestCase):
                 ))
             platform.db.session.add(platform.Trade(market="spot",symbol="CACHEUSDT",side="BUY",
                 entry=100,stop=99,tp1=101,tp2=102,tp3=103,score=80,timeframe="15m",
-                reason="SMART FLOW QUANT: existing current-engine signal",
+                reason="SMART FLOW QUANT: existing current-engine signal | strategy_fp="+platform.STRATEGY_FINGERPRINT,
                 expires_at=platform.utcnow()+timedelta(hours=1)))
             platform.db.session.commit()
             with patch.object(platform, "market_tickers", return_value=[
