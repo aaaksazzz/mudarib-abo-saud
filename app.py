@@ -899,10 +899,10 @@ def run_market_scan(market,force=False):
                 and db.session.get(Setting,f"scan-frame:smart-flow-quant:{market}:{frame}").value==str(timeframe_bucket(frame,now))
                 for frame in market_scan_timeframes(market)
             )
-            if last>now-timedelta(minutes=15) and all_frames_current and Trade.query.filter(
-                Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe=="15m",
-                Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")
-            ).count():
+            # A valid scan cache must not depend on having a 15m trade.
+            # Otherwise an empty 15m result forces repeated 15m-only scans and
+            # starves higher timeframes of their independent scheduled cycles.
+            if last>now-timedelta(minutes=15) and all_frames_current:
                 active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")).order_by(Trade.score.desc()).limit(18).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
