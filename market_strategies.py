@@ -114,16 +114,16 @@ def adaptive_target_prices(entry, side, risk):
 
 def diagnostic_self_test():
     """Exercise SMA200 direction and target math used by the live analyzer."""
-    buy_targets = target_prices(100.0, "BUY")
-    sell_targets = target_prices(100.0, "SELL")
+    buy_targets = adaptive_target_prices(100.0, "BUY", 1.0)
+    sell_targets = adaptive_target_prices(100.0, "SELL", 1.0)
     cases = {
         "buy_above": sma200_allows("BUY", 101.0, 100.0),
         "buy_below": not sma200_allows("BUY", 99.0, 100.0),
         "sell_below": sma200_allows("SELL", 99.0, 100.0),
         "sell_above": not sma200_allows("SELL", 101.0, 100.0),
         "equal_rejected": not sma200_allows("BUY", 100.0, 100.0) and not sma200_allows("SELL", 100.0, 100.0),
-        "buy_targets_2_3_5": buy_targets == (102.0, 103.0, 105.0),
-        "sell_targets_2_3_5": sell_targets == (98.0, 97.0, 95.0),
+        "buy_targets_3r_6r_9r": buy_targets == (103.0, 106.0, 109.0),
+        "sell_targets_3r_6r_9r": sell_targets == (97.0, 94.0, 91.0),
         "timeframes_independent": set(TIMEFRAMES) == set(INTERVAL_MS),
     }
     return {"fingerprint": STRATEGY_FINGERPRINT, "ok": all(cases.values()), "checks": cases,
@@ -281,9 +281,10 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         "score": round(score, 1), "timeframe": timeframe,
         "change_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
         "change_15m_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
-        "reason": "SMART FLOW QUANT: " + " + ".join(labels) + "; same-timeframe SMA200 passed; structural stop; gross targets 2%/3%/5%",
+        "reason": "SMART FLOW QUANT: " + " + ".join(labels) + "; same-timeframe SMA200 passed; structural stop; targets 3R/6R/9R",
         "signal_candle_time": bars[-1][0], "risk_atr": round(risk / atr, 3),
         "reward_risk": round(abs(tp1 - entry) / risk, 3),
+        "risk_distance": risk,
         "atr": atr, "ma200": ma200, "ma200_distance_pct": round((entry / ma200 - 1.0) * 100.0, 4), "confirmations": len(aligned),
         "volume_ratio": round(volume_ratio, 3) if volume_ratio is not None else None,
         "range_expansion": round(range_expansion, 3),
