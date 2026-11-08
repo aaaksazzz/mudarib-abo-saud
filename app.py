@@ -943,7 +943,7 @@ def run_market_scan(market,force=False):
     failed=0
     with ThreadPoolExecutor(max_workers=8) as pool:
         frame_stats={frame:{"completed":0,"failed":0,"matches":0} for frame in frames_to_scan}
-    futures={pool.submit(build_signal,market,item,frame):(item,frame) for item in candidates for frame in frames_to_scan}
+        futures={pool.submit(build_signal,market,item,frame):(item,frame) for item in candidates for frame in frames_to_scan}
         for future in as_completed(futures):
             _,frame=futures[future]
             try:
