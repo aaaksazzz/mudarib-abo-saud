@@ -160,6 +160,8 @@ class MarketEngineTests(unittest.TestCase):
         self.assertEqual(len(data["markets"]), 7)
         self.assertTrue(data["legacy_removed"])
         self.assertTrue(data["manual_only"])
+        self.assertTrue(data["strategy_ready"])
+        self.assertTrue(data["diagnostics"]["ok"])
 
         with platform.app.app_context():
             legacy = platform.Trade(
