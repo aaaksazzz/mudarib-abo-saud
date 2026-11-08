@@ -7,7 +7,7 @@ Spot and USD-M Futures. Scores rank confluence; they are not win probabilities.
 """
 import math
 
-STRATEGY_FINGERPRINT = "SMART-FLOW-15M-1H-4H-1D-1W-1M-TREND-V4-20261108"
+STRATEGY_FINGERPRINT = "SMART-FLOW-15M-1H-4H-1D-1W-1M-RR-3-6-9-V5-20261108"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 INTERVAL_MS = {"15m": 900_000, "1h": 3_600_000, "4h": 14_400_000,
                "1d": 86_400_000, "1w": 604_800_000, "1M": 2_678_400_000}
@@ -97,7 +97,7 @@ def target_prices(entry, side):
 
 
 def adaptive_target_prices(entry, side, risk):
-    """Blend minimum 2/3/5% objectives with targets scaled to actual stop risk."""
+    """Set TP1/TP2/TP3 at exactly 3R/6R/9R from the structural stop risk."""
     try:
         entry, risk = float(entry), float(risk)
     except (TypeError, ValueError, OverflowError):
@@ -106,10 +106,8 @@ def adaptive_target_prices(entry, side, risk):
             or risk <= 0 or side not in ("BUY", "SELL")):
         return None
     direction = 1.0 if side == "BUY" else -1.0
-    r_multiples = (1.5, 2.25, 3.5)
-    minimum_moves = (0.02, 0.03, 0.05)
-    distances = [max(entry * floor, risk * multiple)
-                 for floor, multiple in zip(minimum_moves, r_multiples)]
+    r_multiples = (3.0, 6.0, 9.0)
+    distances = [risk * multiple for multiple in r_multiples]
     targets = tuple(entry + direction * distance for distance in distances)
     return targets if all(math.isfinite(x) and x > 0 for x in targets) else None
 
@@ -129,7 +127,7 @@ def diagnostic_self_test():
         "timeframes_independent": set(TIMEFRAMES) == set(INTERVAL_MS),
     }
     return {"fingerprint": STRATEGY_FINGERPRINT, "ok": all(cases.values()), "checks": cases,
-            "timeframes": list(TIMEFRAMES), "rule": "BUY above same-timeframe SMA200; SELL below; gross targets 2%/3%/5%"}
+            "timeframes": list(TIMEFRAMES), "rule": "BUY above same-timeframe SMA200; SELL below; gross targets 3R/6R/9R"}
 
 
 def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_micro=False):
