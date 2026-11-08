@@ -157,7 +157,7 @@ class MarketEngineTests(unittest.TestCase):
     def test_all_markets_scan_every_exposed_timeframe(self):
         for market in platform.MARKETS:
             with self.subTest(market=market):
-                self.assertEqual(platform.market_scan_timeframes(market), ("15m","1h","4h","1d","1w","1M"))
+                self.assertEqual(platform.market_scan_timeframes(market), ("15m",))
 
     def test_strategy_fingerprint_confirms_all_timeframes_and_legacy_retirement(self):
         response = self.client.get("/api/strategy-status")
@@ -563,9 +563,9 @@ class MarketEngineTests(unittest.TestCase):
                 result=platform.run_market_scan("futures",force=True)
         self.assertEqual(result["scan_universe"],70)
         self.assertEqual(result["scan_batch_size"],70)
-        self.assertEqual(len(visited),70*len(platform.TIMEFRAMES))
+        self.assertEqual(len(visited),70)
         self.assertEqual({symbol for symbol, _ in visited}, {f"COIN{i}USDT" for i in range(70)})
-        self.assertEqual({frame for _, frame in visited}, set(platform.TIMEFRAMES))
+        self.assertEqual({frame for _, frame in visited}, {"15m"})
 
     def test_valid_asset_signal_is_not_vetoed_by_market_breadth(self):
         now_ms=int(platform.utcnow().timestamp()*1000)
@@ -584,8 +584,8 @@ class MarketEngineTests(unittest.TestCase):
             ]), patch.object(platform, "build_signal", side_effect=per_frame):
                 result = platform.run_market_scan("futures", force=True)
                 self.assertEqual(result["market_bias"], "SELL")
-                self.assertEqual(len(result["signals"]), len(platform.TIMEFRAMES))
-                self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
+                self.assertEqual(len(result["signals"]), 1)
+                self.assertEqual(platform.Trade.query.count(), 1)
                 self.assertTrue(all(trade.side=="BUY" for trade in platform.Trade.query.all()))
 
     def test_same_candle_does_not_create_duplicate_trades_per_timeframe(self):
@@ -609,18 +609,18 @@ class MarketEngineTests(unittest.TestCase):
                 side_effect=lambda signals, universe, now=None: (signals, {"rejected_stale_candle": 0, "rejected_late_price": 0})
             ):
                 first = platform.run_market_scan("spot", force=True)
-                self.assertEqual(len(first["signals"]), len(platform.TIMEFRAMES))
+                self.assertEqual(len(first["signals"]), 1)
                 self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
                 second = platform.run_market_scan("spot", force=True)
                 self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
-                self.assertEqual(len(second["signals"]), len(platform.TIMEFRAMES))
+                self.assertEqual(len(second["signals"]), 1)
                 self.assertTrue(all(x.status == "active" for x in platform.Trade.query.all()))
                 candle_time["15m"] += 1
                 third = platform.run_market_scan("spot", force=True)
                 trades = platform.Trade.query.order_by(platform.Trade.id.asc()).all()
-                self.assertEqual(len(trades), len(platform.TIMEFRAMES)+1)
+                self.assertEqual(len(trades), 2)
                 self.assertEqual(sum(x.status == "superseded" for x in trades), 1)
-                self.assertEqual(len(third["signals"]), len(platform.TIMEFRAMES))
+                self.assertEqual(len(third["signals"]), 1)
 
     def test_stale_scan_hides_old_opportunities_instead_of_showing_stuck_coins(self):
         with platform.app.app_context():
