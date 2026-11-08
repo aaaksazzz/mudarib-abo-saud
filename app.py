@@ -727,12 +727,12 @@ def filter_fresh_signals(signals, universe, now=None):
                 rejected_moved+=1
                 continue
             # Keep the same structural-risk floor and ceiling used by the 15m analyzer.
-            if live_risk<atr*1.20 or live_risk>atr*8.0:
+            if live_risk<atr*1.80 or live_risk>atr*12.0:
                 rejected_moved+=1
                 continue
             # The published entry is the actual quote at approval time, not the
             # previous candle close. Rebuild all R-multiple targets from that entry.
-            if live_risk > current * 0.02:
+            if live_risk > current * 0.03:
                 rejected_moved+=1
                 continue
             # Recalculate objectives from the live entry and the actual
