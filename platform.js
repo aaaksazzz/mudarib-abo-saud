@@ -90,7 +90,7 @@ async function marketPage(root,market,version=renderVersion){
   const unavailable=snap.ready===false;
   const stale=sig.stale===true;
   const marketClosed=sig.market_closed===true;
-  const warning=unavailable?"":marketClosed?'<div class="notice-bar">السوق السعودي مغلق حاليًا؛ تتوقف فرص الدخول على فريم 15 دقيقة خارج جلسة التداول، وتعود مع الجلسة القادمة.</div>':sig.scan_error?'<div class="notice-bar">تعذّر الفحص: '+esc(sig.scan_error)+'</div>':stale&&!sig.updated_at?'<div class="notice-bar">لم يكتمل أول فحص ناجح بعد؛ ننتظر دورة الفحص المجدولة.</div>':stale?'<div class="notice-bar">نتائج الفحص أقدم من 20 دقيقة. ننتظر تحديث الفحص المجدول.</div>':"";
+  const warning=unavailable?"":marketClosed?'<div class="notice-bar">السوق السعودي مغلق حاليًا؛ لا تُنشأ فرص دخول جديدة خارج جلسة التداول.</div>':sig.scan_error?'<div class="notice-bar">تعذّر الفحص: '+esc(sig.scan_error)+'</div>':stale&&!sig.updated_at?'<div class="notice-bar">لم يكتمل أول فحص ناجح بعد؛ ننتظر دورة الفحص المجدولة.</div>':stale?'<div class="notice-bar">نتائج هذا الفريم قديمة. ننتظر تحديث الفحص المجدول.</div>':"";
   const signals=sig.signals||[];
   const frameLabel=(timeframeOptions.find(x=>x[0]===timeframe)||[])[1]||timeframe;
   const scanCoverage=sig.scan_universe==null?"نتائج آخر فحص محفوظة":Number(sig.scan_universe)+" أصل في القائمة · تم تحليل "+Number(sig.analysis_completed||0)+" في الدفعة الأخيرة";
@@ -118,7 +118,7 @@ async function marketPage(root,market,version=renderVersion){
   const timeframeSelect=$("#marketTimeframe");
   if(timeframeSelect)timeframeSelect.addEventListener("change",()=>{selectedTimeframe=timeframeSelect.value;marketPage(root,market,version)});
   const grid=$("#tradeCards");
-  if(grid)grid.innerHTML=signals.length?signals.map((t,i)=>tradeCard(t,i)).join(""):'<div class="panel empty-state"><b>لا توجد فرص مؤكدة على هذا الفريم حالياً</b><p>'+esc(emptyDetails)+'</p><small class="data-footnote">تم تنفيذ '+Number(sig.analysis_completed||0)+' تحليل · فشل '+Number(sig.analysis_failed||0)+' · توافق النماذج '+Number(sig.strategy_matches||0)+' · استبعاد الاتجاه '+Number(sig.direction_rejected||0)+' · شموع قديمة '+Number(sig.rejected_stale_candle||0)+' · دخول متأخر '+Number(sig.rejected_late_price||0)+'</small></div>';
+  if(grid)grid.innerHTML=signals.length?signals.map((t,i)=>tradeCard(t,i)).join(""):'<div class="panel empty-state"><b>لا توجد فرص مؤكدة على هذا الفريم حالياً</b><p>'+esc(emptyDetails)+'</p><small class="data-footnote">تم تنفيذ '+Number(sig.analysis_completed||0)+' تحليل · فشل '+Number(sig.analysis_failed||0)+' · توافق النماذج '+Number(sig.strategy_matches||0)+'+' · شموع قديمة '+Number(sig.rejected_stale_candle||0)+' · دخول متأخر '+Number(sig.rejected_late_price||0)+'</small></div>';
  }catch(e){
   if(version!==renderVersion||currentPage!==market)return;
   root.innerHTML='<div class="panel empty-state"><b>تعذر تحميل بيانات السوق</b><p>'+esc(e.message)+'</p><button class="login-btn" id="retryMarket">إعادة المحاولة</button></div>';
