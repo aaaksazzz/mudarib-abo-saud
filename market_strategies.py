@@ -7,7 +7,7 @@ Spot and USD-M Futures. Scores rank confluence; they are not win probabilities.
 """
 import math
 
-STRATEGY_FINGERPRINT = "SMART-FLOW-SMA200-MTF-2-3-5-V1-20261108"
+STRATEGY_FINGERPRINT = "SMART-FLOW-LIQUIDITY-3R-MTF-V2-20261109"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 INTERVAL_MS = {"15m": 900_000, "1h": 3_600_000, "4h": 14_400_000,
                "1d": 86_400_000, "1w": 604_800_000, "1M": 2_678_400_000}
@@ -59,35 +59,37 @@ def sma200_allows(side, price, ma200):
     return (side == "BUY" and price > ma200) or (side == "SELL" and price < ma200)
 
 
-def target_prices(entry, side):
-    """Return directional gross-price targets at +2%, +3%, and +5%."""
+def target_prices(entry, side, risk=None):
+    """Return TP1/TP2/TP3 at 1R/2R/3R from the structural stop distance."""
     try:
         entry = float(entry)
+        risk = float(risk) if risk is not None else entry * 0.01
     except (TypeError, ValueError, OverflowError):
         return None
-    if not math.isfinite(entry) or entry <= 0 or side not in ("BUY", "SELL"):
+    if (not math.isfinite(entry) or entry <= 0 or not math.isfinite(risk)
+            or risk <= 0 or side not in ("BUY", "SELL")):
         return None
     direction = 1.0 if side == "BUY" else -1.0
-    targets = tuple(entry * (1.0 + direction * pct) for pct in (0.02, 0.03, 0.05))
+    targets = tuple(entry + direction * risk * multiple for multiple in (1.0, 2.0, 3.0))
     return targets if all(math.isfinite(x) and x > 0 for x in targets) else None
 
 
 def diagnostic_self_test():
     """Exercise SMA200 direction and target math used by the live analyzer."""
-    buy_targets = target_prices(100.0, "BUY")
-    sell_targets = target_prices(100.0, "SELL")
+    buy_targets = target_prices(100.0, "BUY", 2.0)
+    sell_targets = target_prices(100.0, "SELL", 2.0)
     cases = {
         "buy_above": sma200_allows("BUY", 101.0, 100.0),
         "buy_below": not sma200_allows("BUY", 99.0, 100.0),
         "sell_below": sma200_allows("SELL", 99.0, 100.0),
         "sell_above": not sma200_allows("SELL", 101.0, 100.0),
         "equal_rejected": not sma200_allows("BUY", 100.0, 100.0) and not sma200_allows("SELL", 100.0, 100.0),
-        "buy_targets_2_3_5": buy_targets == (102.0, 103.0, 105.0),
-        "sell_targets_2_3_5": sell_targets == (98.0, 97.0, 95.0),
+        "buy_targets_1_2_3R": buy_targets == (102.0, 104.0, 106.0),
+        "sell_targets_1_2_3R": sell_targets == (98.0, 96.0, 94.0),
         "timeframes_independent": set(TIMEFRAMES) == set(INTERVAL_MS),
     }
     return {"fingerprint": STRATEGY_FINGERPRINT, "ok": all(cases.values()), "checks": cases,
-            "timeframes": list(TIMEFRAMES), "rule": "BUY above same-timeframe SMA200; SELL below; gross targets 2%/3%/5%"}
+            "timeframes": list(TIMEFRAMES), "rule": "closed-candle structure and volume confluence; structural stop; TP1/TP2/TP3 at 1R/2R/3R"}
 
 
 def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_micro=False):
@@ -120,6 +122,8 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
     body_ratio = abs(closes[i] - opens[i]) / candle_range
     prior_high = max(highs[i - 20:i])
     prior_low = min(lows[i - 20:i])
+    sweep_reference_high = max(highs[i - 21:i - 1])
+    sweep_reference_low = min(lows[i - 21:i - 1])
     prior_ranges = [highs[j] - lows[j] for j in range(i - 20, i)]
     avg_range = sum(prior_ranges) / len(prior_ranges) if prior_ranges else 0.0
     range_expansion = candle_range / avg_range if avg_range > 0 else 0.0
@@ -137,6 +141,18 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
     elif closes[i] < prior_low and close_location <= 0.35:
         down_votes["structure breakout"] = 1
 
+    # Count a sweep only after a separate closed candle reclaims the level
+    # and the latest closed candle confirms beyond the sweep candle edge.
+    sweep_high, sweep_low, sweep_close = highs[i - 1], lows[i - 1], closes[i - 1]
+    bullish_sweep = (sweep_low < sweep_reference_low and
+                     sweep_close > sweep_reference_low and closes[i] > sweep_high)
+    bearish_sweep = (sweep_high > sweep_reference_high and
+                     sweep_close < sweep_reference_high and closes[i] < sweep_low)
+    if bullish_sweep:
+        up_votes["liquidity sweep + reclaim"] = 1
+    elif bearish_sweep:
+        down_votes["liquidity sweep + reclaim"] = 1
+
     if closes[i] > opens[i] and close_location >= 0.72 and body_ratio >= 0.45:
         up_votes["buyer pressure"] = 1
     elif closes[i] < opens[i] and close_location <= 0.28 and body_ratio >= 0.45:
@@ -152,6 +168,14 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
                 up_votes["volume expansion"] = 1
             elif volume_ratio >= 1.35 and close_location <= 0.35 and closes[i] < opens[i]:
                 down_votes["volume expansion"] = 1
+
+            # OHLCV rejection/absorption proxy, not true order-flow absorption.
+            lower_wick = min(opens[i], closes[i]) - lows[i]
+            upper_wick = highs[i] - max(opens[i], closes[i])
+            if volume_ratio >= 1.35 and lower_wick > candle_range * 0.20 and close_location >= 0.65:
+                up_votes["high-volume lower-wick rejection (proxy)"] = 1
+            elif volume_ratio >= 1.35 and upper_wick > candle_range * 0.20 and close_location <= 0.35:
+                down_votes["high-volume upper-wick rejection (proxy)"] = 1
 
     if range_expansion >= 1.25 and body_ratio >= 0.55:
         if closes[i] > opens[i] and close_location >= 0.68:
@@ -214,7 +238,7 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
     # of disguising excessive risk with distant R-multiple targets.
     if risk > entry * 0.0125:
         return None
-    targets = target_prices(entry, side)
+    targets = target_prices(entry, side, risk)
     if not targets:
         return None
     tp1, tp2, tp3 = targets
@@ -238,7 +262,7 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         "score": round(score, 1), "timeframe": timeframe,
         "change_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
         "change_15m_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
-        "reason": "SMART FLOW QUANT: " + " + ".join(labels) + "; same-timeframe SMA200 passed; structural stop; gross targets 2%/3%/5%",
+        "reason": "SMART FLOW QUANT PRO: " + " + ".join(labels) + "; same-frame trend gate; structural stop; targets 1R/2R/3R; absorption is an OHLCV proxy unless live flow is available",
         "signal_candle_time": bars[-1][0], "risk_atr": round(risk / atr, 3),
         "reward_risk": round(abs(tp1 - entry) / risk, 3),
         "atr": atr, "ma200": ma200, "ma200_distance_pct": round((entry / ma200 - 1.0) * 100.0, 4), "confirmations": len(aligned),
