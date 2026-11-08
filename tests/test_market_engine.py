@@ -580,7 +580,7 @@ class MarketEngineTests(unittest.TestCase):
     def test_scan_checks_rotating_batch_on_each_due_timeframe(self):
         items = [{"symbol":f"COIN{i}USDT","price":1.0,"change_pct":float(i),"quote_volume":1_000_000.0+i} for i in range(70)]
         visited=[]
-        def capture(market,item,timeframe):
+        def capture(market,item,timeframe,diagnostics=None):
             visited.append((item["symbol"], timeframe))
             return None
         with platform.app.app_context():
@@ -600,7 +600,7 @@ class MarketEngineTests(unittest.TestCase):
             "change_pct":1.2,"timeframe":"15m","signal_candle_time":now_ms-900000-1000,
             "reason":"SMART FLOW QUANT:: confirmed.","atr":1.0
         }
-        def per_frame(market, item, timeframe):
+        def per_frame(market, item, timeframe, diagnostics=None):
             interval=platform.market_strategies.INTERVAL_MS[timeframe]
             return {**signal,"timeframe":timeframe,"signal_candle_time":now_ms-interval-1000}
         with platform.app.app_context():
