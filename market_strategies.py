@@ -239,9 +239,9 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
 
     # A stop must clear normal 15m noise, while remaining within a practical
     # price-risk ceiling. If the true structure needs more room, skip the setup.
-    if risk < atr * 1.80 or risk > atr * 12.0 or risk <= 0:
+    if risk < atr * 1.80 or risk > atr * 16.0 or risk <= 0:
         return None
-    if risk > entry * 0.03:
+    if risk > entry * 0.04:
         return None
     targets = adaptive_target_prices(entry, side, risk)
     if not targets:
