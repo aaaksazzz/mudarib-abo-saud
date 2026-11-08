@@ -262,7 +262,7 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         "score": round(score, 1), "timeframe": timeframe,
         "change_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
         "change_15m_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
-        "reason": "SMART FLOW QUANT PRO: " + " + ".join(labels) + "; same-frame trend gate; structural stop; targets 1R/2R/3R; absorption is an OHLCV proxy unless live flow is available",
+        "reason": "SMART FLOW QUANT: PRO | " + " + ".join(labels) + "; same-frame trend gate; structural stop; targets 1R/2R/3R; absorption is an OHLCV proxy unless live flow is available",
         "signal_candle_time": bars[-1][0], "risk_atr": round(risk / atr, 3),
         "reward_risk": round(abs(tp1 - entry) / risk, 3),
         "atr": atr, "ma200": ma200, "ma200_distance_pct": round((entry / ma200 - 1.0) * 100.0, 4), "confirmations": len(aligned),
