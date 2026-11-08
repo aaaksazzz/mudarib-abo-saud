@@ -73,6 +73,22 @@ class MarketEngineTests(unittest.TestCase):
         self.assertFalse(platform.persistent_secret_configured("short"))
         self.assertFalse(platform.persistent_secret_configured(""))
 
+    def test_scheduler_spreads_market_scans_across_the_15m_cycle(self):
+        delays = [platform.market_scan_initial_delay_seconds(i) for i in range(len(platform.MARKETS))]
+        self.assertEqual(delays, sorted(set(delays)))
+        self.assertGreaterEqual(min(b-a for a,b in zip(delays, delays[1:])), 120)
+        self.assertLess(delays[-1], platform.SCAN_INTERVAL_SECONDS)
+        self.assertEqual(platform.SCAN_EXECUTOR_WORKERS, 1)
+        self.assertEqual(platform.SCAN_MISFIRE_GRACE_SECONDS, 300)
+
+    def test_us_futures_liquidity_uses_contract_notional_not_raw_contract_count(self):
+        adapters = platform.market_adapters
+        self.assertEqual(set(adapters.US_CONTRACTS)-set(adapters.US_CONTRACT_MULTIPLIERS), set())
+        self.assertEqual(adapters.contract_notional_usd("ES=F", 5000, 1), 250000)
+        self.assertEqual(adapters.contract_notional_usd("MES=F", 5000, 1), 25000)
+        self.assertIsNone(adapters.contract_notional_usd("UNKNOWN=F", 100, 1000))
+        self.assertIsNone(adapters.contract_notional_usd("ES=F", float("nan"), 1))
+
     def test_scan_candidate_batches_rotate_across_the_eligible_universe(self):
         universe = [{"symbol":f"COIN{i}","quote_volume":float(1000-i),"change_pct":0.1} for i in range(170)]
         first, cursor, offset = platform.select_scan_candidates(universe, 0, 80)

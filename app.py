@@ -1477,19 +1477,36 @@ def scheduled_market_scan(market):
             db.session.remove()
 
 
+SCAN_INTERVAL_SECONDS=15*60
+SCAN_INITIAL_DELAY_SECONDS=30
+SCAN_MISFIRE_GRACE_SECONDS=300
+SCAN_EXECUTOR_WORKERS=1
+
+
+def market_scan_initial_delay_seconds(index):
+    """Spread market jobs evenly across the 15-minute cycle."""
+    spacing=max(1,SCAN_INTERVAL_SECONDS//len(MARKETS))
+    return SCAN_INITIAL_DELAY_SECONDS+max(0,int(index))*spacing
+
+
 AUTO_SCAN_ENABLED=os.environ.get("ENABLE_AUTO_SCAN","true").lower()=="true"
 scheduler=None
 if AUTO_SCAN_ENABLED:
+    # One scheduler worker prevents seven markets from launching together on
+    # the small production container. Each market keeps its own 15m cadence,
+    # but starts at a staggered offset to avoid executor misfire backlogs.
     scheduler=BackgroundScheduler(
         timezone="UTC",
-        executors={"default":{"type":"threadpool","max_workers":2}},
-        job_defaults={"coalesce":True,"max_instances":1},
+        executors={"default":{"type":"threadpool","max_workers":SCAN_EXECUTOR_WORKERS}},
+        job_defaults={"coalesce":True,"max_instances":1,
+                      "misfire_grace_time":SCAN_MISFIRE_GRACE_SECONDS},
     )
-    for market in MARKETS:
+    for index,market in enumerate(MARKETS):
         scheduler.add_job(
             scheduled_market_scan,"interval",minutes=15,id="market-scan-"+market,
             args=[market],max_instances=1,coalesce=True,
-            next_run_time=utcnow()+timedelta(seconds=30)
+            misfire_grace_time=SCAN_MISFIRE_GRACE_SECONDS,
+            next_run_time=utcnow()+timedelta(seconds=market_scan_initial_delay_seconds(index))
         )
     scheduler.start()
 
