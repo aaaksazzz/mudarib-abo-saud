@@ -1218,7 +1218,8 @@ def trade_history():
     expire_stale_trades()
     open_rows=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.expires_at>utcnow()
+        Trade.expires_at>utcnow(),
+        Trade.reason.like("%"+CURRENT_STRATEGY_MARKER+"%")
     ).order_by(Trade.created_at.desc()).all()
     completed_all=Trade.query.filter(
         Trade.status.in_(("tp3_hit","stopped","stopped_after_tp1","stopped_after_tp2"))
