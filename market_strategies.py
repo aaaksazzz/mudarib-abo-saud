@@ -7,9 +7,10 @@ Spot and USD-M Futures. Scores rank confluence; they are not win probabilities.
 """
 import math
 
-STRATEGY_FINGERPRINT = "SMART-FLOW-SMA200-15M-V2-20261107"
-TIMEFRAMES = ("15m",)
-INTERVAL_MS = {"15m": 900_000}
+STRATEGY_FINGERPRINT = "SMART-FLOW-SMA200-MTF-2-3-5-V1-20261108"
+TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
+INTERVAL_MS = {"15m": 900_000, "1h": 3_600_000, "4h": 14_400_000,
+               "1d": 86_400_000, "1w": 604_800_000, "1M": 2_678_400_000}
 PROFILES = {
     "spot": {"allow_short": False}, "alpha": {"allow_short": False},
     "futures": {"allow_short": True}, "us-stocks": {"allow_short": False},
@@ -58,17 +59,35 @@ def sma200_allows(side, price, ma200):
     return (side == "BUY" and price > ma200) or (side == "SELL" and price < ma200)
 
 
+def target_prices(entry, side):
+    """Return directional gross-price targets at +2%, +3%, and +5%."""
+    try:
+        entry = float(entry)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(entry) or entry <= 0 or side not in ("BUY", "SELL"):
+        return None
+    direction = 1.0 if side == "BUY" else -1.0
+    targets = tuple(entry * (1.0 + direction * pct) for pct in (0.02, 0.03, 0.05))
+    return targets if all(math.isfinite(x) and x > 0 for x in targets) else None
+
+
 def diagnostic_self_test():
-    """Exercise the exact SMA200 gate used by every timeframe analyzer."""
+    """Exercise SMA200 direction and target math used by the live analyzer."""
+    buy_targets = target_prices(100.0, "BUY")
+    sell_targets = target_prices(100.0, "SELL")
     cases = {
         "buy_above": sma200_allows("BUY", 101.0, 100.0),
         "buy_below": not sma200_allows("BUY", 99.0, 100.0),
         "sell_below": sma200_allows("SELL", 99.0, 100.0),
         "sell_above": not sma200_allows("SELL", 101.0, 100.0),
         "equal_rejected": not sma200_allows("BUY", 100.0, 100.0) and not sma200_allows("SELL", 100.0, 100.0),
+        "buy_targets_2_3_5": buy_targets == (102.0, 103.0, 105.0),
+        "sell_targets_2_3_5": sell_targets == (98.0, 97.0, 95.0),
+        "timeframes_independent": set(TIMEFRAMES) == set(INTERVAL_MS),
     }
     return {"fingerprint": STRATEGY_FINGERPRINT, "ok": all(cases.values()), "checks": cases,
-            "timeframes": list(TIMEFRAMES), "rule": "BUY only above same-timeframe SMA200; SELL only below"}
+            "timeframes": list(TIMEFRAMES), "rule": "BUY above same-timeframe SMA200; SELL below; gross targets 2%/3%/5%"}
 
 
 def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_micro=False):
@@ -191,7 +210,14 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
     if risk > atr * 2.5 or risk <= 0:
         return None
 
-    tp1, tp2, tp3 = (entry + direction * risk * multiple for multiple in (1.0, 2.0, 3.0))
+    # Keep the structural invalidation close; reject wide-stop setups instead
+    # of disguising excessive risk with distant R-multiple targets.
+    if risk > entry * 0.0125:
+        return None
+    targets = target_prices(entry, side)
+    if not targets:
+        return None
+    tp1, tp2, tp3 = targets
     if min(entry, stop, tp1, tp2, tp3) <= 0:
         return None
 
@@ -212,8 +238,9 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         "score": round(score, 1), "timeframe": timeframe,
         "change_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
         "change_15m_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
-        "reason": "SMART FLOW QUANT: " + " + ".join(labels) + "; SMA200 trend filter passed; structural stop; targets 1R/2R/3R",
-        "signal_candle_time": bars[-1][0], "risk_atr": round(risk / atr, 3), "reward_risk": 3.0,
+        "reason": "SMART FLOW QUANT: " + " + ".join(labels) + "; same-timeframe SMA200 passed; structural stop; gross targets 2%/3%/5%",
+        "signal_candle_time": bars[-1][0], "risk_atr": round(risk / atr, 3),
+        "reward_risk": round(abs(tp1 - entry) / risk, 3),
         "atr": atr, "ma200": ma200, "ma200_distance_pct": round((entry / ma200 - 1.0) * 100.0, 4), "confirmations": len(aligned),
         "volume_ratio": round(volume_ratio, 3) if volume_ratio is not None else None,
         "range_expansion": round(range_expansion, 3),

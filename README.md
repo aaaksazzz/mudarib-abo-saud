@@ -17,14 +17,14 @@ Production-oriented market intelligence terminal.
 - **Tadawul:** public Saudi Exchange data is preferred, with Yahoo, a public ticker directory and TradingView fallbacks. Saudi equities are not filtered by the $1M threshold; public-feed coverage can be incomplete during provider restrictions.
 - **Forex & Gold:** public Yahoo symbol list; FX tick volume is not represented as exchange-traded dollar volume.
 
-## Active strategy: SMART FLOW QUANT · SMA200 · 15m
-- The canonical engine fingerprint is `SMART-FLOW-SMA200-15M-V2-20261107`.
-- **15m is the only supported analysis timeframe** across all seven markets. Legacy timeframe requests are normalized to 15m for compatibility; no higher-timeframe analysis is performed.
-- The engine evaluates completed 15-minute candles only. At least 200 valid completed candles are required.
-- BUY requires price above the same-timeframe SMA200; SELL requires price below it and is limited to short-capable markets.
+## Active strategy: SMART FLOW QUANT · same-timeframe SMA200 · multi-timeframe
+- The canonical engine fingerprint is `SMART-FLOW-SMA200-MTF-2-3-5-V1-20261108`.
+- All seven markets expose six independently scanned frames: 15m, 1h, 4h, 1d, 1w and 1M. Each frame uses its own completed candles, SMA200, entry validation, stop and trade-outcome replay; no cross-frame candle mixing is allowed.
+- At least 200 valid completed candles from the requested frame are required. Providers that cannot supply a valid history for a symbol/frame are counted as unavailable, not replaced with another frame.
+- BUY requires the symbol price above that same frame's SMA200; SELL requires it below and is limited to short-capable markets. Market-wide 24h breadth is informational and never vetoes a valid symbol-level setup.
 - Price momentum, candle pressure, structure, relative volume and optional Binance public trade-flow/order-book context rank candidates. The score is a confluence score out of 100, not a win probability.
-- Stops use recent swing structure with a volatility buffer; targets are 1R, 2R and 3R. The platform is manual-only and never sends orders.
-- Validate out of sample with fees, spread and slippage before relying on any strategy.
+- Stops remain behind recent swing invalidation with a volatility buffer; setups requiring a stop wider than 1.25% of entry are rejected. Gross price targets are +2%, +3% and +5% for BUY, and -2%, -3% and -5% for SELL. Fees, spread, slippage and leverage are not included in those percentages.
+- The platform is manual-only and never sends orders. Validate out of sample with fees, spread and slippage before relying on any strategy.
 
 ## Signal engine
 - Each successful timeframe scan replaces that timeframe's live batch, keeping up to three opportunities per market per timeframe. Previous rows remain in trade history and expire after 24 hours.

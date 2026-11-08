@@ -142,9 +142,9 @@ class AccountNewsSeoTests(unittest.TestCase):
         self.assertEqual(rejected["rejected_late_price"], 0)
         self.assertEqual(len(accepted), 1)
         self.assertAlmostEqual(accepted[0]["entry"], 100.1)
-        self.assertAlmostEqual(accepted[0]["tp1"], 101.2)
-        self.assertAlmostEqual(accepted[0]["tp2"], 102.3)
-        self.assertAlmostEqual(accepted[0]["tp3"], 103.4)
+        self.assertAlmostEqual(accepted[0]["tp1"], 102.102)
+        self.assertAlmostEqual(accepted[0]["tp2"], 103.103)
+        self.assertAlmostEqual(accepted[0]["tp3"], 105.105)
         self.assertEqual(accepted[0]["entry_price_source"], "live_market_quote")
 
     def test_fresh_signal_is_rejected_if_live_price_crossed_structural_stop(self):

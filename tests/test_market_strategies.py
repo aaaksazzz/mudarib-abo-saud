@@ -22,8 +22,8 @@ def candles(direction="UP", volume=True, count=220):
 
 class Sma200StrategyTests(unittest.TestCase):
     def test_fingerprint_and_timeframes(self):
-        self.assertEqual(STRATEGY_FINGERPRINT, "SMART-FLOW-SMA200-15M-V2-20261107")
-        self.assertEqual(TIMEFRAMES, ("15m",))
+        self.assertEqual(STRATEGY_FINGERPRINT, "SMART-FLOW-SMA200-MTF-2-3-5-V1-20261108")
+        self.assertEqual(TIMEFRAMES, ("15m","1h","4h","1d","1w","1M"))
         self.assertEqual(len(PROFILES), 7)
 
     def test_sma200_gate_allows_only_matching_direction(self):
@@ -33,23 +33,24 @@ class Sma200StrategyTests(unittest.TestCase):
         self.assertFalse(sma200_allows("SELL", 101, 100))
         self.assertFalse(sma200_allows("BUY", 100, 100))
 
-    def test_only_15m_is_analyzed(self):
-        signal = analyze("futures", "TEST", candles("UP"), timeframe="15m")
-        self.assertIsNotNone(signal)
-        self.assertEqual(signal["timeframe"], "15m")
-        self.assertGreater(signal["entry"], signal["ma200"])
-        for legacy_frame in ("1h", "4h", "1d", "1w", "1M"):
-            self.assertIsNone(analyze("futures", "TEST", candles("UP"), timeframe=legacy_frame))
+    def test_each_supported_timeframe_is_analyzed_independently(self):
+        for frame in TIMEFRAMES:
+            with self.subTest(timeframe=frame):
+                signal = analyze("futures", "TEST", candles("UP"), timeframe=frame)
+                self.assertIsNotNone(signal)
+                self.assertEqual(signal["timeframe"], frame)
+                self.assertGreater(signal["entry"], signal["ma200"])
 
-    def test_buy_signal_has_structural_stop_and_three_r_targets(self):
+    def test_buy_signal_has_structural_stop_and_2_3_5_percent_targets(self):
         signal = analyze("futures", "TEST", candles("UP"), timeframe="15m")
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "BUY")
         risk = signal["entry"] - signal["stop"]
         self.assertGreater(risk, 0)
-        self.assertAlmostEqual(signal["tp1"] - signal["entry"], risk)
-        self.assertAlmostEqual(signal["tp2"] - signal["entry"], risk * 2)
-        self.assertAlmostEqual(signal["tp3"] - signal["entry"], risk * 3)
+        self.assertLessEqual(risk / signal["entry"], 0.0125)
+        self.assertAlmostEqual((signal["tp1"] / signal["entry"] - 1) * 100, 2.0)
+        self.assertAlmostEqual((signal["tp2"] / signal["entry"] - 1) * 100, 3.0)
+        self.assertAlmostEqual((signal["tp3"] / signal["entry"] - 1) * 100, 5.0)
         self.assertGreaterEqual(signal["score"], 70)
         self.assertLessEqual(signal["score"], 100)
 
