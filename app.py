@@ -232,6 +232,80 @@ def signal_lab_script():
 def signal_lab_stylesheet():
     return send_from_directory(".", "signal-lab.css")
 
+@app.get("/api/signal-lab/scan")
+@limiter.limit("6 per minute")
+def signal_lab_scan():
+    """Paper-only 15m liquidity-sweep scanner for liquid USD-M perpetuals."""
+    try:
+        tickers=market_tickers("futures")
+        universe=tickers[:35]
+        def inspect_symbol(item):
+            symbol=item["symbol"]
+            try:
+                rows=fetch_json(BINANCE_FUTURES+"/fapi/v1/klines",{
+                    "symbol":symbol,"interval":"15m","limit":40
+                })
+                if not isinstance(rows,list) or len(rows)<23:
+                    return None
+                # Binance's final row is the still-forming candle; use the last closed candle only.
+                c=rows[-2]
+                op,hi,lo,cl=float(c[1]),float(c[2]),float(c[3]),float(c[4])
+                quote_vol=float(c[7])
+                prior=rows[-22:-2]
+                if len(prior)!=20 or min(op,hi,lo,cl)<=0 or hi<=lo:
+                    return None
+                prior_high=max(float(x[2]) for x in prior)
+                prior_low=min(float(x[3]) for x in prior)
+                avg_quote=sum(float(x[7]) for x in prior)/20
+                if avg_quote<=0:
+                    return None
+                vol_ratio=quote_vol/avg_quote
+                body_ratio=abs(cl-op)/(hi-lo)
+                long_sweep=lo<prior_low and cl>prior_low and cl>op
+                short_sweep=hi>prior_high and cl<prior_high and cl<op
+                if vol_ratio<1.20 or body_ratio<0.45 or not (long_sweep or short_sweep):
+                    return None
+                side="BUY" if long_sweep else "SELL"
+                entry=cl
+                stop=lo if side=="BUY" else hi
+                risk=abs(entry-stop)
+                risk_pct=(risk/entry)*100
+                if risk<=0 or risk_pct<0.05 or risk_pct>1.80:
+                    return None
+                sign=1 if side=="BUY" else -1
+                score=min(99,round(55+min(vol_ratio-1.2,2.0)*9+min(body_ratio,1)*15-max(0,risk_pct-0.8)*8))
+                return {
+                    "symbol":symbol,"side":side,"entry":round(entry,12),
+                    "stop":round(stop,12),"tp1":round(entry+sign*risk*1.5,12),
+                    "tp2":round(entry+sign*risk*2.0,12),"tp3":round(entry+sign*risk*3.0,12),
+                    "risk_pct":round(risk_pct,3),"volume_ratio":round(vol_ratio,2),
+                    "body_ratio":round(body_ratio,2),"score":score,
+                    "quote_volume_24h":round(float(item["quote_volume"]),2),
+                    "candle_time":int(c[0]),"timeframe":"15m",
+                    "reason":"سحب سيولة أسفل قاع 20 شمعة ثم إغلاق صاعد بحجم تداول مؤكد" if side=="BUY" else "سحب سيولة أعلى قمة 20 شمعة ثم إغلاق هابط بحجم تداول مؤكد"
+                }
+            except Exception:
+                app.logger.debug("signal lab scan skipped %s",symbol,exc_info=True)
+                return None
+        found=[]
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futures=[pool.submit(inspect_symbol,item) for item in universe]
+            for future in as_completed(futures):
+                signal=future.result()
+                if signal:
+                    found.append(signal)
+        found.sort(key=lambda x:(x["score"],x["quote_volume_24h"]),reverse=True)
+        return jsonify({
+            "ok":True,"strategy":"LIQUIDITY_SWEEP_15M_V1","timeframe":"15m",
+            "universe_checked":len(universe),"universe_eligible":len(tickers),
+            "signals":found[:3],"checked_at":iso(utcnow()),
+            "rules":{"lookback":20,"volume_ratio_min":1.2,"body_ratio_min":0.45,"max_risk_pct":1.8}
+        })
+    except Exception:
+        app.logger.exception("signal lab strategy scan failed")
+        return json_error("تعذر فحص عقود Binance Futures حالياً؛ حاول بعد قليل",502)
+
+
 @app.get("/api/signal-lab/klines")
 @limiter.limit("60 per minute")
 def signal_lab_klines():
