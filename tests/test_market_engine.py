@@ -540,7 +540,7 @@ class MarketEngineTests(unittest.TestCase):
                 self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
                 self.assertTrue(all(trade.side=="BUY" for trade in platform.Trade.query.all()))
 
-    def test_same_15m_candle_does_not_create_duplicate_trades(self):
+    def test_same_candle_does_not_create_duplicate_trades_per_timeframe(self):
         now_ms=int(platform.utcnow().timestamp()*1000)
         signal = {
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":99.0,
