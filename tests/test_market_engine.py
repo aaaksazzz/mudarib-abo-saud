@@ -188,7 +188,7 @@ class MarketEngineTests(unittest.TestCase):
         response = self.client.get("/api/strategy-status")
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertEqual(data["fingerprint"], "SMART-FLOW-SMA200-MTF-2-3-5-V1-20261108")
+        self.assertEqual(data["fingerprint"], "SMART-FLOW-15M-1H-4H-1D-1W-1M-TREND-V4-20261108")
         self.assertEqual(data["engine"], "SMART FLOW QUANT")
         self.assertEqual(data["timeframes"], ["15m","1h","4h","1d","1w","1M"])
         self.assertEqual(len(data["markets"]), 7)
@@ -613,7 +613,7 @@ class MarketEngineTests(unittest.TestCase):
                 self.assertEqual(platform.Trade.query.count(), 1)
                 self.assertTrue(all(trade.side=="BUY" for trade in platform.Trade.query.all()))
 
-    def test_same_candle_does_not_create_duplicate_trades_per_timeframe(self):
+    def test_same_candle_does_not_create_duplicate_15m_trade(self):
         now_ms=int(platform.utcnow().timestamp()*1000)
         signal = {
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":99.0,
@@ -637,7 +637,7 @@ class MarketEngineTests(unittest.TestCase):
                 self.assertEqual(len(first["signals"]), 1)
                 self.assertEqual(platform.Trade.query.count(), 1)
                 second = platform.run_market_scan("spot", force=True)
-                self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
+                self.assertEqual(platform.Trade.query.count(), 1)
                 self.assertEqual(len(second["signals"]), 1)
                 self.assertTrue(all(x.status == "active" for x in platform.Trade.query.all()))
                 candle_time["15m"] += 1
