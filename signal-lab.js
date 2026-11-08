@@ -12,10 +12,10 @@ function valid(s){const long=s.side==="BUY";return s.entry>0&&s.stop>0&&s.tp1>0&
 function localInputNow(){const d=new Date(Date.now()-new Date().getTimezoneOffset()*60000);return d.toISOString().slice(0,16)}
 function signedMove(entry,exit,side){return (exit/entry-1)*(side==="BUY"?1:-1)*100}
 function netFor(s,kind){const r=signedMove(s.entry,s[kind],s.side);return r-s.fee}
-function resultFor(s){const st=s.status;if(st==="tp3_hit")return (signedMove(s.entry,s.tp1,s.side)+signedMove(s.entry,s.tp2,s.side)+signedMove(s.entry,s.tp3,s.side))/3-s.fee;if(st==="stopped_after_tp2")return (signedMove(s.entry,s.tp1,s.side)+signedMove(s.entry,s.tp2,s.side)-signedMove(s.entry,s.stop,s.side)*-1)/3-s.fee;if(st==="stopped_after_tp1")return (signedMove(s.entry,s.tp1,s.side)-2*Math.abs(signedMove(s.entry,s.stop,s.side)))/3-s.fee;if(st==="tp2_hit")return (signedMove(s.entry,s.tp1,s.side)+signedMove(s.entry,s.tp2,s.side))/2-s.fee;if(st==="tp1_hit")return signedMove(s.entry,s.tp1,s.side)-s.fee;if(st==="stopped")return signedMove(s.entry,s.stop,s.side)-s.fee;return null}
+function resultFor(s){const st=s.status,risk=Math.abs(signedMove(s.entry,s.stop,s.side));if(st==="tp3_hit")return (signedMove(s.entry,s.tp1,s.side)+signedMove(s.entry,s.tp2,s.side)+signedMove(s.entry,s.tp3,s.side))/3-s.fee;if(st==="stopped_after_tp2")return (signedMove(s.entry,s.tp1,s.side)+signedMove(s.entry,s.tp2,s.side)-risk)/3-s.fee;if(st==="stopped_after_tp1")return (signedMove(s.entry,s.tp1,s.side)-2*risk)/3-s.fee;if(st==="stopped")return -risk-s.fee;return null}
 function label(s){return ({active:"قيد المتابعة",unfilled:"الدخول لم يتفعل",tp1_hit:"وصل TP1",tp2_hit:"وصل TP2",tp3_hit:"وصل TP3",stopped:"وقف قبل TP1",stopped_after_tp1:"وقف بعد TP1",stopped_after_tp2:"وقف بعد TP2",expired:"انتهت مدة المتابعة"})[s.status]||"قيد المتابعة"}
 function statusClass(s){return ["tp1_hit","tp2_hit","tp3_hit","stopped_after_tp1","stopped_after_tp2"].includes(s.status)?"good":s.status==="stopped"?"bad":""}
-function summarize(items){const done=items.filter(s=>resultFor(s)!==null),filled=items.filter(s=>!["unfilled","expired"].includes(s.status)),tp1=items.filter(s=>["tp1_hit","tp2_hit","tp3_hit","stopped_after_tp1","stopped_after_tp2"].includes(s.status)).length,stops=items.filter(s=>s.status==="stopped").length;const net=done.reduce((a,s)=>a+resultFor(s),0);return {total:items.length,filled:filled.length,tp1,stops,net,closed:done.length}}
+function summarize(items){const done=items.filter(s=>resultFor(s)!==null),filled=items.filter(s=>!!s.filledAt).length,tp1=items.filter(s=>Number(s.maxTarget||0)>=1).length,stops=items.filter(s=>s.status==="stopped").length;const net=done.reduce((a,s)=>a+resultFor(s),0);return {total:items.length,filled:filled.length,tp1,stops,net,closed:done.length}}
 function render(){
  const all=summarize(signals);$("s-total").textContent=all.total;$("s-filled").textContent=all.filled;$("s-tp1").textContent=all.tp1;$("s-stop").textContent=all.stops;$("s-net").textContent=all.net.toFixed(2)+"%";
  $("s-net").style.color=all.net>=0?"#56d6ad":"#ff747d";
@@ -27,7 +27,7 @@ function render(){
 }
 async function fetchCandles(symbol,start){const u="/api/signal-lab/klines?symbol="+encodeURIComponent(symbol)+"&startTime="+encodeURIComponent(start);const r=await fetch(u,{cache:"no-store"});const d=await r.json();if(!r.ok)throw Error(d.error||"تعذر جلب الشموع");return d.candles||[]}
 function trackOne(s,candles,now){
- if(s.status!=="active")return false;
+ if(!["active","tp1_hit","tp2_hit"].includes(s.status))return false;
  let changed=false,filled=!!s.filledAt,lastClose=0;
  const start=Math.ceil(s.sentAt/INTERVAL)*INTERVAL;
  for(const c of candles){const t=Number(c[0]),high=Number(c[1]),low=Number(c[2]),close=Number(c[3]);if(t<start||close>now)continue;lastClose=close;
@@ -47,7 +47,7 @@ async function refresh(){
  if(busy||!signals.some(s=>s.status==="active"))return;
  busy=true;$("last-check").textContent="جارٍ تحديث الشموع…";
  try{
-  const now=Date.now(),active=signals.filter(s=>s.status==="active"),symbols=[...new Set(active.map(s=>s.symbol))];let changed=0;
+  const now=Date.now(),active=signals.filter(s=>["active","tp1_hit","tp2_hit"].includes(s.status)),symbols=[...new Set(active.map(s=>s.symbol))];let changed=0;
   for(const symbol of symbols){const batch=active.filter(s=>s.symbol===symbol);const oldest=Math.min(...batch.map(s=>s.sentAt));if(now-oldest>MAX_AGE){batch.forEach(s=>{if(s.status==="active"){s.status=s.filledAt?"expired":"unfilled";s.closedAt=now;changed++}});continue}
    const candles=await fetchCandles(symbol,Math.max(oldest,now-MAX_AGE));for(const s of batch)if(trackOne(s,candles,now))changed++;
   }
