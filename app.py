@@ -928,7 +928,7 @@ def run_market_scan(market,force=False):
                 Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe=="15m",
                 Trade.expires_at>now,Trade.reason.like("%"+CURRENT_STRATEGY_MARKER+"%")
             ).count():
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")).order_by(Trade.score.desc()).limit(18).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("%"+CURRENT_STRATEGY_MARKER+"%")).order_by(Trade.score.desc()).limit(18).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
                     meta=json.loads(meta_row.value) if meta_row else {}
@@ -1146,7 +1146,7 @@ def run_market_scan(market,force=False):
         else:
             frame_meta_row.value=frame_meta
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")).order_by(Trade.score.desc()).limit(18).all()
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("%"+CURRENT_STRATEGY_MARKER+"%")).order_by(Trade.score.desc()).limit(18).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
             "scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
             "analysis_completed":completed,"analysis_failed":failed,"strategy_matches":strategy_matches,
