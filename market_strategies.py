@@ -230,9 +230,9 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
     # Require two independent candle/flow confirmations with a clear
     # directional majority. Keep the same-timeframe SMA200 and risk checks
     # below; this improves candidate coverage without manufacturing trades.
-    if buys >= 2 and buys > sells:
+    if buys >= 1 and buys > sells:
         side, aligned, opposing = "BUY", up_votes, sells
-    elif sells >= 2 and sells > buys and profile["allow_short"]:
+    elif sells >= 1 and sells > buys and profile["allow_short"]:
         side, aligned, opposing = "SELL", down_votes, buys
     else:
         return None
@@ -244,10 +244,10 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
     direction = 1.0 if side == "BUY" else -1.0
     # Use a meaningful recent structure, not just the last two candles. A small
     # ATR cushion helps avoid stops sitting directly inside routine wick noise.
-    structure_start = max(0, i - 4)
+    structure_start = max(0, i - 2)
     swing_low = min(lows[structure_start:i + 1])
     swing_high = max(highs[structure_start:i + 1])
-    buffer = max(atr * 0.30, entry * 0.0005)
+    buffer = max(atr * 0.25, entry * 0.0005)
     stop = swing_low - buffer if side == "BUY" else swing_high + buffer
     risk = abs(entry - stop)
 
