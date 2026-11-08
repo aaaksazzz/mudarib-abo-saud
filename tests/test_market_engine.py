@@ -166,7 +166,7 @@ class MarketEngineTests(unittest.TestCase):
         now = platform.utcnow()
         current = int(now.timestamp() * 1000)
         good = {"symbol":"BTCUSDT","timeframe":"15m","signal_candle_time":current-900000,
-                "side":"BUY","entry":100.0,"stop":99.0,"tp1":103.0,"atr":0.7}
+                "side":"BUY","entry":100.0,"stop":98.5,"tp1":104.5,"atr":0.7}
         late = {**good,"symbol":"LATEUSDT"}
         old = {**good,"symbol":"OLDUSDT","signal_candle_time":current-3600000}
         accepted, counts = platform.filter_fresh_signals(
@@ -199,7 +199,7 @@ class MarketEngineTests(unittest.TestCase):
         response = self.client.get("/api/strategy-status")
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertEqual(data["fingerprint"], "SMART-FLOW-15M-1H-4H-1D-1W-1M-RR-3-6-9-V5-20261108")
+        self.assertEqual(data["fingerprint"], "SMART-FLOW-15M-1H-4H-1D-1W-1M-RR-3-6-9-WIDE-STOP-V6-20261109")
         self.assertEqual(data["engine"], "SMART FLOW QUANT")
         self.assertEqual(data["timeframes"], ["15m","1h","4h","1d","1w","1M"])
         self.assertEqual(len(data["markets"]), 7)
