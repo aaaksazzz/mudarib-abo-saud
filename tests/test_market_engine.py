@@ -633,8 +633,8 @@ class MarketEngineTests(unittest.TestCase):
     def test_same_candle_does_not_create_duplicate_15m_trade(self):
         now_ms=int(platform.utcnow().timestamp()*1000)
         signal = {
-            "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":99.0,
-            "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,"atr":1.0,
+            "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":98.5,
+            "tp1":104.5,"tp2":109.0,"tp3":113.5,"score":84.5,"atr":1.0,
             "change_pct":1.2,"timeframe":"15m","signal_candle_time":now_ms-900000-1000,
             "reason":"SMART FLOW QUANT:: confirmed."
         }
