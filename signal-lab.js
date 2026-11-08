@@ -44,11 +44,11 @@ function trackOne(s,candles,now){
  return changed;
 }
 async function refresh(){
- if(busy||!signals.some(s=>s.status==="active"))return;
+ if(busy||!signals.some(s=>["active","tp1_hit","tp2_hit"].includes(s.status)))return;
  busy=true;$("last-check").textContent="جارٍ تحديث الشموع…";
  try{
   const now=Date.now(),active=signals.filter(s=>["active","tp1_hit","tp2_hit"].includes(s.status)),symbols=[...new Set(active.map(s=>s.symbol))];let changed=0;
-  for(const symbol of symbols){const batch=active.filter(s=>s.symbol===symbol);const oldest=Math.min(...batch.map(s=>s.sentAt));if(now-oldest>MAX_AGE){batch.forEach(s=>{if(s.status==="active"){s.status=s.filledAt?"expired":"unfilled";s.closedAt=now;changed++}});continue}
+  for(const symbol of symbols){const batch=active.filter(s=>s.symbol===symbol);const oldest=Math.min(...batch.map(s=>s.sentAt));if(now-oldest>MAX_AGE){batch.forEach(s=>{if(["active","tp1_hit","tp2_hit"].includes(s.status)){s.status=s.filledAt?"expired":"unfilled";s.closedAt=now;changed++}});continue}
    const candles=await fetchCandles(symbol,Math.max(oldest,now-MAX_AGE));for(const s of batch)if(trackOne(s,candles,now))changed++;
   }
   if(changed)save();$("last-check").textContent="آخر تحديث: "+new Date().toLocaleTimeString("ar-SA");render();
