@@ -64,37 +64,21 @@ let renderVersion=0,overviewRefreshTimer=null,lastOverviewRefresh=0;
 function pageFromHash(){const key=location.hash.replace(/^#\/?/,"").split(/[/?]/)[0];return validPages.has(key)?key:"overview"}
 function pageFromLocation(){const path=location.pathname.replace(/\/$/,"")||"/";const route=Object.entries(pagePaths).find(([,url])=>url===path);return route?route[0]:pageFromHash()}
 function openPage(page,{pushHistory=true}={}){if(!validPages.has(page))page="overview";if(pushHistory&&pageFromLocation()!==page)history.pushState({page},"",pagePaths[page]||"/");document.querySelectorAll("[data-page]").forEach(b=>{const active=b.dataset.page===page;b.classList.toggle("active",active);if(active)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});$("#sidebar").classList.remove("open");$("#scrim").classList.remove("show");renderPage(page)}
-function renderPage(page){if(!validPages.has(page))page="overview";if(overviewRefreshTimer){clearInterval(overviewRefreshTimer);overviewRefreshTimer=null}currentPage=page;const version=++renderVersion;setTitle(page);const root=$("#dynamicContent");root.innerHTML='<div class="loading-state">جارٍ تحميل البيانات...</div>';if(page==="overview"){overview(root,version);overviewRefreshTimer=setInterval(()=>{if(currentPage==="overview"&&document.visibilityState==="visible")overview(root,renderVersion)},15*60*1000);return}if(page==="plans")return plansPage(root);if(marketNames[page])return marketPage(root,page,version);if(page==="admin")return adminPage(root);if(page==="journal")return journalPage(root);if(page==="blog"||page==="news")return contentPage(root,page)}
+function renderPage(page){if(!validPages.has(page))page="overview";if(overviewRefreshTimer){clearInterval(overviewRefreshTimer);overviewRefreshTimer=null}currentPage=page;const version=++renderVersion;setTitle(page);const root=$("#dynamicContent");if(page==="overview"){root.innerHTML='<div class="market-grid"><article class="market-card"><h3>SMART TRADING PRO</h3><p>اختر السوق لعرض الاتجاه والبيانات والفرص</p></article></div>';overview(root,version);overviewRefreshTimer=setInterval(()=>{if(currentPage==="overview"&&document.visibilityState==="visible")overview(root,renderVersion)},15*60*1000);return}if(page==="plans")return plansPage(root);if(marketNames[page])return marketPage(root,page,version);if(page==="admin")return adminPage(root);if(page==="journal")return journalPage(root);if(page==="blog"||page==="news")return contentPage(root,page)}
 document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&currentPage==="overview"&&Date.now()-lastOverviewRefresh>=15*60*1000)overview($("#dynamicContent"),renderVersion)});
-function overviewMarketCard(m,s){
- const ready=!!(s&&s.ready!==false&&s.direction&&Number.isFinite(Number(s.total)));
- const direction=ready?s.direction:"غير متاح";
- const tone=direction==="صاعد"?"positive":direction==="هابط"?"negative":"muted-label";
- const breadth=ready?(Number(s.up||0)+" صاعد / "+Number(s.down||0)+" هابط · "+(s.side==="BUY"?"شراء":s.side==="SELL"?"بيع":"متعادل")):"بيانات الاتجاه غير متاحة";
- const status=ready?(s.stale?"آخر نسخة محفوظة · قديمة":s.cache_status==="fresh"?"محفوظة · تتحدث كل 15 دقيقة":"تم التحديث الآن"):(m.provider.configured?"بانتظار بيانات موثوقة":"مصدر البيانات غير مهيأ");
- return '<article class="market-card market-open" role="button" tabindex="0" data-open="'+esc(m.id)+'"><div class="market-card-top"><span class="market-type">'+esc(m.id.toUpperCase())+'</span><span class="status-pending">'+(m.enabled?"مفتوح":"موقوف")+'</span></div><h3>'+esc(marketNames[m.id])+'</h3><p>'+esc(m.provider.configured?m.provider.source:"مصدر البيانات غير مهيأ")+'</p><div class="market-overview-direction"><span>الاتجاه <b class="'+tone+'">'+esc(direction)+'</b></span><small>'+esc(breadth)+'</small></div><div class="market-card-bottom"><span class="empty-status">'+status+'</span><span class="arrow">↙</span></div></article>';
+function overviewMarketCard(m){
+ return '<article class="market-card market-open" role="button" tabindex="0" data-open="'+esc(m.id)+'"><div class="market-card-top"><span class="market-type">'+esc(m.id.toUpperCase())+'</span><span class="status-pending">'+(m.enabled?"مفتوح":"موقوف")+'</span></div><h3>'+esc(marketNames[m.id])+'</h3><p>'+esc(m.provider.configured?m.provider.source:"مصدر البيانات غير مهيأ")+'</p><div class="market-card-bottom"><span class="empty-status">افتح السوق لعرض الاتجاه والفرص</span><span class="arrow">↙</span></div></article>';
 }
 async function overview(root,version=renderVersion){
  lastOverviewRefresh=Date.now();
  try{
-  const marketIds=["spot","futures","alpha","us-stocks","us-contracts","saudi","forex"];
-  const [markets,snapshots]=await Promise.all([
-   api("/api/markets"),
-   Promise.all(marketIds.map(m=>api("/api/markets/"+m+"/snapshot").catch(()=>null)))
-  ]);
+  const markets=await api("/api/markets");
   if(version!==renderVersion||currentPage!=="overview")return;
-  const byMarket=Object.fromEntries(snapshots.filter(Boolean).map(x=>[x.market,x]));
-  const cards=markets.markets.map(m=>overviewMarketCard(m,byMarket[m.id])).join("");
-  const failed=snapshots.filter(x=>!x).length;
-  const stale=snapshots.filter(x=>x&&x.stale).length;
-  const updated=snapshots.map(x=>x&&Date.parse(x.updated_at)).filter(Number.isFinite);
-  const latest=updated.length?new Date(Math.min(...updated)).toLocaleString(document.documentElement.lang==="en"?"en-US":"ar-SA",{dateStyle:"medium",timeStyle:"short"}):"—";
-  const message=failed?"تعذر جلب بعض الأسواق؛ نعرض آخر بيانات محفوظة عند توفرها.":stale?"بعض الأسواق تعرض آخر نسخة محفوظة بسبب تعذر التحديث.":"بيانات الأسواق محفوظة تلقائيًا وتتحدث كل 15 دقيقة. آخر تحديث: "+latest;
-  root.innerHTML='<div class="notice-bar"><span class="notice-symbol">!</span><span>'+esc(message)+'</span></div><div class="market-grid">'+cards+'</div><p class="market-overview-footnote">الاتجاهات مبنية على اتساع السوق خلال 24 ساعة. البيانات محفوظة في قاعدة البيانات وتتحدث كل 15 دقيقة.</p>';
+  root.innerHTML='<div class="market-grid">'+markets.markets.map(m=>overviewMarketCard(m)).join("")+'</div><p class="market-overview-footnote">افتح أي سوق لعرض اتجاهه وبياناته المحفوظة والفرص الخاصة به.</p>';
   root.querySelectorAll("[data-open]").forEach(x=>{x.addEventListener("click",()=>openPage(x.dataset.open));x.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openPage(x.dataset.open)}})});
  }catch(e){
   if(version!==renderVersion||currentPage!=="overview")return;
-  root.innerHTML='<div class="panel empty-state"><b>تعذر تحميل إعدادات لوحة الأسواق</b><p>'+esc(e.message)+'</p><button class="login-btn" id="retryOverview">إعادة المحاولة</button></div>';
+  root.innerHTML='<div class="panel empty-state"><b>تعذر تحميل قائمة الأسواق</b><p>'+esc(e.message)+'</p><button class="login-btn" id="retryOverview">إعادة المحاولة</button></div>';
   $("#retryOverview").onclick=()=>overview(root,renderVersion);
  }
 }
