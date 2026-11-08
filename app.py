@@ -709,7 +709,7 @@ def filter_fresh_signals(signals, universe, now=None):
                 continue
             # The published entry is the actual quote at approval time, not the
             # previous candle close. Rebuild all R-multiple targets from that entry.
-            if live_risk > current * 0.0125:
+            if live_risk > current * 0.015:
                 rejected_moved+=1
                 continue
             # Recalculate objectives from the live entry and the actual
