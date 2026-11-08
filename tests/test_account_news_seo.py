@@ -133,8 +133,8 @@ class AccountNewsSeoTests(unittest.TestCase):
         signal = {
             "symbol": "TESTUSDT", "side": "BUY", "timeframe": "15m",
             "signal_candle_time": int(now.timestamp() * 1000) - 900000,
-            "entry": 100.0, "stop": 99.0, "tp1": 101.0, "tp2": 102.0,
-            "tp3": 103.0, "atr": 1.0,
+            "entry": 100.0, "stop": 98.8, "tp1": 103.6, "tp2": 107.2,
+            "tp3": 110.8, "atr": 1.0,
         }
         accepted, rejected = platform_app.filter_fresh_signals(
             [signal], [{"symbol": "TESTUSDT", "price": 100.1}], now
@@ -142,9 +142,9 @@ class AccountNewsSeoTests(unittest.TestCase):
         self.assertEqual(rejected["rejected_late_price"], 0)
         self.assertEqual(len(accepted), 1)
         self.assertAlmostEqual(accepted[0]["entry"], 100.1)
-        self.assertAlmostEqual(accepted[0]["tp1"], 102.102)
-        self.assertAlmostEqual(accepted[0]["tp2"], 103.103)
-        self.assertAlmostEqual(accepted[0]["tp3"], 105.105)
+        self.assertAlmostEqual(accepted[0]["tp1"], 104.0)
+        self.assertAlmostEqual(accepted[0]["tp2"], 107.9)
+        self.assertAlmostEqual(accepted[0]["tp3"], 111.8)
         self.assertEqual(accepted[0]["entry_price_source"], "live_market_quote")
 
     def test_fresh_signal_is_rejected_if_live_price_crossed_structural_stop(self):
