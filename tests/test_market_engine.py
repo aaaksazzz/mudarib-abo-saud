@@ -437,7 +437,7 @@ class MarketEngineTests(unittest.TestCase):
         )
         self.assertEqual((status,count),("active",0))
 
-    def test_market_volume_strategy_preserves_dive_atr_levels(self):
+    def test_market_volume_strategy_preserves_directional_2_3_5_targets(self):
         rows = [[i * 900000, 100, 101, 99, 100, 1000] for i in range(120)]
         setup = {"side":"BUY","entry":100.0,"stop":97.0,"tp1":103.0,"tp2":106.0,
                  "tp3":109.0,"score":84.0,"timeframe":"15m","change_pct":0.5,
@@ -445,14 +445,13 @@ class MarketEngineTests(unittest.TestCase):
         with patch.object(platform, "klines", return_value=rows), patch.object(platform.market_strategies, "analyze", return_value=setup):
             signal = platform.build_signal("spot", {"symbol":"BTCUSDT","quote_volume":50000000}, "15m")
         self.assertEqual(signal["side"], "BUY")
-        risk = signal["entry"] - signal["stop"]
-        self.assertAlmostEqual(signal["tp1"] - signal["entry"], risk)
-        self.assertAlmostEqual(signal["tp2"] - signal["entry"], 2 * risk)
-        self.assertAlmostEqual(signal["tp3"] - signal["entry"], 3 * risk)
+        self.assertAlmostEqual((signal["tp1"] / signal["entry"] - 1) * 100, 2.0)
+        self.assertAlmostEqual((signal["tp2"] / signal["entry"] - 1) * 100, 3.0)
+        self.assertAlmostEqual((signal["tp3"] / signal["entry"] - 1) * 100, 5.0)
         self.assertIn("SMART FLOW QUANT:", signal["reason"])
 
-    def test_only_15m_is_returned(self):
-        self.assertEqual(platform.TIMEFRAMES, ("15m",))
+    def test_api_returns_only_the_requested_timeframe(self):
+        self.assertEqual(platform.TIMEFRAMES, ("15m","1h","4h","1d","1w","1M"))
         with platform.app.app_context():
             now = platform.utcnow()
             platform.db.session.add_all([
@@ -463,6 +462,7 @@ class MarketEngineTests(unittest.TestCase):
                     tp1=105, tp2=110, tp3=115, score=85, timeframe="15m",
                     reason="SMART FLOW QUANT:: current frame | bar_ts=123", expires_at=now + timedelta(hours=1)),
                 platform.Setting(key="scan:spot", value=platform.iso(now)),
+                platform.Setting(key="scan:spot:1h", value=platform.iso(now)),
             ])
             platform.db.session.commit()
         response = self.client.get("/api/markets/spot/signals")
@@ -470,7 +470,7 @@ class MarketEngineTests(unittest.TestCase):
         signals = response.get_json()["signals"]
         self.assertEqual([x["symbol"] for x in signals], ["NEWUSDT"])
         hourly = self.client.get("/api/markets/spot/signals?timeframe=1h").get_json()["signals"]
-        self.assertEqual([x["symbol"] for x in hourly], ["NEWUSDT"])
+        self.assertEqual([x["symbol"] for x in hourly], ["OLDUSDT"])
 
     def test_public_routes_do_not_disclose_strategy_details(self):
         self.assertEqual(self.client.get("/api/strategies").status_code, 404)
@@ -504,7 +504,7 @@ class MarketEngineTests(unittest.TestCase):
                 ticker_source.assert_called_once()
 
     # Current-strategy fixtures must use the same reason prefix as production signals.
-    def test_scan_checks_rotating_batch_of_eligible_assets_on_15m_only(self):
+    def test_scan_checks_rotating_batch_on_each_due_timeframe(self):
         items = [{"symbol":f"COIN{i}USDT","price":1.0,"change_pct":float(i),"quote_volume":1_000_000.0+i} for i in range(70)]
         visited=[]
         def capture(market,item,timeframe):
@@ -515,11 +515,11 @@ class MarketEngineTests(unittest.TestCase):
                 result=platform.run_market_scan("futures",force=True)
         self.assertEqual(result["scan_universe"],70)
         self.assertEqual(result["scan_batch_size"],70)
-        self.assertEqual(len(visited),70)
+        self.assertEqual(len(visited),70*len(platform.TIMEFRAMES))
         self.assertEqual({symbol for symbol, _ in visited}, {f"COIN{i}USDT" for i in range(70)})
-        self.assertEqual({frame for _, frame in visited}, {"15m"})
+        self.assertEqual({frame for _, frame in visited}, set(platform.TIMEFRAMES))
 
-    def test_signals_must_match_market_direction(self):
+    def test_valid_asset_signal_is_not_vetoed_by_market_breadth(self):
         now_ms=int(platform.utcnow().timestamp()*1000)
         signal = {
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":99.0,
@@ -536,8 +536,9 @@ class MarketEngineTests(unittest.TestCase):
             ]), patch.object(platform, "build_signal", side_effect=per_frame):
                 result = platform.run_market_scan("futures", force=True)
                 self.assertEqual(result["market_bias"], "SELL")
-                self.assertEqual(len(result["signals"]), 0)
-                self.assertEqual(platform.Trade.query.count(), 0)
+                self.assertEqual(len(result["signals"]), len(platform.TIMEFRAMES))
+                self.assertEqual(platform.Trade.query.count(), len(platform.TIMEFRAMES))
+                self.assertTrue(all(trade.side=="BUY" for trade in platform.Trade.query.all()))
 
     def test_same_15m_candle_does_not_create_duplicate_trades(self):
         now_ms=int(platform.utcnow().timestamp()*1000)
@@ -621,8 +622,8 @@ class MarketEngineTests(unittest.TestCase):
             rows = platform.market_tickers("spot")
         self.assertEqual(rows, [])
 
-    def test_strategy_exposes_only_15m(self):
-        self.assertEqual(platform.TIMEFRAMES, ("15m",))
+    def test_strategy_exposes_six_independent_timeframes(self):
+        self.assertEqual(platform.TIMEFRAMES, ("15m","1h","4h","1d","1w","1M"))
         self.assertEqual(platform.provider_status("spot")["timeframes"], list(platform.TIMEFRAMES))
 
     def test_registration_accepts_unicode_letters_and_digits(self):
