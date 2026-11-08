@@ -228,6 +228,10 @@ def signal_lab_page():
 def signal_lab_script():
     return send_from_directory(".", "signal-lab.js")
 
+@app.get("/signal-lab.css")
+def signal_lab_stylesheet():
+    return send_from_directory(".", "signal-lab.css")
+
 @app.get("/api/signal-lab/klines")
 @limiter.limit("60 per minute")
 def signal_lab_klines():
