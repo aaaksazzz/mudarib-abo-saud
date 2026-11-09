@@ -1,19 +1,19 @@
+import math
 import unittest
 from rebuild.strategy import analyze, read_frame
 
 
-def trend_rows(up=True, n=50):
+def trend_rows(up=True, n=80):
     rows = []
-    price = 100.0
     for i in range(n):
-        step = 1.0 if up else -1.0
-        op = price
-        close = price + step * 0.8
-        high = max(op, close) + 0.2
-        low = min(op, close) - 0.2
+        drift = 0.45 * i if up else -0.45 * i
+        wave = math.sin(i * math.pi / 2) * 1.8
+        close = 100 + drift + wave
+        op = close - (0.25 if up else -0.25)
+        high = max(op, close) + 0.25
+        low = min(op, close) - 0.25
         rows.append([i, op, high, low, close, 1000 + i * 5])
-        price = close
-    rows.append([n, price, price + 0.2, price - 0.2, price, 1000])
+    rows.append([n, rows[-1][4], rows[-1][4] + 0.2, rows[-1][4] - 0.2, rows[-1][4], 1000])
     return rows
 
 
