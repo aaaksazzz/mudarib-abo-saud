@@ -90,7 +90,7 @@ def _google_news(symbol, market, display_name=None):
         score = _headline_score(title)
         if score:
             items.append({"title": title[:350], "source": source, "source_url": source_url,
-                          "published_at": published, "score": score,
+                          "published_at": published, "article_url": (node.findtext("link") or "").strip(), "score": score,
                           "weight": _publisher_weight(source) * _freshness_weight(published),
                           "provider": "Google News RSS"})
     return items
@@ -116,7 +116,7 @@ def _stocktwits(symbol):
         items.append({"title": str(message.get("body") or "")[:350],
                       "source": "Stocktwits community", "source_url": "",
                       "published_at": str(message.get("created_at") or ""),
-                      "score": score, "weight": weight, "provider": "Stocktwits"})
+                      "article_url": "https://stocktwits.com/symbol/" + quote(symbol), "score": score, "weight": weight, "provider": "Stocktwits"})
     return items
 
 def collect_sentiment(symbol, market, display_name=None):
