@@ -106,6 +106,18 @@ class Trade(db.Model):
     result_pct=db.Column(db.Float)
     change_15m_pct=db.Column(db.Float)
 
+def trade_json(trade):
+    """Stable public journal shape for historical paper-trade records."""
+    return {
+        "id":trade.id,"market":trade.market,"symbol":trade.symbol,"side":trade.side,
+        "entry":trade.entry,"stop":trade.stop,"tp1":trade.tp1,"tp2":trade.tp2,
+        "tp3":trade.tp3,"score":trade.score,"timeframe":trade.timeframe,
+        "reason":trade.reason,"status":trade.status,
+        "created_at":iso(trade.created_at),"expires_at":iso(trade.expires_at),
+        "result_pct":trade.result_pct,"change_pct":trade.change_15m_pct,
+    }
+
+
 class Article(db.Model):
     id=db.Column(db.Integer, primary_key=True)
     kind=db.Column(db.String(10), nullable=False, default="blog")
@@ -247,38 +259,8 @@ def signal_lab_scan():
     return json_error("مختبر الاستراتيجية القديمة متوقف؛ استخدم تحليل حركة السعر الكلاسيكي",410)
 
 @app.get("/api/signal-lab/klines")
-@limiter.limit("60 per minute")
 def signal_lab_klines():
-    symbol=str(request.args.get("symbol","")).strip().upper()
-    if not re.fullmatch(r"[A-Z0-9]{2,26}USDT",symbol):
-        return json_error("رمز العملة غير صحيح")
-    try:
-        start_ms=int(request.args.get("startTime",""))
-    except (TypeError,ValueError):
-        return json_error("وقت بداية التوصية غير صحيح")
-    now_ms=int(utcnow().timestamp()*1000)
-    if start_ms<now_ms-10*24*60*60*1000 or start_ms>now_ms:
-        return json_error("المتابعة متاحة للتوصيات التي وصلتنا خلال آخر 10 أيام فقط")
-    try:
-        if symbol not in market_symbols("futures"):
-            return json_error("العملة غير مدرجة في عقود Binance USD-M",404)
-        rows=fetch_json(BINANCE_FUTURES+"/fapi/v1/klines",{
-            "symbol":symbol,"interval":"15m","startTime":start_ms,"limit":1000
-        })
-        candles=[]
-        for row in rows:
-            try:
-                opened=int(row[0]); high=float(row[2]); low=float(row[3]); closed=int(row[6])
-                if not all(math.isfinite(value) for value in (high,low)) or high<=0 or low<=0 or high<low:
-                    continue
-                candles.append([opened,high,low,closed])
-            except (TypeError,ValueError,IndexError,OverflowError):
-                continue
-        return jsonify({"ok":True,"symbol":symbol,"timeframe":"15m","candles":candles,"source":"Binance USD-M public klines","checked_at":iso(utcnow())})
-    except Exception:
-        app.logger.exception("signal lab candle fetch failed: %s",symbol)
-        return json_error("تعذر جلب شموع Binance الآن؛ ستتم إعادة المحاولة لاحقاً",502)
-
+    return json_error("واجهة المختبر القديمة متوقفة؛ استخدم تحليل حركة السعر",410)
 
 @app.get("/blog/<slug>")
 def public_article_page(slug):
@@ -329,8 +311,15 @@ def pro_theme(): return send_from_directory(".", "pro-theme.css")
 def compat_styles(): return send_from_directory(".", "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
-    diagnostic=market_strategies.diagnostic_self_test()
-    return jsonify({"ok":diagnostic["ok"],"strategy": "SMART FLOW MTF QUANT + SMA200", **diagnostic}), 200 if diagnostic["ok"] else 500
+    return jsonify({
+        "ok":True,"strategy":"CLASSIC PRICE ACTION",
+        "engine":"CLASSIC PRICE ACTION",
+        "fingerprint":market_price_action.STRATEGY_FINGERPRINT,
+        "markets":list(MARKETS),
+        "internal_contexts":list(market_price_action.TIMEFRAMES),
+        "user_timeframe_filters":False,
+        "manual_only":True,
+    })
 
 @app.get("/health")
 def health():
@@ -365,7 +354,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "sentiment_engine":True}
+            "price_action_engine":market_price_action.STRATEGY_FINGERPRINT.startswith("CLASSIC-PRICE-ACTION-MTF-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True

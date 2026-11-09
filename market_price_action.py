@@ -92,18 +92,29 @@ def _inspect(item,market,klines_fn):
     if not symbol:return None
     results={}
     candle_sets={}
+    provider_failures=[]
     for tf in TIMEFRAMES:
         try:
             rows=klines_fn(market,symbol,tf,90)
+            if len(_bars(rows))<22:
+                provider_failures.append(tf+": insufficient completed candles")
+                continue
             candle_sets[tf]=rows
             p=_pattern(rows)
             if p:results[tf]=p
-        except Exception:continue
+        except Exception as exc:
+            provider_failures.append(tf+": "+type(exc).__name__)
+    # Do not silently report a clean no-signal result when most candle feeds failed.
+    if len(candle_sets)<2:
+        raise RuntimeError("Insufficient candle coverage ("+str(len(candle_sets))+"/"+str(len(TIMEFRAMES))+"): "+"; ".join(provider_failures))
     if not results:return None
     buys=sum(1 for p in results.values() if p["side"]=="BUY")
     sells=sum(1 for p in results.values() if p["side"]=="SELL")
     if buys==sells:return None
     side="BUY" if buys>sells else "SELL"
+    # Cash-only markets must never publish a short-side execution idea.
+    if side=="SELL" and market in ("spot","alpha","us-stocks","saudi"):
+        return None
     aligned=[(tf,p) for tf,p in results.items() if p["side"]==side]
     if len(aligned)<2:return None
     # Prefer daily structure for invalidation, then 4h, then 1h.
@@ -131,11 +142,18 @@ def scan_market(market,universe,klines_fn,limit=30):
         old=_cache.get(market)
         if old and now-old[0]<CACHE_SECONDS:return dict(old[1],cached=True)
         ordered=sorted(universe,key=lambda x:float(x.get("quote_volume") or 0),reverse=True)
-        if not ordered:return {"ok":True,"market":market,"signals":[],"checked_assets":0,"universe_total":0}
+        if not ordered:
+            return {"ok":True,"market":market,"engine":"CLASSIC_PRICE_ACTION_MTF_V1",
+                    "checked_assets":0,"universe_total":0,"scan_offset":0,
+                    "signals_found":0,"analysis_errors":0,"signals":[],
+                    "updated_at":datetime.now(timezone.utc).isoformat(),"cached":False,
+                    "coverage":"لا توجد أصول مؤهلة من مزود السوق حالياً",
+                    "strategy_fingerprint":STRATEGY_FINGERPRINT}
         offset=_cursor.get(market,0)%len(ordered)
-        batch=ordered[offset:offset+limit]
-        if len(batch)<limit:batch+=ordered[:limit-len(batch)]
-        _cursor[market]=(offset+len(batch))%len(ordered)
+        take=min(max(1,int(limit)),len(ordered))
+        end=offset+take
+        batch=ordered[offset:end] if end<=len(ordered) else ordered[offset:]+ordered[:end-len(ordered)]
+        _cursor[market]=(offset+take)%len(ordered)
     found=[];failed=0
     with ThreadPoolExecutor(max_workers=5) as pool:
         jobs=[pool.submit(_inspect,x,market,klines_fn) for x in batch]
