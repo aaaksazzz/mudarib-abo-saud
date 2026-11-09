@@ -113,20 +113,24 @@ class MarketEngineTests(unittest.TestCase):
     def test_strategy_diagnostic_confirms_sma200_and_all_frames(self):
         diagnostic=platform.market_strategies.diagnostic_self_test()
         self.assertTrue(diagnostic["ok"],diagnostic["checks"])
-        self.assertEqual(set(diagnostic["timeframes"]),set(platform.market_strategies.INTERVAL_MS))
+        self.assertTrue(set(diagnostic["timeframes"]).issubset(set(platform.market_strategies.INTERVAL_MS)))
+        self.assertEqual(diagnostic["signal_timeframes"], {"15m":"1m","1h":"15m","4h":"1h","1d":"1h","1w":"4h","1M":"1d"})
 
-    def test_build_signal_requests_only_the_selected_timeframe(self):
+    def test_build_signal_requires_mapped_gate_then_trade_frame_confirmation(self):
         setup={"side":"BUY","entry":100.0,"stop":99.0,"tp1":102.0,"tp2":103.0,
                "tp3":105.0,"score":80.0,"timeframe":"1h","change_pct":0.5,
-               "reason":"SMART FLOW QUANT: same-frame test"}
+               "reason":"SMART FLOW MTF QUANT: mapped test"}
         with patch.object(platform,"klines",return_value=[[0,100,101,99,100,1000]]*250) as candle_source, patch.object(
             platform.market_strategies,"analyze",return_value=setup
         ) as analyzer:
             result=platform.build_signal("futures",{"symbol":"BTCUSDT"},"1h")
-        candle_source.assert_called_once_with("futures","BTCUSDT","1h",250)
-        analyzer.assert_called_once()
-        self.assertEqual(analyzer.call_args.kwargs["timeframe"],"1h")
+        self.assertEqual(candle_source.call_args_list, [
+            unittest.mock.call("futures","BTCUSDT","15m",250),
+            unittest.mock.call("futures","BTCUSDT","1h",250),
+        ])
+        self.assertEqual([call.kwargs["timeframe"] for call in analyzer.call_args_list], ["15m","1h"])
         self.assertEqual(result["timeframe"],"1h")
+        self.assertEqual(result["signal_timeframe"],"15m")
 
     def test_freshness_filter_rejects_late_or_old_entries(self):
         now = platform.utcnow()
@@ -154,8 +158,8 @@ class MarketEngineTests(unittest.TestCase):
         response = self.client.get("/api/strategy-status")
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertEqual(data["fingerprint"], "SMART-FLOW-SMA200-MTF-2-3-5-V1-20261108")
-        self.assertEqual(data["engine"], "SMART FLOW QUANT")
+        self.assertEqual(data["fingerprint"], "SMART-FLOW-MTF-SMA200-V2-20261109")
+        self.assertEqual(data["engine"], "SMART FLOW MTF QUANT")
         self.assertEqual(data["timeframes"], ["15m","1h","4h","1d","1w","1M"])
         self.assertEqual(len(data["markets"]), 7)
         self.assertTrue(data["legacy_removed"])
@@ -173,7 +177,7 @@ class MarketEngineTests(unittest.TestCase):
             current = platform.Trade(
                 market="spot", symbol="NEWUSDT", side="BUY", entry=100,
                 stop=97, tp1=103, tp2=106, tp3=109, score=70,
-                timeframe="1h", reason="SMART FLOW QUANT: new signal",
+                timeframe="1h", reason="SMART FLOW MTF QUANT: new signal",
                 expires_at=platform.utcnow() + timedelta(hours=1),
             )
             platform.db.session.add_all([legacy, current])
@@ -291,7 +295,7 @@ class MarketEngineTests(unittest.TestCase):
     def test_signals_endpoint_reports_engine_fingerprint_as_a_fallback(self):
         with patch.object(platform, "saudi_market_is_open", return_value=False):
             response = self.client.get("/api/markets/saudi/signals").get_json()
-        self.assertEqual(response["engine"], "SMART FLOW QUANT")
+        self.assertEqual(response["engine"], "SMART FLOW MTF QUANT")
         self.assertEqual(response["fingerprint"], platform.STRATEGY_FINGERPRINT)
         self.assertTrue(response["market_closed"])
         self.assertEqual(response["signals"], [])
@@ -355,10 +359,10 @@ class MarketEngineTests(unittest.TestCase):
         with platform.app.app_context():
             now=platform.utcnow()
             rows=[
-                platform.Trade(market="spot",symbol="BTCUSDT",side="BUY",entry=100,stop=97,tp1=103,tp2=106,tp3=109,score=80,timeframe="15m",reason="SMART FLOW QUANT: current",status="active",expires_at=now+timedelta(hours=2)),
-                platform.Trade(market="spot",symbol="BTCUSDT",side="BUY",entry=101,stop=98,tp1=104,tp2=107,tp3=110,score=81,timeframe="15m",reason="SMART FLOW QUANT: duplicate",status="active",expires_at=now+timedelta(hours=2)),
-                platform.Trade(market="futures",symbol="ETHUSDT",side="SELL",entry=100,stop=103,tp1=97,tp2=94,tp3=91,score=82,timeframe="15m",reason="SMART FLOW QUANT: win",status="tp3_hit",expires_at=now),
-                platform.Trade(market="futures",symbol="SOLUSDT",side="SELL",entry=100,stop=103,tp1=97,tp2=94,tp3=91,score=82,timeframe="15m",reason="SMART FLOW QUANT: loss",status="stopped",expires_at=now),
+                platform.Trade(market="spot",symbol="BTCUSDT",side="BUY",entry=100,stop=97,tp1=103,tp2=106,tp3=109,score=80,timeframe="15m",reason="SMART FLOW MTF QUANT: current",status="active",expires_at=now+timedelta(hours=2)),
+                platform.Trade(market="spot",symbol="BTCUSDT",side="BUY",entry=101,stop=98,tp1=104,tp2=107,tp3=110,score=81,timeframe="15m",reason="SMART FLOW MTF QUANT: duplicate",status="active",expires_at=now+timedelta(hours=2)),
+                platform.Trade(market="futures",symbol="ETHUSDT",side="SELL",entry=100,stop=103,tp1=97,tp2=94,tp3=91,score=82,timeframe="15m",reason="SMART FLOW MTF QUANT: win",status="tp3_hit",expires_at=now),
+                platform.Trade(market="futures",symbol="SOLUSDT",side="SELL",entry=100,stop=103,tp1=97,tp2=94,tp3=91,score=82,timeframe="15m",reason="SMART FLOW MTF QUANT: loss",status="stopped",expires_at=now),
                 platform.Trade(market="spot",symbol="OLDUSDT",side="BUY",entry=100,stop=97,tp1=103,tp2=106,tp3=109,score=70,timeframe="15m",reason="legacy",status="superseded",expires_at=now),
             ]
             platform.db.session.add_all(rows)
@@ -474,14 +478,14 @@ class MarketEngineTests(unittest.TestCase):
         rows = [[i * 900000, 100, 101, 99, 100, 1000] for i in range(120)]
         setup = {"side":"BUY","entry":100.0,"stop":97.0,"tp1":102.0,"tp2":103.0,
                  "tp3":105.0,"score":84.0,"timeframe":"15m","change_pct":0.5,
-                 "change_15m_pct":0.5,"reason":"SMART FLOW QUANT:: structure breakout"}
+                 "change_15m_pct":0.5,"reason":"SMART FLOW MTF QUANT:: structure breakout"}
         with patch.object(platform, "klines", return_value=rows), patch.object(platform.market_strategies, "analyze", return_value=setup):
             signal = platform.build_signal("spot", {"symbol":"BTCUSDT","quote_volume":50000000}, "15m")
         self.assertEqual(signal["side"], "BUY")
         self.assertAlmostEqual((signal["tp1"] / signal["entry"] - 1) * 100, 2.0)
         self.assertAlmostEqual((signal["tp2"] / signal["entry"] - 1) * 100, 3.0)
         self.assertAlmostEqual((signal["tp3"] / signal["entry"] - 1) * 100, 5.0)
-        self.assertIn("SMART FLOW QUANT:", signal["reason"])
+        self.assertIn("SMART FLOW MTF QUANT:", signal["reason"])
 
     def test_api_returns_only_the_requested_timeframe(self):
         self.assertEqual(platform.TIMEFRAMES, ("15m","1h","4h","1d","1w","1M"))
@@ -490,10 +494,10 @@ class MarketEngineTests(unittest.TestCase):
             platform.db.session.add_all([
                 platform.Trade(market="spot", symbol="OLDUSDT", side="BUY", entry=100, stop=95,
                     tp1=105, tp2=110, tp3=115, score=80, timeframe="1h",
-                    reason="SMART FLOW QUANT:: old frame", expires_at=now + timedelta(hours=1)),
+                    reason="SMART FLOW MTF QUANT:: old frame", expires_at=now + timedelta(hours=1)),
                 platform.Trade(market="spot", symbol="NEWUSDT", side="BUY", entry=100, stop=95,
                     tp1=105, tp2=110, tp3=115, score=85, timeframe="15m",
-                    reason="SMART FLOW QUANT:: current frame | bar_ts=123", expires_at=now + timedelta(hours=1)),
+                    reason="SMART FLOW MTF QUANT:: current frame | bar_ts=123", expires_at=now + timedelta(hours=1)),
                 platform.Setting(key="scan:spot", value=platform.iso(now)),
                 platform.Setting(key="scan:spot:1h", value=platform.iso(now)),
             ])
@@ -529,7 +533,7 @@ class MarketEngineTests(unittest.TestCase):
                 ))
             platform.db.session.add(platform.Trade(market="spot",symbol="CACHEUSDT",side="BUY",
                 entry=100,stop=99,tp1=101,tp2=102,tp3=103,score=80,timeframe="15m",
-                reason="SMART FLOW QUANT: existing current-engine signal",
+                reason="SMART FLOW MTF QUANT: existing current-engine signal",
                 expires_at=platform.utcnow()+timedelta(hours=1)))
             platform.db.session.commit()
             with patch.object(platform, "market_tickers", return_value=[
@@ -564,7 +568,7 @@ class MarketEngineTests(unittest.TestCase):
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":99.0,
             "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,"atr":0.5,
             "change_pct":1.2,"timeframe":"15m","signal_candle_time":now_ms-900000-1000,
-            "reason":"SMART FLOW QUANT:: confirmed.","atr":1.0
+            "reason":"SMART FLOW MTF QUANT:: confirmed.","atr":1.0
         }
         def per_frame(market, item, timeframe):
             interval=platform.market_strategies.INTERVAL_MS[timeframe]
@@ -585,7 +589,7 @@ class MarketEngineTests(unittest.TestCase):
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":99.0,
             "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,"atr":1.0,
             "change_pct":1.2,"timeframe":"15m","signal_candle_time":now_ms-900000-1000,
-            "reason":"SMART FLOW QUANT:: confirmed."
+            "reason":"SMART FLOW MTF QUANT:: confirmed."
         }
         candle_time={}
         def per_frame(market, item, timeframe):
