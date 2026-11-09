@@ -6,8 +6,12 @@
   <meta name="theme-color" content="#080d17">
   <script>
     (function () {
-      var match = location.pathname.match(/^\\/market\\/(spot|futures|alpha|us-stocks|us-contracts|saudi|forex)\\/?$/);
-      if (match) location.replace("/intelligence?market=" + encodeURIComponent(match[1]));
+      var parts = location.pathname.split("/");
+      var market = parts[2];
+      var allowed = ["spot", "futures", "alpha", "us-stocks", "us-contracts", "saudi", "forex"];
+      if (parts.length <= 4 && parts[1] === "market" && allowed.indexOf(market) !== -1) {
+        location.replace("/intelligence?market=" + encodeURIComponent(market));
+      }
     })();
   </script>
   <meta name="description" content="SMART TRADING PRO — منصة الأسواق والتحليل والتداول الذكي">
