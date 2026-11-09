@@ -36,9 +36,9 @@ Production-oriented market intelligence terminal.
 - Buildpack startup uses `Procfile`; Docker deployment is also supported.
 - Expose port 8080.
 - Prefer a persistent PostgreSQL database through `DATABASE_URL`. SQLite is acceptable only when `DATA_DIR` points to a persistent mounted volume; the default local SQLite path is not production-durable.
-- Configure a persistent random `SECRET_KEY`, `COOKIE_SECURE=true`, and `ENABLE_AUTO_SCAN=true`.
-- Keep one Gunicorn worker while APScheduler runs in-process. The seven market scans are staggered across each 15-minute cycle and dispatched by one scheduler worker to avoid simultaneous provider bursts and missed-job backlogs. Do not increase web workers until scanning is moved to a separate worker with a distributed lock.
-- `/ready` requires a durable database configuration (PostgreSQL or an explicitly configured `DATA_DIR` volume), a persistent `SECRET_KEY`, and the market scheduler.
+- Configure a persistent random `SECRET_KEY` and `COOKIE_SECURE=true`. The public sentiment dashboard scans on demand and does not require the legacy market scheduler.
+- The retired SMA200/liquidity-sweep scheduler is disabled by default. Do not set `ENABLE_LEGACY_AUTO_SCAN=true` unless intentionally restoring the legacy scanner for diagnostics. Sentiment requests use bounded concurrency and a five-minute in-process cache.
+- `/ready` requires a durable database configuration (PostgreSQL or an explicitly configured `DATA_DIR` volume) and a persistent `SECRET_KEY`; no background market scheduler is required.
 - Configure `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` (14+ characters) before first boot if first-admin provisioning is needed.
 - Never commit or share secrets. Rotate credentials after any security incident and update them at the provider and deployment environment.
 
