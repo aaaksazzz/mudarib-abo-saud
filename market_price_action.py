@@ -154,7 +154,17 @@ def scan_market(market,universe,klines_fn,limit=30):
                 if x:found.append(x)
             except Exception:failed+=1
     found.sort(key=lambda x:(x["score"],float(x.get("quote_volume") or 0)),reverse=True)
-    payload={"ok":True,"market":market,"engine":"CLASSIC_PRICE_ACTION_MTF_V1",
+    # If every requested candle fetch failed, this is a provider outage, not
+    # a valid empty-signal scan. Never cache or present it as "no opportunities".
+    if failed==len(batch) and batch:
+        return {"ok":False,"market":market,"engine":"CLASSIC_PRICE_ACTION_15M_V2",
+                "provider_error":True,"error_code":"all_candle_requests_failed",
+                "checked_assets":len(batch),"universe_total":len(ordered),"scan_offset":offset,
+                "signals_found":0,"analysis_errors":failed,"signals":[],
+                "updated_at":datetime.now(timezone.utc).isoformat(),"cached":False,
+                "coverage":"تعذر جلب شموع 15 دقيقة من مزود البيانات؛ لم يتم اعتماد نتيجة فحص",
+                "strategy_fingerprint":STRATEGY_FINGERPRINT}
+    payload={"ok":True,"market":market,"engine":"CLASSIC_PRICE_ACTION_15M_V2",
              "checked_assets":len(batch),"universe_total":len(ordered),"scan_offset":offset,
              "signals_found":len(found),"analysis_errors":failed,"signals":found[:30],
              "updated_at":datetime.now(timezone.utc).isoformat(),"cached":False,

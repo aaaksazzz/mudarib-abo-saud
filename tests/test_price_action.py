@@ -35,8 +35,8 @@ class ClassicPriceActionTests(unittest.TestCase):
             engine._cursor.pop("unit-test", None)
 
     def test_fingerprint_and_internal_contexts(self):
-        self.assertEqual(engine.STRATEGY_FINGERPRINT, "CLASSIC-PRICE-ACTION-MTF-V1-20261109")
-        self.assertEqual(engine.TIMEFRAMES, ("1h", "4h", "1d"))
+        self.assertEqual(engine.STRATEGY_FINGERPRINT, "CLASSIC-PRICE-ACTION-15M-V2-20261109")
+        self.assertEqual(engine.TIMEFRAMES, ("15m",))
 
     def test_detects_closed_bullish_and_bearish_liquidity_sweeps(self):
         self.assertEqual(engine._pattern(candle_set("buy_sweep"))["side"], "BUY")
@@ -94,7 +94,7 @@ class ClassicPriceActionTests(unittest.TestCase):
     def test_provider_failure_is_not_silently_reported_as_no_signal(self):
         def broken(*args, **kwargs):
             raise OSError("provider offline")
-        with self.assertRaisesRegex(RuntimeError, "Insufficient candle coverage"):
+        with self.assertRaisesRegex(RuntimeError, "Insufficient completed 15m candles"):
             engine._inspect({"symbol": "TESTUSDT"}, "futures", broken)
 
     def test_small_universe_is_not_duplicated_to_fill_scan_batch(self):

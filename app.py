@@ -354,7 +354,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":market_price_action.STRATEGY_FINGERPRINT.startswith("CLASSIC-PRICE-ACTION-MTF-")}
+            "price_action_engine":market_price_action.STRATEGY_FINGERPRINT.startswith("CLASSIC-PRICE-ACTION-15M-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -525,8 +525,22 @@ def update_admin_contact():
 def market_list():
     return jsonify({"ok":True,"markets":[{"id":m,"enabled":section_enabled(m),"provider":provider_status(m)} for m in MARKETS]})
 def provider_status(m):
-    sources={"spot":"Binance Spot public API","futures":"Binance USD-M Futures public API","alpha":"Binance Alpha public market API","us-stocks":"Yahoo Finance US equity screener","us-contracts":"Yahoo Finance US futures quotes","saudi":"Yahoo Finance Saudi-listed shares screener","forex":"Yahoo Finance FX and metals quotes"}
-    return {"configured":m in sources,"source":sources.get(m,"غير معروف"),"requires_api_key":False,"access":"public_no_key","analysis":"classic_price_action_multi_context"}
+    # Report actual adapter topology honestly. A second hostname for the same
+    # vendor is a mirror, not an independent data provider or a proven failover.
+    providers={
+        "spot":{"primary":"Binance Spot public API","backup":"Binance API mirror hosts","backup_type":"same_vendor_mirror","independent_backup":False},
+        "futures":{"primary":"Binance USD-M Futures public API","backup":"Binance Futures API mirror hosts","backup_type":"same_vendor_mirror","independent_backup":False},
+        "alpha":{"primary":"Binance Alpha public API","backup":None,"backup_type":"none","independent_backup":False},
+        "us-stocks":{"primary":"Yahoo Finance US screener/chart","backup":"Yahoo Finance secondary hostname","backup_type":"same_vendor_mirror","independent_backup":False},
+        "us-contracts":{"primary":"Yahoo Finance futures quotes/chart","backup":"Yahoo Finance secondary hostname","backup_type":"same_vendor_mirror","independent_backup":False},
+        "saudi":{"primary":"Saudi Exchange official feed","backup":"Yahoo Finance charts/screener; TradingView scanner for quotes/universe","backup_type":"partial_market_data","independent_backup":True},
+        "forex":{"primary":"Yahoo Finance FX/metals chart","backup":"Yahoo Finance secondary hostname","backup_type":"same_vendor_mirror","independent_backup":False},
+    }
+    item=providers.get(m)
+    if not item:
+        return {"configured":False,"health":"unknown","source":None,"requires_api_key":False}
+    return {**item,"configured":True,"health":"not_probed","health_note":"Adapter presence only; live connectivity is not tested by this endpoint",
+            "requires_api_key":False,"access":"public_no_key","analysis":"classic_price_action_15m"}
 def fetch_json(url,params=None):
     last_error=None
     for attempt in range(3):
