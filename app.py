@@ -173,9 +173,18 @@ def security_headers(response):
     response.headers["Referrer-Policy"]="strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"]="camera=(), microphone=(), geolocation=()"
     response.headers["Content-Security-Policy"]="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-    if request.path.startswith("/api/"):
-        response.headers["Cache-Control"]="no-store, private, max-age=0"
+    # Never let the browser/CDN keep an old app shell or market script after a deploy.
+    is_app_shell = (
+        request.path == "/"
+        or request.path in ("/intelligence", "/signal-lab", "/login", "/register",
+                            "/account", "/admin", "/plans", "/journal", "/blog", "/news")
+        or request.path.startswith("/market/")
+    )
+    is_app_asset = request.path.endswith((".js", ".css"))
+    if request.path.startswith("/api/") or is_app_shell or is_app_asset:
+        response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, private, max-age=0"
         response.headers["Pragma"]="no-cache"
+        response.headers["Expires"]="0"
         response.headers["Vary"]="Cookie"
     return response
 @app.before_request
