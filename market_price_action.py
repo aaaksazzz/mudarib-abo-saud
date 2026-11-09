@@ -94,7 +94,7 @@ def _inspect(item,market,klines_fn):
         item, market, klines_fn, _pattern, _atr, _levels
     )
 
-def scan_market(market,universe,klines_fn,limit=30):
+def scan_market(market,universe,klines_fn,limit=8):
     now=time.time()
     with _lock:
         old=_cache.get(market)
@@ -113,7 +113,7 @@ def scan_market(market,universe,klines_fn,limit=30):
         batch=ordered[offset:end] if end<=len(ordered) else ordered[offset:]+ordered[:end-len(ordered)]
         _cursor[market]=(offset+take)%len(ordered)
     found=[];failed=0
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
         jobs=[pool.submit(_inspect,x,market,klines_fn) for x in batch]
         for f in as_completed(jobs):
             try:
