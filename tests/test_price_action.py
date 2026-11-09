@@ -57,7 +57,7 @@ class ClassicPriceActionTests(unittest.TestCase):
             if timeframe == "1h":
                 return candle_set("buy_sweep")
             if timeframe == "4h":
-                return candle_set("buy_sweep")
+                return candle_set("flat")
             return candle_set("sell_sweep")
         result = engine._inspect({"symbol": "TESTUSDT", "price": 100.3}, "futures", provider)
         self.assertIsNone(result)
@@ -108,7 +108,12 @@ class ClassicPriceActionTests(unittest.TestCase):
         self.assertEqual(payload["symbol"], "TESTUSDT")
         self.assertEqual(payload["change_pct"], 0.2)
         platform.app.config.update(TESTING=True)
+        with platform.app.app_context():
+            platform.db.create_all()
         client = platform.app.test_client()
+        journal = client.get("/api/trades")
+        self.assertEqual(journal.status_code, 200)
+        self.assertIn("active_trades", journal.get_json())
         status = client.get("/api/strategy/status")
         self.assertEqual(status.status_code, 200)
         self.assertEqual(status.get_json()["fingerprint"], engine.STRATEGY_FINGERPRINT)
