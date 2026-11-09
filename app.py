@@ -312,8 +312,8 @@ def compat_styles(): return send_from_directory(".", "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
     return jsonify({
-        "ok":True,"strategy":"CLASSIC PRICE ACTION",
-        "engine":"CLASSIC PRICE ACTION",
+        "ok":True,"strategy":"SULTAN MULTI-TIMEFRAME PRICE ACTION",
+        "engine":"SULTAN MULTI-TIMEFRAME PRICE ACTION",
         "fingerprint":market_price_action.STRATEGY_FINGERPRINT,
         "markets":list(MARKETS),
         "internal_contexts":list(market_price_action.TIMEFRAMES),
@@ -354,7 +354,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":market_price_action.STRATEGY_FINGERPRINT.startswith("CLASSIC-PRICE-ACTION-15M-")}
+            "price_action_engine":market_price_action.STRATEGY_FINGERPRINT.startswith("SULTAN-PRICE-ACTION-W-D-4H-15M-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -679,8 +679,8 @@ def strategy_status_summary():
         Trade.reason.like("SMART FLOW MTF QUANT:%")
     ).count()
     return jsonify({
-        "ok":True,"engine":"CLASSIC PRICE ACTION","fingerprint":STRATEGY_FINGERPRINT,
-        "markets":list(MARKETS),"timeframes":[],
+        "ok":True,"engine":"SULTAN MULTI-TIMEFRAME PRICE ACTION","fingerprint":STRATEGY_FINGERPRINT,
+        "markets":list(MARKETS),"timeframes":list(market_price_action.TIMEFRAMES),
         "current_active":0,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_ready":True,
@@ -1287,7 +1287,7 @@ def intelligence_scan():
         universe=market_tickers(market)
         if not universe:
             return jsonify({"ok":True,"market":market,"checked_assets":0,"universe_total":0,
-                            "signals_found":0,"signals":[],"engine":"CLASSIC_PRICE_ACTION_MTF_V1"})
+                            "signals_found":0,"signals":[],"engine":"SULTAN_MULTI_TIMEFRAME_V1"})
         result=market_price_action.scan_market(market,universe,klines,limit=30)
         return jsonify(result)
     except Exception:
