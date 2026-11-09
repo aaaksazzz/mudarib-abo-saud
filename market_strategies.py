@@ -7,10 +7,15 @@ Spot and USD-M Futures. Scores rank confluence; they are not win probabilities.
 """
 import math
 
-STRATEGY_FINGERPRINT = "SMART-FLOW-SMA200-MTF-2-3-5-V1-20261108"
+STRATEGY_FINGERPRINT = "SMART-FLOW-MTF-SMA200-V2-20261109"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
-INTERVAL_MS = {"15m": 900_000, "1h": 3_600_000, "4h": 14_400_000,
+# Each trade timeframe is gated by a separate strong-direction signal timeframe.
+# Daily, weekly and monthly gates are exactly two supported ladder steps lower.
+SIGNAL_TIMEFRAME = {"15m": "1m", "1h": "15m", "4h": "15m",
+                    "1d": "1h", "1w": "4h", "1M": "1d"}
+INTERVAL_MS = {"1m": 60_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000,
                "1d": 86_400_000, "1w": 604_800_000, "1M": 2_678_400_000}
+SUPPORTED_TIMEFRAMES = tuple(INTERVAL_MS)
 PROFILES = {
     "spot": {"allow_short": False}, "alpha": {"allow_short": False},
     "futures": {"allow_short": True}, "us-stocks": {"allow_short": False},
@@ -84,16 +89,21 @@ def diagnostic_self_test():
         "equal_rejected": not sma200_allows("BUY", 100.0, 100.0) and not sma200_allows("SELL", 100.0, 100.0),
         "buy_targets_2_3_5": buy_targets == (102.0, 103.0, 105.0),
         "sell_targets_2_3_5": sell_targets == (98.0, 97.0, 95.0),
-        "timeframes_independent": set(TIMEFRAMES) == set(INTERVAL_MS),
+        "timeframes_independent": set(TIMEFRAMES).issubset(set(INTERVAL_MS)),
+        "signal_map_complete": set(SIGNAL_TIMEFRAME) == set(TIMEFRAMES),
+        "daily_two_steps_down": SIGNAL_TIMEFRAME["1d"] == "1h",
+        "weekly_two_steps_down": SIGNAL_TIMEFRAME["1w"] == "4h",
+        "monthly_two_steps_down": SIGNAL_TIMEFRAME["1M"] == "1d",
     }
     return {"fingerprint": STRATEGY_FINGERPRINT, "ok": all(cases.values()), "checks": cases,
-            "timeframes": list(TIMEFRAMES), "rule": "BUY above same-timeframe SMA200; SELL below; gross targets 2%/3%/5%"}
+            "timeframes": list(TIMEFRAMES), "signal_timeframes": dict(SIGNAL_TIMEFRAME),
+            "rule": "Strong BUY above SMA200 / SELL below SMA200 on mapped signal timeframe; confirm same side on trade timeframe; gross targets 2%/3%/5%"}
 
 
 def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_micro=False):
     """Analyze one market/timeframe using closed candles and optional live flow."""
     profile = PROFILES.get(market)
-    if not profile or timeframe not in TIMEFRAMES or not isinstance(rows, list):
+    if not profile or timeframe not in SUPPORTED_TIMEFRAMES or not isinstance(rows, list):
         return None
     bars = _finite_rows(rows)
     if not bars or len(bars) < 200:
