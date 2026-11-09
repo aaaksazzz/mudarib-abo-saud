@@ -66,13 +66,26 @@ def _freshness_weight(published):
         return 0.5
 
 def _google_news(symbol, market, display_name=None):
-    terms = [str(display_name or "").strip(), str(symbol).strip()]
+    raw_symbol = str(symbol).strip().upper()
+    if raw_symbol in ("XAUUSD=X", "GC=F", "MGC=F"):
+        asset_term = "gold"
+    elif raw_symbol in ("XAGUSD=X", "SI=F", "SIL=F"):
+        asset_term = "silver"
+    elif raw_symbol.endswith("USDT"):
+        asset_term = raw_symbol[:-4] + " crypto"
+    elif raw_symbol.endswith(".SR"):
+        asset_term = raw_symbol[:-3] + " Saudi stock"
+    elif raw_symbol.endswith("=X"):
+        asset_term = raw_symbol[:-2].replace("USD", " USD ")
+    else:
+        asset_term = raw_symbol.replace("=F", "")
+    terms = [str(display_name or "").strip(), asset_term]
     if market in ("spot", "futures", "alpha"):
         terms.append("cryptocurrency")
     elif market == "forex":
-        terms.append("forex OR gold OR silver")
+        terms.append("forex market")
     elif market == "saudi":
-        terms.append("Tadawul OR Saudi stock")
+        terms.append("Tadawul")
     query = " ".join(x for x in terms if x)
     url = "https://news.google.com/rss/search?q=" + quote(query) + "&hl=en-US&gl=US&ceid=US:en"
     response = requests.get(url, headers=HEADERS, timeout=(3, 7))
