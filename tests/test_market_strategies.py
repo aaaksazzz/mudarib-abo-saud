@@ -1,6 +1,6 @@
 import unittest
 
-from market_strategies import PROFILES, STRATEGY_FINGERPRINT, TIMEFRAMES, analyze, sma200_allows
+from market_strategies import PROFILES, STRATEGY_FINGERPRINT, TIMEFRAMES, SIGNAL_TIMEFRAME, INTERVAL_MS, analyze, sma200_allows
 
 
 def candles(direction="UP", volume=True, count=220):
@@ -22,9 +22,11 @@ def candles(direction="UP", volume=True, count=220):
 
 class Sma200StrategyTests(unittest.TestCase):
     def test_fingerprint_and_timeframes(self):
-        self.assertEqual(STRATEGY_FINGERPRINT, "SMART-FLOW-SMA200-MTF-2-3-5-V1-20261108")
+        self.assertEqual(STRATEGY_FINGERPRINT, "SMART-FLOW-MTF-SMA200-V2-20261109")
         self.assertEqual(TIMEFRAMES, ("15m","1h","4h","1d","1w","1M"))
         self.assertEqual(len(PROFILES), 7)
+        self.assertEqual(SIGNAL_TIMEFRAME, {"15m":"1m","1h":"15m","4h":"15m","1d":"1h","1w":"4h","1M":"1d"})
+        self.assertIn("1m", INTERVAL_MS)
 
     def test_sma200_gate_allows_only_matching_direction(self):
         self.assertTrue(sma200_allows("BUY", 101, 100))
