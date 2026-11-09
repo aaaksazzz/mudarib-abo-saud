@@ -31,7 +31,8 @@ HIGH_TRUST = ("reuters","bloomberg","financial times","wall street journal","wsj
 MED_TRUST = ("investing.com","benzinga","barron's","barrons","seeking alpha","coindesk","cointelegraph","the block","kitco","cme group")
 _cache = {}
 _cache_lock = threading.Lock()
-CACHE_SECONDS = 300
+CACHE_SECONDS = 240
+_cursor = {}
 
 def _headline_score(title):
     text = str(title or "").casefold()
@@ -256,7 +257,17 @@ def scan_market(market, universe, klines_fn, limit=35):
         cached = _cache.get(market)
         if cached and now - cached[0] < CACHE_SECONDS:
             return dict(cached[1], cached=True)
-    ranked = sorted(universe, key=lambda x: float(x.get("quote_volume") or 0), reverse=True)[:max(1, min(int(limit), 60))]
+    ranked_all = sorted(universe, key=lambda x: float(x.get("quote_volume") or 0), reverse=True)
+    batch_size = max(1, min(int(limit), 60))
+    if ranked_all:
+        with _cache_lock:
+            offset = _cursor.get(market, 0) % len(ranked_all)
+            ranked = ranked_all[offset:offset + batch_size]
+            if len(ranked) < batch_size:
+                ranked.extend(ranked_all[:batch_size - len(ranked)])
+            _cursor[market] = (offset + len(ranked)) % len(ranked_all)
+    else:
+        offset, ranked = 0, []
     results, errors = [], 0
     coverage = {"assets_with_mentions": 0, "assets_without_mentions": 0,
                 "provider_failures": 0, "neutral_assets": 0, "technical_unavailable": 0}
@@ -304,7 +315,7 @@ def scan_market(market, universe, klines_fn, limit=35):
                 errors += 1
     results.sort(key=lambda x: (x["confidence"], abs(x["sentiment_score"]), float(x.get("quote_volume") or 0)), reverse=True)
     payload = {"ok": True, "market": market, "engine": "PUBLIC_SENTIMENT_CONSENSUS_V1",
-               "checked_assets": len(ranked), "signals_found": len(results), "analysis_errors": errors,
+               "checked_assets": len(ranked), "universe_total": len(ranked_all), "scan_offset": offset, "scan_batch_size": len(ranked), "signals_found": len(results), "analysis_errors": errors,
                "coverage_stats": coverage, "signals": results[:30],
                "sources": ["Google News RSS", "Reddit public search"] + (["Stocktwits"] if market == "us-stocks" else []),
                "source_scope": "مصادر عامة متاحة فقط؛ لا تمثل كامل الإنترنت أو جميع المتداولين",
