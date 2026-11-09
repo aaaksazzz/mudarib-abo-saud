@@ -243,109 +243,8 @@ def signal_lab_stylesheet():
     return send_from_directory(".", "signal-lab.css")
 
 @app.get("/api/signal-lab/scan")
-@limiter.limit("6 per minute")
 def signal_lab_scan():
-    """Paper-only 15m liquidity-sweep scanner across every eligible USD-M perpetual."""
-    started=time.monotonic()
-    try:
-        # market_tickers already enforces active USD-M perpetuals and >= 1M USDT
-        # 24h quote volume, sorted from highest liquidity to lowest.
-        universe=market_tickers("futures")
-        if not universe:
-            return jsonify({
-                "ok":True,"strategy":"LIQUIDITY_SWEEP_15M_V1","timeframe":"15m",
-                "universe_checked":0,"universe_attempted":0,"universe_eligible":0,
-                "analysis_failed":0,"insufficient_data":0,"signals":[],
-                "checked_at":iso(utcnow()),"scan_duration_seconds":round(time.monotonic()-started,2)
-            })
-
-        def inspect_symbol(item):
-            symbol=item["symbol"]
-            try:
-                rows=fetch_json(BINANCE_FUTURES+"/fapi/v1/klines",{
-                    "symbol":symbol,"interval":"15m","limit":40
-                })
-                if not isinstance(rows,list) or len(rows)<23:
-                    return {"status":"insufficient_data","signal":None}
-                # Ignore the live candle. A sweep candle must precede a separate,
-                # fully closed confirmation candle; neither can repaint intrabar.
-                sweep=rows[-3]
-                confirm=rows[-2]
-                sop,shi,slo,scl=float(sweep[1]),float(sweep[2]),float(sweep[3]),float(sweep[4])
-                op,hi,lo,cl=float(confirm[1]),float(confirm[2]),float(confirm[3]),float(confirm[4])
-                quote_vol=float(confirm[7])
-                prior=rows[-23:-3]
-                if len(prior)!=20 or min(sop,shi,slo,scl,op,hi,lo,cl)<=0 or shi<=slo or hi<=lo:
-                    return {"status":"insufficient_data","signal":None}
-                prior_high=max(float(x[2]) for x in prior)
-                prior_low=min(float(x[3]) for x in prior)
-                avg_quote=sum(float(x[7]) for x in prior)/20
-                if avg_quote<=0:
-                    return {"status":"insufficient_data","signal":None}
-                vol_ratio=quote_vol/avg_quote
-                body_ratio=abs(cl-op)/(hi-lo)
-                long_sweep=slo<prior_low and scl>prior_low
-                short_sweep=shi>prior_high and scl<prior_high
-                long_confirm=cl>op and cl>scl
-                short_confirm=cl<op and cl<scl
-                is_long=long_sweep and long_confirm
-                is_short=short_sweep and short_confirm
-                if vol_ratio<1.20 or body_ratio<0.45 or not (is_long or is_short):
-                    return {"status":"checked","signal":None}
-                side="BUY" if is_long else "SELL"
-                entry=cl
-                stop=slo if side=="BUY" else shi
-                risk=abs(entry-stop)
-                risk_pct=(risk/entry)*100
-                if risk<=0 or risk_pct<0.05 or risk_pct>1.80:
-                    return {"status":"checked","signal":None}
-                sign=1 if side=="BUY" else -1
-                score=min(99,round(55+min(vol_ratio-1.2,2.0)*9+min(body_ratio,1)*15-max(0,risk_pct-0.8)*8))
-                signal={
-                    "symbol":symbol,"side":side,"entry":round(entry,12),
-                    "stop":round(stop,12),"tp1":round(entry+sign*risk*1.5,12),
-                    "tp2":round(entry+sign*risk*2.0,12),"tp3":round(entry+sign*risk*3.0,12),
-                    "risk_pct":round(risk_pct,3),"volume_ratio":round(vol_ratio,2),
-                    "body_ratio":round(body_ratio,2),"score":score,
-                    "quote_volume_24h":round(float(item["quote_volume"]),2),
-                    "sweep_time":int(sweep[0]),"candle_time":int(confirm[0]),"timeframe":"15m",
-                    "reason":"سحب سيولة أسفل قاع 20 شمعة، ثم شمعة تأكيد صاعدة بحجم تداول مؤكد" if side=="BUY" else "سحب سيولة أعلى قمة 20 شمعة، ثم شمعة تأكيد هابطة بحجم تداول مؤكد"
-                }
-                return {"status":"checked","signal":signal}
-            except Exception:
-                app.logger.warning("signal lab scan failed for %s",symbol,exc_info=True)
-                return {"status":"failed","signal":None}
-
-        found=[]
-        checked=failed=insufficient=0
-        # Scan the complete eligible universe with bounded concurrency to avoid
-        # burst traffic against Binance and keep the single-worker service stable.
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            futures=[pool.submit(inspect_symbol,item) for item in universe]
-            for future in as_completed(futures):
-                result=future.result()
-                if result["status"]=="checked":
-                    checked+=1
-                    if result["signal"]:
-                        found.append(result["signal"])
-                elif result["status"]=="insufficient_data":
-                    insufficient+=1
-                else:
-                    failed+=1
-        found.sort(key=lambda x:(x["score"],x["quote_volume_24h"]),reverse=True)
-        return jsonify({
-            "ok":True,"strategy":"LIQUIDITY_SWEEP_15M_V1","timeframe":"15m",
-            "universe_checked":checked,"universe_attempted":len(universe),
-            "universe_eligible":len(universe),"analysis_failed":failed,
-            "insufficient_data":insufficient,"signals":found[:3],
-            "signals_found_total":len(found),"checked_at":iso(utcnow()),
-            "scan_duration_seconds":round(time.monotonic()-started,2),
-            "rules":{"lookback":20,"volume_ratio_min":1.2,"body_ratio_min":0.45,"max_risk_pct":1.8}
-        })
-    except Exception:
-        app.logger.exception("signal lab strategy scan failed")
-        return json_error("تعذر فحص عقود Binance Futures حالياً؛ حاول بعد قليل",502)
-
+    return json_error("مختبر الاستراتيجية القديمة متوقف؛ استخدم تحليل حركة السعر الكلاسيكي",410)
 
 @app.get("/api/signal-lab/klines")
 @limiter.limit("60 per minute")
@@ -1282,61 +1181,8 @@ def run_market_scan(market,force=False):
             "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":frames_to_scan}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
-    if market not in MARKETS:
-        return json_error("السوق غير معروف",404)
-    blocked=gate_section(market)
-    if blocked:
-        return blocked
-    try:
-        # Keep this endpoint read-only. The single scheduler expires trades;
-        # writing from page requests races with scheduled scans on SQLite.
-        timeframe=request.args.get("timeframe","15m")
-        if timeframe not in TIMEFRAMES:
-            return json_error("الفريم غير مدعوم",400)
-        row=db.session.get(Setting,f"scan:{market}:{timeframe}")
-        meta_row=db.session.get(Setting,f"scan-meta:{market}:{timeframe}")
-        # Backward-compatible read of the last 15m scan during rollout.
-        if row is None and timeframe=="15m":
-            row=db.session.get(Setting,"scan:"+market)
-        if meta_row is None and timeframe=="15m":
-            meta_row=db.session.get(Setting,"scan-meta:"+market)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("SMART FLOW MTF QUANT:%"),Trade.timeframe==timeframe).order_by(Trade.score.desc()).limit(3).all()
-        updated=row.value if row else None
-        try:
-            meta=json.loads(meta_row.value) if meta_row else {}
-        except (ValueError,TypeError):
-            meta={}
-        stale=True
-        if updated:
-            try:
-                max_age_ms=market_strategies.INTERVAL_MS[timeframe]*1.5+120_000
-                stale=aware(datetime.fromisoformat(updated))<utcnow()-timedelta(milliseconds=max_age_ms)
-            except (ValueError,TypeError):
-                stale=True
-        # Never present an old batch or a closed-session quote as a live entry.
-        market_closed=(market=="saudi" and not saudi_market_is_open())
-        runtime=read_scan_runtime(market)
-        scan_error=None
-        if not market_closed:
-            active_scheduler=globals().get("scheduler")
-            if not globals().get("AUTO_SCAN_ENABLED",False):
-                scan_error="الفحص التلقائي غير مفعّل على الخادم؛ يلزم تفعيل ENABLE_AUTO_SCAN."
-            elif not active_scheduler or not active_scheduler.running:
-                scan_error="المجدول الخلفي غير نشط داخل الخدمة."
-            elif stale and runtime.get("status")=="error":
-                scan_error=scan_error_message(runtime.get("last_error_code"))
-        return jsonify({"ok":True,"market":market,"timeframe":timeframe,"timeframes":list(TIMEFRAMES),
-                        "signals":[trade_json(x) for x in active] if not stale and not market_closed else [],
-                        "updated_at":updated,"cached":True,"stale":stale,"scan_ready":bool(updated),
-                        **meta,"timeframes":list(TIMEFRAMES),
-                        "scan_error":scan_error,"market_closed":market_closed,
-                        "engine":"SMART FLOW MTF QUANT","fingerprint":STRATEGY_FINGERPRINT})
-    except Exception:
-        app.logger.exception("signal retrieval failed")
-        return json_error("تعذر قراءة نتائج الفحص المحفوظة حالياً",503)
-def trade_json(t):
-    # Public trade payload contains execution levels and status only; never disclose strategy rationale.
-    return {"id":t.id,"market":t.market,"symbol":t.symbol,"side":t.side,"entry":t.entry,"stop":t.stop,"tp1":t.tp1,"tp2":t.tp2,"tp3":t.tp3,"score":t.score,"change_15m_pct":t.change_15m_pct,"change_pct":t.change_15m_pct,"timeframe":t.timeframe,"status":t.status,"result_pct":t.result_pct,"created_at":iso(t.created_at),"expires_at":iso(t.expires_at)}
+    return json_error("محرك التوصيات القديم متوقف؛ استخدم لوحة تحليل حركة السعر",410)
+
 @app.get("/api/trades")
 def trade_history():
     # The journal is an outcome report, not a raw database dump:
@@ -1727,7 +1573,8 @@ def market_scan_initial_delay_seconds(index):
     return SCAN_INITIAL_DELAY_SECONDS+max(0,int(index))*spacing
 
 
-AUTO_SCAN_ENABLED=os.environ.get("ENABLE_LEGACY_AUTO_SCAN","false").lower()=="true"
+# The previous SMA200/liquidity-sweep scheduler is permanently retired.
+AUTO_SCAN_ENABLED=False
 scheduler=None
 if AUTO_SCAN_ENABLED:
     # One scheduler worker prevents seven markets from launching together on
