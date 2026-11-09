@@ -60,7 +60,7 @@ def _get(url,params=None):
     return payload
 
 def _chart(symbol,interval="15m",period=None):
-    periods={"15m":"60d","30m":"1mo","60m":"6mo","1d":"2y","1wk":"5y","1mo":"max"}
+    periods={"1m":"7d","5m":"60d","15m":"60d","30m":"1mo","60m":"6mo","1d":"2y","1wk":"5y","1mo":"max"}
     period=period or periods.get(interval,"5d")
     errors=[]
     for host in YAHOO_HOSTS:
@@ -530,10 +530,10 @@ def _aggregate_4h(rows):
 
 
 def klines(market,symbol,interval="15m",limit=250):
-    yahoo_map={"15m":"15m","1h":"60m","1d":"1d","1w":"1wk","1M":"1mo"}
-    alpha_map={"15m":"15m","1h":"1h","4h":"4h",
+    yahoo_map={"1m":"1m","15m":"15m","1h":"60m","1d":"1d","1w":"1wk","1M":"1mo"}
+    alpha_map={"1m":"1m","15m":"15m","1h":"1h","4h":"4h",
                "1d":"1d","1w":"1w","1M":"1M"}
-    if interval not in ("15m","1h","4h","1d","1w","1M"):
+    if interval not in ("1m","15m","1h","4h","1d","1w","1M"):
         raise ValueError("Unsupported timeframe "+str(interval))
     if market=="alpha":
         payload=_get(BINANCE_ALPHA+"/bapi/defi/v1/public/alpha-trade/klines",{"symbol":symbol,"interval":alpha_map[interval],"limit":limit})
