@@ -334,6 +334,21 @@ class MarketEngineTests(unittest.TestCase):
             rows = platform.market_adapters.market_tickers("saudi")
         self.assertEqual({row["symbol"] for row in rows}, {"2222.SR","7010.SR"})
 
+    def test_scan_cache_is_reused_even_when_15m_has_no_active_signals(self):
+        with platform.app.app_context():
+            now=platform.utcnow()
+            platform.db.session.add(platform.Setting(key="scan:spot",value=platform.iso(now)))
+            for frame in platform.TIMEFRAMES:
+                platform.db.session.add(platform.Setting(
+                    key=f"scan-frame:smart-flow-quant:spot:{frame}",
+                    value=str(platform.timeframe_bucket(frame,now))
+                ))
+            platform.db.session.commit()
+        with patch.object(platform,"market_tickers",side_effect=AssertionError("cache miss triggered a new scan")):
+            result=platform.run_market_scan("spot")
+        self.assertTrue(result["cached"])
+        self.assertEqual(result["signals"],[])
+
     def test_signal_read_does_not_write_expired_trades(self):
         with platform.app.app_context():
             trade = platform.Trade(
