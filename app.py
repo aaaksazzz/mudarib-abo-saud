@@ -1181,61 +1181,8 @@ def run_market_scan(market,force=False):
             "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":frames_to_scan}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
-    if market not in MARKETS:
-        return json_error("السوق غير معروف",404)
-    blocked=gate_section(market)
-    if blocked:
-        return blocked
-    try:
-        # Keep this endpoint read-only. The single scheduler expires trades;
-        # writing from page requests races with scheduled scans on SQLite.
-        timeframe=request.args.get("timeframe","15m")
-        if timeframe not in TIMEFRAMES:
-            return json_error("الفريم غير مدعوم",400)
-        row=db.session.get(Setting,f"scan:{market}:{timeframe}")
-        meta_row=db.session.get(Setting,f"scan-meta:{market}:{timeframe}")
-        # Backward-compatible read of the last 15m scan during rollout.
-        if row is None and timeframe=="15m":
-            row=db.session.get(Setting,"scan:"+market)
-        if meta_row is None and timeframe=="15m":
-            meta_row=db.session.get(Setting,"scan-meta:"+market)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("SMART FLOW MTF QUANT:%"),Trade.timeframe==timeframe).order_by(Trade.score.desc()).limit(3).all()
-        updated=row.value if row else None
-        try:
-            meta=json.loads(meta_row.value) if meta_row else {}
-        except (ValueError,TypeError):
-            meta={}
-        stale=True
-        if updated:
-            try:
-                max_age_ms=market_strategies.INTERVAL_MS[timeframe]*1.5+120_000
-                stale=aware(datetime.fromisoformat(updated))<utcnow()-timedelta(milliseconds=max_age_ms)
-            except (ValueError,TypeError):
-                stale=True
-        # Never present an old batch or a closed-session quote as a live entry.
-        market_closed=(market=="saudi" and not saudi_market_is_open())
-        runtime=read_scan_runtime(market)
-        scan_error=None
-        if not market_closed:
-            active_scheduler=globals().get("scheduler")
-            if not globals().get("AUTO_SCAN_ENABLED",False):
-                scan_error="الفحص التلقائي غير مفعّل على الخادم؛ يلزم تفعيل ENABLE_AUTO_SCAN."
-            elif not active_scheduler or not active_scheduler.running:
-                scan_error="المجدول الخلفي غير نشط داخل الخدمة."
-            elif stale and runtime.get("status")=="error":
-                scan_error=scan_error_message(runtime.get("last_error_code"))
-        return jsonify({"ok":True,"market":market,"timeframe":timeframe,"timeframes":list(TIMEFRAMES),
-                        "signals":[trade_json(x) for x in active] if not stale and not market_closed else [],
-                        "updated_at":updated,"cached":True,"stale":stale,"scan_ready":bool(updated),
-                        **meta,"timeframes":list(TIMEFRAMES),
-                        "scan_error":scan_error,"market_closed":market_closed,
-                        "engine":"SMART FLOW MTF QUANT","fingerprint":STRATEGY_FINGERPRINT})
-    except Exception:
-        app.logger.exception("signal retrieval failed")
-        return json_error("تعذر قراءة نتائج الفحص المحفوظة حالياً",503)
-def trade_json(t):
-    # Public trade payload contains execution levels and status only; never disclose strategy rationale.
-    return {"id":t.id,"market":t.market,"symbol":t.symbol,"side":t.side,"entry":t.entry,"stop":t.stop,"tp1":t.tp1,"tp2":t.tp2,"tp3":t.tp3,"score":t.score,"change_15m_pct":t.change_15m_pct,"change_pct":t.change_15m_pct,"timeframe":t.timeframe,"status":t.status,"result_pct":t.result_pct,"created_at":iso(t.created_at),"expires_at":iso(t.expires_at)}
+    return json_error("محرك التوصيات القديم متوقف؛ استخدم لوحة تحليل حركة السعر",410)
+
 @app.get("/api/trades")
 def trade_history():
     # The journal is an outcome report, not a raw database dump:
