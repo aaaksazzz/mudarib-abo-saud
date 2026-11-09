@@ -638,7 +638,7 @@ def market_list():
     return jsonify({"ok":True,"markets":[{"id":m,"enabled":section_enabled(m),"provider":provider_status(m)} for m in MARKETS]})
 def provider_status(m):
     sources={"spot":"Binance Spot public API","futures":"Binance USD-M Futures public API","alpha":"Binance Alpha public market API","us-stocks":"Yahoo Finance US equity screener","us-contracts":"Yahoo Finance US futures quotes","saudi":"Yahoo Finance Saudi-listed shares screener","forex":"Yahoo Finance FX and metals quotes"}
-    return {"configured":m in sources,"source":sources.get(m,"غير معروف"),"timeframe":"15m","timeframes":list(market_strategies.TIMEFRAMES),"requires_api_key":False,"access":"public_no_key"}
+    return {"configured":m in sources,"source":sources.get(m,"غير معروف"),"requires_api_key":False,"access":"public_no_key","analysis":"classic_price_action_multi_context"}
 def fetch_json(url,params=None):
     last_error=None
     for attempt in range(3):
@@ -767,34 +767,23 @@ def klines(market,symbol,interval,limit=120):
     base=BINANCE_FUTURES if market=="futures" else BINANCE_SPOT
     path="/fapi/v1/klines" if market=="futures" else "/api/v3/klines"
     return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit})
-TIMEFRAMES=market_strategies.TIMEFRAMES
+TIMEFRAMES=()
 
-STRATEGY_FINGERPRINT=market_strategies.STRATEGY_FINGERPRINT
+STRATEGY_FINGERPRINT=market_price_action.STRATEGY_FINGERPRINT
 @app.get("/api/strategy-status")
 def strategy_status_summary():
-    current_active=Trade.query.filter(
-        Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.expires_at>utcnow(),
+    active_legacy=Trade.query.filter(
+        Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
         Trade.reason.like("SMART FLOW MTF QUANT:%")
     ).count()
-    legacy_active=Trade.query.filter(
-        Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.expires_at>utcnow(),
-        Trade.reason.not_like("SMART FLOW MTF QUANT:%")
-    ).count()
-    diagnostics=market_strategies.diagnostic_self_test()
     return jsonify({
-        "ok":diagnostics["ok"],
-        "engine":"SMART FLOW MTF QUANT",
-        "fingerprint":STRATEGY_FINGERPRINT,
-        "markets":list(MARKETS),
-        "timeframes":list(TIMEFRAMES),
-        "current_active":current_active,
-        "legacy_active":legacy_active,
-        "legacy_removed":legacy_active==0,
-        "manual_only":True,
-        "diagnostics":diagnostics,
-        "strategy_ready":diagnostics["ok"],
+        "ok":True,"engine":"CLASSIC PRICE ACTION","fingerprint":STRATEGY_FINGERPRINT,
+        "markets":list(MARKETS),"timeframes":[],
+        "current_active":0,"legacy_active":active_legacy,
+        "legacy_removed":active_legacy==0,"manual_only":True,
+        "strategy_ready":True,
+        "rules":["liquidity sweep and reclaim","confirmed breakout close","successful retest",
+                 "structural invalidation stop","structure-based targets"]
     })
 
 
