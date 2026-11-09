@@ -112,6 +112,9 @@ def _inspect(item,market,klines_fn):
     sells=sum(1 for p in results.values() if p["side"]=="SELL")
     if buys==sells:return None
     side="BUY" if buys>sells else "SELL"
+    # Cash-only markets must never publish a short-side execution idea.
+    if side=="SELL" and market in ("spot","alpha","us-stocks","saudi"):
+        return None
     aligned=[(tf,p) for tf,p in results.items() if p["side"]==side]
     if len(aligned)<2:return None
     # Prefer daily structure for invalidation, then 4h, then 1h.
