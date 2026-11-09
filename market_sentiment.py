@@ -88,7 +88,7 @@ def _google_news(symbol, market, display_name=None):
         terms.append("Tadawul")
     query = " ".join(x for x in terms if x)
     url = "https://news.google.com/rss/search?q=" + quote(query) + "&hl=en-US&gl=US&ceid=US:en"
-    response = requests.get(url, headers=HEADERS, timeout=(3, 7))
+    response = requests.get(url, headers=HEADERS, timeout=(2, 5))
     response.raise_for_status()
     root = ET.fromstring(response.content)
     items = []
@@ -113,7 +113,7 @@ def _stocktwits(symbol):
     if not re.fullmatch(r"[A-Z]{1,6}", str(symbol or "")):
         return []
     url = "https://api.stocktwits.com/api/2/streams/symbol/" + quote(symbol) + ".json"
-    response = requests.get(url, headers=HEADERS, timeout=(3, 6))
+    response = requests.get(url, headers=HEADERS, timeout=(2, 4))
     response.raise_for_status()
     payload = response.json()
     messages = payload.get("messages") or []
@@ -145,7 +145,7 @@ def _reddit_search(symbol, market):
     else:
         query = raw_symbol.replace("=X", "").replace("=F", "")
     url = "https://www.reddit.com/search.json?q=" + quote(query) + "&sort=new&t=week&limit=25"
-    response = requests.get(url, headers=HEADERS, timeout=(3, 5))
+    response = requests.get(url, headers=HEADERS, timeout=(2, 4))
     response.raise_for_status()
     payload = response.json()
     children = ((payload.get("data") or {}).get("children") or [])
@@ -170,19 +170,18 @@ def _reddit_search(symbol, market):
 def collect_sentiment(symbol, market, display_name=None):
     items = []
     errors = []
-    try:
-        items.extend(_google_news(symbol, market, display_name))
-    except Exception as exc:
-        errors.append("Google News RSS: " + type(exc).__name__)
-    try:
-        items.extend(_reddit_search(symbol, market))
-    except Exception as exc:
-        errors.append("Reddit: " + type(exc).__name__)
+    jobs = {"Google News RSS": lambda: _google_news(symbol, market, display_name),
+            "Reddit": lambda: _reddit_search(symbol, market)}
     if market == "us-stocks":
-        try:
-            items.extend(_stocktwits(symbol))
-        except Exception as exc:
-            errors.append("Stocktwits: " + type(exc).__name__)
+        jobs["Stocktwits"] = lambda: _stocktwits(symbol)
+    with ThreadPoolExecutor(max_workers=len(jobs)) as source_pool:
+        pending = {source_pool.submit(fn): name for name, fn in jobs.items()}
+        for future in as_completed(pending):
+            name = pending[future]
+            try:
+                items.extend(future.result())
+            except Exception as exc:
+                errors.append(name + ": " + type(exc).__name__)
     # De-duplicate exact headline/message text while retaining source diversity.
     unique = {}
     for item in items:
@@ -194,7 +193,7 @@ def collect_sentiment(symbol, market, display_name=None):
     negative = sum(x["weight"] for x in items if x["score"] < 0)
     total = positive + negative
     score = (positive - negative) / total if total else 0.0
-    side = "BUY" if score >= 0.12 else "SELL" if score <= -0.12 else "NEUTRAL"
+    side = "BUY" if len(items) >= 2 and score >= 0.12 else "SELL" if len(items) >= 2 and score <= -0.12 else "NEUTRAL"
     providers = sorted(set(x["provider"] for x in items))
     return {
         "side": side, "sentiment_score": round(score * 100, 1),
