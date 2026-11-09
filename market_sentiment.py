@@ -132,6 +132,41 @@ def _stocktwits(symbol):
                       "article_url": "https://stocktwits.com/symbol/" + quote(symbol), "score": score, "weight": weight, "provider": "Stocktwits"})
     return items
 
+def _reddit_search(symbol, market):
+    raw_symbol = str(symbol).strip().upper()
+    if raw_symbol in ("XAUUSD=X", "GC=F", "MGC=F"):
+        query = "gold"
+    elif raw_symbol in ("XAGUSD=X", "SI=F", "SIL=F"):
+        query = "silver"
+    elif raw_symbol.endswith("USDT"):
+        query = raw_symbol[:-4]
+    elif raw_symbol.endswith(".SR"):
+        query = raw_symbol[:-3] + " Tadawul"
+    else:
+        query = raw_symbol.replace("=X", "").replace("=F", "")
+    url = "https://www.reddit.com/search.json?q=" + quote(query) + "&sort=new&t=week&limit=25"
+    response = requests.get(url, headers=HEADERS, timeout=(3, 5))
+    response.raise_for_status()
+    payload = response.json()
+    children = ((payload.get("data") or {}).get("children") or [])
+    items = []
+    for child in children:
+        post = child.get("data") or {}
+        title = str(post.get("title") or "")
+        body = str(post.get("selftext") or "")
+        score = _headline_score(title + " " + body[:1200])
+        if not score:
+            continue
+        votes = max(0, int(post.get("score") or 0))
+        items.append({"title": (title + (": " + body[:180] if body else ""))[:350],
+                      "source": "Reddit · r/" + str(post.get("subreddit") or "public"),
+                      "source_url": "https://www.reddit.com" + str(post.get("permalink") or ""),
+                      "article_url": "https://www.reddit.com" + str(post.get("permalink") or ""),
+                      "published_at": "", "score": score,
+                      "weight": 0.75 + min(votes, 1000) / 5000,
+                      "provider": "Reddit public search"})
+    return items
+
 def collect_sentiment(symbol, market, display_name=None):
     items = []
     errors = []
@@ -139,6 +174,10 @@ def collect_sentiment(symbol, market, display_name=None):
         items.extend(_google_news(symbol, market, display_name))
     except Exception as exc:
         errors.append("Google News RSS: " + type(exc).__name__)
+    try:
+        items.extend(_reddit_search(symbol, market))
+    except Exception as exc:
+        errors.append("Reddit: " + type(exc).__name__)
     if market == "us-stocks":
         try:
             items.extend(_stocktwits(symbol))
@@ -268,7 +307,7 @@ def scan_market(market, universe, klines_fn, limit=35):
     payload = {"ok": True, "market": market, "engine": "PUBLIC_SENTIMENT_CONSENSUS_V1",
                "checked_assets": len(ranked), "signals_found": len(results), "analysis_errors": errors,
                "coverage_stats": coverage, "signals": results[:30],
-               "sources": ["Google News RSS"] + (["Stocktwits"] if market == "us-stocks" else []),
+               "sources": ["Google News RSS", "Reddit public search"] + (["Stocktwits"] if market == "us-stocks" else []),
                "source_scope": "مصادر عامة متاحة فقط؛ لا تمثل كامل الإنترنت أو جميع المتداولين",
                "updated_at": datetime.now(timezone.utc).isoformat(), "cached": False}
     with _cache_lock:
