@@ -1449,7 +1449,7 @@ def intelligence_scan():
         universe=market_tickers(market)
         if not universe:
             return jsonify({"ok":True,"market":market,"checked_assets":0,"signals_found":0,"signals":[],"error":"لا توجد أصول متاحة من مزود السوق"})
-        result=market_sentiment.scan_market(market,universe,market_adapters.klines,limit=60)
+        result=market_sentiment.scan_market(market,universe,market_adapters.klines,limit=30)
         return jsonify(result)
     except Exception:
         app.logger.exception("public sentiment scan failed for %s",market)
