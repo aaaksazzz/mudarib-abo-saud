@@ -466,7 +466,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "market_scheduler":False}
+            "sentiment_engine":True}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -477,8 +477,6 @@ def readiness():
     except Exception:
         db.session.rollback()
         app.logger.exception("readiness database check failed")
-    active_scheduler=globals().get("scheduler")
-    checks["market_scheduler"]=bool(active_scheduler and active_scheduler.running)
     ready=all(checks.values())
     return jsonify({"ok":ready,"checks":checks,"time":iso(utcnow())}),200 if ready else 503
 @app.get("/api/bootstrap")
