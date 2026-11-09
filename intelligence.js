@@ -8,5 +8,13 @@ const requested=new URLSearchParams(location.search).get("market")||location.pat
 $("#scan").addEventListener("click",scan);
 $("#market").addEventListener("change",scan);
 $("#theme").addEventListener("click",()=>document.body.classList.toggle("light"));
+let autoRefreshTimer=null;
+function scheduleAutoRefresh(){
+ if(autoRefreshTimer)clearInterval(autoRefreshTimer);
+ autoRefreshTimer=setInterval(()=>{if(document.visibilityState==="visible")scan()},75*1000);
+}
+document.addEventListener("visibilitychange",()=>{
+ if(document.visibilityState==="visible")scan();
+});
 scan();
-setInterval(()=>{if(document.visibilityState==="visible")scan()},5*60*1000);
+scheduleAutoRefresh();
