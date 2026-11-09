@@ -42,6 +42,7 @@ jobs:
           assert client.get("/api/trades").status_code == 200
           assert client.get("/api/strategy/status").get_json()["fingerprint"] == "CLASSIC-PRICE-ACTION-MTF-V1-20261109"
           assert client.get("/api/signal-lab/scan").status_code == 410
+          assert client.get("/api/signal-lab/klines").status_code == 410
           for path in ("/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex"):
               page = client.get(path)
               assert page.status_code == 200 and b'src="/intelligence.js?' in page.data and b'href="/intelligence.css?' in page.data, (path, page.status_code)
