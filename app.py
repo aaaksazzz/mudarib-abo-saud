@@ -106,6 +106,18 @@ class Trade(db.Model):
     result_pct=db.Column(db.Float)
     change_15m_pct=db.Column(db.Float)
 
+def trade_json(trade):
+    """Stable public journal shape for historical paper-trade records."""
+    return {
+        "id":trade.id,"market":trade.market,"symbol":trade.symbol,"side":trade.side,
+        "entry":trade.entry,"stop":trade.stop,"tp1":trade.tp1,"tp2":trade.tp2,
+        "tp3":trade.tp3,"score":trade.score,"timeframe":trade.timeframe,
+        "reason":trade.reason,"status":trade.status,
+        "created_at":iso(trade.created_at),"expires_at":iso(trade.expires_at),
+        "result_pct":trade.result_pct,"change_pct":trade.change_15m_pct,
+    }
+
+
 class Article(db.Model):
     id=db.Column(db.Integer, primary_key=True)
     kind=db.Column(db.String(10), nullable=False, default="blog")
@@ -329,8 +341,15 @@ def pro_theme(): return send_from_directory(".", "pro-theme.css")
 def compat_styles(): return send_from_directory(".", "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
-    diagnostic=market_strategies.diagnostic_self_test()
-    return jsonify({"ok":diagnostic["ok"],"strategy": "SMART FLOW MTF QUANT + SMA200", **diagnostic}), 200 if diagnostic["ok"] else 500
+    return jsonify({
+        "ok":True,"strategy":"CLASSIC PRICE ACTION",
+        "engine":"CLASSIC PRICE ACTION",
+        "fingerprint":market_price_action.STRATEGY_FINGERPRINT,
+        "markets":list(MARKETS),
+        "internal_contexts":list(market_price_action.TIMEFRAMES),
+        "user_timeframe_filters":False,
+        "manual_only":True,
+    })
 
 @app.get("/health")
 def health():
@@ -365,7 +384,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "sentiment_engine":True}
+            "price_action_engine":bool(market_price_action.STRATEGY_FINGERPRINT)}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
