@@ -421,7 +421,7 @@ def compat_styles(): return send_from_directory(".", "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
     diagnostic=market_strategies.diagnostic_self_test()
-    return jsonify({"ok":diagnostic["ok"],"strategy": "SMART FLOW QUANT + SMA200", **diagnostic}), 200 if diagnostic["ok"] else 500
+    return jsonify({"ok":diagnostic["ok"],"strategy": "SMART FLOW MTF QUANT + SMA200", **diagnostic}), 200 if diagnostic["ok"] else 500
 
 @app.get("/health")
 def health():
@@ -767,17 +767,17 @@ def strategy_status_summary():
     current_active=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.expires_at>utcnow(),
-        Trade.reason.like("SMART FLOW QUANT:%")
+        Trade.reason.like("SMART FLOW MTF QUANT:%")
     ).count()
     legacy_active=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.expires_at>utcnow(),
-        Trade.reason.not_like("SMART FLOW QUANT:%")
+        Trade.reason.not_like("SMART FLOW MTF QUANT:%")
     ).count()
     diagnostics=market_strategies.diagnostic_self_test()
     return jsonify({
         "ok":diagnostics["ok"],
-        "engine":"SMART FLOW QUANT",
+        "engine":"SMART FLOW MTF QUANT",
         "fingerprint":STRATEGY_FINGERPRINT,
         "markets":list(MARKETS),
         "timeframes":list(TIMEFRAMES),
@@ -807,7 +807,7 @@ def build_signal(market,item,timeframe):
     if not setup or setup.get("side") != gate.get("side"):
         return None
     setup["signal_timeframe"]=signal_timeframe
-    setup["reason"]="SMART FLOW QUANT: strong "+gate["side"]+" + SMA200 on "+signal_timeframe+"; same-side confirmation on "+timeframe+"; "+setup.get("reason","")
+    setup["reason"]="SMART FLOW MTF QUANT: strong "+gate["side"]+" + SMA200 on "+signal_timeframe+"; same-side confirmation on "+timeframe+"; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -1046,6 +1046,12 @@ def run_market_scan(market,force=False):
     if market not in MARKETS:
         raise ValueError("Unknown market "+str(market))
     now=utcnow()
+    # Retire all still-open signals produced by the replaced single-timeframe engine.
+    Trade.query.filter(
+        Trade.market==market, Trade.status.in_(OPEN_TRADE_STATUSES),
+        Trade.expires_at>now, Trade.reason.like("SMART FLOW QUANT:%")
+    ).update({"status":"superseded"}, synchronize_session=False)
+    db.session.commit()
     expire_stale_trades(market)
     scan_key="scan:"+market
     scan_row=db.session.get(Setting,scan_key)
@@ -1059,9 +1065,9 @@ def run_market_scan(market,force=False):
             )
             if last>now-timedelta(minutes=15) and all_frames_current and Trade.query.filter(
                 Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe=="15m",
-                Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")
+                Trade.expires_at>now,Trade.reason.like("SMART FLOW MTF QUANT:%")
             ).count():
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")).order_by(Trade.score.desc()).limit(18).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("SMART FLOW MTF QUANT:%")).order_by(Trade.score.desc()).limit(18).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
                     meta=json.loads(meta_row.value) if meta_row else {}
@@ -1173,7 +1179,7 @@ def run_market_scan(market,force=False):
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("SMART FLOW QUANT:%"),
+        Trade.reason.like("SMART FLOW MTF QUANT:%"),
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
@@ -1207,9 +1213,9 @@ def run_market_scan(market,force=False):
             new_signals.append(signal)
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("SMART FLOW QUANT:%")).update({"status":"superseded"},synchronize_session=False)
+        Trade.reason.not_like("SMART FLOW MTF QUANT:%")).update({"status":"superseded"},synchronize_session=False)
     active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.timeframe.in_(frames_to_scan),Trade.reason.like("SMART FLOW QUANT:%"))
+        Trade.timeframe.in_(frames_to_scan),Trade.reason.like("SMART FLOW MTF QUANT:%"))
     if retained_ids:
         active_query=active_query.filter(~Trade.id.in_(retained_ids))
     active_query.update({"status":"superseded"},synchronize_session=False)
@@ -1269,7 +1275,7 @@ def run_market_scan(market,force=False):
         else:
             frame_meta_row.value=frame_meta
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("SMART FLOW QUANT:%")).order_by(Trade.score.desc()).limit(18).all()
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("SMART FLOW MTF QUANT:%")).order_by(Trade.score.desc()).limit(18).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
             "scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
             "analysis_completed":completed,"analysis_failed":failed,"strategy_matches":strategy_matches,
@@ -1297,7 +1303,7 @@ def signals(market):
             row=db.session.get(Setting,"scan:"+market)
         if meta_row is None and timeframe=="15m":
             meta_row=db.session.get(Setting,"scan-meta:"+market)
-        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("SMART FLOW QUANT:%"),Trade.timeframe==timeframe).order_by(Trade.score.desc()).limit(3).all()
+        active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),Trade.reason.like("SMART FLOW MTF QUANT:%"),Trade.timeframe==timeframe).order_by(Trade.score.desc()).limit(3).all()
         updated=row.value if row else None
         try:
             meta=json.loads(meta_row.value) if meta_row else {}
@@ -1327,7 +1333,7 @@ def signals(market):
                         "updated_at":updated,"cached":True,"stale":stale,"scan_ready":bool(updated),
                         **meta,"timeframes":list(TIMEFRAMES),
                         "scan_error":scan_error,"market_closed":market_closed,
-                        "engine":"SMART FLOW QUANT","fingerprint":STRATEGY_FINGERPRINT})
+                        "engine":"SMART FLOW MTF QUANT","fingerprint":STRATEGY_FINGERPRINT})
     except Exception:
         app.logger.exception("signal retrieval failed")
         return json_error("تعذر قراءة نتائج الفحص المحفوظة حالياً",503)
