@@ -7,7 +7,7 @@ import xml.etree.ElementTree as ET
 import html
 import market_adapters
 import market_strategies
-import market_sentiment
+import market_price_action
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -1448,12 +1448,13 @@ def intelligence_scan():
     try:
         universe=market_tickers(market)
         if not universe:
-            return jsonify({"ok":True,"market":market,"checked_assets":0,"signals_found":0,"signals":[],"error":"لا توجد أصول متاحة من مزود السوق"})
-        result=market_sentiment.scan_market(market,universe,market_adapters.klines,limit=30)
+            return jsonify({"ok":True,"market":market,"checked_assets":0,"universe_total":0,
+                            "signals_found":0,"signals":[],"engine":"CLASSIC_PRICE_ACTION_MTF_V1"})
+        result=market_price_action.scan_market(market,universe,klines,limit=30)
         return jsonify(result)
     except Exception:
-        app.logger.exception("public sentiment scan failed for %s",market)
-        return json_error("تعذر جمع الآراء أو بيانات السعر لهذا السوق حالياً",502)
+        app.logger.exception("classic price-action scan failed for %s",market)
+        return json_error("تعذر جلب بيانات حركة السعر لهذا السوق حالياً",502)
 
 @app.get("/api/news")
 def live_news():
