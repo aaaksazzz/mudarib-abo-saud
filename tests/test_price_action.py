@@ -108,6 +108,16 @@ class ClassicPriceActionTests(unittest.TestCase):
         self.assertEqual(result["universe_total"], 2)
         self.assertEqual(result["analysis_errors"], 0)
 
+    def test_all_candle_provider_failures_return_provider_error_not_empty_success(self):
+        universe = [{"symbol": "AAAUSDT", "quote_volume": 2_000_000}]
+        def broken(*args, **kwargs):
+            raise OSError("provider offline")
+        result = engine.scan_market("unit-test", universe, broken, limit=1)
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["provider_error"])
+        self.assertEqual(result["error_code"], "all_candle_requests_failed")
+        self.assertEqual(result["signals"], [])
+
     def test_journal_serializer_and_current_strategy_status(self):
         now = datetime.now(timezone.utc)
         trade = SimpleNamespace(
