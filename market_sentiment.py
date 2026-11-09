@@ -207,39 +207,55 @@ def scan_market(market, universe, klines_fn, limit=35):
             return dict(cached[1], cached=True)
     ranked = sorted(universe, key=lambda x: float(x.get("quote_volume") or 0), reverse=True)[:max(1, min(int(limit), 60))]
     results, errors = [], 0
+    coverage = {"assets_with_mentions": 0, "assets_without_mentions": 0,
+                "provider_failures": 0, "neutral_assets": 0, "technical_unavailable": 0}
     def inspect(item):
         symbol = str(item.get("symbol") or "")
         if not symbol:
-            return None
+            return {"signal": None, "sentiment": None, "errors": 0}
         sentiment = collect_sentiment(symbol, market, item.get("name"))
-        if sentiment["side"] == "NEUTRAL" or sentiment["mentions"] == 0:
-            return None
+        if sentiment["mentions"] == 0:
+            return {"signal": None, "sentiment": sentiment, "errors": len(sentiment["source_errors"])}
+        if sentiment["side"] == "NEUTRAL":
+            return {"signal": None, "sentiment": sentiment, "errors": len(sentiment["source_errors"])}
         levels = technical_levels(market, symbol, sentiment["side"], klines_fn)
         if not levels:
-            return None
+            return {"signal": None, "sentiment": sentiment, "errors": len(sentiment["source_errors"]), "technical_unavailable": True}
         votes = sentiment["positive_mentions"] + sentiment["negative_mentions"]
         consensus = abs(sentiment["sentiment_score"])
         confidence = min(95, round(45 + consensus * 0.35 + min(votes, 8) * 2))
-        return {"market": market, "symbol": symbol, "side": sentiment["side"],
-                "sentiment_score": sentiment["sentiment_score"], "confidence": confidence,
-                "mentions": sentiment["mentions"], "positive_mentions": sentiment["positive_mentions"],
-                "negative_mentions": sentiment["negative_mentions"], "providers": sentiment["providers"],
-                "coverage": sentiment["coverage"], "evidence": sentiment["evidence"],
-                "source_errors": sentiment["source_errors"], "quote_volume": item.get("quote_volume"),
-                "change_pct_24h": item.get("change_pct"), **levels}
+        signal = {"market": market, "symbol": symbol, "side": sentiment["side"],
+                  "sentiment_score": sentiment["sentiment_score"], "confidence": confidence,
+                  "mentions": sentiment["mentions"], "positive_mentions": sentiment["positive_mentions"],
+                  "negative_mentions": sentiment["negative_mentions"], "providers": sentiment["providers"],
+                  "coverage": sentiment["coverage"], "evidence": sentiment["evidence"],
+                  "source_errors": sentiment["source_errors"], "quote_volume": item.get("quote_volume"),
+                  "change_pct_24h": item.get("change_pct"), **levels}
+        return {"signal": signal, "sentiment": sentiment, "errors": len(sentiment["source_errors"])}
     with ThreadPoolExecutor(max_workers=5) as pool:
         futures = [pool.submit(inspect, item) for item in ranked]
         for future in as_completed(futures):
             try:
-                value = future.result()
-                if value:
-                    results.append(value)
+                result = future.result()
+                sentiment = result.get("sentiment") or {}
+                if sentiment.get("mentions", 0):
+                    coverage["assets_with_mentions"] += 1
+                else:
+                    coverage["assets_without_mentions"] += 1
+                if sentiment.get("side") == "NEUTRAL":
+                    coverage["neutral_assets"] += 1
+                if result.get("technical_unavailable"):
+                    coverage["technical_unavailable"] += 1
+                coverage["provider_failures"] += result.get("errors", 0)
+                if result.get("signal"):
+                    results.append(result["signal"])
             except Exception:
                 errors += 1
     results.sort(key=lambda x: (x["confidence"], abs(x["sentiment_score"]), float(x.get("quote_volume") or 0)), reverse=True)
     payload = {"ok": True, "market": market, "engine": "PUBLIC_SENTIMENT_CONSENSUS_V1",
                "checked_assets": len(ranked), "signals_found": len(results), "analysis_errors": errors,
-               "signals": results[:30], "sources": ["Google News RSS"] + (["Stocktwits"] if market == "us-stocks" else []),
+               "coverage_stats": coverage, "signals": results[:30],
+               "sources": ["Google News RSS"] + (["Stocktwits"] if market == "us-stocks" else []),
                "source_scope": "مصادر عامة متاحة فقط؛ لا تمثل كامل الإنترنت أو جميع المتداولين",
                "updated_at": datetime.now(timezone.utc).isoformat(), "cached": False}
     with _cache_lock:
