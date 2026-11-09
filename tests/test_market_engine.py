@@ -478,14 +478,14 @@ class MarketEngineTests(unittest.TestCase):
         rows = [[i * 900000, 100, 101, 99, 100, 1000] for i in range(120)]
         setup = {"side":"BUY","entry":100.0,"stop":97.0,"tp1":102.0,"tp2":103.0,
                  "tp3":105.0,"score":84.0,"timeframe":"15m","change_pct":0.5,
-                 "change_15m_pct":0.5,"reason":"SMART FLOW QUANT:: structure breakout"}
+                 "change_15m_pct":0.5,"reason":"SMART FLOW MTF QUANT:: structure breakout"}
         with patch.object(platform, "klines", return_value=rows), patch.object(platform.market_strategies, "analyze", return_value=setup):
             signal = platform.build_signal("spot", {"symbol":"BTCUSDT","quote_volume":50000000}, "15m")
         self.assertEqual(signal["side"], "BUY")
         self.assertAlmostEqual((signal["tp1"] / signal["entry"] - 1) * 100, 2.0)
         self.assertAlmostEqual((signal["tp2"] / signal["entry"] - 1) * 100, 3.0)
         self.assertAlmostEqual((signal["tp3"] / signal["entry"] - 1) * 100, 5.0)
-        self.assertIn("SMART FLOW QUANT:", signal["reason"])
+        self.assertIn("SMART FLOW MTF QUANT:", signal["reason"])
 
     def test_api_returns_only_the_requested_timeframe(self):
         self.assertEqual(platform.TIMEFRAMES, ("15m","1h","4h","1d","1w","1M"))
@@ -568,7 +568,7 @@ class MarketEngineTests(unittest.TestCase):
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":99.0,
             "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,"atr":0.5,
             "change_pct":1.2,"timeframe":"15m","signal_candle_time":now_ms-900000-1000,
-            "reason":"SMART FLOW QUANT:: confirmed.","atr":1.0
+            "reason":"SMART FLOW MTF QUANT:: confirmed.","atr":1.0
         }
         def per_frame(market, item, timeframe):
             interval=platform.market_strategies.INTERVAL_MS[timeframe]
@@ -589,7 +589,7 @@ class MarketEngineTests(unittest.TestCase):
             "symbol":"BTCUSDT","side":"BUY","entry":100.0,"stop":99.0,
             "tp1":101.0,"tp2":102.0,"tp3":103.0,"score":84.5,"atr":1.0,
             "change_pct":1.2,"timeframe":"15m","signal_candle_time":now_ms-900000-1000,
-            "reason":"SMART FLOW QUANT:: confirmed."
+            "reason":"SMART FLOW MTF QUANT:: confirmed."
         }
         candle_time={}
         def per_frame(market, item, timeframe):
