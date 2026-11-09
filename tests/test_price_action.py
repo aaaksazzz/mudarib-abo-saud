@@ -35,8 +35,8 @@ class ClassicPriceActionTests(unittest.TestCase):
             engine._cursor.pop("unit-test", None)
 
     def test_fingerprint_and_internal_contexts(self):
-        self.assertEqual(engine.STRATEGY_FINGERPRINT, "CLASSIC-PRICE-ACTION-15M-V2-20261109")
-        self.assertEqual(engine.TIMEFRAMES, ("15m",))
+        self.assertEqual(engine.STRATEGY_FINGERPRINT, "SULTAN-PRICE-ACTION-W-D-4H-15M-V1-20261109")
+        self.assertEqual(engine.TIMEFRAMES, ("1w", "1d", "4h", "15m"))
 
     def test_detects_closed_bullish_and_bearish_liquidity_sweeps(self):
         self.assertEqual(engine._pattern(candle_set("buy_sweep"))["side"], "BUY")
@@ -54,11 +54,7 @@ class ClassicPriceActionTests(unittest.TestCase):
 
     def test_requires_two_matching_timeframe_confirmations(self):
         def provider(market, symbol, timeframe, limit):
-            if timeframe == "1h":
-                return candle_set("buy_sweep")
-            if timeframe == "4h":
-                return candle_set("flat")
-            return candle_set("sell_sweep")
+            return candle_set("buy_sweep" if timeframe in ("1w", "1d", "4h") else "sell_sweep")
         result = engine._inspect({"symbol": "TESTUSDT", "price": 100.3}, "futures", provider)
         self.assertIsNone(result)
 
@@ -77,11 +73,12 @@ class ClassicPriceActionTests(unittest.TestCase):
     def test_inspect_builds_levels_after_two_confirmations(self):
         def provider(market, symbol, timeframe, limit):
             return candle_set("buy_sweep")
-        result = engine._inspect(
-            {"symbol": "TESTUSDT", "price": 100.3, "quote_volume": 2_000_000},
-            "futures",
-            provider,
-        )
+        with patch("market_sultan_strategy.direction_stack", return_value=("BUY", {"1w":"UP","1d":"UP","4h":"NEUTRAL"})):
+            result = engine._inspect(
+                {"symbol": "TESTUSDT", "price": 100.3, "quote_volume": 2_000_000},
+                "futures",
+                provider,
+            )
         self.assertIsNotNone(result)
         self.assertEqual(result["side"], "BUY")
         self.assertGreaterEqual(result["confirmations"], 2)
@@ -94,7 +91,7 @@ class ClassicPriceActionTests(unittest.TestCase):
     def test_provider_failure_is_not_silently_reported_as_no_signal(self):
         def broken(*args, **kwargs):
             raise OSError("provider offline")
-        with self.assertRaisesRegex(RuntimeError, "Insufficient completed 15m candles"):
+        with self.assertRaisesRegex(RuntimeError, "1w candle provider failed"):
             engine._inspect({"symbol": "TESTUSDT"}, "futures", broken)
 
     def test_small_universe_is_not_duplicated_to_fill_scan_batch(self):
