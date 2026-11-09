@@ -25,7 +25,7 @@ class Sma200StrategyTests(unittest.TestCase):
         self.assertEqual(STRATEGY_FINGERPRINT, "SMART-FLOW-MTF-SMA200-V2-20261109")
         self.assertEqual(TIMEFRAMES, ("15m","1h","4h","1d","1w","1M"))
         self.assertEqual(len(PROFILES), 7)
-        self.assertEqual(SIGNAL_TIMEFRAME, {"15m":"1m","1h":"15m","4h":"15m","1d":"1h","1w":"4h","1M":"1d"})
+        self.assertEqual(SIGNAL_TIMEFRAME, {"15m":"1m","1h":"15m","4h":"1h","1d":"1h","1w":"4h","1M":"1d"})
         self.assertIn("1m", INTERVAL_MS)
 
     def test_sma200_gate_allows_only_matching_direction(self):
