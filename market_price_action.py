@@ -46,11 +46,13 @@ def _pattern(rows):
     if bull_break: return {"side":"BUY","kind":"اختراق مقاومة بإغلاق مؤكد","entry":c[i],"invalidation":prior_hi,"strength":1+(vol_ratio>=1.2)}
     if bear_break: return {"side":"SELL","kind":"كسر دعم بإغلاق مؤكد","entry":c[i],"invalidation":prior_lo,"strength":1+(vol_ratio>=1.2)}
     # Failed breakout/retest: price returns to broken level and closes back in breakout direction.
-    level_hi=max(h[i-8:i]); level_lo=min(l[i-8:i])
-    if l[i]<=level_hi and c[i]>level_hi and c[i]>o[i] and close_pos>=0.68:
-        return {"side":"BUY","kind":"إعادة اختبار ناجحة للمقاومة","entry":c[i],"invalidation":min(l[i],level_hi),"strength":1}
-    if h[i]>=level_lo and c[i]<level_lo and c[i]<o[i] and close_pos<=0.32:
-        return {"side":"SELL","kind":"إعادة اختبار ناجحة للدعم","entry":c[i],"invalidation":max(h[i],level_lo),"strength":1}
+    resistance=max(h[i-20:i-5]); support=min(l[i-20:i-5])
+    prior_bull_break=any(c[j]>resistance and c[j]>o[j] for j in range(i-5,i))
+    prior_bear_break=any(c[j]<support and c[j]<o[j] for j in range(i-5,i))
+    if prior_bull_break and l[i]<=resistance*1.002 and c[i]>resistance and c[i]>o[i] and close_pos>=0.62:
+        return {"side":"BUY","kind":"إعادة اختبار ناجحة للمقاومة","entry":c[i],"invalidation":min(l[i],resistance),"strength":1}
+    if prior_bear_break and h[i]>=support*0.998 and c[i]<support and c[i]<o[i] and close_pos<=0.38:
+        return {"side":"SELL","kind":"إعادة اختبار ناجحة للدعم","entry":c[i],"invalidation":max(h[i],support),"strength":1}
     return None
 
 def _atr(rows):
