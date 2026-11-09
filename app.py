@@ -312,8 +312,8 @@ def compat_styles(): return send_from_directory(".", "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
     return jsonify({
-        "ok":True,"strategy":"CLASSIC PRICE ACTION",
-        "engine":"CLASSIC PRICE ACTION",
+        "ok":True,"strategy":"SULTAN MULTI-TIMEFRAME PRICE ACTION",
+        "engine":"SULTAN MULTI-TIMEFRAME PRICE ACTION",
         "fingerprint":market_price_action.STRATEGY_FINGERPRINT,
         "markets":list(MARKETS),
         "internal_contexts":list(market_price_action.TIMEFRAMES),
@@ -354,7 +354,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":market_price_action.STRATEGY_FINGERPRINT.startswith("CLASSIC-PRICE-ACTION-MTF-")}
+            "price_action_engine":market_price_action.STRATEGY_FINGERPRINT.startswith("SULTAN-PRICE-ACTION-W-D-4H-15M-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -525,8 +525,22 @@ def update_admin_contact():
 def market_list():
     return jsonify({"ok":True,"markets":[{"id":m,"enabled":section_enabled(m),"provider":provider_status(m)} for m in MARKETS]})
 def provider_status(m):
-    sources={"spot":"Binance Spot public API","futures":"Binance USD-M Futures public API","alpha":"Binance Alpha public market API","us-stocks":"Yahoo Finance US equity screener","us-contracts":"Yahoo Finance US futures quotes","saudi":"Yahoo Finance Saudi-listed shares screener","forex":"Yahoo Finance FX and metals quotes"}
-    return {"configured":m in sources,"source":sources.get(m,"غير معروف"),"requires_api_key":False,"access":"public_no_key","analysis":"classic_price_action_multi_context"}
+    # Report actual adapter topology honestly. A second hostname for the same
+    # vendor is a mirror, not an independent data provider or a proven failover.
+    providers={
+        "spot":{"primary":"Binance Spot public API","backup":"Binance API mirror hosts","backup_type":"same_vendor_mirror","independent_backup":False},
+        "futures":{"primary":"Binance USD-M Futures public API","backup":"Binance Futures API mirror hosts","backup_type":"same_vendor_mirror","independent_backup":False},
+        "alpha":{"primary":"Binance Alpha public API","backup":None,"backup_type":"none","independent_backup":False},
+        "us-stocks":{"primary":"Yahoo Finance US screener/chart","backup":"Yahoo Finance secondary hostname","backup_type":"same_vendor_mirror","independent_backup":False},
+        "us-contracts":{"primary":"Yahoo Finance futures quotes/chart","backup":"Yahoo Finance secondary hostname","backup_type":"same_vendor_mirror","independent_backup":False},
+        "saudi":{"primary":"Saudi Exchange official feed","backup":"Yahoo Finance charts/screener; TradingView scanner for quotes/universe","backup_type":"partial_market_data","independent_backup":True},
+        "forex":{"primary":"Yahoo Finance FX/metals chart","backup":"Yahoo Finance secondary hostname","backup_type":"same_vendor_mirror","independent_backup":False},
+    }
+    item=providers.get(m)
+    if not item:
+        return {"configured":False,"health":"unknown","source":None,"requires_api_key":False}
+    return {**item,"configured":True,"health":"not_probed","health_note":"Adapter presence only; live connectivity is not tested by this endpoint",
+            "requires_api_key":False,"access":"public_no_key","analysis":"classic_price_action_15m"}
 def fetch_json(url,params=None):
     last_error=None
     for attempt in range(3):
@@ -665,8 +679,8 @@ def strategy_status_summary():
         Trade.reason.like("SMART FLOW MTF QUANT:%")
     ).count()
     return jsonify({
-        "ok":True,"engine":"CLASSIC PRICE ACTION","fingerprint":STRATEGY_FINGERPRINT,
-        "markets":list(MARKETS),"timeframes":[],
+        "ok":True,"engine":"SULTAN MULTI-TIMEFRAME PRICE ACTION","fingerprint":STRATEGY_FINGERPRINT,
+        "markets":list(MARKETS),"timeframes":list(market_price_action.TIMEFRAMES),
         "current_active":0,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_ready":True,
@@ -1273,7 +1287,7 @@ def intelligence_scan():
         universe=market_tickers(market)
         if not universe:
             return jsonify({"ok":True,"market":market,"checked_assets":0,"universe_total":0,
-                            "signals_found":0,"signals":[],"engine":"CLASSIC_PRICE_ACTION_MTF_V1"})
+                            "signals_found":0,"signals":[],"engine":"SULTAN_MULTI_TIMEFRAME_V1"})
         result=market_price_action.scan_market(market,universe,klines,limit=30)
         return jsonify(result)
     except Exception:

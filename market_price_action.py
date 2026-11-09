@@ -2,13 +2,14 @@
 import math, time, threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+import market_sultan_strategy
 
-TIMEFRAMES=("15m",)  # All markets use the same confirmed 15-minute analysis timeframe.
+TIMEFRAMES=market_sultan_strategy.TIMEFRAMES  # W -> D -> 4h direction; 15m entry.
 CACHE_SECONDS=60
 _cache={}
 _cursor={}
 _lock=threading.Lock()
-STRATEGY_FINGERPRINT="CLASSIC-PRICE-ACTION-15M-V2-20261109"
+STRATEGY_FINGERPRINT=market_sultan_strategy.FINGERPRINT
 
 def _bars(rows):
     if not isinstance(rows,list) or len(rows)<25: return []
@@ -88,44 +89,10 @@ def _levels(entry,stop,side,rows):
             "reward_risk_tp3":abs(targets[2]-entry)/risk}
 
 def _inspect(item,market,klines_fn):
-    """Analyze one completed 15-minute candle sequence across every supported market."""
-    symbol=str(item.get("symbol") or "")
-    if not symbol:
-        return None
-    try:
-        rows=klines_fn(market,symbol,"15m",120)
-    except Exception as exc:
-        raise RuntimeError("15m candle provider failed: "+type(exc).__name__) from exc
-    bars=_bars(rows)
-    if len(bars)<22:
-        raise RuntimeError("Insufficient completed 15m candles")
-    pattern=_pattern(rows)
-    if not pattern:
-        return None
-    side=pattern["side"]
-    # Cash-only markets publish BUY setups only; no synthetic short trades.
-    if side=="SELL" and market in ("spot","alpha","us-stocks","saudi"):
-        return None
-    entry=float(item.get("price") or pattern["entry"])
-    atr=_atr(rows)
-    if not math.isfinite(entry) or entry<=0 or not math.isfinite(atr) or atr<=0:
-        return None
-    pad=max(atr*0.08,entry*0.0003)
-    stop=float(pattern["invalidation"])-pad if side=="BUY" else float(pattern["invalidation"])+pad
-    levels=_levels(entry,stop,side,rows)
-    if not levels:
-        return None
-    return {"market":market,"symbol":symbol,"side":side,"timeframe":"15m",
-            "pattern":pattern["kind"],"entry":round(entry,10),
-            "stop":round(levels["stop"],10),"tp1":round(levels["tp1"],10),
-            "tp2":round(levels["tp2"],10),"tp3":round(levels["tp3"],10),
-            "risk_pct":round(levels["risk_pct"],3),
-            "reward_risk_tp3":round(levels["reward_risk_tp3"],2),
-            "confirmations":1,"score":min(95,65+int(pattern["strength"])*8),
-            "quote_volume":item.get("quote_volume"),
-            "change_pct_24h":item.get("change_pct"),
-            "analysis":"تحليل حركة السعر والسيولة على شموع 15 دقيقة مكتملة",
-            "strategy_fingerprint":STRATEGY_FINGERPRINT}
+    """Apply weekly/daily/4h directional alignment and a completed 15m entry."""
+    return market_sultan_strategy.inspect(
+        item, market, klines_fn, _pattern, _atr, _levels
+    )
 
 def scan_market(market,universe,klines_fn,limit=30):
     now=time.time()
@@ -134,7 +101,7 @@ def scan_market(market,universe,klines_fn,limit=30):
         if old and now-old[0]<CACHE_SECONDS:return dict(old[1],cached=True)
         ordered=sorted(universe,key=lambda x:float(x.get("quote_volume") or 0),reverse=True)
         if not ordered:
-            return {"ok":True,"market":market,"engine":"CLASSIC_PRICE_ACTION_MTF_V1",
+            return {"ok":True,"market":market,"engine":"SULTAN_MULTI_TIMEFRAME_V1",
                     "checked_assets":0,"universe_total":0,"scan_offset":0,
                     "signals_found":0,"analysis_errors":0,"signals":[],
                     "updated_at":datetime.now(timezone.utc).isoformat(),"cached":False,
@@ -154,11 +121,21 @@ def scan_market(market,universe,klines_fn,limit=30):
                 if x:found.append(x)
             except Exception:failed+=1
     found.sort(key=lambda x:(x["score"],float(x.get("quote_volume") or 0)),reverse=True)
-    payload={"ok":True,"market":market,"engine":"CLASSIC_PRICE_ACTION_MTF_V1",
+    # If every requested candle fetch failed, this is a provider outage, not
+    # a valid empty-signal scan. Never cache or present it as "no opportunities".
+    if failed==len(batch) and batch:
+        return {"ok":False,"market":market,"engine":"SULTAN_MULTI_TIMEFRAME_V1",
+                "provider_error":True,"error_code":"all_candle_requests_failed",
+                "checked_assets":len(batch),"universe_total":len(ordered),"scan_offset":offset,
+                "signals_found":0,"analysis_errors":failed,"signals":[],
+                "updated_at":datetime.now(timezone.utc).isoformat(),"cached":False,
+                "coverage":"تعذر جلب شموع أحد الفريمات المطلوبة من مزود البيانات؛ لم يتم اعتماد نتيجة فحص",
+                "strategy_fingerprint":STRATEGY_FINGERPRINT}
+    payload={"ok":True,"market":market,"engine":"SULTAN_MULTI_TIMEFRAME_V1",
              "checked_assets":len(batch),"universe_total":len(ordered),"scan_offset":offset,
              "signals_found":len(found),"analysis_errors":failed,"signals":found[:30],
              "updated_at":datetime.now(timezone.utc).isoformat(),"cached":False,
-             "coverage":"فحص متناوب لجميع الأصول المؤهلة؛ لا يعني عدم ظهور إشارة أن السوق بلا اتجاه",
+             "coverage":"فحص متناوب لجميع الأصول المؤهلة؛ اتجاه أسبوعي ويومي و4 ساعات مع دخول 15 دقيقة",
              "strategy_fingerprint":STRATEGY_FINGERPRINT}
     with _lock:_cache[market]=(now,payload)
     return payload

@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Compile backend
-        run: python -m compileall -q app.py market_adapters.py market_price_action.py
+        run: python -m compileall -q app.py market_adapters.py market_price_action.py market_sultan_strategy.py
       - name: Run backend regression tests
         env:
           SECRET_KEY: ci-test-secret-key-not-for-production
@@ -40,7 +40,7 @@ jobs:
           assert client.get("/health").get_json()["ok"] is True
           assert client.get("/api/bootstrap").status_code == 200
           assert client.get("/api/trades").status_code == 200
-          assert client.get("/api/strategy/status").get_json()["fingerprint"] == "CLASSIC-PRICE-ACTION-MTF-V1-20261109"
+          assert client.get("/api/strategy/status").get_json()["fingerprint"] == "SULTAN-PRICE-ACTION-W-D-4H-15M-V1-20261109"
           assert client.get("/api/signal-lab/scan").status_code == 410
           assert client.get("/api/signal-lab/klines").status_code == 410
           for path in ("/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex"):
