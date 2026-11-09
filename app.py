@@ -228,11 +228,11 @@ def intelligence_stylesheet(): return send_from_directory(".", "intelligence.css
 @app.get("/market/<market>")
 def market_page_route(market):
     if market not in MARKETS: return json_error("السوق غير معروف",404)
-    return send_from_directory(".", "index.html")
+    return send_from_directory(".", "intelligence.html")
 
 @app.get("/signal-lab")
 def signal_lab_page():
-    return send_from_directory(".", "signal-lab.html")
+    return send_from_directory(".", "intelligence.html")
 
 @app.get("/signal-lab.js")
 def signal_lab_script():
