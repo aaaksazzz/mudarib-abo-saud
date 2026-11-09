@@ -62,6 +62,18 @@ class ClassicPriceActionTests(unittest.TestCase):
         result = engine._inspect({"symbol": "TESTUSDT", "price": 100.3}, "futures", provider)
         self.assertIsNone(result)
 
+    def test_cash_only_markets_reject_sell_signals(self):
+        def provider(market, symbol, timeframe, limit):
+            return candle_set("sell_sweep")
+        for market in ("spot", "alpha", "us-stocks", "saudi"):
+            with self.subTest(market=market):
+                result = engine._inspect(
+                    {"symbol": "TEST", "price": 99.7, "quote_volume": 2_000_000},
+                    market,
+                    provider,
+                )
+                self.assertIsNone(result)
+
     def test_inspect_builds_levels_after_two_confirmations(self):
         def provider(market, symbol, timeframe, limit):
             return candle_set("buy_sweep")
