@@ -791,16 +791,23 @@ def strategy_status_summary():
 
 
 def build_signal(market,item,timeframe):
-    # Let provider/transport failures reach the scan coordinator. Returning None
-    # for both "no setup" and "data unavailable" made failed feeds look healthy.
+    # Require a strong independent setup on the mapped signal timeframe first,
+    # then require the trade timeframe analysis to confirm the same direction.
     symbol=item["symbol"]
+    signal_timeframe=market_strategies.SIGNAL_TIMEFRAME[timeframe]
+    signal_rows=klines(market,symbol,signal_timeframe,250)
+    gate=market_strategies.analyze(market,symbol,signal_rows,timeframe=signal_timeframe)
+    if not gate:
+        return None
     rows=klines(market,symbol,timeframe,250)
     flow=None
     if item.get("include_microstructure") and market in ("spot","futures"):
         flow=market_adapters.microstructure(market,symbol)
     setup=market_strategies.analyze(market,symbol,rows,timeframe=timeframe,microstructure=flow)
-    if not setup:
+    if not setup or setup.get("side") != gate.get("side"):
         return None
+    setup["signal_timeframe"]=signal_timeframe
+    setup["reason"]="SMART FLOW QUANT: strong "+gate["side"]+" + SMA200 on "+signal_timeframe+"; same-side confirmation on "+timeframe+"; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
