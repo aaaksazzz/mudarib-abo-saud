@@ -3,12 +3,12 @@ import math, time, threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
-TIMEFRAMES=("1h","4h","1d")  # Internal analysis only; never exposed as user-selectable filters.
-CACHE_SECONDS=240
+TIMEFRAMES=("15m",)  # All markets use the same confirmed 15-minute analysis timeframe.
+CACHE_SECONDS=60
 _cache={}
 _cursor={}
 _lock=threading.Lock()
-STRATEGY_FINGERPRINT="CLASSIC-PRICE-ACTION-MTF-V1-20261109"
+STRATEGY_FINGERPRINT="CLASSIC-PRICE-ACTION-15M-V2-20261109"
 
 def _bars(rows):
     if not isinstance(rows,list) or len(rows)<25: return []
@@ -88,52 +88,43 @@ def _levels(entry,stop,side,rows):
             "reward_risk_tp3":abs(targets[2]-entry)/risk}
 
 def _inspect(item,market,klines_fn):
+    """Analyze one completed 15-minute candle sequence across every supported market."""
     symbol=str(item.get("symbol") or "")
-    if not symbol:return None
-    results={}
-    candle_sets={}
-    provider_failures=[]
-    for tf in TIMEFRAMES:
-        try:
-            rows=klines_fn(market,symbol,tf,90)
-            if len(_bars(rows))<22:
-                provider_failures.append(tf+": insufficient completed candles")
-                continue
-            candle_sets[tf]=rows
-            p=_pattern(rows)
-            if p:results[tf]=p
-        except Exception as exc:
-            provider_failures.append(tf+": "+type(exc).__name__)
-    # Do not silently report a clean no-signal result when most candle feeds failed.
-    if len(candle_sets)<2:
-        raise RuntimeError("Insufficient candle coverage ("+str(len(candle_sets))+"/"+str(len(TIMEFRAMES))+"): "+"; ".join(provider_failures))
-    if not results:return None
-    buys=sum(1 for p in results.values() if p["side"]=="BUY")
-    sells=sum(1 for p in results.values() if p["side"]=="SELL")
-    if buys==sells:return None
-    side="BUY" if buys>sells else "SELL"
-    # Cash-only markets must never publish a short-side execution idea.
+    if not symbol:
+        return None
+    try:
+        rows=klines_fn(market,symbol,"15m",120)
+    except Exception as exc:
+        raise RuntimeError("15m candle provider failed: "+type(exc).__name__) from exc
+    bars=_bars(rows)
+    if len(bars)<22:
+        raise RuntimeError("Insufficient completed 15m candles")
+    pattern=_pattern(rows)
+    if not pattern:
+        return None
+    side=pattern["side"]
+    # Cash-only markets publish BUY setups only; no synthetic short trades.
     if side=="SELL" and market in ("spot","alpha","us-stocks","saudi"):
         return None
-    aligned=[(tf,p) for tf,p in results.items() if p["side"]==side]
-    if len(aligned)<2:return None
-    # Prefer daily structure for invalidation, then 4h, then 1h.
-    chosen=next((p for tf,p in aligned if tf=="1d"),None) or next((p for tf,p in aligned if tf=="4h"),None) or aligned[0][1]
-    entry=float(item.get("price") or chosen["entry"])
-    daily=candle_sets.get("1d") or candle_sets.get("4h") or candle_sets.get("1h")
-    atr=_atr(daily)
-    if atr<=0:return None
+    entry=float(item.get("price") or pattern["entry"])
+    atr=_atr(rows)
+    if not math.isfinite(entry) or entry<=0 or not math.isfinite(atr) or atr<=0:
+        return None
     pad=max(atr*0.08,entry*0.0003)
-    stop=float(chosen["invalidation"])-pad if side=="BUY" else float(chosen["invalidation"])+pad
-    levels=_levels(entry,stop,side,daily)
-    if not levels:return None
-    return {"market":market,"symbol":symbol,"side":side,"pattern":chosen["kind"],
-            "entry":round(entry,10),"stop":round(levels["stop"],10),
-            "tp1":round(levels["tp1"],10),"tp2":round(levels["tp2"],10),"tp3":round(levels["tp3"],10),
-            "risk_pct":round(levels["risk_pct"],3),"reward_risk_tp3":round(levels["reward_risk_tp3"],2),
-            "confirmations":len(aligned),"score":min(95,55+len(aligned)*10+sum(int(p["strength"]) for _,p in aligned)*3),
-            "quote_volume":item.get("quote_volume"),"change_pct_24h":item.get("change_pct"),
-            "analysis":"توافق بنية السعر على أكثر من قراءة داخلية؛ شموع مكتملة فقط",
+    stop=float(pattern["invalidation"])-pad if side=="BUY" else float(pattern["invalidation"])+pad
+    levels=_levels(entry,stop,side,rows)
+    if not levels:
+        return None
+    return {"market":market,"symbol":symbol,"side":side,"timeframe":"15m",
+            "pattern":pattern["kind"],"entry":round(entry,10),
+            "stop":round(levels["stop"],10),"tp1":round(levels["tp1"],10),
+            "tp2":round(levels["tp2"],10),"tp3":round(levels["tp3"],10),
+            "risk_pct":round(levels["risk_pct"],3),
+            "reward_risk_tp3":round(levels["reward_risk_tp3"],2),
+            "confirmations":1,"score":min(95,65+int(pattern["strength"])*8),
+            "quote_volume":item.get("quote_volume"),
+            "change_pct_24h":item.get("change_pct"),
+            "analysis":"تحليل حركة السعر والسيولة على شموع 15 دقيقة مكتملة",
             "strategy_fingerprint":STRATEGY_FINGERPRINT}
 
 def scan_market(market,universe,klines_fn,limit=30):
