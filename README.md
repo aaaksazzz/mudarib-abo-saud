@@ -17,14 +17,13 @@ Production-oriented market intelligence terminal.
 - **Tadawul:** public Saudi Exchange data is preferred, with Yahoo, a public ticker directory and TradingView fallbacks. Saudi equities are not filtered by the $1M threshold; public-feed coverage can be incomplete during provider restrictions.
 - **Forex & Gold:** public Yahoo symbol list; FX tick volume is not represented as exchange-traded dollar volume.
 
-## Active strategy: SMART FLOW QUANT · same-timeframe SMA200 · multi-timeframe
-- The canonical engine fingerprint is `SMART-FLOW-SMA200-MTF-2-3-5-V1-20261108`.
-- All seven markets expose six independently scanned frames: 15m, 1h, 4h, 1d, 1w and 1M. Each frame uses its own completed candles, SMA200, entry validation, stop and trade-outcome replay; no cross-frame candle mixing is allowed.
-- At least 200 valid completed candles from the requested frame are required. Providers that cannot supply a valid history for a symbol/frame are counted as unavailable, not replaced with another frame.
-- BUY requires the symbol price above that same frame's SMA200; SELL requires it below and is limited to short-capable markets. Market-wide 24h breadth is informational and never vetoes a valid symbol-level setup.
-- Price momentum, candle pressure, structure, relative volume and optional Binance public trade-flow/order-book context rank candidates. The score is a confluence score out of 100, not a win probability.
-- Stops remain behind recent swing invalidation with a volatility buffer; setups requiring a stop wider than 1.25% of entry are rejected. Gross price targets are +2%, +3% and +5% for BUY, and -2%, -3% and -5% for SELL. Fees, spread, slippage and leverage are not included in those percentages.
-- The platform is manual-only and never sends orders. Validate out of sample with fees, spread and slippage before relying on any strategy.
+## Active engine: PUBLIC SENTIMENT CONSENSUS · no chart timeframes
+- The homepage and legacy market URLs now open one sentiment dashboard; no timeframe selector is used.
+- For each selected market, the dashboard ranks up to 30 highest-activity assets and gathers public Google News RSS headlines and public Reddit discussions. Stocktwits public sentiment is additionally queried for US equities when available.
+- Positive and negative mentions are weighted by publisher tier and publication recency. Neutral items are excluded from the vote; source coverage, mention counts and evidence headlines are displayed. A neutral or unsupported asset is not forced into BUY/SELL.
+- The engine does not claim to search the entire internet or represent every trader. Public-source coverage can be incomplete, noisy or unavailable; the source list and coverage warning are shown in the dashboard.
+- Entry, stop and TP1/TP2/TP3 are calculated separately from completed daily OHLCV candles using ATR and recent swing invalidation. TP1/TP2/TP3 target 1R/2R/3R before fees, spread, slippage or leverage. This is a risk framework, not a win-rate claim.
+- Legacy SMA200 and liquidity-sweep scheduled scans are disabled by default. No account API keys or order execution are used.
 
 ## Signal engine
 - Each successful timeframe scan replaces that timeframe's live batch, keeping up to three opportunities per market per timeframe. Previous rows remain in trade history and expire after 24 hours.
@@ -37,9 +36,9 @@ Production-oriented market intelligence terminal.
 - Buildpack startup uses `Procfile`; Docker deployment is also supported.
 - Expose port 8080.
 - Prefer a persistent PostgreSQL database through `DATABASE_URL`. SQLite is acceptable only when `DATA_DIR` points to a persistent mounted volume; the default local SQLite path is not production-durable.
-- Configure a persistent random `SECRET_KEY`, `COOKIE_SECURE=true`, and `ENABLE_AUTO_SCAN=true`.
-- Keep one Gunicorn worker while APScheduler runs in-process. The seven market scans are staggered across each 15-minute cycle and dispatched by one scheduler worker to avoid simultaneous provider bursts and missed-job backlogs. Do not increase web workers until scanning is moved to a separate worker with a distributed lock.
-- `/ready` requires a durable database configuration (PostgreSQL or an explicitly configured `DATA_DIR` volume), a persistent `SECRET_KEY`, and the market scheduler.
+- Configure a persistent random `SECRET_KEY` and `COOKIE_SECURE=true`. The public sentiment dashboard scans on demand and does not require the legacy market scheduler.
+- The retired SMA200/liquidity-sweep scheduler is disabled by default. Do not set `ENABLE_LEGACY_AUTO_SCAN=true` unless intentionally restoring the legacy scanner for diagnostics. Sentiment requests use bounded concurrency and a five-minute in-process cache.
+- `/ready` requires a durable database configuration (PostgreSQL or an explicitly configured `DATA_DIR` volume) and a persistent `SECRET_KEY`; no background market scheduler is required.
 - Configure `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` (14+ characters) before first boot if first-admin provisioning is needed.
 - Never commit or share secrets. Rotate credentials after any security incident and update them at the provider and deployment environment.
 

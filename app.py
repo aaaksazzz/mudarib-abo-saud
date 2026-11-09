@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 import html
 import market_adapters
 import market_strategies
+import market_sentiment
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -214,15 +215,24 @@ def public_article(a):
             "meta_description":a.meta_description or a.summary,"canonical_slug":a.canonical_slug or a.slug,
             "created_at":iso(a.created_at)}
 @app.get("/")
-def home(): return send_from_directory(".", "index.html")
+def home(): return send_from_directory(".", "intelligence.html")
+
+@app.get("/intelligence")
+def intelligence_page(): return send_from_directory(".", "intelligence.html")
+
+@app.get("/intelligence.js")
+def intelligence_script(): return send_from_directory(".", "intelligence.js")
+
+@app.get("/intelligence.css")
+def intelligence_stylesheet(): return send_from_directory(".", "intelligence.css")
 @app.get("/market/<market>")
 def market_page_route(market):
     if market not in MARKETS: return json_error("السوق غير معروف",404)
-    return send_from_directory(".", "index.html")
+    return send_from_directory(".", "intelligence.html")
 
 @app.get("/signal-lab")
 def signal_lab_page():
-    return send_from_directory(".", "signal-lab.html")
+    return send_from_directory(".", "intelligence.html")
 
 @app.get("/signal-lab.js")
 def signal_lab_script():
@@ -456,7 +466,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "market_scheduler":False}
+            "sentiment_engine":True}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -467,8 +477,6 @@ def readiness():
     except Exception:
         db.session.rollback()
         app.logger.exception("readiness database check failed")
-    active_scheduler=globals().get("scheduler")
-    checks["market_scheduler"]=bool(active_scheduler and active_scheduler.running)
     ready=all(checks.values())
     return jsonify({"ok":ready,"checks":checks,"time":iso(utcnow())}),200 if ready else 503
 @app.get("/api/bootstrap")
@@ -1428,6 +1436,25 @@ def _cached_google_news(language, bucket):
             items.append({"title":title,"source":source_name,"published_at":published,**classified})
     return items
 
+@app.get("/api/intelligence/scan")
+@limiter.limit("12 per minute")
+def intelligence_scan():
+    market=str(request.args.get("market","spot")).strip().lower()
+    if market not in MARKETS:
+        return json_error("السوق غير معروف",404)
+    blocked=gate_section(market)
+    if blocked:
+        return blocked
+    try:
+        universe=market_tickers(market)
+        if not universe:
+            return jsonify({"ok":True,"market":market,"checked_assets":0,"signals_found":0,"signals":[],"error":"لا توجد أصول متاحة من مزود السوق"})
+        result=market_sentiment.scan_market(market,universe,market_adapters.klines,limit=30)
+        return jsonify(result)
+    except Exception:
+        app.logger.exception("public sentiment scan failed for %s",market)
+        return json_error("تعذر جمع الآراء أو بيانات السعر لهذا السوق حالياً",502)
+
 @app.get("/api/news")
 def live_news():
     blocked=gate_section("news")
@@ -1710,7 +1737,7 @@ def market_scan_initial_delay_seconds(index):
     return SCAN_INITIAL_DELAY_SECONDS+max(0,int(index))*spacing
 
 
-AUTO_SCAN_ENABLED=os.environ.get("ENABLE_AUTO_SCAN","true").lower()=="true"
+AUTO_SCAN_ENABLED=os.environ.get("ENABLE_LEGACY_AUTO_SCAN","false").lower()=="true"
 scheduler=None
 if AUTO_SCAN_ENABLED:
     # One scheduler worker prevents seven markets from launching together on

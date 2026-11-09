@@ -54,7 +54,8 @@ class MarketEngineTests(unittest.TestCase):
         self.assertTrue(ready.get_json()["checks"]["database"])
         self.assertFalse(ready.get_json()["checks"]["persistent_database"])
         self.assertTrue(ready.get_json()["checks"]["persistent_secret"])
-        self.assertFalse(ready.get_json()["checks"]["market_scheduler"])
+        self.assertTrue(ready.get_json()["checks"]["sentiment_engine"])
+        self.assertNotIn("market_scheduler", ready.get_json()["checks"])
 
 
     def test_readiness_requires_sqlite_file_inside_absolute_writable_data_dir(self):
