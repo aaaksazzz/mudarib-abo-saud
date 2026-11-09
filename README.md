@@ -19,7 +19,7 @@ Production-oriented market intelligence terminal.
 
 ## Active engine: PUBLIC SENTIMENT CONSENSUS · no chart timeframes
 - The homepage and legacy market URLs now open one sentiment dashboard; no timeframe selector is used.
-- For each selected market, the dashboard ranks up to 30 highest-activity assets and gathers public Google News RSS headlines and public Reddit discussions. Stocktwits public sentiment is additionally queried for US equities when available.
+- For each selected market, the dashboard scans rotating batches of up to 30 assets ordered by activity, gathering Google News RSS headlines and public Reddit discussions; Stocktwits is also queried for US equities. The dashboard automatically refreshes every five minutes and advances through the full available market universe over successive scans.
 - Positive and negative mentions are weighted by publisher tier and publication recency. Neutral items are excluded from the vote; source coverage, mention counts and evidence headlines are displayed. A neutral or unsupported asset is not forced into BUY/SELL.
 - The engine does not claim to search the entire internet or represent every trader. Public-source coverage can be incomplete, noisy or unavailable; the source list and coverage warning are shown in the dashboard.
 - Entry, stop and TP1/TP2/TP3 are calculated separately from completed daily OHLCV candles using ATR and recent swing invalidation. TP1/TP2/TP3 target 1R/2R/3R before fees, spread, slippage or leverage. This is a risk framework, not a win-rate claim.
