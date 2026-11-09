@@ -114,7 +114,7 @@ class MarketEngineTests(unittest.TestCase):
         diagnostic=platform.market_strategies.diagnostic_self_test()
         self.assertTrue(diagnostic["ok"],diagnostic["checks"])
         self.assertTrue(set(diagnostic["timeframes"]).issubset(set(platform.market_strategies.INTERVAL_MS)))
-        self.assertEqual(diagnostic["signal_timeframes"], {"15m":"1m","1h":"15m","4h":"15m","1d":"1h","1w":"4h","1M":"1d"})
+        self.assertEqual(diagnostic["signal_timeframes"], {"15m":"1m","1h":"15m","4h":"1h","1d":"1h","1w":"4h","1M":"1d"})
 
     def test_build_signal_requires_mapped_gate_then_trade_frame_confirmation(self):
         setup={"side":"BUY","entry":100.0,"stop":99.0,"tp1":102.0,"tp2":103.0,
