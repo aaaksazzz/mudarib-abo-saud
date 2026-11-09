@@ -53,7 +53,7 @@ FX_SYMBOLS=[
 ]
 
 def _get(url,params=None):
-    response=requests.get(url,params=params,headers=HEADERS,timeout=(3.05,10))
+    response=requests.get(url,params=params,headers=HEADERS,timeout=(2,6))
     response.raise_for_status()
     payload=response.json()
     if not isinstance(payload,dict): raise ValueError("Invalid market-data response")
