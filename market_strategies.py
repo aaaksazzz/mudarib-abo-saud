@@ -11,7 +11,7 @@ STRATEGY_FINGERPRINT = "SMART-FLOW-MTF-SMA200-V2-20261109"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 # Each trade timeframe is gated by a separate strong-direction signal timeframe.
 # Daily, weekly and monthly gates are exactly two supported ladder steps lower.
-SIGNAL_TIMEFRAME = {"15m": "1m", "1h": "15m", "4h": "15m",
+SIGNAL_TIMEFRAME = {"15m": "1m", "1h": "15m", "4h": "1h",
                     "1d": "1h", "1w": "4h", "1M": "1d"}
 INTERVAL_MS = {"1m": 60_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000,
                "1d": 86_400_000, "1w": 604_800_000, "1M": 2_678_400_000}
