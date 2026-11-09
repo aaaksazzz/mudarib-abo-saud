@@ -7,7 +7,7 @@ def trend_rows(slope=1.0, count=65):
     rows = []
     wave = (0, 1, 2, 1, 0, -1, -2, -1)
     for i in range(count):
-        base = 100 + slope * i + wave[i % len(wave)] * 0.25
+        base = 100 + slope * i + wave[i % len(wave)] * 2.0
         close = base + (0.15 if slope > 0 else -0.15)
         rows.append([i * 3_600_000, close - 0.1, base + 1.5, base - 1.5, close, 1000])
     # The last row represents the still-open candle and is deliberately ignored.
