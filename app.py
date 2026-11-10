@@ -6,6 +6,14 @@ from market_engine import MarketEngine
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY") or secrets.token_hex(32)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.getenv("COOKIE_SECURE", "true").lower() == "true",
+    PERMANENT_SESSION_LIFETIME=__import__("datetime").timedelta(days=7),
+)
+if not os.getenv("SECRET_KEY"):
+    app.logger.warning("SECRET_KEY is not configured; sessions will be invalidated on restart")
 DB = os.getenv("DATABASE_PATH", "smart_trading.db")
 engine = MarketEngine()
 
@@ -70,7 +78,7 @@ def markets(): return jsonify(engine.market_overview())
 @app.get("/api/scan/<market>")
 def scan(market):
     timeframe=request.args.get("timeframe","15m")
-    if timeframe not in ("15m","1h","4h","1d","1w"): return jsonify(error="فريم غير مدعوم"),400
+    if timeframe not in ("1m","15m","1h","4h","1d","1w","1M"): return jsonify(error="فريم غير مدعوم"),400
     try: return jsonify(engine.scan(market,timeframe))
     except ValueError as e: return jsonify(error=str(e)),404
     except Exception: app.logger.exception("scan failed"); return jsonify(error="تعذر جلب بيانات السوق حالياً"),503
