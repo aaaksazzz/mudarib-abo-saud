@@ -8,7 +8,7 @@ import html
 import market_adapters
 import market_strategies
 import market_price_action
-from flask import Flask, request, jsonify, send_from_directory, session, g
+from flask import Flask, request, jsonify, send_from_directory, session, g, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import func, text, inspect, or_, event
@@ -236,10 +236,14 @@ def public_article(a):
             "meta_description":a.meta_description or a.summary,"canonical_slug":a.canonical_slug or a.slug,
             "created_at":iso(a.created_at)}
 @app.get("/")
-def home(): return send_from_directory(".", "intelligence.html")
+def home():
+    # Serve the current platform shell; the retired Sultan page is not the homepage.
+    return send_from_directory(".", "index.html")
 
 @app.get("/intelligence")
-def intelligence_page(): return send_from_directory(".", "intelligence.html")
+def intelligence_page():
+    # Keep old bookmarks working without showing the retired strategy interface.
+    return redirect(url_for("home"), code=302)
 
 @app.get("/intelligence.js")
 def intelligence_script(): return send_from_directory(".", "intelligence.js")
@@ -249,11 +253,12 @@ def intelligence_stylesheet(): return send_from_directory(".", "intelligence.css
 @app.get("/market/<market>")
 def market_page_route(market):
     if market not in MARKETS: return json_error("السوق غير معروف",404)
-    return send_from_directory(".", "intelligence.html")
+    return send_from_directory(".", "index.html")
 
 @app.get("/signal-lab")
 def signal_lab_page():
-    return send_from_directory(".", "intelligence.html")
+    # Retired lab route now leads to the active Futures market page.
+    return redirect("/market/futures", code=302)
 
 @app.get("/signal-lab.js")
 def signal_lab_script():
