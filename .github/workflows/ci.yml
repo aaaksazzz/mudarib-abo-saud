@@ -43,9 +43,13 @@ jobs:
           assert client.get("/api/strategy/status").get_json()["fingerprint"] == "SULTAN-PRICE-ACTION-W-D-4H-15M-V1-20261109"
           assert client.get("/api/signal-lab/scan").status_code == 410
           assert client.get("/api/signal-lab/klines").status_code == 410
-          for path in ("/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex"):
+          for path in ("/", "/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex"):
               page = client.get(path)
-              assert page.status_code == 200 and b'src="/intelligence.js?' in page.data and b'href="/intelligence.css?' in page.data, (path, page.status_code)
+              assert page.status_code == 200 and b'SMART TRADING PRO' in page.data and b'/platform.js?' in page.data, (path, page.status_code)
+          legacy = client.get("/intelligence", follow_redirects=False)
+          assert legacy.status_code == 302 and legacy.headers.get("Location") == "/", (legacy.status_code, legacy.headers)
+          legacy_lab = client.get("/signal-lab", follow_redirects=False)
+          assert legacy_lab.status_code == 302 and legacy_lab.headers.get("Location") == "/market/futures", (legacy_lab.status_code, legacy_lab.headers)
           assert client.get("/compat.css").status_code == 200
           print("route and static asset smoke tests passed")
           PY
