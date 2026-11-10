@@ -83,7 +83,8 @@ async function overview(root,version=renderVersion){
  }
 }
 async function marketPage(root,market,version=renderVersion){
- if(location.pathname===pagePaths[market]){location.replace("/intelligence?market="+encodeURIComponent(market));return;}
+ // Market routes are served by the current platform shell. Do not redirect
+ // them to the retired standalone Sultan interface.
  try{
   const timeframe=selectedTimeframe;
   const [snap,sig,engine]=await Promise.all([api("/api/markets/"+market+"/snapshot"),api("/api/markets/"+market+"/signals?timeframe="+encodeURIComponent(timeframe)),api("/api/strategy-status").catch(()=>null)]);
