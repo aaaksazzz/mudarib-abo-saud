@@ -15,7 +15,8 @@ function choose(m){
  $("#marketTitle").textContent=names[m][0];$("#marketDesc").textContent=names[m][1]+" — اتجاه أسبوعي ويومي و4 ساعات، ثم دخول مؤكد على 15 دقيقة.";
  $("#direction").textContent="بانتظار التحليل";$("#checked").textContent="—";$("#opportunities").textContent="—";$("#errors").textContent="—";$("#updated").textContent="—";$("#coverage").textContent="لم يبدأ فحص الأصول بعد.";
  $("#results").innerHTML='<div class="empty"><b>السوق محدد</b><p>ابدأ التحليل لفحص دفعة الأصول التالية.</p></div>';
- history.replaceState(null,"","/?market="+m);
+ const marketPath=location.pathname.startsWith("/market/");
+ history.replaceState(null,"",marketPath?("/market/"+m):("/?market="+m));
 }
 async function scan(){
  if(busy)return;
@@ -47,5 +48,8 @@ async function scan(){
 document.querySelectorAll(".market").forEach(b=>b.addEventListener("click",()=>{choose(b.dataset.market);scan()}));
 $("#scan").addEventListener("click",scan);
 $("#theme").addEventListener("click",()=>document.body.classList.toggle("light"));
-const initial=new URLSearchParams(location.search).get("market");choose(names[initial]?initial:"futures");
+const pathMarket=location.pathname.match(/^\/market\/([^/]+)$/)?.[1];
+const initial=new URLSearchParams(location.search).get("market")||pathMarket;
+choose(names[initial]?initial:"futures");
+scan();
 $("#date").textContent=new Intl.DateTimeFormat("ar-SA",{dateStyle:"medium"}).format(new Date());
