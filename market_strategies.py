@@ -7,7 +7,7 @@ Spot and USD-M Futures. Scores rank confluence; they are not win probabilities.
 """
 import math
 
-STRATEGY_FINGERPRINT = "SMART-FLOW-MTF-SMA200-V2-20261109"
+STRATEGY_FINGERPRINT = "SMART-FLOW-MTF-SMA200-R3-V3-20261110"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 # Each trade timeframe is gated by a separate strong-direction signal timeframe.
 # Daily, weekly and monthly gates are exactly two supported ladder steps lower.
@@ -64,31 +64,36 @@ def sma200_allows(side, price, ma200):
     return (side == "BUY" and price > ma200) or (side == "SELL" and price < ma200)
 
 
-def target_prices(entry, side):
-    """Return directional gross-price targets at +2%, +3%, and +5%."""
+def target_prices(entry, side, stop):
+    """Return TP1/TP2/TP3 at 3R/4R/5R from the actual structural stop."""
     try:
-        entry = float(entry)
+        entry, stop = float(entry), float(stop)
     except (TypeError, ValueError, OverflowError):
         return None
-    if not math.isfinite(entry) or entry <= 0 or side not in ("BUY", "SELL"):
+    if (not math.isfinite(entry) or not math.isfinite(stop) or entry <= 0
+            or stop <= 0 or side not in ("BUY", "SELL")):
+        return None
+    risk = entry - stop if side == "BUY" else stop - entry
+    if not math.isfinite(risk) or risk <= 0:
         return None
     direction = 1.0 if side == "BUY" else -1.0
-    targets = tuple(entry * (1.0 + direction * pct) for pct in (0.02, 0.03, 0.05))
+    targets = tuple(entry + direction * risk * multiple for multiple in (3.0, 4.0, 5.0))
     return targets if all(math.isfinite(x) and x > 0 for x in targets) else None
 
 
 def diagnostic_self_test():
     """Exercise SMA200 direction and target math used by the live analyzer."""
-    buy_targets = target_prices(100.0, "BUY")
-    sell_targets = target_prices(100.0, "SELL")
+    buy_targets = target_prices(100.0, "BUY", 99.0)
+    sell_targets = target_prices(100.0, "SELL", 101.0)
     cases = {
         "buy_above": sma200_allows("BUY", 101.0, 100.0),
         "buy_below": not sma200_allows("BUY", 99.0, 100.0),
         "sell_below": sma200_allows("SELL", 99.0, 100.0),
         "sell_above": not sma200_allows("SELL", 101.0, 100.0),
         "equal_rejected": not sma200_allows("BUY", 100.0, 100.0) and not sma200_allows("SELL", 100.0, 100.0),
-        "buy_targets_2_3_5": buy_targets == (102.0, 103.0, 105.0),
-        "sell_targets_2_3_5": sell_targets == (98.0, 97.0, 95.0),
+        "buy_targets_3r_4r_5r": buy_targets == (103.0, 104.0, 105.0),
+        "sell_targets_3r_4r_5r": sell_targets == (97.0, 96.0, 95.0),
+        "invalid_stop_rejected": target_prices(100.0, "BUY", 101.0) is None,
         "timeframes_independent": set(TIMEFRAMES).issubset(set(INTERVAL_MS)),
         "signal_map_complete": set(SIGNAL_TIMEFRAME) == set(TIMEFRAMES),
         "daily_two_steps_down": SIGNAL_TIMEFRAME["1d"] == "1h",
@@ -97,7 +102,7 @@ def diagnostic_self_test():
     }
     return {"fingerprint": STRATEGY_FINGERPRINT, "ok": all(cases.values()), "checks": cases,
             "timeframes": list(TIMEFRAMES), "signal_timeframes": dict(SIGNAL_TIMEFRAME),
-            "rule": "Strong BUY above SMA200 / SELL below SMA200 on mapped signal timeframe; confirm same side on trade timeframe; gross targets 2%/3%/5%"}
+            "rule": "Strong BUY above SMA200 / SELL below SMA200 on mapped signal timeframe; confirm same side on trade timeframe; TP1/TP2/TP3 at 3R/4R/5R from structural stop"}
 
 
 def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_micro=False):
@@ -224,7 +229,7 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
     # of disguising excessive risk with distant R-multiple targets.
     if risk > entry * 0.0125:
         return None
-    targets = target_prices(entry, side)
+    targets = target_prices(entry, side, stop)
     if not targets:
         return None
     tp1, tp2, tp3 = targets
@@ -248,9 +253,9 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         "score": round(score, 1), "timeframe": timeframe,
         "change_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
         "change_15m_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
-        "reason": "SMART FLOW QUANT: " + " + ".join(labels) + "; same-timeframe SMA200 passed; structural stop; gross targets 2%/3%/5%",
+        "reason": "SMART FLOW QUANT: " + " + ".join(labels) + "; same-timeframe SMA200 passed; structural stop; risk-multiple targets 3R/4R/5R",
         "signal_candle_time": bars[-1][0], "risk_atr": round(risk / atr, 3),
-        "reward_risk": round(abs(tp1 - entry) / risk, 3),
+        "reward_risk": round(abs(tp1 - entry) / risk, 3), "target_multiples": [3.0, 4.0, 5.0],
         "atr": atr, "ma200": ma200, "ma200_distance_pct": round((entry / ma200 - 1.0) * 100.0, 4), "confirmations": len(aligned),
         "volume_ratio": round(volume_ratio, 3) if volume_ratio is not None else None,
         "range_expansion": round(range_expansion, 3),
