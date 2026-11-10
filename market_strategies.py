@@ -7,7 +7,7 @@ Spot and USD-M Futures. Scores rank confluence; they are not win probabilities.
 """
 import math
 
-STRATEGY_FINGERPRINT = "SMART-FLOW-MTF-SMA200-V2-20261109"
+STRATEGY_FINGERPRINT = "SMART-FLOW-MTF-SMA200-INVERTED-V1-20261111"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 # Each trade timeframe is gated by a separate strong-direction signal timeframe.
 # Daily, weekly and monthly gates are exactly two supported ladder steps lower.
@@ -61,7 +61,7 @@ def sma200_allows(side, price, ma200):
         return False
     if not math.isfinite(price) or not math.isfinite(ma200) or price <= 0 or ma200 <= 0:
         return False
-    return (side == "BUY" and price > ma200) or (side == "SELL" and price < ma200)
+    return (side == "BUY" and price < ma200) or (side == "SELL" and price > ma200)
 
 
 def target_prices(entry, side):
@@ -82,10 +82,10 @@ def diagnostic_self_test():
     buy_targets = target_prices(100.0, "BUY")
     sell_targets = target_prices(100.0, "SELL")
     cases = {
-        "buy_above": sma200_allows("BUY", 101.0, 100.0),
-        "buy_below": not sma200_allows("BUY", 99.0, 100.0),
-        "sell_below": sma200_allows("SELL", 99.0, 100.0),
-        "sell_above": not sma200_allows("SELL", 101.0, 100.0),
+        "inverted_buy_below": sma200_allows("BUY", 99.0, 100.0),
+        "inverted_buy_above": not sma200_allows("BUY", 101.0, 100.0),
+        "inverted_sell_above": sma200_allows("SELL", 101.0, 100.0),
+        "inverted_sell_below": not sma200_allows("SELL", 99.0, 100.0),
         "equal_rejected": not sma200_allows("BUY", 100.0, 100.0) and not sma200_allows("SELL", 100.0, 100.0),
         "buy_targets_2_3_5": buy_targets == (102.0, 103.0, 105.0),
         "sell_targets_2_3_5": sell_targets == (98.0, 97.0, 95.0),
@@ -97,7 +97,7 @@ def diagnostic_self_test():
     }
     return {"fingerprint": STRATEGY_FINGERPRINT, "ok": all(cases.values()), "checks": cases,
             "timeframes": list(TIMEFRAMES), "signal_timeframes": dict(SIGNAL_TIMEFRAME),
-            "rule": "Strong BUY above SMA200 / SELL below SMA200 on mapped signal timeframe; confirm same side on trade timeframe; gross targets 2%/3%/5%"}
+            "rule": "INVERTED: bearish confirmations create BUY below SMA200; bullish confirmations create SELL above SMA200; same inverted side required on mapped signal and trade timeframes; gross targets 2%/3%/5%"}
 
 
 def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_micro=False):
@@ -195,17 +195,16 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
                 down_votes["order-book imbalance"] = 1
 
     buys, sells = len(up_votes), len(down_votes)
-    # Require two independent candle/flow confirmations with a clear
-    # directional majority. Keep the same-timeframe SMA200 and risk checks
-    # below; this improves candidate coverage without manufacturing trades.
-    if buys >= 2 and buys > sells:
-        side, aligned, opposing = "BUY", up_votes, sells
-    elif sells >= 2 and sells > buys and profile["allow_short"]:
-        side, aligned, opposing = "SELL", down_votes, buys
+    # Fully invert the directional interpretation: bullish evidence becomes
+    # a SELL candidate; bearish evidence becomes a BUY candidate.
+    if buys >= 2 and buys > sells and profile["allow_short"]:
+        side, aligned, opposing = "SELL", up_votes, sells
+    elif sells >= 2 and sells > buys:
+        side, aligned, opposing = "BUY", down_votes, buys
     else:
         return None
 
-    # Long setups must trade above the same-timeframe SMA200; shorts below it.
+    # Contrarian SMA200 gate: BUY below the average; SELL above it.
     if not sma200_allows(side, entry, ma200):
         return None
 
@@ -248,7 +247,7 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         "score": round(score, 1), "timeframe": timeframe,
         "change_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
         "change_15m_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
-        "reason": "SMART FLOW QUANT: " + " + ".join(labels) + "; same-timeframe SMA200 passed; structural stop; gross targets 2%/3%/5%",
+        "reason": "SMART FLOW QUANT INVERTED: " + " + ".join(labels) + "; contrarian SMA200 gate passed; structural stop; gross targets 2%/3%/5%",
         "signal_candle_time": bars[-1][0], "risk_atr": round(risk / atr, 3),
         "reward_risk": round(abs(tp1 - entry) / risk, 3),
         "atr": atr, "ma200": ma200, "ma200_distance_pct": round((entry / ma200 - 1.0) * 100.0, 4), "confirmations": len(aligned),
@@ -256,6 +255,6 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         "range_expansion": round(range_expansion, 3),
         "taker_delta_ratio": flow_delta, "book_imbalance": book_imbalance,
         "strategy_votes": {"BUY": list(up_votes), "SELL": list(down_votes)},
-        "strategy": "SMART_FLOW_QUANT_" + market.upper() + "_" + timeframe,
+        "strategy": "SMART_FLOW_QUANT_INVERTED_" + market.upper() + "_" + timeframe,
         "strategy_fingerprint": STRATEGY_FINGERPRINT,
     }
