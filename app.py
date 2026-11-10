@@ -320,7 +320,7 @@ def compat_styles(): return send_from_directory(".", "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
     return jsonify({
-        "ok":True,"strategy":"SMART FLOW QUANT · SMA200 MULTI-TIMEFRAME",
+        "ok":True,"strategy":"SMART FLOW QUANT · INVERTED SMA200 MULTI-TIMEFRAME",
         "engine":"market_strategies",
         "fingerprint":market_strategies.STRATEGY_FINGERPRINT,
         "markets":list(MARKETS),
@@ -687,13 +687,15 @@ def strategy_status_summary():
         Trade.reason.like("SMART FLOW MTF QUANT:%")
     ).count()
     return jsonify({
-        "ok":True,"engine":"SMART FLOW QUANT · SMA200 MULTI-TIMEFRAME","fingerprint":STRATEGY_FINGERPRINT,
+        "ok":True,"engine":"SMART FLOW QUANT · INVERTED SMA200 MULTI-TIMEFRAME","fingerprint":STRATEGY_FINGERPRINT,
         "markets":list(MARKETS),"timeframes":list(market_strategies.TIMEFRAMES),
         "current_active":0,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_ready":True,
-        "rules":["liquidity sweep and reclaim","confirmed breakout close","successful retest",
-                 "structural invalidation stop","structure-based targets"]
+        "rules":["bullish evidence => SELL; bearish evidence => BUY",
+                 "contrarian SMA200 gate: BUY below SMA200; SELL above SMA200",
+                 "same inverted direction required on mapped signal and trade timeframes",
+                 "structural invalidation stop","directional gross targets 2%/3%/5%"]
     })
 
 
@@ -714,7 +716,7 @@ def build_signal(market,item,timeframe):
     if not setup or setup.get("side") != gate.get("side"):
         return None
     setup["signal_timeframe"]=signal_timeframe
-    setup["reason"]="SMART FLOW MTF QUANT: strong "+gate["side"]+" + SMA200 on "+signal_timeframe+"; same-side confirmation on "+timeframe+"; "+setup.get("reason","")
+    setup["reason"]="SMART FLOW MTF QUANT INVERTED: contrarian "+gate["side"]+" + SMA200 on "+signal_timeframe+"; same-side inverted confirmation on "+timeframe+"; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -1002,7 +1004,7 @@ def run_market_scan(market,force=False):
     persist_market_snapshot(market,universe,now)
     market_up=sum(1 for item in universe if item.get("change_pct",0)>0)
     market_down=sum(1 for item in universe if item.get("change_pct",0)<0)
-    market_bias="BUY" if market_up>market_down else "SELL" if market_down>market_up else None
+    market_bias="SELL" if market_up>market_down else "BUY" if market_down>market_up else None
     # Update outcomes first, then keep the previous signal batch visible until
     # this scan has successfully analysed enough fresh candles.
     update_trade_outcomes(market,universe)
@@ -1304,7 +1306,7 @@ def intelligence_scan():
             "signals":result.get("signals",[]),
             "updated_at":result.get("updated_at") or iso(utcnow()),
             "cached":False,"market_bias":result.get("market_bias"),
-            "coverage":"محرك SMART FLOW QUANT: تحليل SMA200 مستقل لكل فريم مع تأكيد فريم الإشارة الأدنى"
+            "coverage":"محرك SMART FLOW QUANT المعكوس: شراء تحت SMA200 وبيع فوقه مع تأكيد الفريم الأدنى"
         })
     except Exception:
         app.logger.exception("SMART FLOW QUANT scan failed for %s",market)
