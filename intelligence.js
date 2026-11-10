@@ -19,7 +19,7 @@ function choose(m){
 }
 async function scan(){
  if(busy)return;
- busy=true;const b=$("#scan");b.disabled=true;b.textContent="جارٍ التحليل…";
+ busy=true;let buttonLabel="تحليل الدفعة التالية";const b=$("#scan");b.disabled=true;b.textContent="جارٍ التحليل…";
  $("#results").innerHTML='<div class="empty"><b>جارٍ فحص دفعة السوق</b><p>يتم تحليل الأصول والتحقق من الشموع المكتملة.</p></div>';
  try{
   const r=await fetch("/api/intelligence/scan?market="+encodeURIComponent(market),{cache:"no-store"});
@@ -36,7 +36,8 @@ async function scan(){
   $("#errors").textContent=fmt(errors);
   $("#updated").textContent=new Date(d.updated_at||Date.now()).toLocaleTimeString("ar-SA",{hour:"2-digit",minute:"2-digit"});
   const complete=total>0&&checked>0&&end>=total;
-  $("#coverage").textContent=(total?("الدفعة "+start+"–"+end+" من "+total+" · تغطية هذه الدفعة "+fmt(total?checked/total*100:0)+"%"):"لا توجد أصول مؤهلة")+(complete?" · اكتملت دورة الفحص الحالية":" · الفحص متناوب؛ النتيجة تخص هذه الدفعة فقط")+(errors?" · تعذر تحليل "+errors+" أصل":"");
+  if(d.cached)buttonLabel="النتيجة محفوظة — أعد المحاولة لاحقاً";
+  $("#coverage").textContent=(total?("الدفعة "+start+"–"+end+" من "+total+" · تغطية هذه الدفعة "+fmt(total?checked/total*100:0)+"%"):"لا توجد أصول مؤهلة")+(complete?" · اكتملت دورة الفحص الحالية":" · الفحص متناوب؛ النتيجة تخص هذه الدفعة فقط")+(errors?" · تعذر تحليل "+errors+" أصل":"")+(d.cached?" · هذه نتيجة مخزنة خلال آخر دقيقة":"");
   $("#results").innerHTML=signals.length?signals.map(card).join(""):'<div class="empty"><b>لا توجد فرص مؤكدة في هذه الدفعة</b><p>'+(complete?"اكتملت دورة الفحص الحالية دون فرص مكتملة الشروط.":"هذه ليست نتيجة السوق بالكامل؛ افحص مرة أخرى للانتقال إلى الدفعة التالية.")+'</p></div>';
  }catch(e){
   $("#direction").textContent="غير متاح";$("#coverage").textContent="لم يتم اعتماد نتيجة الفحص بسبب خطأ في الطلب.";
