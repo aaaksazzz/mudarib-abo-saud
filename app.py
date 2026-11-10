@@ -1,7 +1,8 @@
-from flask import Flask, jsonify, render_template, request, redirect, url_for, session, flash
+from flask import Flask, jsonify, render_template, request, redirect, url_for, session, flash, g, abort
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
-import os, sqlite3, secrets
+from datetime import timedelta
+import os, sqlite3, secrets, hmac
 from market_engine import MarketEngine
 
 app = Flask(__name__)
@@ -10,12 +11,37 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.getenv("COOKIE_SECURE", "true").lower() == "true",
-    PERMANENT_SESSION_LIFETIME=__import__("datetime").timedelta(days=7),
+    PERMANENT_SESSION_LIFETIME=timedelta(days=7),
 )
 if not os.getenv("SECRET_KEY"):
     app.logger.warning("SECRET_KEY is not configured; sessions will be invalidated on restart")
-DB = os.getenv("DATABASE_PATH", "smart_trading.db")
+DATA_DIR = os.getenv("DATA_DIR", app.instance_path)
+os.makedirs(DATA_DIR, exist_ok=True)
+DB = os.getenv("DATABASE_PATH", os.path.join(DATA_DIR, "smart_trading.db"))
 engine = MarketEngine()
+
+@app.context_processor
+def inject_csrf():
+    if "csrf_token" not in session:
+        session["csrf_token"] = secrets.token_urlsafe(32)
+    return {"csrf_token": session["csrf_token"]}
+
+@app.before_request
+def protect_state_changes():
+    if request.method != "POST":
+        return
+    expected = session.get("csrf_token", "")
+    supplied = request.form.get("csrf_token", "") or request.headers.get("X-CSRF-Token", "")
+    if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+        abort(400, description="CSRF token missing or invalid")
+
+@app.after_request
+def security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    return response
 
 def db():
     con=sqlite3.connect(DB); con.row_factory=sqlite3.Row
@@ -48,7 +74,8 @@ def do_login():
     with db() as c: u=c.execute("SELECT * FROM users WHERE email=?",(request.form.get("email","").lower().strip(),)).fetchone()
     if not u or not check_password_hash(u["password"],request.form.get("password","")):
         flash("بيانات الدخول غير صحيحة"); return redirect(url_for("login"))
-    session.update(user_id=u["id"],username=u["username"])
+    session.clear()
+    session.update(user_id=u["id"],username=u["username"],_permanent=True)
     return redirect(url_for("account"))
 
 @app.get("/register")
@@ -65,7 +92,7 @@ def do_register():
         flash("اسم المستخدم أو البريد مستخدم مسبقاً"); return redirect(url_for("register"))
     flash("تم إنشاء الحساب، سجل دخولك"); return redirect(url_for("login"))
 
-@app.get("/logout")
+@app.post("/logout")
 def logout(): session.clear(); return redirect(url_for("home"))
 
 @app.get("/account")
@@ -99,7 +126,10 @@ def stats():
 def trades():
     with db() as c:
         if request.method=="POST":
-            x=request.get_json(force=True)
+            x=request.get_json(silent=True) or {}
+            required=("market","symbol","side","entry","stop","target")
+            if any(k not in x for k in required): return jsonify(error="بيانات الصفقة غير مكتملة"),400
+            if x["side"] not in ("شراء","بيع","BUY","SELL","LONG","SHORT"): return jsonify(error="اتجاه الصفقة غير صحيح"),400
             try: c.execute("INSERT INTO trades(user_id,market,symbol,side,entry,stop,target) VALUES(?,?,?,?,?,?,?)",(session["user_id"],x["market"],x["symbol"],x["side"],float(x["entry"]),float(x["stop"]),float(x["target"])))
             except (KeyError,ValueError): return jsonify(error="بيانات الصفقة غير مكتملة"),400
         rows=c.execute("SELECT * FROM trades WHERE user_id=? ORDER BY id DESC LIMIT 100",(session["user_id"],)).fetchall()
@@ -127,7 +157,8 @@ def close_trade(trade_id):
 @app.post("/api/alerts")
 @login_required
 def add_alert():
-    x=request.get_json(force=True)
+    x=request.get_json(silent=True) or {}
+    if not all(x.get(k) for k in ("market","symbol","direction")): return jsonify(error="بيانات التنبيه غير مكتملة"),400
     with db() as c: c.execute("INSERT INTO alerts(user_id,market,symbol,direction) VALUES(?,?,?,?)",(session["user_id"],x["market"],x["symbol"],x["direction"]))
     return jsonify(ok=True)
 
