@@ -514,19 +514,30 @@ def microstructure(market,symbol):
 
 
 def _aggregate_4h(rows):
-    buckets={}
-    for row in rows:
+    """Aggregate four consecutive hourly bars without crossing session gaps.
+
+    UTC four-hour buckets split US cash sessions at arbitrary boundaries and
+    can produce partial or misaligned bars. Consecutive grouping preserves
+    chronological OHLCV and resets across overnight/weekend/provider gaps.
+    """
+    aggregated=[]
+    group=[]
+    for row in sorted(rows,key=lambda item:int(item[0])):
         stamp=int(row[0])
-        key=(stamp//14_400_000)*14_400_000
-        if key not in buckets:
-            buckets[key]=[key,float(row[1]),float(row[2]),float(row[3]),float(row[4]),float(row[5] or 0)]
-        else:
-            item=buckets[key]
-            item[2]=max(item[2],float(row[2]))
-            item[3]=min(item[3],float(row[3]))
-            item[4]=float(row[4])
-            item[5]+=float(row[5] or 0)
-    return [buckets[key] for key in sorted(buckets)]
+        if group and stamp-int(group[-1][0])>5_400_000:
+            group=[]
+        group.append(row)
+        if len(group)==4:
+            aggregated.append([
+                int(group[0][0]),
+                float(group[0][1]),
+                max(float(x[2]) for x in group),
+                min(float(x[3]) for x in group),
+                float(group[-1][4]),
+                sum(float(x[5] or 0) for x in group),
+            ])
+            group=[]
+    return aggregated
 
 
 def klines(market,symbol,interval="15m",limit=250):
