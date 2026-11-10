@@ -1,11 +1,11 @@
 <!doctype html>
 <html lang="ar" dir="rtl"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#080e19"><meta name="description" content="SMART TRADING PRO — محطة الأسواق العالمية">
+<meta name="theme-color" content="#080e19"><meta name="description" content="SMART TRADING PRO — اتجاه السوق والصفقات المؤكدة">
 <title>SMART TRADING PRO · محطة الأسواق</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/intelligence.css?v=20261110.terminal-v2"></head><body>
+<link rel="stylesheet" href="/intelligence.css?v=20261110.trades-only-v1"></head><body>
 <div class="app-shell"><aside class="sidebar" id="sidebar">
 <a class="brand" href="/"><i>STP</i><span>SMART TRADING <b>PRO</b><small>GLOBAL MARKET TERMINAL</small></span></a>
 <div class="nav-caption">مساحة العمل</div><a class="nav-link" data-home href="/">⌂ <span>نظرة عامة</span></a>
@@ -17,30 +17,22 @@
 <a class="nav-link" data-market="us-contracts" href="/market/us-contracts"><i>⌗</i><span>العقود الأمريكية</span></a>
 <a class="nav-link" data-market="saudi" href="/market/saudi"><i>◉</i><span>السوق السعودي</span></a>
 <a class="nav-link" data-market="forex" href="/market/forex"><i>⇄</i><span>الفوركس والذهب</span></a></nav>
-<div class="sidebar-foot"><span class="status-dot"></span> نظام تحليل · تداول يدوي فقط</div></aside>
+<div class="sidebar-foot"><span class="status-dot"></span> تحليل ومتابعة · تداول يدوي فقط</div></aside>
 <div class="scrim" id="scrim"></div><div class="main-column">
-<header class="topbar"><div class="top-left"><button id="menuToggle" class="menu-toggle" aria-label="فتح القائمة">☰</button><div><small>SMART TRADING PRO</small><b id="topTitle">مركز الأسواق الذكي</b></div></div><div class="top-right"><span class="live-state"><i></i> مراقبة البيانات</span><span id="date"></span><button id="theme" aria-label="تغيير المظهر">◐</button></div></header>
+<header class="topbar"><div class="top-left"><button id="menuToggle" class="menu-toggle" aria-label="فتح القائمة">☰</button><div><small>SMART TRADING PRO</small><b id="topTitle">مركز الأسواق الذكي</b></div></div><div class="top-right"><span class="live-state"><i></i> تحليل الأسواق</span><span id="date"></span><button id="theme" aria-label="تغيير المظهر">◐</button></div></header>
 <main>
 <section id="homeView" class="home-view">
-<div class="welcome"><div><span class="eyebrow">GLOBAL MARKET INTELLIGENCE</span><h1>رؤية أوضح لكل <em>سوق</em></h1><p>لوحة مستقلة لكل سوق، واتجاه محسوب من أصوله وبياناته فقط.</p><div class="welcome-tags"><span>بيانات عامة</span><span>تحليل متعدد الفريمات</span><span>بدون تنفيذ آلي</span></div></div><div class="welcome-mark"><div class="orbit"><b>STP</b><i></i></div><small>MARKET CONTROL CENTER</small></div></div>
-<div class="section-heading"><div><span class="eyebrow">MARKET OVERVIEW</span><h2>مؤشر الأسواق</h2><p>كل بطاقة تعرض اتجاه سوقها، ولا تخلط بياناته مع الأسواق الأخرى.</p></div><span class="market-count">07 أسواق</span></div>
-<div id="markets" class="market-grid"><div class="loading-state">يتم تحميل ملخص الأسواق المحفوظ…</div></div>
-<div class="home-note"><b>كيف تقرأ الاتجاه؟</b><span>صاعد أو هابط حسب اتساع الأصول داخل السوق خلال 24 ساعة. هذا وصف لاتجاه السوق وليس توصية شراء أو بيع.</span></div>
+<div class="welcome"><div><span class="eyebrow">GLOBAL MARKET INTELLIGENCE</span><h1>اتجاه السوق <em>والصفقات</em></h1><p>نعرض اتجاه كل سوق والصفقات المؤكدة فقط، بدون بث أسعار أو قوائم حركة الأصول.</p><div class="welcome-tags"><span>اتجاه مستقل لكل سوق</span><span>صفقات مستوفية للشروط</span><span>بدون تنفيذ آلي</span></div></div><div class="welcome-mark"><div class="orbit"><b>STP</b><i></i></div><small>MARKET CONTROL CENTER</small></div></div>
+<div class="section-heading"><div><span class="eyebrow">MARKET DIRECTION</span><h2>اتجاه الأسواق</h2><p>ملخص الاتجاه فقط لكل سوق.</p></div><span class="market-count">07 أسواق</span></div>
+<div id="markets" class="market-grid"><div class="loading-state">يتم تحميل اتجاه الأسواق…</div></div>
 </section>
 <section id="marketView" class="market-view" hidden>
-<div class="market-heading"><div><a class="back-link" href="/">← جميع الأسواق</a><span class="eyebrow" id="marketEnglish">MARKET TERMINAL</span><h1 id="marketTitle">السوق</h1><p id="marketDesc">تحليل مستقل واتجاه خاص بهذا السوق.</p></div><div class="market-state"><span class="status-dot"></span><span id="providerState">جاري التحقق من البيانات</span></div></div>
-<section class="direction-panel" id="directionPanel">
-<div class="direction-main"><small>اتجاه هذا السوق · 24 ساعة</small><strong id="marketDirection">—</strong><span id="directionBasis">اتساع الأصول المتاحة داخل السوق</span></div>
-<div class="breadth"><div class="breadth-label"><span>الأصول الصاعدة <b id="upCount">—</b></span><span>الأصول الهابطة <b id="downCount">—</b></span></div><div class="breadth-track"><i id="upBar"></i><i id="downBar"></i></div><small id="breadthTotal">بانتظار بيانات السوق</small></div>
-<div class="direction-meta"><span>آخر تحديث<b id="snapshotUpdated">—</b></span><span>حالة البيانات<b id="snapshotStatus">—</b></span></div>
+<div class="market-heading"><div><a class="back-link" href="/">← جميع الأسواق</a><span class="eyebrow" id="marketEnglish">MARKET TERMINAL</span><h1 id="marketTitle">السوق</h1><p id="marketDesc">اتجاه السوق والصفقات المؤكدة فقط.</p></div><div class="market-state"><span class="status-dot"></span><span id="providerState">جاري التحقق من البيانات</span></div></div>
+<section class="direction-panel" id="directionPanel"><div class="direction-main"><small>اتجاه السوق</small><strong id="marketDirection">—</strong><span id="directionBasis">قراءة الاتجاه العام للسوق</span></div><div class="direction-meta"><span>آخر تحديث<b id="snapshotUpdated">—</b></span><span>حالة البيانات<b id="snapshotStatus">—</b></span></div></section>
+<div class="section-heading compact"><div><span class="eyebrow">CONFIRMED TRADE SETUPS</span><h2>الصفقات المؤكدة</h2><p>الدخول ووقف الخسارة وثلاثة أهداف · لهذا السوق فقط.</p></div><span id="signalCount" class="scan-badge">0 صفقة</span></div>
+<section class="panel opportunities-panel"><div id="results" class="results"><div class="loading-state">يتم تحليل السوق…</div></div></section>
+<div class="market-disclaimer">لا تظهر الصفقة إلا بعد تحقق شروط الاستراتيجية وحداثة بياناتها. اتجاه السوق وصف عام وليس توصية مستقلة. التداول ينطوي على مخاطر.</div>
 </section>
-<div class="section-heading compact"><div><span class="eyebrow">SCAN COVERAGE</span><h2>تغطية الفحص</h2><p>نوضح ما تم فحصه فعلياً في الدفعة الحالية.</p></div><span id="scanBadge" class="scan-badge">بانتظار الفحص</span></div>
-<div class="metric-grid"><article><small>الأصول المؤهلة</small><b id="universeCount">—</b><span>ضمن شروط السوق</span></article><article><small>تم تحليلها</small><b id="checked">—</b><span>في آخر دفعة</span></article><article><small>الفرص المكتشفة</small><b id="opportunities">—</b><span>قبل تحقق حداثة السعر</span></article><article><small>تعذر تحليلها</small><b id="errors">—</b><span>أخطاء بيانات أو مزود</span></article></div>
-<p id="coverage" class="coverage">سيبدأ الفحص تلقائياً عند فتح السوق.</p>
-<div class="content-grid"><section class="panel opportunities-panel"><div class="panel-heading"><div><span class="eyebrow">TRADE SETUPS</span><h2>الفرص المؤكدة</h2><p>صفقات هذا السوق فقط · دخول ووقف وثلاثة أهداف</p></div><span class="panel-count" id="signalCount">0</span></div><div id="results" class="results"><div class="loading-state">يتم تجهيز تحليل السوق…</div></div></section>
-<aside class="panel assets-panel"><div class="panel-heading"><div><span class="eyebrow">MARKET BREADTH</span><h2>حركة الأصول</h2><p>أبرز الأصول حسب حجم التداول المتاح</p></div></div><div id="assets" class="asset-list"><div class="loading-state">بانتظار بيانات السوق…</div></div></aside></div>
-<div class="market-disclaimer">الاتجاه العام لا يضمن اتجاه كل أصل. لا تظهر توصية إلا بعد تحقق شروط الاستراتيجية على الأصل نفسه. التداول ينطوي على مخاطر.</div>
-</section>
-<footer><b>SMART TRADING PRO</b><span>تحليل ومتابعة فقط · لا يوجد تنفيذ آلي للأوامر · لا توجد وعود ربح.</span></footer>
+<footer><b>SMART TRADING PRO</b><span>اتجاه السوق والصفقات المؤكدة فقط · تداول يدوي · لا يوجد تنفيذ آلي.</span></footer>
 </main></div></div>
-<script src="/intelligence.js?v=20261110.terminal-v2"></script></body></html>
+<script src="/intelligence.js?v=20261110.trades-only-v1"></script></body></html>
