@@ -44,7 +44,7 @@ def security_headers(response):
     return response
 
 def db():
-    con=sqlite3.connect(DB); con.row_factory=sqlite3.Row
+    con=sqlite3.connect(DB, timeout=15); con.row_factory=sqlite3.Row
     return con
 
 def init_db():
