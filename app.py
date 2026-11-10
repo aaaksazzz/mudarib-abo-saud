@@ -7,7 +7,6 @@ import xml.etree.ElementTree as ET
 import html
 import market_adapters
 import market_strategies
-import market_price_action
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -321,11 +320,11 @@ def compat_styles(): return send_from_directory(".", "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
     return jsonify({
-        "ok":True,"strategy":"SULTAN MULTI-TIMEFRAME PRICE ACTION",
-        "engine":"SULTAN MULTI-TIMEFRAME PRICE ACTION",
-        "fingerprint":market_price_action.STRATEGY_FINGERPRINT,
+        "ok":True,"strategy":"SMART FLOW QUANT · SMA200 MULTI-TIMEFRAME",
+        "engine":"market_strategies",
+        "fingerprint":market_strategies.STRATEGY_FINGERPRINT,
         "markets":list(MARKETS),
-        "internal_contexts":list(market_price_action.TIMEFRAMES),
+        "internal_contexts":list(market_strategies.TIMEFRAMES),
         "user_timeframe_filters":False,
         "manual_only":True,
     })
@@ -363,7 +362,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":market_price_action.STRATEGY_FINGERPRINT.startswith("SULTAN-PRICE-ACTION-W-D-4H-15M-")}
+            "price_action_engine":market_strategies.STRATEGY_FINGERPRINT.startswith("SMART-FLOW-MTF-SMA200-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -678,9 +677,9 @@ def klines(market,symbol,interval,limit=120):
     base=BINANCE_FUTURES if market=="futures" else BINANCE_SPOT
     path="/fapi/v1/klines" if market=="futures" else "/api/v3/klines"
     return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit})
-TIMEFRAMES=()
+TIMEFRAMES=market_strategies.TIMEFRAMES
 
-STRATEGY_FINGERPRINT=market_price_action.STRATEGY_FINGERPRINT
+STRATEGY_FINGERPRINT=market_strategies.STRATEGY_FINGERPRINT
 @app.get("/api/strategy-status")
 def strategy_status_summary():
     active_legacy=Trade.query.filter(
@@ -688,8 +687,8 @@ def strategy_status_summary():
         Trade.reason.like("SMART FLOW MTF QUANT:%")
     ).count()
     return jsonify({
-        "ok":True,"engine":"SULTAN MULTI-TIMEFRAME PRICE ACTION","fingerprint":STRATEGY_FINGERPRINT,
-        "markets":list(MARKETS),"timeframes":list(market_price_action.TIMEFRAMES),
+        "ok":True,"engine":"SMART FLOW QUANT · SMA200 MULTI-TIMEFRAME","fingerprint":STRATEGY_FINGERPRINT,
+        "markets":list(MARKETS),"timeframes":list(market_strategies.TIMEFRAMES),
         "current_active":0,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_ready":True,
@@ -1293,15 +1292,23 @@ def intelligence_scan():
     if blocked:
         return blocked
     try:
-        universe=market_tickers(market)
-        if not universe:
-            return jsonify({"ok":True,"market":market,"checked_assets":0,"universe_total":0,
-                            "signals_found":0,"signals":[],"engine":"SULTAN_MULTI_TIMEFRAME_V1"})
-        result=market_price_action.scan_market(market,universe,klines,limit=30)
-        return jsonify(result)
+        result=run_market_scan(market,force=True)
+        checked=int(result.get("analysis_completed",0) or 0)+int(result.get("analysis_failed",0) or 0)
+        return jsonify({
+            "ok":True,"market":market,"engine":"SMART_FLOW_QUANT_SMA200",
+            "strategy_fingerprint":STRATEGY_FINGERPRINT,
+            "checked_assets":checked,"universe_total":int(result.get("scan_universe",0) or 0),
+            "scan_offset":int(result.get("scan_offset",0) or 0),
+            "signals_found":int(result.get("accepted_signals",0) or 0),
+            "analysis_errors":int(result.get("analysis_failed",0) or 0),
+            "signals":result.get("signals",[]),
+            "updated_at":result.get("updated_at") or iso(utcnow()),
+            "cached":False,"market_bias":result.get("market_bias"),
+            "coverage":"محرك SMART FLOW QUANT: تحليل SMA200 مستقل لكل فريم مع تأكيد فريم الإشارة الأدنى"
+        })
     except Exception:
-        app.logger.exception("classic price-action scan failed for %s",market)
-        return json_error("تعذر جلب بيانات حركة السعر لهذا السوق حالياً",502)
+        app.logger.exception("SMART FLOW QUANT scan failed for %s",market)
+        return json_error("تعذر إكمال تحليل السوق حالياً",502)
 
 @app.get("/api/news")
 def live_news():
