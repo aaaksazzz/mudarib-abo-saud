@@ -1,5 +1,5 @@
 const $=s=>document.querySelector(s);
-const names={spot:["Binance Spot","السوق الفوري"],futures:["Binance Futures","العقود الآجلة"],alpha:["Binance Alpha","الأصول الناشئة"],"us-stocks":["الأسهم الأمريكية","الشركات المدرجة"],"us-contracts":["العقود الأمريكية","العقود والأدوات الأمريكية"],saudi:["السوق السعودي","أسهم تداول السعودية"],forex:["Forex & Gold","الفوركس والمعادن"]};
+const names={spot:["السوق الفوري","Binance Spot"],futures:["العقود الآجلة","Binance Futures"],alpha:["باينانس ألفا","الأصول الناشئة"],"us-stocks":["الأسهم الأمريكية","الشركات المدرجة"],"us-contracts":["العقود الأمريكية","العقود والأدوات الأمريكية"],saudi:["السوق السعودي","أسهم تداول السعودية"],forex:["الفوركس والذهب","أزواج العملات والمعادن"]};
 let market="futures",busy=false;
 const fmt=v=>v===null||v===undefined||v===""||!Number.isFinite(Number(v))?"—":Number(v).toLocaleString("en-US",{maximumFractionDigits:8});
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -11,8 +11,8 @@ function card(x){
 }
 function choose(m){
  market=m;
- document.querySelectorAll(".market").forEach(x=>x.classList.toggle("active",x.dataset.market===m));
- $("#marketTitle").textContent=names[m][0];$("#marketDesc").textContent=names[m][1]+" — اتجاه أسبوعي ويومي و4 ساعات، ثم دخول مؤكد على 15 دقيقة.";
+ document.querySelectorAll(".nav-link[data-market]").forEach(x=>x.classList.toggle("active",x.dataset.market===m));
+ $("#marketTitle").textContent=names[m][0];$("#marketDesc").textContent=names[m][1]+" — صفحة مستقلة لتحليل هذا السوق ومتابعة فرصه.";
  $("#direction").textContent="بانتظار التحليل";$("#checked").textContent="—";$("#opportunities").textContent="—";$("#errors").textContent="—";$("#updated").textContent="—";$("#coverage").textContent="لم يبدأ فحص الأصول بعد.";
  $("#results").innerHTML='<div class="empty"><b>السوق محدد</b><p>ابدأ التحليل لفحص دفعة الأصول التالية.</p></div>';
  const marketPath=location.pathname.startsWith("/market/");
@@ -45,11 +45,16 @@ async function scan(){
   $("#results").innerHTML='<div class="empty"><b>تعذر جلب النتائج</b><p>'+esc(e.message)+'</p></div>';
  }finally{busy=false;b.disabled=false;b.textContent="تحليل الدفعة التالية";}
 }
-document.querySelectorAll(".market").forEach(b=>b.addEventListener("click",()=>{choose(b.dataset.market);scan()}));
+
 $("#scan").addEventListener("click",scan);
 $("#theme").addEventListener("click",()=>document.body.classList.toggle("light"));
-const pathMarket=location.pathname.match(/^\/market\/([^/]+)$/)?.[1];
+const pathMarket=location.pathname.match(/^\\/market\\/([^/]+)$/)?.[1];
 const initial=new URLSearchParams(location.search).get("market")||pathMarket;
-choose(names[initial]?initial:"futures");
-scan();
+if(initial&&Object.prototype.hasOwnProperty.call(names,initial)){choose(initial);scan();}
+else{document.body.classList.add("home-page");document.querySelector("[data-home]")?.classList.add("active");}
+const menu=$("#menuToggle"),scrim=$("#scrim");
+function closeMenu(){document.body.classList.remove("menu-open");menu?.setAttribute("aria-expanded","false");}
+menu?.addEventListener("click",()=>{document.body.classList.toggle("menu-open");menu.setAttribute("aria-expanded",document.body.classList.contains("menu-open")?"true":"false");});
+scrim?.addEventListener("click",closeMenu);
+document.querySelectorAll(".nav-link").forEach(a=>a.addEventListener("click",closeMenu));
 $("#date").textContent=new Intl.DateTimeFormat("ar-SA",{dateStyle:"medium"}).format(new Date());
