@@ -15,6 +15,14 @@ class AppSmokeTests(unittest.TestCase):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
 
+    def test_post_without_csrf_is_rejected(self):
+        response = self.client.post("/login", data={"email": "a@example.com", "password": "password"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_logout_is_not_gettable(self):
+        response = self.client.get("/logout")
+        self.assertEqual(response.status_code, 405)
+
     def test_market_list(self):
         response = self.client.get("/api/markets")
         self.assertEqual(response.status_code, 200)
