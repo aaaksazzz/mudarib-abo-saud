@@ -550,11 +550,11 @@ def provider_status(m):
         return {"configured":False,"health":"unknown","source":None,"requires_api_key":False}
     return {**item,"configured":True,"health":"not_probed","health_note":"Adapter presence only; live connectivity is not tested by this endpoint",
             "requires_api_key":False,"access":"public_no_key","analysis":"classic_price_action_15m"}
-def fetch_json(url,params=None):
+def fetch_json(url,params=None,timeout=(3.05,8),attempts=3):
     last_error=None
-    for attempt in range(3):
+    for attempt in range(max(1,int(attempts))):
         try:
-            response=requests.get(url,params=params,timeout=(3.05,8),headers={"User-Agent":"SMART-TRADING-PRO/1.1"})
+            response=requests.get(url,params=params,timeout=timeout,headers={"User-Agent":"SMART-TRADING-PRO/1.1"})
             if response.status_code==429 or response.status_code>=500:
                 response.raise_for_status()
             response.raise_for_status()
@@ -565,7 +565,7 @@ def fetch_json(url,params=None):
         except (requests.Timeout,requests.ConnectionError,requests.HTTPError,ValueError) as exc:
             last_error=exc
             status=getattr(getattr(exc,"response",None),"status_code",None)
-            if attempt==2 or (status is not None and status<500 and status!=429):
+            if attempt==max(1,int(attempts))-1 or (status is not None and status<500 and status!=429):
                 raise
             time.sleep(0.25*(attempt+1))
     raise last_error
@@ -677,7 +677,7 @@ def klines(market,symbol,interval,limit=120):
         return market_adapters.klines(market,symbol,interval,limit)
     base=BINANCE_FUTURES if market=="futures" else BINANCE_SPOT
     path="/fapi/v1/klines" if market=="futures" else "/api/v3/klines"
-    return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit})
+    return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit},timeout=(2,5),attempts=2)
 TIMEFRAMES=()
 
 STRATEGY_FINGERPRINT=market_price_action.STRATEGY_FINGERPRINT

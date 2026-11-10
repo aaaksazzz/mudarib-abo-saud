@@ -1,0 +1,20 @@
+name: Validate market scanner
+on:
+  push:
+    branches:
+      - fix/scan-timeout-and-lightweight-batches
+  pull_request:
+    branches:
+      - main
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m compileall -q app.py market_adapters.py market_price_action.py market_sultan_strategy.py saudi_market_data.py
+      - run: python -m unittest discover -s tests -v
