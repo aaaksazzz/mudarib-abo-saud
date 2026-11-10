@@ -48,7 +48,7 @@ async function scan(){
 
 $("#scan").addEventListener("click",scan);
 $("#theme").addEventListener("click",()=>document.body.classList.toggle("light"));
-const pathMarket=location.pathname.match(/^\\/market\\/([^/]+)$/)?.[1];
+const pathMarket=location.pathname.match(/^\/market\/([^/]+)$/)?.[1];
 const initial=new URLSearchParams(location.search).get("market")||pathMarket;
 if(initial&&Object.prototype.hasOwnProperty.call(names,initial)){choose(initial);scan();}
 else{document.body.classList.add("home-page");document.querySelector("[data-home]")?.classList.add("active");}
