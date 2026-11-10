@@ -1,0 +1,9 @@
+{
+  "algorithm-language": "Python",
+  "parameters": {
+    "asset_class": "crypto",
+    "ticker": "BTCUSDT",
+    "resolution": "hour"
+  },
+  "description": "SMART TRADING PRO signal-only LEAN research baseline"
+}
