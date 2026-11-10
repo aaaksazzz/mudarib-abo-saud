@@ -83,18 +83,18 @@ class MarketEngine:
                 candles.append({"t": int(stamp), "o": float(vals[0]), "h": float(vals[1]),
                                 "l": float(vals[2]), "c": float(vals[3]), "v": float(vals[4] or 0)})
         if timeframe == "4h":
-            buckets = {}
+            # Build four consecutive hourly bars inside each trading session.
+            # Reset at overnight/weekend gaps; never combine bars across sessions.
+            aggregated, group = [], []
             for candle in candles:
-                bucket = candle["t"] // 14400
-                buckets.setdefault(bucket, []).append(candle)
-            aggregated = []
-            for bucket, group in sorted(buckets.items()):
-                group.sort(key=lambda x: x["t"])
-                if len(group) != 4:
-                    continue
-                aggregated.append({"t": bucket * 14400, "o": group[0]["o"],
-                    "h": max(x["h"] for x in group), "l": min(x["l"] for x in group),
-                    "c": group[-1]["c"], "v": sum(x["v"] for x in group)})
+                if group and candle["t"] - group[-1]["t"] > 5400:
+                    group = []
+                group.append(candle)
+                if len(group) == 4:
+                    aggregated.append({"t": group[0]["t"], "o": group[0]["o"],
+                        "h": max(x["h"] for x in group), "l": min(x["l"] for x in group),
+                        "c": group[-1]["c"], "v": sum(x["v"] for x in group)})
+                    group = []
             candles = aggregated
         return candles
 
