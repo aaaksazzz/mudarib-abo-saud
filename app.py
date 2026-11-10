@@ -97,6 +97,25 @@ def trades():
         rows=c.execute("SELECT * FROM trades WHERE user_id=? ORDER BY id DESC LIMIT 100",(session["user_id"],)).fetchall()
     return jsonify([dict(r) for r in rows])
 
+@app.post("/api/trades/<int:trade_id>/close")
+@login_required
+def close_trade(trade_id):
+    data=request.get_json(silent=True) or {}
+    try:
+        exit_price=float(data["exit_price"])
+        if exit_price<=0: raise ValueError()
+    except (KeyError,TypeError,ValueError):
+        return jsonify(error="سعر الإغلاق غير صحيح"),400
+    with db() as c:
+        trade=c.execute("SELECT * FROM trades WHERE id=? AND user_id=?",(trade_id,session["user_id"])).fetchone()
+        if not trade: return jsonify(error="الصفقة غير موجودة"),404
+        if trade["status"]!="open": return jsonify(error="الصفقة مغلقة مسبقاً"),409
+        entry=float(trade["entry"])
+        raw=(exit_price-entry)/entry*100
+        pnl=raw if trade["side"] in ("شراء","BUY","LONG") else -raw
+        c.execute("UPDATE trades SET status='closed',exit_price=?,pnl_pct=?,closed_at=CURRENT_TIMESTAMP WHERE id=? AND user_id=?",(exit_price,round(pnl,4),trade_id,session["user_id"]))
+    return jsonify(ok=True,pnl_pct=round(pnl,4),exit_price=exit_price)
+
 @app.post("/api/alerts")
 @login_required
 def add_alert():
