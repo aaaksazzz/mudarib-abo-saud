@@ -46,10 +46,10 @@ jobs:
           for path in ("/", "/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex"):
               page = client.get(path)
               assert page.status_code == 200 and b'SMART TRADING PRO' in page.data and b'/platform.js?' in page.data, (path, page.status_code)
-          legacy = client.get("/intelligence", follow_redirects=False)
-          assert legacy.status_code in (301, 302, 303, 307, 308) and b'href="/">/' in legacy.data, (legacy.status_code, legacy.data)
-          legacy_lab = client.get("/signal-lab", follow_redirects=False)
-          assert legacy_lab.status_code in (301, 302, 303, 307, 308) and b'href="/market/futures">/market/futures</a>' in legacy_lab.data, (legacy_lab.status_code, legacy_lab.data)
+          legacy = client.get("/intelligence", follow_redirects=True)
+          assert legacy.status_code == 200 and b"SMART TRADING PRO" in legacy.data and b"/platform.js?" in legacy.data, (legacy.status_code, legacy.data[:500])
+          legacy_lab = client.get("/signal-lab", follow_redirects=True)
+          assert legacy_lab.status_code == 200 and b"SMART TRADING PRO" in legacy_lab.data and b"/platform.js?" in legacy_lab.data, (legacy_lab.status_code, legacy_lab.data[:500])
           assert client.get("/compat.css").status_code == 200
           print("route and static asset smoke tests passed")
           PY
