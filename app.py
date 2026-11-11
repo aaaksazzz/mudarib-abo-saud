@@ -766,14 +766,18 @@ def filter_fresh_signals(signals, universe, now=None):
             if live_risk>atr*8 or live_risk<atr*0.20:
                 rejected_moved+=1
                 continue
-            # The published entry is the actual quote at approval time, not the
-            # previous candle close. Rebuild all R-multiple targets from that entry.
+            # Keep TP1 anchored to the previous structural swing. Only the
+            # extension targets are recalculated from the live quote.
             targets=market_strategies.target_prices(current,side,stop)
             if not targets:
                 rejected_moved+=1
                 continue
+            if (side=="BUY" and old_tp1<=current) or (side=="SELL" and old_tp1>=current):
+                rejected_moved+=1
+                continue
             signal["entry"]=current
-            signal["tp1"],signal["tp2"],signal["tp3"]=targets
+            signal["tp1"]=old_tp1
+            signal["tp2"],signal["tp3"]=targets[1],targets[2]
             signal["risk_distance"]=live_risk
             signal["entry_price_source"]="live_market_quote"
             accepted.append(signal)
