@@ -17,13 +17,16 @@ Production-oriented market intelligence terminal.
 - **Tadawul:** public Saudi Exchange data is preferred, with Yahoo, a public ticker directory and TradingView fallbacks. Saudi equities are not filtered by the $1M threshold; public-feed coverage can be incomplete during provider restrictions.
 - **Forex & Gold:** public Yahoo symbol list; FX tick volume is not represented as exchange-traded dollar volume.
 
-## Active engine: SWING-50 · independent multi-timeframe analysis
+## Active engine: BREAKOUT + MANDATORY FVG · independent multi-timeframe analysis
 - Every market is analysed independently on 15m, 1h, 4h, 1d, 1w and 1M candles. No lower-timeframe direction gate is shared between frames.
-- A setup requires a confirmed swing-high/swing-low pivot, a candle close beyond that level, a 50% retracement of the breakout impulse, and a closed-candle reversal confirmation at the retracement zone.
-- BUY stop is placed beyond the original swing low; SELL stop is placed beyond the original swing high. A volatility buffer is added beyond the structural invalidation.
-- TP1 is 1R, TP2 is 2R and TP3 is 3R from the live entry to the structural stop. The final target is 3:1 gross reward-to-risk before fees, spread, slippage or leverage.
+- A BUY requires a confirmed swing-high breakout by a completed candle and a bullish three-candle Fair Value Gap (FVG) below the current price. No bullish FVG means no BUY signal.
+- A SELL requires a confirmed swing-low breakdown by a completed candle and a bearish three-candle FVG above the current price. No bearish FVG means no SELL signal.
+- BUY stop is below the nearest confirmed structural low under the FVG, with a volatility buffer; the primary target is the next prior confirmed swing high above entry.
+- SELL stop is above the nearest confirmed structural high above the FVG, with a volatility buffer; the primary target is the next prior confirmed swing low below entry.
 - Only completed candles are used. Bullish BUY and mirrored bearish SELL setups are detected across all seven markets. On Spot, Alpha and equities, SELL is a manual exit/bearish signal, not a short-sale or automatic order.
-- No account API keys or automatic order execution are used. A setup is not guaranteed to occur on every asset or timeframe; empty timeframe groups mean the rules were not fully met.
+- The UI retains additional risk-ladder fields for compatibility; TP1 represents the structural prior-swing target. Fees, spread and slippage can affect realized reward/risk.
+- No account API keys or automatic order execution are used. A setup is not guaranteed to occur on every asset or timeframe; empty timeframe groups mean the mandatory conditions were not fully met.
+
 ## Signal engine
 - Each successful timeframe scan replaces that timeframe's live batch, keeping up to three opportunities per market per timeframe. Previous rows remain in trade history and expire after 24 hours.
 - Market-page requests only read committed results and never launch heavy scans synchronously.
@@ -36,7 +39,7 @@ Production-oriented market intelligence terminal.
 - Expose port 8080.
 - Prefer a persistent PostgreSQL database through `DATABASE_URL`. SQLite is acceptable only when `DATA_DIR` points to a persistent mounted volume; the default local SQLite path is not production-durable.
 - Configure a persistent random `SECRET_KEY` and `COOKIE_SECURE=true`. The public sentiment dashboard scans on demand and does not require the legacy market scheduler.
-- The retired SMA200/liquidity-sweep scheduler is disabled by default. Do not set `ENABLE_LEGACY_AUTO_SCAN=true` unless intentionally restoring the legacy scanner for diagnostics. The active SWING-50 engine scans each configured timeframe independently.
+- The retired SMA200/liquidity-sweep scheduler is disabled by default. Do not set `ENABLE_LEGACY_AUTO_SCAN=true` unless intentionally restoring the legacy scanner for diagnostics. The active BREAKOUT-FVG engine scans each configured timeframe independently.
 - `/ready` requires a durable database configuration (PostgreSQL or an explicitly configured `DATA_DIR` volume) and a persistent `SECRET_KEY`; no background market scheduler is required.
 - Configure `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` (14+ characters) before first boot if first-admin provisioning is needed.
 - Never commit or share secrets. Rotate credentials after any security incident and update them at the provider and deployment environment.
