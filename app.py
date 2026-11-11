@@ -682,6 +682,10 @@ TIMEFRAMES=market_strategies.TIMEFRAMES
 STRATEGY_FINGERPRINT=market_strategies.STRATEGY_FINGERPRINT
 @app.get("/api/strategy-status")
 def strategy_status_summary():
+    active_current=Trade.query.filter(
+        Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
+        Trade.reason.like("SWING-50 MTF:%")
+    ).count()
     active_legacy=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
         Trade.reason.like("SMART FLOW MTF QUANT:%")
@@ -689,7 +693,7 @@ def strategy_status_summary():
     return jsonify({
         "ok":True,"engine":"SMART FLOW SWING-50 · INDEPENDENT MULTI-TIMEFRAME","fingerprint":STRATEGY_FINGERPRINT,
         "markets":list(MARKETS),"timeframes":list(market_strategies.TIMEFRAMES),
-        "current_active":0,"legacy_active":active_legacy,
+        "current_active":active_current,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_ready":True,
         "rules":["confirmed swing high/low breakout on candle close","50% retracement of breakout impulse","closed-candle reversal confirmation","stop beyond original swing low/high","TP1=1R, TP2=2R, TP3=3R"]
@@ -704,7 +708,7 @@ def build_signal(market,item,timeframe):
     if not setup:
         return None
     setup["signal_timeframe"]=timeframe
-    setup["reason"]="SMART FLOW MTF QUANT: independent "+timeframe+" swing structure; "+setup.get("reason","")
+    setup["reason"]="SWING-50 MTF: independent "+timeframe+" swing structure; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -959,9 +963,9 @@ def run_market_scan(market,force=False):
             )
             if last>now-timedelta(minutes=15) and all_frames_current and Trade.query.filter(
                 Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe=="15m",
-                Trade.expires_at>now,Trade.reason.like("SMART FLOW MTF QUANT:%")
+                Trade.expires_at>now,Trade.reason.like("SWING-50 MTF:%")
             ).count():
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("SMART FLOW MTF QUANT:%")).order_by(Trade.score.desc()).limit(18).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("SWING-50 MTF:%")).order_by(Trade.score.desc()).limit(18).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
                     meta=json.loads(meta_row.value) if meta_row else {}
@@ -1073,7 +1077,7 @@ def run_market_scan(market,force=False):
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("SMART FLOW MTF QUANT:%"),
+        Trade.reason.like("SWING-50 MTF:%"),
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
@@ -1107,9 +1111,9 @@ def run_market_scan(market,force=False):
             new_signals.append(signal)
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("SMART FLOW MTF QUANT:%")).update({"status":"superseded"},synchronize_session=False)
+        Trade.reason.not_like("SWING-50 MTF:%")).update({"status":"superseded"},synchronize_session=False)
     active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.timeframe.in_(frames_to_scan),Trade.reason.like("SMART FLOW MTF QUANT:%"))
+        Trade.timeframe.in_(frames_to_scan),Trade.reason.like("SWING-50 MTF:%"))
     if retained_ids:
         active_query=active_query.filter(~Trade.id.in_(retained_ids))
     active_query.update({"status":"superseded"},synchronize_session=False)
@@ -1169,7 +1173,7 @@ def run_market_scan(market,force=False):
         else:
             frame_meta_row.value=frame_meta
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("SMART FLOW MTF QUANT:%")).order_by(Trade.score.desc()).limit(18).all()
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("SWING-50 MTF:%")).order_by(Trade.score.desc()).limit(18).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
             "scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
             "analysis_completed":completed,"analysis_failed":failed,"strategy_matches":strategy_matches,
