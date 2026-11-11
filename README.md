@@ -17,14 +17,13 @@ Production-oriented market intelligence terminal.
 - **Tadawul:** public Saudi Exchange data is preferred, with Yahoo, a public ticker directory and TradingView fallbacks. Saudi equities are not filtered by the $1M threshold; public-feed coverage can be incomplete during provider restrictions.
 - **Forex & Gold:** public Yahoo symbol list; FX tick volume is not represented as exchange-traded dollar volume.
 
-## Active engine: PUBLIC SENTIMENT CONSENSUS · no chart timeframes
-- The homepage and legacy market URLs now open one sentiment dashboard; no timeframe selector is used.
-- For each selected market, the dashboard scans rotating batches of up to 30 assets ordered by activity, gathering Google News RSS headlines and public Reddit discussions; Stocktwits is also queried for US equities. The dashboard automatically refreshes every five minutes and advances through the full available market universe over successive scans.
-- Positive and negative mentions are weighted by publisher tier and publication recency. Neutral items are excluded from the vote; source coverage, mention counts and evidence headlines are displayed. A neutral or unsupported asset is not forced into BUY/SELL.
-- The engine does not claim to search the entire internet or represent every trader. Public-source coverage can be incomplete, noisy or unavailable; the source list and coverage warning are shown in the dashboard.
-- Entry, stop and TP1/TP2/TP3 are calculated separately from completed daily OHLCV candles using ATR and recent swing invalidation. TP1/TP2/TP3 target 1R/2R/3R before fees, spread, slippage or leverage. This is a risk framework, not a win-rate claim.
-- Legacy SMA200 and liquidity-sweep scheduled scans are disabled by default. No account API keys or order execution are used.
-
+## Active engine: SWING-50 · independent multi-timeframe analysis
+- Every market is analysed independently on 15m, 1h, 4h, 1d, 1w and 1M candles. No lower-timeframe direction gate is shared between frames.
+- A setup requires a confirmed swing-high/swing-low pivot, a candle close beyond that level, a 50% retracement of the breakout impulse, and a closed-candle reversal confirmation at the retracement zone.
+- BUY stop is placed beyond the original swing low; SELL stop is placed beyond the original swing high. A volatility buffer is added beyond the structural invalidation.
+- TP1 is 1R, TP2 is 2R and TP3 is 3R from the live entry to the structural stop. The final target is 3:1 gross reward-to-risk before fees, spread, slippage or leverage.
+- Only completed candles are used. Spot, Alpha, US equities and Saudi equities are long-only; Futures, US contracts and Forex/Gold support both directions.
+- No account API keys or automatic order execution are used. A setup is not guaranteed to occur on every asset or timeframe; empty timeframe groups mean the rules were not fully met.
 ## Signal engine
 - Each successful timeframe scan replaces that timeframe's live batch, keeping up to three opportunities per market per timeframe. Previous rows remain in trade history and expire after 24 hours.
 - Market-page requests only read committed results and never launch heavy scans synchronously.
@@ -37,7 +36,7 @@ Production-oriented market intelligence terminal.
 - Expose port 8080.
 - Prefer a persistent PostgreSQL database through `DATABASE_URL`. SQLite is acceptable only when `DATA_DIR` points to a persistent mounted volume; the default local SQLite path is not production-durable.
 - Configure a persistent random `SECRET_KEY` and `COOKIE_SECURE=true`. The public sentiment dashboard scans on demand and does not require the legacy market scheduler.
-- The retired SMA200/liquidity-sweep scheduler is disabled by default. Do not set `ENABLE_LEGACY_AUTO_SCAN=true` unless intentionally restoring the legacy scanner for diagnostics. Sentiment requests use bounded concurrency and a five-minute in-process cache.
+- The retired SMA200/liquidity-sweep scheduler is disabled by default. Do not set `ENABLE_LEGACY_AUTO_SCAN=true` unless intentionally restoring the legacy scanner for diagnostics. The active SWING-50 engine scans each configured timeframe independently.
 - `/ready` requires a durable database configuration (PostgreSQL or an explicitly configured `DATA_DIR` volume) and a persistent `SECRET_KEY`; no background market scheduler is required.
 - Configure `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` (14+ characters) before first boot if first-admin provisioning is needed.
 - Never commit or share secrets. Rotate credentials after any security incident and update them at the provider and deployment environment.
