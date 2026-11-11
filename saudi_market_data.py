@@ -135,11 +135,17 @@ def official_saudi_quotes(allowed_symbols=None):
                 change_pct = 0.0
         if not all(math.isfinite(x) for x in (price, change_pct, volume)):
             continue
+        traded_value = _pick(item, (
+            "tradedValue", "tradingValue", "valueTraded", "turnover",
+            "totalTradedValue", "totalValueTraded", "marketValueTraded",
+        ))
+        turnover_sar = max(0.0, traded_value) if traded_value is not None else price * max(0.0, volume)
         output.append({
             "symbol": symbol + ".SR",
             "price": price,
             "change_pct": change_pct,
-            "quote_volume": max(0.0, price * max(0.0, volume)),
+            "quote_volume": turnover_sar,
+            "turnover_sar": turnover_sar,
             "volume": max(0.0, volume),
             "currency": "SAR",
             "source": "Saudi Exchange",
