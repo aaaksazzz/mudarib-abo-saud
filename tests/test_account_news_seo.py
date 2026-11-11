@@ -128,7 +128,15 @@ class AccountNewsSeoTests(unittest.TestCase):
         self.assertNotIn("ADMIN_PASSWORD", response.get_json())
         self.assertNotIn("SECRET_KEY", response.get_json())
 
-    def test_fresh_signal_entry_and_targets_are_rebased_to_live_quote(self):
+    def test_every_market_has_six_independent_timeframes(self):
+        expected = ("15m", "1h", "4h", "1d", "1w", "1M")
+        self.assertEqual(platform_app.market_strategies.TIMEFRAMES, expected)
+        for market in platform_app.MARKETS:
+            self.assertEqual(platform_app.market_scan_timeframes(market), expected)
+        self.assertEqual(platform_app.market_strategies.SIGNAL_TIMEFRAME,
+                         {frame: frame for frame in expected})
+
+    def test_fresh_signal_preserves_previous_swing_target_and_rebases_extensions(self):
         now = platform_app.utcnow()
         signal = {
             "symbol": "TESTUSDT", "side": "BUY", "timeframe": "15m",
@@ -142,7 +150,7 @@ class AccountNewsSeoTests(unittest.TestCase):
         self.assertEqual(rejected["rejected_late_price"], 0)
         self.assertEqual(len(accepted), 1)
         self.assertAlmostEqual(accepted[0]["entry"], 100.1)
-        self.assertAlmostEqual(accepted[0]["tp1"], 101.2)
+        self.assertAlmostEqual(accepted[0]["tp1"], 101.0)
         self.assertAlmostEqual(accepted[0]["tp2"], 102.3)
         self.assertAlmostEqual(accepted[0]["tp3"], 103.4)
         self.assertEqual(accepted[0]["entry_price_source"], "live_market_quote")
