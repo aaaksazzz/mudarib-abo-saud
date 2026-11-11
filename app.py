@@ -1338,7 +1338,7 @@ def intelligence_scan():
             "scan_offset":int(result.get("scan_offset",0) or 0),
             "signals_found":int(result.get("accepted_signals",0) or 0),
             "analysis_errors":int(result.get("analysis_failed",0) or 0),
-            "signals":result.get("signals",[]),
+            "signals":[{k:v for k,v in signal.items() if k not in ("reason","strategy","strategy_fingerprint","strategy_votes")} for signal in result.get("signals",[])],
             "updated_at":result.get("updated_at") or iso(utcnow()),
             "cached":False,"market_bias":result.get("market_bias")
         })
