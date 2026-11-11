@@ -320,7 +320,7 @@ def compat_styles(): return send_from_directory(".", "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
     return jsonify({
-        "ok":True,"strategy":"SMART FLOW QUANT · SMA200 MULTI-TIMEFRAME",
+        "ok":True,"strategy":"SMART FLOW SWING-50 · INDEPENDENT MULTI-TIMEFRAME",
         "engine":"market_strategies",
         "fingerprint":market_strategies.STRATEGY_FINGERPRINT,
         "markets":list(MARKETS),
@@ -362,7 +362,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":market_strategies.STRATEGY_FINGERPRINT.startswith("SMART-FLOW-MTF-SMA200-")}
+            "price_action_engine":market_strategies.STRATEGY_FINGERPRINT.startswith("SMART-FLOW-SWING50-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -692,29 +692,19 @@ def strategy_status_summary():
         "current_active":0,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_ready":True,
-        "rules":["liquidity sweep and reclaim","confirmed breakout close","successful retest",
-                 "structural invalidation stop","structure-based targets"]
+        "rules":["confirmed swing high/low breakout on candle close","50% retracement of breakout impulse","closed-candle reversal confirmation","stop beyond original swing low/high","TP1=1R, TP2=2R, TP3=3R"]
     })
 
 
 def build_signal(market,item,timeframe):
-    # Require a strong independent setup on the mapped signal timeframe first,
-    # then require the trade timeframe analysis to confirm the same direction.
+    # Each market and timeframe is analysed independently from its own closed candles.
     symbol=item["symbol"]
-    signal_timeframe=market_strategies.SIGNAL_TIMEFRAME[timeframe]
-    signal_rows=klines(market,symbol,signal_timeframe,250)
-    gate=market_strategies.analyze(market,symbol,signal_rows,timeframe=signal_timeframe)
-    if not gate:
-        return None
     rows=klines(market,symbol,timeframe,250)
-    flow=None
-    if item.get("include_microstructure") and market in ("spot","futures"):
-        flow=market_adapters.microstructure(market,symbol)
-    setup=market_strategies.analyze(market,symbol,rows,timeframe=timeframe,microstructure=flow)
-    if not setup or setup.get("side") != gate.get("side"):
+    setup=market_strategies.analyze(market,symbol,rows,timeframe=timeframe)
+    if not setup:
         return None
-    setup["signal_timeframe"]=signal_timeframe
-    setup["reason"]="SMART FLOW MTF QUANT: strong "+gate["side"]+" + SMA200 on "+signal_timeframe+"; same-side confirmation on "+timeframe+"; "+setup.get("reason","")
+    setup["signal_timeframe"]=timeframe
+    setup["reason"]="SMART FLOW MTF QUANT: independent "+timeframe+" swing structure; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -777,7 +767,7 @@ def filter_fresh_signals(signals, universe, now=None):
             if live_risk > current * 0.0125:
                 rejected_moved+=1
                 continue
-            targets=market_strategies.target_prices(current,side)
+            targets=market_strategies.target_prices(current,side,stop)
             if not targets:
                 rejected_moved+=1
                 continue
