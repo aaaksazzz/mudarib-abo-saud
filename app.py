@@ -704,6 +704,11 @@ def build_signal(market,item,timeframe):
     # Each market and timeframe is analysed independently from its own closed candles.
     symbol=item["symbol"]
     rows=klines(market,symbol,timeframe,250)
+    # The strategy discards the still-forming final candle; require at least
+    # 40 completed candles so an empty/short provider response is not counted
+    # as a successful analysis.
+    if not isinstance(rows,list) or len(rows)<41:
+        raise ValueError("Insufficient candles: "+str(len(rows) if isinstance(rows,list) else 0)+"/41")
     setup=market_strategies.analyze(market,symbol,rows,timeframe=timeframe)
     if not setup:
         return None
@@ -965,10 +970,10 @@ def run_market_scan(market,force=False):
                 and db.session.get(Setting,f"scan-frame:breakout-fvg:{market}:{frame}").value==str(timeframe_bucket(frame,now))
                 for frame in market_scan_timeframes(market)
             )
-            if last>now-timedelta(minutes=15) and all_frames_current and Trade.query.filter(
-                Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe=="15m",
-                Trade.expires_at>now,Trade.reason.like("BREAKOUT-FVG MTF:%")
-            ).count():
+            # Throttle repeated failed/partial provider scans too. A healthy
+            # scan is cached for 15 minutes; an incomplete scan is retried after
+            # two minutes without making every page request launch 100s of calls.
+            if last>now-timedelta(minutes=2) or (last>now-timedelta(minutes=15) and all_frames_current):
                 active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("BREAKOUT-FVG MTF:%")).order_by(Trade.score.desc()).limit(18).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
@@ -1050,9 +1055,48 @@ def run_market_scan(market,force=False):
         actual=frame_stats[frame]["completed"]
         if actual<required:
             incomplete_frames[frame]=(actual,required)
+    # A provider outage on one timeframe must not discard successful frames
+    # or turn the entire market endpoint into HTTP 502. Keep failed frames
+    # uncommitted so they are retried, while publishing healthy frame results.
+    requested_frames=list(frames_to_scan)
+    complete_frames=[frame for frame in requested_frames if frame not in incomplete_frames]
     if incomplete_frames:
         details=", ".join(f"{frame}={actual}/{required}" for frame,(actual,required) in incomplete_frames.items())
-        raise RuntimeError("Insufficient candle data by timeframe: "+details)
+        app.logger.warning("partial timeframe coverage: market=%s %s",market,details)
+    frames_to_scan=complete_frames
+    if not frames_to_scan:
+        # Preserve the previous signal batch and record a short retry cooldown.
+        if scan_row is None:
+            scan_row=Setting(key=scan_key,value=iso(now))
+            db.session.add(scan_row)
+        else:
+            scan_row.value=iso(now)
+        meta_key="scan-meta:"+market
+        meta_value=json.dumps({
+            "scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
+            "analysis_completed":completed,"analysis_failed":failed,"strategy_matches":0,
+            "fresh_matches":0,"accepted_signals":0,"market_bias":market_bias,
+            "timeframes":list(TIMEFRAMES),"scanned_timeframes":[],
+            "incomplete_timeframes":{frame:{"completed":actual,"required":required}
+                                     for frame,(actual,required) in incomplete_frames.items()},
+            "data_status":"unavailable"
+        },ensure_ascii=False)
+        meta_row=db.session.get(Setting,meta_key)
+        if meta_row is None:
+            db.session.add(Setting(key=meta_key,value=meta_value))
+        else:
+            meta_row.value=meta_value
+        db.session.commit()
+        active=Trade.query.filter(
+            Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
+            Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
+            Trade.reason.like("BREAKOUT-FVG MTF:%")
+        ).order_by(Trade.score.desc()).limit(18).all()
+        return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],
+                "updated_at":iso(now),"cached":False,"data_status":"unavailable",
+                "warning":"تعذر تحديث الشموع حالياً؛ تم الاحتفاظ بآخر الصفقات دون استبدالها.",
+                "incomplete_timeframes":meta_value and json.loads(meta_value)["incomplete_timeframes"],
+                "timeframes":list(TIMEFRAMES),"scanned_timeframes":[]}
     if failed:
         app.logger.warning(
             "market scan partial data: market=%s completed=%s failed=%s requested=%s",
@@ -1135,7 +1179,10 @@ def run_market_scan(market,force=False):
                             "fresh_matches":fresh_matches,"direction_rejected":direction_rejected,
                             "accepted_signals":len(found),"rejected_stale_candle":freshness["rejected_stale_candle"],
                             "rejected_late_price":freshness["rejected_late_price"],
-                            "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":frames_to_scan},ensure_ascii=False)
+                            "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":frames_to_scan,
+                            "incomplete_timeframes":{frame:{"completed":actual,"required":required}
+                                                     for frame,(actual,required) in incomplete_frames.items()},
+                            "data_status":"partial" if incomplete_frames else "ready"},ensure_ascii=False)
     if not meta_row:
         db.session.add(Setting(key=meta_key,value=meta_value))
     else:
@@ -1170,7 +1217,8 @@ def run_market_scan(market,force=False):
             "direction_rejected":0,"accepted_signals":len(frame_signals),
             "rejected_stale_candle":freshness_by_frame[frame]["rejected_stale_candle"],
             "rejected_late_price":freshness_by_frame[frame]["rejected_late_price"],
-            "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":[frame]
+            "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":[frame],
+            "data_status":"ready"
         },ensure_ascii=False)
         if frame_meta_row is None:
             db.session.add(Setting(key=frame_meta_key,value=frame_meta))
@@ -1184,7 +1232,10 @@ def run_market_scan(market,force=False):
             "fresh_matches":fresh_matches,"direction_rejected":direction_rejected,"accepted_signals":len(found),
             "rejected_stale_candle":freshness["rejected_stale_candle"],
             "rejected_late_price":freshness["rejected_late_price"],
-            "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":frames_to_scan}
+            "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":frames_to_scan,
+            "incomplete_timeframes":{frame:{"completed":actual,"required":required}
+                                     for frame,(actual,required) in incomplete_frames.items()},
+            "data_status":"partial" if incomplete_frames else "ready"}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
     return json_error("محرك التوصيات القديم متوقف؛ استخدم لوحة تحليل حركة السعر",410)
