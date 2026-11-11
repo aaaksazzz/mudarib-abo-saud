@@ -325,7 +325,7 @@ def strategy_status():
         "fingerprint":market_strategies.STRATEGY_FINGERPRINT,
         "markets":list(MARKETS),
         "internal_contexts":list(market_strategies.TIMEFRAMES),
-        "user_timeframe_filters":False,
+        "user_timeframe_filters":True,
         "manual_only":True,
     })
 
