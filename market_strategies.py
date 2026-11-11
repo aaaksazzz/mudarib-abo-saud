@@ -79,7 +79,7 @@ def target_prices(entry, side, stop=None):
 def _buy_setup(highs, lows, opens, closes, atr, pivot_highs, pivot_lows):
     n = len(closes)
     for pivot in reversed([p for p in pivot_highs if p >= n - 60]):
-        breakout = next((j for j in range(p + 1, n - 1) if closes[j] > highs[p]), None)
+        breakout = next((j for j in range(pivot + 1, n - 1) if closes[j] > highs[pivot]), None)
         if breakout is None:
             continue
         gaps = [g for g in _bull_fvgs(highs, lows, breakout) if g[2] < closes[-1] and g[1] < closes[-1]]
@@ -107,7 +107,7 @@ def _buy_setup(highs, lows, opens, closes, atr, pivot_highs, pivot_lows):
 def _sell_setup(highs, lows, opens, closes, atr, pivot_highs, pivot_lows):
     n = len(closes)
     for pivot in reversed([p for p in pivot_lows if p >= n - 60]):
-        breakdown = next((j for j in range(p + 1, n - 1) if closes[j] < lows[p]), None)
+        breakdown = next((j for j in range(pivot + 1, n - 1) if closes[j] < lows[pivot]), None)
         if breakdown is None:
             continue
         gaps = [g for g in _bear_fvgs(highs, lows, breakdown) if g[1] > closes[-1] and g[2] > closes[-1]]
