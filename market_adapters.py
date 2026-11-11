@@ -156,7 +156,7 @@ def _saudi_eligible_quotes(rows):
             turnover=float(row.get("turnover_sar",row.get("quote_volume",0)) or 0)
         except (TypeError,ValueError,OverflowError):
             continue
-        if math.isfinite(turnover) and turnover>=SAUDI_MIN_DAILY_TURNOVER_SAR:
+        if math.isfinite(turnover) and turnover>SAUDI_MIN_DAILY_TURNOVER_SAR:
             normalized=dict(row)
             normalized["quote_volume"]=turnover
             normalized["turnover_sar"]=turnover
@@ -368,7 +368,7 @@ def market_tickers(market):
                 if out:
                     print("Saudi quotes loaded from Yahoo charts using public TASI directory: "
                           + str(len(out)) + "/" + str(len(symbols)))
-                    return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
+                    return _saudi_eligible_quotes(out)
                 errors.append("Public TASI directory loaded but Yahoo returned no chart quotes")
             except Exception as exc:
                 errors.append("Public TASI directory: "+str(exc))
