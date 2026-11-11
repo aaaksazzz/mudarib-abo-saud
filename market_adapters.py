@@ -145,6 +145,24 @@ def _screener_quotes(region):
     # screener bursts from the scanner and snapshot endpoints.
     return list(_screener_quotes_cached(region,int(time.time()//600)))
 
+
+SAUDI_MIN_DAILY_TURNOVER_SAR=1_000_000
+
+def _saudi_eligible_quotes(rows):
+    """Keep TASI shares whose latest session traded value exceeds SAR 1m."""
+    eligible=[]
+    for row in rows or []:
+        try:
+            turnover=float(row.get("turnover_sar",row.get("quote_volume",0)) or 0)
+        except (TypeError,ValueError,OverflowError):
+            continue
+        if math.isfinite(turnover) and turnover>=SAUDI_MIN_DAILY_TURNOVER_SAR:
+            normalized=dict(row)
+            normalized["quote_volume"]=turnover
+            normalized["turnover_sar"]=turnover
+            eligible.append(normalized)
+    return sorted(eligible,key=lambda x:x["quote_volume"],reverse=True)
+
 def _row(symbol,price,change,volume,currency=None):
     try:
         p,c,v=float(price or 0),float(change or 0),float(volume or 0)
@@ -322,7 +340,7 @@ def market_tickers(market):
                     allowed_symbols=None
                 official_rows=official_saudi_quotes(allowed_symbols)
                 if official_rows:
-                    return sorted(official_rows,key=lambda x:x["quote_volume"],reverse=True)
+                    return _saudi_eligible_quotes(official_rows)
             except Exception as exc:
                 print("Saudi Exchange live feed unavailable; trying fallbacks: "+str(exc))
         if market=="us-stocks":
@@ -340,7 +358,7 @@ def market_tickers(market):
                 symbols=_saudi_exchange_symbols()
                 out=_saudi_chart_quotes(symbols)
                 if out:
-                    return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
+                    return _saudi_eligible_quotes(out)
                 errors.append("Saudi Exchange symbols were found but Yahoo returned no chart quotes")
             except Exception as exc:
                 errors.append("Saudi Exchange: "+str(exc))
@@ -356,7 +374,7 @@ def market_tickers(market):
                 errors.append("Public TASI directory: "+str(exc))
             try:
                 fallback=_tradingview_saudi_quotes()
-                return sorted(fallback,key=lambda x:x["quote_volume"],reverse=True)
+                return _saudi_eligible_quotes(fallback)
             except Exception as exc:
                 errors.append("TradingView: "+str(exc))
             raise ValueError("Saudi market data unavailable ("+"; ".join(errors)+")")
@@ -414,6 +432,8 @@ def market_tickers(market):
                     "Yahoo Saudi screener returned no priced TASI symbols; "
                     f"chart fallback checked {len(candidates)} symbols"
                 )
+        if market=="saudi":
+            return _saudi_eligible_quotes(out)
         return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
     if market in ("us-contracts","forex"):
         symbols=sorted(market_symbols(market))
