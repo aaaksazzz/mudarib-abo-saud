@@ -687,7 +687,7 @@ def strategy_status_summary():
         Trade.reason.like("SMART FLOW MTF QUANT:%")
     ).count()
     return jsonify({
-        "ok":True,"engine":"SMART FLOW QUANT · SMA200 MULTI-TIMEFRAME","fingerprint":STRATEGY_FINGERPRINT,
+        "ok":True,"engine":"SMART FLOW SWING-50 · INDEPENDENT MULTI-TIMEFRAME","fingerprint":STRATEGY_FINGERPRINT,
         "markets":list(MARKETS),"timeframes":list(market_strategies.TIMEFRAMES),
         "current_active":0,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
@@ -759,14 +759,11 @@ def filter_fresh_signals(signals, universe, now=None):
             if not math.isfinite(live_risk) or live_risk<=0 or not math.isfinite(atr) or atr<=0:
                 rejected_moved+=1
                 continue
-            if live_risk>atr*2.5 or live_risk<atr*0.20:
+            if live_risk>atr*8 or live_risk<atr*0.20:
                 rejected_moved+=1
                 continue
             # The published entry is the actual quote at approval time, not the
             # previous candle close. Rebuild all R-multiple targets from that entry.
-            if live_risk > current * 0.0125:
-                rejected_moved+=1
-                continue
             targets=market_strategies.target_prices(current,side,stop)
             if not targets:
                 rejected_moved+=1
@@ -1067,7 +1064,7 @@ def run_market_scan(market,force=False):
                for key in ("rejected_stale_candle","rejected_late_price")}
     fresh_matches=len(found)
     # Market breadth is informational only. Each symbol is gated by its own
-    # same-timeframe SMA200 and directional candle/flow confirmations.
+    # each timeframe uses its own confirmed swing structure and pullback confirmation.
     direction_rejected=0
     app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,len(found),
@@ -1285,7 +1282,7 @@ def intelligence_scan():
         result=run_market_scan(market,force=True)
         checked=int(result.get("analysis_completed",0) or 0)+int(result.get("analysis_failed",0) or 0)
         return jsonify({
-            "ok":True,"market":market,"engine":"SMART_FLOW_QUANT_SMA200",
+            "ok":True,"market":market,"engine":"SMART_FLOW_SWING50_MTF",
             "strategy_fingerprint":STRATEGY_FINGERPRINT,
             "checked_assets":checked,"universe_total":int(result.get("scan_universe",0) or 0),
             "scan_offset":int(result.get("scan_offset",0) or 0),
@@ -1294,10 +1291,10 @@ def intelligence_scan():
             "signals":result.get("signals",[]),
             "updated_at":result.get("updated_at") or iso(utcnow()),
             "cached":False,"market_bias":result.get("market_bias"),
-            "coverage":"محرك SMART FLOW QUANT: تحليل SMA200 مستقل لكل فريم مع تأكيد فريم الإشارة الأدنى"
+            "coverage":"محرك SWING-50: تحليل مستقل لكل فريم من 15 دقيقة إلى الشهري؛ اختراق مؤكد ثم تصحيح 50% ووقف هيكلي وأهداف 1R/2R/3R"
         })
     except Exception:
-        app.logger.exception("SMART FLOW QUANT scan failed for %s",market)
+        app.logger.exception("SMART FLOW SWING-50 scan failed for %s",market)
         return json_error("تعذر إكمال تحليل السوق حالياً",502)
 
 @app.get("/api/news")
