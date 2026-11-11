@@ -957,8 +957,8 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             all_frames_current=all(
-                db.session.get(Setting,f"scan-frame:smart-flow-quant:{market}:{frame}") is not None
-                and db.session.get(Setting,f"scan-frame:smart-flow-quant:{market}:{frame}").value==str(timeframe_bucket(frame,now))
+                db.session.get(Setting,f"scan-frame:swing50:{market}:{frame}") is not None
+                and db.session.get(Setting,f"scan-frame:swing50:{market}:{frame}").value==str(timeframe_bucket(frame,now))
                 for frame in market_scan_timeframes(market)
             )
             if last>now-timedelta(minutes=15) and all_frames_current and Trade.query.filter(
@@ -980,7 +980,7 @@ def run_market_scan(market,force=False):
     for frame in scan_frames:
         bucket=timeframe_bucket(frame,now)
         frame_buckets[frame]=bucket
-        frame_row=db.session.get(Setting,f"scan-frame:smart-flow-quant:{market}:{frame}")
+        frame_row=db.session.get(Setting,f"scan-frame:swing50:{market}:{frame}")
         if frame_row is None or frame_row.value!=str(bucket):
             frames_to_scan.append(frame)
     if not frames_to_scan:
@@ -1096,7 +1096,7 @@ def run_market_scan(market,force=False):
         for signal in frame_signals[:3]:
             marker=str(signal["signal_candle_time"])
             key=(signal["symbol"],frame,marker)
-            setting_key=f"signal-candle:smart-flow-quant:{market}:{signal['symbol']}:{frame}"
+            setting_key=f"signal-candle:swing50:{market}:{signal['symbol']}:{frame}"
             candle_row=db.session.get(Setting,setting_key)
             previous=existing_by_key.get(key)
             if candle_row and candle_row.value==marker:
@@ -1141,7 +1141,7 @@ def run_market_scan(market,force=False):
     else:
         cursor_row.value=str(next_cursor)
     for frame in frames_to_scan:
-        frame_key=f"scan-frame:smart-flow-quant:{market}:{frame}"
+        frame_key=f"scan-frame:swing50:{market}:{frame}"
         frame_row=db.session.get(Setting,frame_key)
         bucket_value=str(frame_buckets[frame])
         if frame_row is None:
