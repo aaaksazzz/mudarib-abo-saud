@@ -70,7 +70,7 @@ def _buy_setup(highs, lows, opens, closes, atr):
     n = len(closes)
     pivot_highs, pivot_lows = _pivots(highs, lows)
     for pivot in reversed([p for p in pivot_highs if p >= n - 45]):
-        breakout = next((j for j in range(p + 1, n - 1) if closes[j] > highs[p]), None)
+        breakout = next((j for j in range(p + 4, n - 1) if closes[j] > highs[p]), None)
         if breakout is None:
             continue
         prior_lows = [x for x in pivot_lows if x < p]
@@ -92,7 +92,7 @@ def _sell_setup(highs, lows, opens, closes, atr):
     n = len(closes)
     pivot_highs, pivot_lows = _pivots(highs, lows)
     for pivot in reversed([p for p in pivot_lows if p >= n - 45]):
-        breakout = next((j for j in range(p + 1, n - 1) if closes[j] < lows[p]), None)
+        breakout = next((j for j in range(p + 4, n - 1) if closes[j] < lows[p]), None)
         if breakout is None:
             continue
         prior_highs = [x for x in pivot_highs if x < p]
