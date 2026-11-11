@@ -7,10 +7,8 @@ SIGNAL_TIMEFRAME = {frame: frame for frame in TIMEFRAMES}
 INTERVAL_MS = {"1m": 60_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000,
                "1d": 86_400_000, "1w": 604_800_000, "1M": 2_678_400_000}
 SUPPORTED_TIMEFRAMES = tuple(INTERVAL_MS)
-PROFILES = {"spot": {"allow_short": False}, "alpha": {"allow_short": False},
-            "futures": {"allow_short": True}, "us-stocks": {"allow_short": False},
-            "us-contracts": {"allow_short": True}, "saudi": {"allow_short": False},
-            "forex": {"allow_short": True}}
+PROFILES = {market: {"allow_short": True} for market in
+            ("spot", "futures", "alpha", "us-stocks", "us-contracts", "saudi", "forex")}
 
 
 def _finite_rows(rows):
@@ -164,6 +162,7 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
 def diagnostic_self_test():
     checks = {
         "six_independent_timeframes": TIMEFRAMES == ("15m", "1h", "4h", "1d", "1w", "1M"),
+        "both_directions_all_markets": all(PROFILES[m]["allow_short"] for m in PROFILES),
         "each_frame_uses_itself": all(SIGNAL_TIMEFRAME[x] == x for x in TIMEFRAMES),
         "buy_targets_1r_2r_3r": target_prices(100, "BUY", 95) == (105.0, 110.0, 115.0),
         "sell_targets_1r_2r_3r": target_prices(100, "SELL", 105) == (95.0, 90.0, 85.0),

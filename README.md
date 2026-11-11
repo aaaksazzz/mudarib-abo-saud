@@ -22,7 +22,7 @@ Production-oriented market intelligence terminal.
 - A setup requires a confirmed swing-high/swing-low pivot, a candle close beyond that level, a 50% retracement of the breakout impulse, and a closed-candle reversal confirmation at the retracement zone.
 - BUY stop is placed beyond the original swing low; SELL stop is placed beyond the original swing high. A volatility buffer is added beyond the structural invalidation.
 - TP1 is 1R, TP2 is 2R and TP3 is 3R from the live entry to the structural stop. The final target is 3:1 gross reward-to-risk before fees, spread, slippage or leverage.
-- Only completed candles are used. Spot, Alpha, US equities and Saudi equities are long-only; Futures, US contracts and Forex/Gold support both directions.
+- Only completed candles are used. Bullish BUY and mirrored bearish SELL setups are detected across all seven markets. On Spot, Alpha and equities, SELL is a manual exit/bearish signal, not a short-sale or automatic order.
 - No account API keys or automatic order execution are used. A setup is not guaranteed to occur on every asset or timeframe; empty timeframe groups mean the rules were not fully met.
 ## Signal engine
 - Each successful timeframe scan replaces that timeframe's live batch, keeping up to three opportunities per market per timeframe. Previous rows remain in trade history and expire after 24 hours.
