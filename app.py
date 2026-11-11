@@ -320,7 +320,7 @@ def compat_styles(): return send_from_directory(".", "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
     return jsonify({
-        "ok":True,"strategy":"SMART FLOW SWING-50 · INDEPENDENT MULTI-TIMEFRAME",
+        "ok":True,"strategy":"SMART FLOW BREAKOUT + FVG · INDEPENDENT MULTI-TIMEFRAME",
         "engine":"market_strategies",
         "fingerprint":market_strategies.STRATEGY_FINGERPRINT,
         "markets":list(MARKETS),
@@ -362,7 +362,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":market_strategies.STRATEGY_FINGERPRINT.startswith("SMART-FLOW-SWING50-")}
+            "price_action_engine":market_strategies.STRATEGY_FINGERPRINT.startswith("SMART-FLOW-BREAKOUT-FVG-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -684,19 +684,19 @@ STRATEGY_FINGERPRINT=market_strategies.STRATEGY_FINGERPRINT
 def strategy_status_summary():
     active_current=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.like("SWING-50 MTF:%")
+        Trade.reason.like("BREAKOUT-FVG MTF:%")
     ).count()
     active_legacy=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
         Trade.reason.like("SMART FLOW MTF QUANT:%")
     ).count()
     return jsonify({
-        "ok":True,"engine":"SMART FLOW SWING-50 · INDEPENDENT MULTI-TIMEFRAME","fingerprint":STRATEGY_FINGERPRINT,
+        "ok":True,"engine":"SMART FLOW BREAKOUT + FVG · INDEPENDENT MULTI-TIMEFRAME","fingerprint":STRATEGY_FINGERPRINT,
         "markets":list(MARKETS),"timeframes":list(market_strategies.TIMEFRAMES),
         "current_active":active_current,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_ready":True,
-        "rules":["confirmed swing high/low breakout on candle close","50% retracement of breakout impulse","closed-candle reversal confirmation","stop beyond original swing low/high","TP1=1R, TP2=2R, TP3=3R"]
+        "rules":["confirmed swing high/low breakout on candle close","mandatory three-candle bullish/bearish FVG","stop beyond nearest structural swing low/high","primary target is next previous structural swing high/low"]
     })
 
 
@@ -708,7 +708,7 @@ def build_signal(market,item,timeframe):
     if not setup:
         return None
     setup["signal_timeframe"]=timeframe
-    setup["reason"]="SWING-50 MTF: independent "+timeframe+" swing structure; "+setup.get("reason","")
+    setup["reason"]="BREAKOUT-FVG MTF: independent "+timeframe+" swing breakout and FVG; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -957,15 +957,15 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             all_frames_current=all(
-                db.session.get(Setting,f"scan-frame:swing50:{market}:{frame}") is not None
-                and db.session.get(Setting,f"scan-frame:swing50:{market}:{frame}").value==str(timeframe_bucket(frame,now))
+                db.session.get(Setting,f"scan-frame:breakout-fvg:{market}:{frame}") is not None
+                and db.session.get(Setting,f"scan-frame:breakout-fvg:{market}:{frame}").value==str(timeframe_bucket(frame,now))
                 for frame in market_scan_timeframes(market)
             )
             if last>now-timedelta(minutes=15) and all_frames_current and Trade.query.filter(
                 Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe=="15m",
-                Trade.expires_at>now,Trade.reason.like("SWING-50 MTF:%")
+                Trade.expires_at>now,Trade.reason.like("BREAKOUT-FVG MTF:%")
             ).count():
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("SWING-50 MTF:%")).order_by(Trade.score.desc()).limit(18).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("BREAKOUT-FVG MTF:%")).order_by(Trade.score.desc()).limit(18).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
                     meta=json.loads(meta_row.value) if meta_row else {}
@@ -980,7 +980,7 @@ def run_market_scan(market,force=False):
     for frame in scan_frames:
         bucket=timeframe_bucket(frame,now)
         frame_buckets[frame]=bucket
-        frame_row=db.session.get(Setting,f"scan-frame:swing50:{market}:{frame}")
+        frame_row=db.session.get(Setting,f"scan-frame:breakout-fvg:{market}:{frame}")
         if frame_row is None or frame_row.value!=str(bucket):
             frames_to_scan.append(frame)
     if not frames_to_scan:
@@ -1068,7 +1068,7 @@ def run_market_scan(market,force=False):
                for key in ("rejected_stale_candle","rejected_late_price")}
     fresh_matches=len(found)
     # Market breadth is informational only. Each symbol is gated by its own
-    # each timeframe uses its own confirmed swing structure and pullback confirmation.
+    # each timeframe uses its own confirmed swing structure and mandatory FVG confirmation.
     direction_rejected=0
     app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,len(found),
@@ -1077,7 +1077,7 @@ def run_market_scan(market,force=False):
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("SWING-50 MTF:%"),
+        Trade.reason.like("BREAKOUT-FVG MTF:%"),
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
@@ -1096,7 +1096,7 @@ def run_market_scan(market,force=False):
         for signal in frame_signals[:3]:
             marker=str(signal["signal_candle_time"])
             key=(signal["symbol"],frame,marker)
-            setting_key=f"signal-candle:swing50:{market}:{signal['symbol']}:{frame}"
+            setting_key=f"signal-candle:breakout-fvg:{market}:{signal['symbol']}:{frame}"
             candle_row=db.session.get(Setting,setting_key)
             previous=existing_by_key.get(key)
             if candle_row and candle_row.value==marker:
@@ -1111,9 +1111,9 @@ def run_market_scan(market,force=False):
             new_signals.append(signal)
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("SWING-50 MTF:%")).update({"status":"superseded"},synchronize_session=False)
+        Trade.reason.not_like("BREAKOUT-FVG MTF:%")).update({"status":"superseded"},synchronize_session=False)
     active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.timeframe.in_(frames_to_scan),Trade.reason.like("SWING-50 MTF:%"))
+        Trade.timeframe.in_(frames_to_scan),Trade.reason.like("BREAKOUT-FVG MTF:%"))
     if retained_ids:
         active_query=active_query.filter(~Trade.id.in_(retained_ids))
     active_query.update({"status":"superseded"},synchronize_session=False)
@@ -1141,7 +1141,7 @@ def run_market_scan(market,force=False):
     else:
         cursor_row.value=str(next_cursor)
     for frame in frames_to_scan:
-        frame_key=f"scan-frame:swing50:{market}:{frame}"
+        frame_key=f"scan-frame:breakout-fvg:{market}:{frame}"
         frame_row=db.session.get(Setting,frame_key)
         bucket_value=str(frame_buckets[frame])
         if frame_row is None:
@@ -1173,7 +1173,7 @@ def run_market_scan(market,force=False):
         else:
             frame_meta_row.value=frame_meta
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("SWING-50 MTF:%")).order_by(Trade.score.desc()).limit(18).all()
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("BREAKOUT-FVG MTF:%")).order_by(Trade.score.desc()).limit(18).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
             "scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
             "analysis_completed":completed,"analysis_failed":failed,"strategy_matches":strategy_matches,
@@ -1286,7 +1286,7 @@ def intelligence_scan():
         result=run_market_scan(market,force=True)
         checked=int(result.get("analysis_completed",0) or 0)+int(result.get("analysis_failed",0) or 0)
         return jsonify({
-            "ok":True,"market":market,"engine":"SMART_FLOW_SWING50_MTF",
+            "ok":True,"market":market,"engine":"SMART_FLOW_BREAKOUT_FVG_MTF",
             "strategy_fingerprint":STRATEGY_FINGERPRINT,
             "checked_assets":checked,"universe_total":int(result.get("scan_universe",0) or 0),
             "scan_offset":int(result.get("scan_offset",0) or 0),
@@ -1295,10 +1295,10 @@ def intelligence_scan():
             "signals":result.get("signals",[]),
             "updated_at":result.get("updated_at") or iso(utcnow()),
             "cached":False,"market_bias":result.get("market_bias"),
-            "coverage":"محرك SWING-50: تحليل مستقل لكل فريم من 15 دقيقة إلى الشهري؛ اختراق مؤكد ثم تصحيح 50% ووقف هيكلي وأهداف 1R/2R/3R"
+            "coverage":"محرك BREAKOUT-FVG: تحليل مستقل لكل فريم من 15 دقيقة إلى الشهري؛ اختراق قمة/قاع مع فجوة سعرية إلزامية ووقف هيكلي وهدف القمة/القاع السابق"
         })
     except Exception:
-        app.logger.exception("SMART FLOW SWING-50 scan failed for %s",market)
+        app.logger.exception("SMART FLOW BREAKOUT-FVG scan failed for %s",market)
         return json_error("تعذر إكمال تحليل السوق حالياً",502)
 
 @app.get("/api/news")
