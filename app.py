@@ -1014,7 +1014,10 @@ def run_market_scan(market,force=False):
         cursor=int(cursor_row.value) if cursor_row else 0
     except (TypeError,ValueError):
         cursor=0
-    candidates,next_cursor,scan_offset=select_scan_candidates(universe,cursor,80)
+    # Keep each market cycle bounded on the small production container.
+    # Twenty rotating candidates per timeframe still cover all six frames while
+    # avoiding the previous 480-candle burst on a cold scan.
+    candidates,next_cursor,scan_offset=select_scan_candidates(universe,cursor,20)
     for index,item in enumerate(candidates):
         item["include_microstructure"]=(market in ("spot","futures") and index<12)
     found=[]
@@ -1338,7 +1341,9 @@ def intelligence_scan():
     if blocked:
         return blocked
     try:
-        result=run_market_scan(market,force=True)
+        # Reuse a fresh completed scan instead of forcing a full provider sweep
+        # on every page visit; the scan cache expires on its normal 15m cadence.
+        result=run_market_scan(market,force=False)
         checked=int(result.get("analysis_completed",0) or 0)+int(result.get("analysis_failed",0) or 0)
         return jsonify({
             "ok":True,"market":market,"engine":"SMART_FLOW_BREAKOUT_FVG_MTF",
