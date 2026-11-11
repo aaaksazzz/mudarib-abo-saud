@@ -111,7 +111,7 @@ def trade_json(trade):
         "id":trade.id,"market":trade.market,"symbol":trade.symbol,"side":trade.side,
         "entry":trade.entry,"stop":trade.stop,"tp1":trade.tp1,"tp2":trade.tp2,
         "tp3":trade.tp3,"score":trade.score,"timeframe":trade.timeframe,
-        "reason":trade.reason,"status":trade.status,
+        "reason":"إعداد فني مؤكد","status":trade.status,
         "created_at":iso(trade.created_at),"expires_at":iso(trade.expires_at),
         "result_pct":trade.result_pct,"change_pct":trade.change_15m_pct,
     }
@@ -319,15 +319,8 @@ def pro_theme(): return send_from_directory(".", "pro-theme.css")
 def compat_styles(): return send_from_directory(".", "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
-    return jsonify({
-        "ok":True,"strategy":"SMART FLOW BREAKOUT + FVG · INDEPENDENT MULTI-TIMEFRAME",
-        "engine":"market_strategies",
-        "fingerprint":market_strategies.STRATEGY_FINGERPRINT,
-        "markets":list(MARKETS),
-        "internal_contexts":list(market_strategies.TIMEFRAMES),
-        "user_timeframe_filters":True,
-        "manual_only":True,
-    })
+    # Public status intentionally omits proprietary strategy names, rules and fingerprints.
+    return jsonify({"ok":True,"engine":"SMART TRADING PRO","manual_only":True})
 
 @app.get("/health")
 def health():
@@ -690,13 +683,12 @@ def strategy_status_summary():
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
         Trade.reason.like("SMART FLOW MTF QUANT:%")
     ).count()
+    # Keep operational readiness while withholding proprietary strategy details.
     return jsonify({
-        "ok":True,"engine":"SMART FLOW BREAKOUT + FVG · INDEPENDENT MULTI-TIMEFRAME","fingerprint":STRATEGY_FINGERPRINT,
-        "markets":list(MARKETS),"timeframes":list(market_strategies.TIMEFRAMES),
+        "ok":True,"engine":"SMART TRADING PRO",
         "current_active":active_current,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
-        "strategy_ready":True,
-        "rules":["confirmed swing high/low breakout on candle close","mandatory three-candle bullish/bearish FVG","stop beyond nearest structural swing low/high","primary target is next previous structural swing high/low"]
+        "strategy_ready":True
     })
 
 
@@ -1341,16 +1333,14 @@ def intelligence_scan():
         result=run_market_scan(market,force=True)
         checked=int(result.get("analysis_completed",0) or 0)+int(result.get("analysis_failed",0) or 0)
         return jsonify({
-            "ok":True,"market":market,"engine":"SMART_FLOW_BREAKOUT_FVG_MTF",
-            "strategy_fingerprint":STRATEGY_FINGERPRINT,
+            "ok":True,"market":market,
             "checked_assets":checked,"universe_total":int(result.get("scan_universe",0) or 0),
             "scan_offset":int(result.get("scan_offset",0) or 0),
             "signals_found":int(result.get("accepted_signals",0) or 0),
             "analysis_errors":int(result.get("analysis_failed",0) or 0),
-            "signals":result.get("signals",[]),
+            "signals":[{k:v for k,v in signal.items() if k not in ("reason","strategy","strategy_fingerprint","strategy_votes")} for signal in result.get("signals",[])],
             "updated_at":result.get("updated_at") or iso(utcnow()),
-            "cached":False,"market_bias":result.get("market_bias"),
-            "coverage":"محرك BREAKOUT-FVG: تحليل مستقل لكل فريم من 15 دقيقة إلى الشهري؛ اختراق قمة/قاع مع فجوة سعرية إلزامية ووقف هيكلي وهدف القمة/القاع السابق"
+            "cached":False,"market_bias":result.get("market_bias")
         })
     except Exception:
         app.logger.exception("SMART FLOW BREAKOUT-FVG scan failed for %s",market)
