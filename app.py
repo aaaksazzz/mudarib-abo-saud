@@ -235,7 +235,7 @@ def public_article(a):
             "meta_description":a.meta_description or a.summary,"canonical_slug":a.canonical_slug or a.slug,
             "created_at":iso(a.created_at)}
 @app.get("/")
-def home(): return send_from_directory(".", "intelligence.html")
+def home(): return send_from_directory(".", "home.html")
 
 @app.get("/intelligence")
 def intelligence_page(): return send_from_directory(".", "intelligence.html")
