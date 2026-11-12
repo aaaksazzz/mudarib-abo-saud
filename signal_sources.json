@@ -1,0 +1,191 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-10-30",
+  "policy": {
+    "goal": "Prefer verified trade outcomes over source count.",
+    "count_only_if": [
+      "Public/free access to the actual signal, not just a market-data or news feed.",
+      "A timestamped BUY/SELL setup with symbol and timeframe.",
+      "Entry, stop-loss, TP1, TP2 and TP3 are explicitly published; never synthesize missing levels.",
+      "A source URL or original post URL is retained for audit.",
+      "Wins, losses, breakevens and unfilled signals are retained and scored consistently.",
+      "Live/open status can be distinguished from closed status and reconciled against market prices."
+    ],
+    "activation_rule": "Only status=verified_free_complete may be used by production trade-feed adapters. Candidates and rejected sources must never create customer trade cards.",
+    "performance_rule": "Do not rank by advertised win rate alone. Require sample size, net expectancy after costs, profit factor, maximum drawdown, and full loss accounting. Label provider-reported results as unverified until independently replayed."
+  },
+  "sources": [
+    {
+      "id": "borearis-public-signals",
+      "name": "Borearis Markets Today",
+      "url": "https://borearis.com/en/market/signals/",
+      "status": "candidate_not_connected",
+      "access": "public_page",
+      "market_coverage_claimed": [
+        "forex",
+        "gold_metals",
+        "crypto",
+        "us_stocks",
+        "indices",
+        "commodities"
+      ],
+      "observed_signal_fields": [
+        "symbol",
+        "direction",
+        "timeframe",
+        "issued_at",
+        "entry",
+        "stop_loss",
+        "partial_take_profit",
+        "final_target",
+        "status",
+        "closed_result"
+      ],
+      "missing_required_fields": [
+        "tp3"
+      ],
+      "performance_evidence": {
+        "period": "2026-03 to 2026-10",
+        "sample": 1668,
+        "reported_profitable_pct": 73,
+        "reported_avg_per_signal_usd": 17,
+        "live_quote_lookback_sample": 515,
+        "live_quote_reported_profitable_pct": 72,
+        "live_quote_avg_per_signal_usd": 11,
+        "caveat": "Provider-reported backtest/live-quote look-back, not independently audited. Current signal layout shows one partial take-profit and one final target, not three explicit targets."
+      },
+      "activation_blocker": "Do not activate until a stable public feed is confirmed and the three required target levels are genuinely published, or the product owner explicitly approves a two-target format."
+    },
+    {
+      "id": "quantroomx-gold",
+      "name": "Quant Room X",
+      "url": "https://quantroomx.com/",
+      "status": "candidate_not_connected",
+      "access": "free_telegram_claim",
+      "market_coverage_claimed": [
+        "gold"
+      ],
+      "observed_signal_fields": [
+        "symbol",
+        "direction",
+        "entry_zone",
+        "stop_loss",
+        "target_progress",
+        "closed_result"
+      ],
+      "missing_required_fields": [
+        "confirmed_public_machine_readable_feed",
+        "tp2",
+        "tp3",
+        "stable_timeframe_field"
+      ],
+      "performance_evidence": {
+        "period": "2026-02 to 2026-08-26",
+        "sample": 1286,
+        "reported_tp1_reached_pct": 84,
+        "reported_full_target_pct": 42,
+        "stopped_out": 177,
+        "no_fill": 229,
+        "caveat": "Provider says history is reconstructed from public Telegram posts. TP1 hit rate is not equivalent to profitable full exits; independent replay required."
+      },
+      "activation_blocker": "Need reliable post-history extraction and complete explicit TP1-TP3 levels before production use."
+    },
+    {
+      "id": "forexero-results",
+      "name": "Forexero",
+      "url": "https://forexero.com/signals",
+      "status": "rejected_for_free_live_feed",
+      "access": "public_closed_history_live_vip",
+      "market_coverage_claimed": [
+        "forex",
+        "gold"
+      ],
+      "observed_signal_fields": [
+        "entry",
+        "stop_loss",
+        "tp1",
+        "tp2",
+        "tp3",
+        "closed_result"
+      ],
+      "performance_evidence": {
+        "period": "since 2023",
+        "caveat": "Public page describes closed VIP history; open signals are posted in VIP first. Not eligible as a free live source."
+      },
+      "activation_blocker": "Live/open setups are not freely available on the public page."
+    },
+    {
+      "id": "signalstrades",
+      "name": "SignalsTrades",
+      "url": "https://www.signalstrades.com/",
+      "status": "rejected_quality_screen",
+      "access": "public",
+      "market_coverage_claimed": [
+        "forex",
+        "gold",
+        "crypto",
+        "indices"
+      ],
+      "performance_evidence": {
+        "period": "30 days as observed 2026-10-30",
+        "sample": 855,
+        "reported_win_rate_pct": 38,
+        "caveat": "Public page reports 38% win rate across 855 closed signals. Rejected from preferred-source shortlist pending positive net expectancy evidence."
+      },
+      "activation_blocker": "Weak recent win-rate evidence; do not use as a preferred signal source."
+    },
+    {
+      "id": "quantum-algo-public-ledger",
+      "name": "Quantum Algo",
+      "url": "https://www.quantum-algo.com/track-record/",
+      "status": "rejected_free_coverage_screen",
+      "access": "mixed_public_and_premium",
+      "market_coverage_claimed": [
+        "crypto",
+        "forex",
+        "gold",
+        "indices",
+        "stocks"
+      ],
+      "performance_evidence": {
+        "sample": 160,
+        "reported_win_rate_pct": 75,
+        "public_calls": 43,
+        "premium_calls": 117,
+        "caveat": "The headline record combines public TradingView ideas with premium signals; only 43 calls are public. Do not treat the 75% aggregate as a free-feed result."
+      },
+      "activation_blocker": "Free/public sample is limited and aggregate record includes paid signals."
+    }
+  ],
+  "market_status": {
+    "binance_spot": {
+      "verified_free_complete_sources": 0,
+      "candidate_sources": 0
+    },
+    "binance_futures": {
+      "verified_free_complete_sources": 0,
+      "candidate_sources": 0
+    },
+    "binance_alpha": {
+      "verified_free_complete_sources": 0,
+      "candidate_sources": 0
+    },
+    "us_contracts": {
+      "verified_free_complete_sources": 0,
+      "candidate_sources": 0
+    },
+    "us_stocks": {
+      "verified_free_complete_sources": 0,
+      "candidate_sources": 1
+    },
+    "saudi_tasi": {
+      "verified_free_complete_sources": 0,
+      "candidate_sources": 0
+    },
+    "forex_gold": {
+      "verified_free_complete_sources": 0,
+      "candidate_sources": 2
+    }
+  },
+  "note": "These are research candidates only. No source in this file is approved for live customer trade cards yet. Candidate counts are not verified-source counts."
+}
