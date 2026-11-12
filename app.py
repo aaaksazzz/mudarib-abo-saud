@@ -584,7 +584,9 @@ def market_tickers(market):
         try:
             vol=float(t.get("quoteVolume",0)); change=float(t.get("priceChangePercent",0)); price=float(t.get("lastPrice",0))
             if not all(math.isfinite(value) for value in (vol,change,price)): continue
-            if vol<1_000_000 or price<=0: continue
+            # Spot: include every active USDT pair with a valid live price, including lower-volume coins.
+            # USD-M Futures: retain the strict minimum of $1M 24h quote volume.
+            if price<=0 or (market=="futures" and vol<1_000_000): continue
             out.append({"symbol":t["symbol"],"price":price,"change_pct":change,"quote_volume":vol})
         except (ValueError,TypeError): continue
     return sorted(out,key=lambda x:x["quote_volume"],reverse=True)
