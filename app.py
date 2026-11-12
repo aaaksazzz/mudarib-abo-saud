@@ -185,6 +185,12 @@ def security_headers(response):
         response.headers["Pragma"]="no-cache"
         response.headers["Expires"]="0"
         response.headers["Vary"]="Cookie"
+    elif response.mimetype in ("text/html", "text/javascript", "application/javascript", "text/css"):
+        # Prevent browsers and intermediary caches from reusing retired SPA assets/routes.
+        response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"]="no-cache"
+        response.headers["Expires"]="0"
+        response.headers.pop("ETag", None)
     return response
 @app.before_request
 def security_and_identity():
@@ -235,32 +241,32 @@ def public_article(a):
             "meta_description":a.meta_description or a.summary,"canonical_slug":a.canonical_slug or a.slug,
             "created_at":iso(a.created_at)}
 @app.get("/")
-def home(): return send_from_directory(".", "intelligence.html")
+def home(): return send_from_directory(".", "intelligence.html", conditional=False)
 
 @app.get("/intelligence")
-def intelligence_page(): return send_from_directory(".", "intelligence.html")
+def intelligence_page(): return send_from_directory(".", "intelligence.html", conditional=False)
 
 @app.get("/intelligence.js")
-def intelligence_script(): return send_from_directory(".", "intelligence.js")
+def intelligence_script(): return send_from_directory(".", "intelligence.js", conditional=False)
 
 @app.get("/intelligence.css")
-def intelligence_stylesheet(): return send_from_directory(".", "intelligence.css")
+def intelligence_stylesheet(): return send_from_directory(".", "intelligence.css", conditional=False)
 @app.get("/market/<market>")
 def market_page_route(market):
     if market not in MARKETS: return json_error("السوق غير معروف",404)
-    return send_from_directory(".", "intelligence.html")
+    return send_from_directory(".", "intelligence.html", conditional=False)
 
 @app.get("/signal-lab")
 def signal_lab_page():
-    return send_from_directory(".", "intelligence.html")
+    return send_from_directory(".", "intelligence.html", conditional=False)
 
 @app.get("/signal-lab.js")
 def signal_lab_script():
-    return send_from_directory(".", "signal-lab.js")
+    return send_from_directory(".", "signal-lab.js", conditional=False)
 
 @app.get("/signal-lab.css")
 def signal_lab_stylesheet():
-    return send_from_directory(".", "signal-lab.css")
+    return send_from_directory(".", "signal-lab.css", conditional=False)
 
 @app.get("/api/signal-lab/scan")
 def signal_lab_scan():
@@ -307,16 +313,16 @@ def robots_txt():
 @app.get("/account")
 @app.get("/admin")
 def standalone_section_route():
-    return send_from_directory(".", "index.html")
+    return send_from_directory(".", "index.html", conditional=False)
 
 @app.get("/styles.css")
-def styles(): return send_from_directory(".", "styles.css")
+def styles(): return send_from_directory(".", "styles.css", conditional=False)
 @app.get("/platform.js")
-def platform_script(): return send_from_directory(".", "platform.js")
+def platform_script(): return send_from_directory(".", "platform.js", conditional=False)
 @app.get("/pro-theme.css")
-def pro_theme(): return send_from_directory(".", "pro-theme.css")
+def pro_theme(): return send_from_directory(".", "pro-theme.css", conditional=False)
 @app.get("/compat.css")
-def compat_styles(): return send_from_directory(".", "compat.css")
+def compat_styles(): return send_from_directory(".", "compat.css", conditional=False)
 @app.get("/api/strategy/status")
 def strategy_status():
     # Public status intentionally omits proprietary strategy names, rules and fingerprints.
