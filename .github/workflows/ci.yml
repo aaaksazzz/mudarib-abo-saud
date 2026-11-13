@@ -42,7 +42,12 @@ jobs:
           assert client.get("/health").get_json()["ok"] is True
           assert client.get("/api/bootstrap").status_code == 200
           assert client.get("/api/trades").status_code == 200
-          assert client.get("/api/strategy/status").get_json()["fingerprint"].startswith("SMART-FLOW-BREAKOUT-FVG-")
+          status = client.get("/api/strategy/status").get_json()
+          assert status["fingerprint"] == "STP-EMA-STRONG-MTF-V1-20261113"
+          assert status["running_fingerprint"] == status["fingerprint"]
+          assert status["engine_active"] is True
+          assert status["diagnostic"]["ok"] is True
+          assert status["signal_timeframes"] == {"15m":"1m","1h":"15m","4h":"1h","1d":"4h","1w":"1d","1M":"1w"}
           assert client.get("/api/strategy/status").get_json()["engine"] == "market_strategies"
           assert client.get("/api/strategy/status").get_json()["manual_only"] is True
           for path in ("/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex"):
