@@ -1,5 +1,6 @@
 import os, re, secrets, hashlib, hmac, time, json, math, shutil
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from functools import wraps, lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
@@ -1692,6 +1693,53 @@ def scheduled_market_scan(market):
             db.session.remove()
 
 
+BLOG_LANGUAGES=("ar","en","es","de","id","pt","tr","fr","hi")
+
+def scheduled_daily_blog_publish():
+    """Publish the oldest complete nine-language editorial batch; no AI/API key required."""
+    with app.app_context():
+        try:
+            queued=Article.query.filter(
+                Article.kind=="blog",
+                Article.published.is_(False),
+                Article.canonical_slug.like("daily-queue-%")
+            ).order_by(Article.created_at.asc()).all()
+            batches={}
+            for article in queued:
+                batches.setdefault(article.canonical_slug,[]).append(article)
+            for canonical, articles in batches.items():
+                languages={article.language for article in articles}
+                if set(BLOG_LANGUAGES).issubset(languages):
+                    for article in articles:
+                        if article.language in BLOG_LANGUAGES:
+                            article.published=True
+                    db.session.commit()
+                    app.logger.info(
+                        "daily multilingual blog batch published: canonical=%s languages=%s",
+                        canonical,len(BLOG_LANGUAGES)
+                    )
+                    return
+            app.logger.info(
+                "daily blog publisher idle: no complete unpublished nine-language batch is queued"
+            )
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception("daily blog publishing failed: %s",type(exc).__name__)
+        finally:
+            db.session.remove()
+
+
+def start_daily_blog_scheduler():
+    blog_scheduler=BackgroundScheduler(timezone="Asia/Riyadh")
+    blog_scheduler.add_job(
+        scheduled_daily_blog_publish,"cron",hour=6,minute=15,
+        id="daily-multilingual-trading-blog",replace_existing=True,
+        max_instances=1,coalesce=True,misfire_grace_time=3600
+    )
+    blog_scheduler.start()
+    app.logger.info("daily multilingual blog scheduler registered: 06:15 Asia/Riyadh")
+
+
 SCAN_INTERVAL_SECONDS=15*60
 SCAN_INITIAL_DELAY_SECONDS=30
 SCAN_MISFIRE_GRACE_SECONDS=300
@@ -1725,6 +1773,12 @@ if AUTO_SCAN_ENABLED:
             next_run_time=utcnow()+timedelta(seconds=market_scan_initial_delay_seconds(index))
         )
     scheduler.start()
+
+# The blog scheduler is independent from market scanning and never blocks app startup.
+try:
+    start_daily_blog_scheduler()
+except Exception:
+    app.logger.exception("daily blog scheduler could not start")
 
 if __name__=="__main__":
     app.run(host="0.0.0.0",port=int(os.environ.get("PORT","8080")))
