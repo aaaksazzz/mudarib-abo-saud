@@ -1,5 +1,6 @@
 import os, re, secrets, hashlib, hmac, time, json, math, shutil
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from functools import wraps, lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
@@ -1692,6 +1693,115 @@ def scheduled_market_scan(market):
             db.session.remove()
 
 
+BLOG_LANGUAGES=("ar","en","es","de","id","pt","tr","fr","hi")
+BLOG_TOPICS=(
+    "إدارة المخاطر وتحديد حجم الصفقة",
+    "كيف تقرأ مناطق الدعم والمقاومة",
+    "فهم السيولة والاختراقات الكاذبة",
+    "الفرق بين التداول الفوري والعقود الآجلة",
+    "أساسيات قراءة الشموع اليابانية",
+    "إدارة رأس المال وتجنب الرافعة المفرطة",
+    "بناء خطة تداول قابلة للقياس",
+    "فهم الاتجاه والزخم في الأسواق",
+    "أخطاء المتداولين وكيفية تجنبها",
+    "استخدام وقف الخسارة والأهداف بطريقة منضبطة",
+    "تأثير الأخبار الاقتصادية على الأسواق",
+    "مبادئ تداول الذهب والعملات والأسهم"
+)
+
+def scheduled_daily_blog_publish():
+    """Create one original educational trading article and its nine localized versions."""
+    with app.app_context():
+        api_key=os.environ.get("OPENAI_API_KEY","").strip()
+        if not api_key:
+            app.logger.warning("daily blog skipped: OPENAI_API_KEY is not configured")
+            return
+        local_now=datetime.now(ZoneInfo("Asia/Riyadh"))
+        day_key=local_now.date().isoformat()
+        canonical="daily-trading-"+day_key
+        existing={x.language for x in Article.query.filter_by(kind="blog",canonical_slug=canonical).all()}
+        missing=[lang for lang in BLOG_LANGUAGES if lang not in existing]
+        if not missing:
+            app.logger.info("daily blog already published: %s",day_key)
+            return
+        topic=BLOG_TOPICS[local_now.timetuple().tm_yday % len(BLOG_TOPICS)]
+        language_names={
+            "ar":"Arabic","en":"English","es":"Spanish","de":"German",
+            "id":"Indonesian","pt":"Brazilian Portuguese","tr":"Turkish",
+            "fr":"French","hi":"Hindi"
+        }
+        prompt=(
+            "Create a high-quality, original educational article about trading. "
+            "Topic: "+topic+". Return ONLY a valid JSON object with one key per requested language. "
+            "Each value must contain title, summary, meta_title, meta_description, and body. "
+            "Write naturally for native readers, not literal machine translations. "
+            "Each body must be 5-7 useful paragraphs, at least 700 characters, with practical explanations. "
+            "Do not give personalized financial advice, promise profits, invent current prices or news, "
+            "or present an educational example as a live signal. Include risk warnings where relevant. "
+            "SEO titles must be unique and concise; descriptions must be useful and under 170 characters. "
+            "Languages: "+json.dumps({k:language_names[k] for k in BLOG_LANGUAGES},ensure_ascii=False)
+        )
+        try:
+            response=requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization":"Bearer "+api_key,"Content-Type":"application/json"},
+                json={
+                    "model":os.environ.get("BLOG_AI_MODEL","gpt-4o-mini"),
+                    "temperature":0.6,
+                    "response_format":{"type":"json_object"},
+                    "messages":[
+                        {"role":"system","content":"You are an experienced multilingual financial education editor. Never fabricate market facts."},
+                        {"role":"user","content":prompt}
+                    ]
+                },
+                timeout=90
+            )
+            response.raise_for_status()
+            payload=response.json()
+            raw=payload["choices"][0]["message"]["content"]
+            generated=json.loads(raw)
+            created=[]
+            for lang in missing:
+                item=generated.get(lang)
+                if not isinstance(item,dict):
+                    raise ValueError("missing language output: "+lang)
+                title=str(item.get("title","")).strip()
+                summary=str(item.get("summary","")).strip()
+                body=str(item.get("body","")).strip()
+                if not title or len(summary)<40 or len(body)<700:
+                    raise ValueError("incomplete article output: "+lang)
+                slug=canonical+"-"+lang
+                if Article.query.filter_by(slug=slug).first():
+                    continue
+                article=Article(
+                    kind="blog",title=title[:220],slug=slug,
+                    summary=summary[:500],body=body,published=True,language=lang,
+                    meta_title=str(item.get("meta_title") or title)[:70],
+                    meta_description=str(item.get("meta_description") or summary)[:170],
+                    canonical_slug=canonical
+                )
+                db.session.add(article)
+                created.append(slug)
+            db.session.commit()
+            app.logger.info("daily multilingual blog published: date=%s languages=%s",day_key,len(created))
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception("daily multilingual blog generation failed: %s",type(exc).__name__)
+        finally:
+            db.session.remove()
+
+
+def start_daily_blog_scheduler():
+    blog_scheduler=BackgroundScheduler(timezone="Asia/Riyadh")
+    blog_scheduler.add_job(
+        scheduled_daily_blog_publish,"cron",hour=6,minute=15,
+        id="daily-multilingual-trading-blog",replace_existing=True,
+        max_instances=1,coalesce=True,misfire_grace_time=3600
+    )
+    blog_scheduler.start()
+    app.logger.info("daily multilingual blog scheduler registered: 06:15 Asia/Riyadh")
+
+
 SCAN_INTERVAL_SECONDS=15*60
 SCAN_INITIAL_DELAY_SECONDS=30
 SCAN_MISFIRE_GRACE_SECONDS=300
@@ -1725,6 +1835,12 @@ if AUTO_SCAN_ENABLED:
             next_run_time=utcnow()+timedelta(seconds=market_scan_initial_delay_seconds(index))
         )
     scheduler.start()
+
+# The blog scheduler is independent from market scanning and never blocks app startup.
+try:
+    start_daily_blog_scheduler()
+except Exception:
+    app.logger.exception("daily blog scheduler could not start")
 
 if __name__=="__main__":
     app.run(host="0.0.0.0",port=int(os.environ.get("PORT","8080")))
