@@ -138,6 +138,19 @@ class Audit(db.Model):
     target=db.Column(db.String(200), default="")
     created_at=db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
+class Visitor(db.Model):
+    __tablename__="site_visitors"
+    visitor_hash=db.Column(db.String(64),primary_key=True)
+    first_seen=db.Column(db.DateTime,nullable=False,default=lambda: datetime.now(timezone.utc))
+    last_seen=db.Column(db.DateTime,nullable=False,default=lambda: datetime.now(timezone.utc))
+
+class DailyVisitor(db.Model):
+    __tablename__="site_daily_visitors"
+    visitor_hash=db.Column(db.String(64),db.ForeignKey("site_visitors.visitor_hash",ondelete="CASCADE"),primary_key=True)
+    visit_date=db.Column(db.Date,primary_key=True)
+    first_seen=db.Column(db.DateTime,nullable=False,default=lambda: datetime.now(timezone.utc))
+
+
 def utcnow(): return datetime.now(timezone.utc)
 def iso(dt): return dt.isoformat() if dt else None
 def aware(dt): return dt.replace(tzinfo=timezone.utc) if dt and dt.tzinfo is None else dt
@@ -234,6 +247,69 @@ def public_article(a):
             "language":a.language or "ar","meta_title":a.meta_title or a.title,
             "meta_description":a.meta_description or a.summary,"canonical_slug":a.canonical_slug or a.slug,
             "created_at":iso(a.created_at)}
+
+@app.before_request
+def count_site_visitor():
+    # Count real HTML page visitors only; never count API, assets, health checks or bots.
+    path=request.path or "/"
+    page_request=(
+        path in ("/","/intelligence","/signal-lab","/login","/register","/account","/admin","/plans","/journal","/blog","/news")
+        or path.startswith("/market/")
+        or path.startswith("/blog/")
+    )
+    if request.method!="GET" or not page_request:
+        return
+    agent=(request.headers.get("User-Agent") or "").lower()
+    if any(token in agent for token in ("bot","crawler","spider","slurp","headless","preview")):
+        return
+    visitor_id=request.cookies.get("stp_visitor","")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{32,80}",visitor_id):
+        visitor_id=secrets.token_urlsafe(32)
+    visitor_hash=hmac.new(app.config["SECRET_KEY"].encode("utf-8"),visitor_id.encode("utf-8"),hashlib.sha256).hexdigest()
+    now=utcnow()
+    local_day=now.astimezone(timezone(timedelta(hours=3))).date()
+    try:
+        visitor=db.session.get(Visitor,visitor_hash)
+        if visitor is None:
+            visitor=Visitor(visitor_hash=visitor_hash,first_seen=now,last_seen=now)
+            db.session.add(visitor)
+            db.session.flush()
+        else:
+            visitor.last_seen=now
+        day_key=(visitor_hash,local_day)
+        if db.session.get(DailyVisitor,day_key) is None:
+            db.session.add(DailyVisitor(visitor_hash=visitor_hash,visit_date=local_day,first_seen=now))
+        db.session.commit()
+        g.stp_visitor_cookie=visitor_id
+    except IntegrityError:
+        db.session.rollback()
+        # A concurrent first request may already have inserted this visitor.
+        g.stp_visitor_cookie=visitor_id
+    except Exception as exc:
+        db.session.rollback()
+        # Analytics must never prevent the requested page from rendering.
+        app.logger.warning("visitor tracking skipped: %s",type(exc).__name__)
+
+@app.after_request
+def set_visitor_cookie(response):
+    visitor_id=getattr(g,"stp_visitor_cookie",None)
+    if visitor_id:
+        response.set_cookie(
+            "stp_visitor",visitor_id,max_age=365*24*60*60,
+            httponly=True,secure=app.config["SESSION_COOKIE_SECURE"],samesite="Lax",path="/"
+        )
+    return response
+
+@app.get("/api/visitors/stats")
+def visitor_stats():
+    today=utcnow().astimezone(timezone(timedelta(hours=3))).date()
+    return jsonify({
+        "ok":True,
+        "total_unique":Visitor.query.count(),
+        "today_unique":DailyVisitor.query.filter_by(visit_date=today).count(),
+        "updated_at":iso(utcnow())
+    })
+
 @app.get("/")
 def home(): return send_from_directory(".", "intelligence.html")
 
