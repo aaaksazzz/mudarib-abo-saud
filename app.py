@@ -759,12 +759,19 @@ def strategy_status_summary():
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
         Trade.reason.not_like("STP EMA STRONG MTF:%")
     ).count()
-    # Keep operational readiness while withholding proprietary strategy details.
+    diagnostic=market_strategies.diagnostic_self_test()
     return jsonify({
         "ok":True,"engine":"SMART TRADING PRO",
+        "fingerprint":market_strategies.STRATEGY_FINGERPRINT,
+        "running_fingerprint":market_strategies.STRATEGY_FINGERPRINT,
+        "strategy_name":"EMA STRONG MULTI-TIMEFRAME",
+        "analysis_timeframes":list(market_strategies.TIMEFRAMES),
+        "signal_timeframes":dict(market_strategies.SIGNAL_TIMEFRAME),
+        "diagnostic":diagnostic,
+        "engine_active":bool(diagnostic.get("ok")),
         "current_active":active_current,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
-        "strategy_ready":True
+        "strategy_ready":bool(diagnostic.get("ok"))
     })
 
 
@@ -775,9 +782,9 @@ def build_signal(market,item,timeframe):
     rows=klines(market,symbol,timeframe,250)
     trigger_rows=klines(market,symbol,trigger_timeframe,250)
     if not isinstance(rows,list) or len(rows)<56:
-        raise ValueError("Insufficient analysis candles: "+str(len(rows) if isinstance(rows,list) else 0)+"/56")
+        raise ValueError("Insufficient candles (analysis): "+str(len(rows) if isinstance(rows,list) else 0)+"/56")
     if not isinstance(trigger_rows,list) or len(trigger_rows)<56:
-        raise ValueError("Insufficient trigger candles: "+str(len(trigger_rows) if isinstance(trigger_rows,list) else 0)+"/56")
+        raise ValueError("Insufficient candles (trigger): "+str(len(trigger_rows) if isinstance(trigger_rows,list) else 0)+"/56")
     setup=market_strategies.analyze(market,symbol,rows,timeframe=timeframe,trigger_rows=trigger_rows)
     if not setup:
         return None
