@@ -133,8 +133,13 @@ class AccountNewsSeoTests(unittest.TestCase):
         self.assertEqual(platform_app.market_strategies.TIMEFRAMES, expected)
         for market in platform_app.MARKETS:
             self.assertEqual(platform_app.market_scan_timeframes(market), expected)
-        self.assertEqual(platform_app.market_strategies.SIGNAL_TIMEFRAME,
-                         {frame: frame for frame in expected})
+        self.assertEqual(platform_app.market_strategies.SIGNAL_TIMEFRAME, {
+            "15m": "1m", "1h": "15m", "4h": "1h",
+            "1d": "4h", "1w": "1d", "1M": "1w",
+        })
+        diagnostic = platform_app.market_strategies.diagnostic_self_test()
+        self.assertTrue(diagnostic["ok"], diagnostic["checks"])
+        self.assertEqual(diagnostic["fingerprint"], "STP-EMA-STRONG-MTF-V1-20261113")
 
     def test_build_signal_rejects_short_candle_provider_response(self):
         with patch.object(platform_app, "klines", return_value=[[i, 100, 101, 99, 100, 10] for i in range(40)]):
