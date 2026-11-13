@@ -395,8 +395,16 @@ def pro_theme(): return send_from_directory(".", "pro-theme.css")
 def compat_styles(): return send_from_directory(".", "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
-    # Public status intentionally omits proprietary strategy names, rules and fingerprints.
-    return jsonify({"ok":True,"engine":"SMART TRADING PRO","manual_only":True})
+    diagnostic=market_strategies.diagnostic_self_test()
+    return jsonify({
+        "ok":True,"engine":"market_strategies","strategy_name":"EMA STRONG MULTI-TIMEFRAME",
+        "fingerprint":market_strategies.STRATEGY_FINGERPRINT,
+        "running_fingerprint":market_strategies.STRATEGY_FINGERPRINT,
+        "analysis_timeframes":list(market_strategies.TIMEFRAMES),
+        "signal_timeframes":dict(market_strategies.SIGNAL_TIMEFRAME),
+        "diagnostic":diagnostic,"engine_active":bool(diagnostic.get("ok")),
+        "manual_only":True
+    })
 
 @app.get("/health")
 def health():
