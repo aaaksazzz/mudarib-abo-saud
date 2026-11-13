@@ -283,8 +283,12 @@ def count_site_visitor():
         g.stp_visitor_cookie=visitor_id
     except IntegrityError:
         db.session.rollback()
-        # Concurrent first requests from the same browser must not break page loading.
+        # A concurrent first request may already have inserted this visitor.
         g.stp_visitor_cookie=visitor_id
+    except Exception as exc:
+        db.session.rollback()
+        # Analytics must never prevent the requested page from rendering.
+        app.logger.warning("visitor tracking skipped: %s",type(exc).__name__)
 
 @app.after_request
 def set_visitor_cookie(response):
