@@ -433,6 +433,7 @@ def sitemap_xml():
     base=os.environ.get("PUBLIC_BASE_URL",request.url_root.rstrip("/")).rstrip("/")
     rows=Article.query.filter_by(kind="blog",published=True).order_by(Article.created_at.desc()).limit(5000).all()
     language_urls="".join("<url><loc>"+html.escape(base+"/blog?lang="+code)+"</loc></url>" for code in ("ar","en","es","de","id","pt","tr","fr","hi"))
+    language_urls="".join("<url><loc>"+html.escape(base+"/blog?lang="+code)+"</loc></url>" for code in ("ar","en","es","de","id","pt","tr","fr","hi"))
     entries="<url><loc>"+html.escape(base+"/")+"</loc></url>"+language_urls+"".join("<url><loc>"+html.escape(base+"/blog/"+html.escape(x.slug))+"</loc><lastmod>"+(x.created_at.date().isoformat() if x.created_at else utcnow().date().isoformat())+"</lastmod></url>" for x in rows)
     xml='<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+entries+"</urlset>"
     return xml,200,{"Content-Type":"application/xml; charset=utf-8"}
