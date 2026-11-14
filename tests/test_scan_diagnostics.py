@@ -45,34 +45,20 @@ class ScanDiagnosticsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers.get("Location"), "/intelligence")
 
-    def test_legacy_market_signals_route_uses_current_scanner_and_filters_frame(self):
-        current = {
-            "signals": [
-                {"symbol": "BTCUSDT", "timeframe": "15m"},
-                {"symbol": "ETHUSDT", "timeframe": "1h"},
-            ],
-            "updated_at": "2026-11-14T12:00:00+00:00",
-            "analysis_completed": 12,
-            "analysis_failed": 2,
-            "strategy_matches": 2,
-            "rejected_stale_candle": 0,
-            "rejected_late_price": 0,
-            "data_status": "partial",
-            "incomplete_timeframes": {"1M": {"completed": 2, "required": 8}},
-            "frame_diagnostics": {},
-        }
+    def test_market_signals_route_reads_frame_cache_without_running_scan(self):
         with patch.object(platform_app, "gate_section", return_value=None), patch.object(
-            platform_app, "run_market_scan", return_value=current
-        ) as scan:
+            platform_app.db.session, "get", return_value=None
+        ), patch.object(platform_app, "run_market_scan") as scan:
             response = platform_app.app.test_client().get(
                 "/api/markets/spot/signals?timeframe=1h"
             )
         self.assertEqual(response.status_code, 200, response.get_json())
         payload = response.get_json()
-        self.assertEqual([item["symbol"] for item in payload["signals"]], ["ETHUSDT"])
         self.assertEqual(payload["timeframe"], "1h")
-        self.assertEqual(payload["data_status"], "partial")
-        scan.assert_called_once_with("spot", force=False)
+        self.assertEqual(payload["signals"], [])
+        self.assertTrue(payload["stale"])
+        self.assertEqual(payload["data_status"], "pending")
+        scan.assert_not_called()
 
     def test_trade_json_includes_calculated_reward_risk(self):
         trade = platform_app.Trade(
