@@ -6,7 +6,7 @@ or transitional conditions. Uses completed OHLCV candles only; paper analysis.
 """
 import math
 
-STRATEGY_FINGERPRINT = "SMART-REGIME-ADAPTIVE-ENSEMBLE-MTF-V2-20261114"
+STRATEGY_FINGERPRINT = "SMART-REGIME-ADAPTIVE-ENSEMBLE-MTF-V3-MODERATE-20261114"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 # Independent parameter profiles keep each timeframe's strategy horizon appropriate.
 FRAME_PROFILES = {
@@ -121,11 +121,11 @@ def _classify_window(bars, profile=None):
     ema_slow = _ema(closes, profile["ema_slow"])
     trend_spread = abs(ema_fast[-1] / ema_slow[-1] - 1.0) if ema_fast[-1] and ema_slow[-1] else 0.0
     atr_pct = atr_fast / price
-    if volatility_ratio >= 2.10 or atr_pct >= 0.12:
+    if volatility_ratio >= 2.30 or atr_pct >= 0.15:
         regime = "STRESS"
-    elif efficiency >= 0.32 and trend_spread >= 0.0015 and volatility_ratio <= 1.90:
+    elif efficiency >= 0.28 and trend_spread >= 0.0012 and volatility_ratio <= 2.10:
         regime = "TREND"
-    elif efficiency <= 0.28 and volatility_ratio <= 1.70:
+    elif efficiency <= 0.32 and volatility_ratio <= 1.85:
         regime = "RANGE"
     else:
         regime = "TRANSITION"
@@ -148,7 +148,7 @@ def _rolling_regime(bars, profile=None):
         return "TRANSITION", 0.0, []
     current = labels[-1]
     agreement = sum(label == current for label in labels[-4:]) / min(4, len(labels))
-    if current in ("TREND", "RANGE") and agreement < 0.75:
+    if current in ("TREND", "RANGE") and agreement < 0.60:
         return "TRANSITION", agreement, labels
     return current, agreement, labels
 
@@ -184,9 +184,9 @@ def _trend_signal(highs, lows, closes, ema_fast, ema_slow, atr, periods=CHANNEL_
             votes.append(("SELL", "DONCHIAN_" + str(period), lower))
     buys = [v for v in votes if v[0] == "BUY"]
     sells = [v for v in votes if v[0] == "SELL"]
-    if len(buys) >= 2 and len(buys) > len(sells):
+    if len(buys) >= 1 and len(buys) > len(sells):
         side, chosen = "BUY", buys
-    elif len(sells) >= 2 and len(sells) > len(buys):
+    elif len(sells) >= 1 and len(sells) > len(buys):
         side, chosen = "SELL", sells
     else:
         return None
@@ -212,11 +212,11 @@ def _range_signal(opens, highs, lows, closes, period=20):
     candle_range = max(highs[-1] - lows[-1], close * 1e-9)
     lower_zone = lower + width * 0.18
     upper_zone = upper - width * 0.18
-    bullish_rejection = close > op and close >= closes[-2] and (close - lows[-1]) / candle_range >= 0.60
-    bearish_rejection = close < op and close <= closes[-2] and (highs[-1] - close) / candle_range >= 0.60
-    if close <= lower_zone and rsi <= 38 and bullish_rejection:
+    bullish_rejection = close > op and close >= closes[-2] and (close - lows[-1]) / candle_range >= 0.55
+    bearish_rejection = close < op and close <= closes[-2] and (highs[-1] - close) / candle_range >= 0.55
+    if close <= lower_zone and rsi <= 42 and bullish_rejection:
         return "BUY", ["RANGE_LOW_REJECTION", "RSI_OVERSOLD"], "RANGE_MEAN_REVERSION"
-    if close >= upper_zone and rsi >= 62 and bearish_rejection:
+    if close >= upper_zone and rsi >= 58 and bearish_rejection:
         return "SELL", ["RANGE_HIGH_REJECTION", "RSI_OVERBOUGHT"], "RANGE_MEAN_REVERSION"
     return None
 
@@ -241,7 +241,7 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
     regime, regime_confidence, regime_history = _rolling_regime(bars, frame)
     if regime not in ("TREND", "RANGE"):
         return reject("regime_not_tradeable")
-    if regime_confidence < 0.75:
+    if regime_confidence < 0.60:
         return reject("regime_persistence_below_threshold")
     atr = _atr(highs, lows, closes, frame["atr_fast"])
     atr_slow = _atr(highs, lows, closes, frame["atr_slow"])
@@ -249,7 +249,7 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         return reject("invalid_atr")
     atr_pct = atr / entry
     volatility_ratio = atr / atr_slow
-    if atr_pct > 0.12 or volatility_ratio > 2.10 or volatility_ratio < 0.45:
+    if atr_pct > 0.15 or volatility_ratio > 2.30 or volatility_ratio < 0.35:
         return reject("volatility_outside_profile")
     ema_fast = _ema(closes, frame["ema_fast"])
     ema_slow = _ema(closes, frame["ema_slow"])
@@ -273,7 +273,7 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         average = sum(prior_volumes) / len(prior_volumes)
         if average > 0:
             volume_ratio = volumes[-1] / average
-            if volume_ratio < (0.75 if regime == "TREND" else 0.50):
+            if volume_ratio < (0.60 if regime == "TREND" else 0.40):
                 return reject("volume_below_threshold")
 
     buffer = max(atr * 0.25, entry * 0.0002)
@@ -361,6 +361,6 @@ def diagnostic_self_test():
         "checks": checks, "timeframes": list(TIMEFRAMES),
         "catalog": list(STRATEGY_CATALOG),
         "frame_profiles": {frame: {key: value for key, value in profile.items() if key in ("min_bars", "channels", "ema_fast", "ema_slow", "stop_lookback")} for frame, profile in FRAME_PROFILES.items()},
-        "rule": "rolling regime persistence; trend breakout or range rejection; stress/transition no-trade; structural ATR stop; 1R/2R/3R",
+        "rule": "moderate rolling regime persistence; one Donchian vote plus EMA alignment for trend; softer range rejection and volume thresholds; stress protection retained; structural ATR stop; 1R/2R/3R",
         "score_type": "technical quality, not probability or win rate",
     }
