@@ -869,7 +869,7 @@ def build_signal(market,item,timeframe):
                 else "empty_candle_response" if received==0
                 else "insufficient_history")
         return {"_data_incomplete":True,"_candles_received":received,
-                "_candles_required":required_rows,"_diagnostic_code":reason}
+                "_diagnostic_code":reason}
     strategy_rejections={}
     setup=market_strategies.analyze_all(
         market,symbol,rows,timeframe=timeframe,diagnostics=strategy_rejections
