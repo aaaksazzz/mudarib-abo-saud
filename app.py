@@ -260,10 +260,10 @@ def public_article(a):
             "meta_description":a.meta_description or a.summary,"canonical_slug":a.canonical_slug or a.slug,
             "created_at":iso(a.created_at)}
 
-@app.before_request
 _VISITOR_TRACKING_LOCK=threading.Lock()
 _VISITOR_TRACKED_TODAY=set()
 
+@app.before_request
 def count_site_visitor():
     # Count real HTML page visitors only; never count API, assets, health checks or bots.
     path=request.path or "/"
