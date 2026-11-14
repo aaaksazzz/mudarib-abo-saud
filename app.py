@@ -859,22 +859,24 @@ def build_signal(market,item,timeframe):
     # Each market and timeframe is analysed independently from its own closed candles.
     symbol=item["symbol"]
     rows=klines(market,symbol,timeframe,250)
-    # Provider coverage varies by symbol/timeframe. Raise a sample error;
-    # scanner counts sparse samples without a traceback for every symbol.
-    if not isinstance(rows,list) or len(rows)<106:
-        # The strategy needs 105 completed candles because its validator
-        # deliberately drops the still-forming final candle. Reject shorter
-        # histories here so they are counted as incomplete data, not as a
-        # successful analysis with an unexplained no-match result.
+    # Each timeframe has its own minimum completed-candle requirement.
+    # The strategy excludes the final forming candle, so fetch one extra row.
+    frame_profile=market_strategies.FRAME_PROFILES.get(timeframe)
+    required_rows=(int(frame_profile["min_bars"])+1) if frame_profile else 106
+    if not isinstance(rows,list) or len(rows)<required_rows:
         received=len(rows) if isinstance(rows,list) else 0
         reason=("invalid_candle_payload" if not isinstance(rows,list)
                 else "empty_candle_response" if received==0
                 else "insufficient_history")
         return {"_data_incomplete":True,"_candles_received":received,
-                "_diagnostic_code":reason}
-    setup=market_strategies.analyze_all(market,symbol,rows,timeframe=timeframe)
+                "_candles_required":required_rows,"_diagnostic_code":reason}
+    strategy_rejections={}
+    setup=market_strategies.analyze_all(
+        market,symbol,rows,timeframe=timeframe,diagnostics=strategy_rejections
+    )
     if not setup:
-        return None
+        return {"_strategy_rejected":True,
+                "_strategy_rejection_reasons":strategy_rejections or {"no_setup":"no_valid_pattern"}}
     setup["signal_timeframe"]=timeframe
     setup["reason"]="ADAPTIVE-TREND MTF: "+timeframe+" regime-adaptive setup; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
@@ -1199,7 +1201,8 @@ def _run_market_scan_unlocked(market,force=False):
     failed=0
     with ThreadPoolExecutor(max_workers=8) as pool:
         frame_stats={frame:{"completed":0,"failed":0,"matches":0,
-                              "failure_reasons":{},"failure_samples":[]} for frame in frames_to_scan}
+                              "failure_reasons":{},"failure_samples":[],
+                              "strategy_rejections":{}} for frame in frames_to_scan}
         futures={pool.submit(build_signal,market,item,frame):(item,frame) for item in candidates for frame in frames_to_scan}
         for future in as_completed(futures):
             item,frame=futures[future]
@@ -1212,6 +1215,11 @@ def _run_market_scan_unlocked(market,force=False):
                     continue
                 completed+=1
                 frame_stats[frame]["completed"]+=1
+                if isinstance(signal,dict) and signal.get("_strategy_rejected"):
+                    rejection_counts=frame_stats[frame]["strategy_rejections"]
+                    for reason,count in (signal.get("_strategy_rejection_reasons") or {}).items():
+                        rejection_counts[reason]=rejection_counts.get(reason,0)+int(count or 0)
+                    continue
                 if signal:
                     found.append(signal)
                     frame_stats[frame]["matches"]+=1
@@ -1248,7 +1256,8 @@ def _run_market_scan_unlocked(market,force=False):
         frame:{"completed":stats["completed"],"failed":stats["failed"],
                "matches":stats["matches"],
                "failure_reasons":stats.get("failure_reasons",{}),
-               "failure_samples":stats.get("failure_samples",[])}
+               "failure_samples":stats.get("failure_samples",[]),
+               "strategy_rejections":stats.get("strategy_rejections",{})}
         for frame,stats in frame_stats.items()
     }
     if not frames_to_scan:
