@@ -397,8 +397,7 @@ def compat_styles(): return send_from_directory(".", "compat.css")
 def strategy_status():
     # Public status intentionally omits proprietary strategy names, rules and fingerprints.
     return jsonify({"ok":True,"engine":"SMART TRADING PRO","manual_only":True})
-@app.get("/health")
-def health():
+@app.get("/health")def health():
     return jsonify({"ok":True,"service":"SMART TRADING PRO","time":iso(utcnow())})
 
 def persistent_database_configured(dialect,database_path,data_dir):
@@ -780,7 +779,7 @@ def build_signal(market,item,timeframe):
     if not setup:
         return None
     setup["signal_timeframe"]=timeframe
-    setup["reason"]="BREAKOUT-FVG MTF: independent "+timeframe+" swing breakout and FVG; "+setup.get("reason","")
+    setup["reason"]="BREAKOUT-FVG MTF: legacy-compatible storage tag; FALSE-SWEEP confirmation on "+timeframe+"; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -797,8 +796,7 @@ def filter_fresh_signals(signals, universe, now=None):
                 live_prices[item["symbol"]]=price
         except (TypeError,ValueError):
             continue    accepted=[]
-    rejected_old=0
-    rejected_moved=0
+    rejected_old=0    rejected_moved=0
     for signal in signals:
         try:
             candle_time=int(signal.get("signal_candle_time") or 0)
@@ -1197,8 +1195,7 @@ def run_market_scan(market,force=False):
     existing_by_key={}
     for trade in existing_rows:        marker=trade.reason.rsplit("bar_ts=",1)[-1] if "bar_ts=" in trade.reason else ""
         if marker:
-            existing_by_key[(trade.symbol,trade.timeframe,marker)]=trade
-    retained_ids=set()
+            existing_by_key[(trade.symbol,trade.timeframe,marker)]=trade    retained_ids=set()
     new_signals=[]
     for frame in frames_to_scan:
         frame_signals=sorted(
@@ -1597,8 +1594,7 @@ def provision_admin_from_env():
     if email_owner is not None and email_owner.id!=admin.id:        app.logger.error("Configured ADMIN_EMAIL is already used by another account; admin email was not changed")
     else:
         admin.email=admin_email
-    admin.password_hash=generate_password_hash(admin_password)
-    admin.active=True
+    admin.password_hash=generate_password_hash(admin_password)    admin.active=True
     admin.subscription_plan="admin"
     db.session.commit()
     app.logger.info("Existing administrator credentials synchronized from deployment environment")
@@ -1700,7 +1696,7 @@ def market_scan_initial_delay_seconds(index):
     return SCAN_INITIAL_DELAY_SECONDS+max(0,int(index))*spacing
 
 
-# The previous SMA200/liquidity-sweep scheduler is permanently retired.
+# Run the active false-sweep strategy on the staggered 15-minute market schedule.
 AUTO_SCAN_ENABLED=True
 scheduler=None
 if AUTO_SCAN_ENABLED:
