@@ -118,13 +118,21 @@ class Trade(db.Model):
     change_15m_pct=db.Column(db.Float)
 
 def trade_json(trade):
-    """Stable public journal shape for historical paper-trade records."""
+    """Expose the actual paper-trade plan and measured risk; never imply score is win probability."""
+    risk_distance=abs(float(trade.entry)-float(trade.stop)) if trade.entry else 0.0
+    direction=1.0 if trade.side=="BUY" else -1.0
+    def target_r(target):
+        return round(((float(target)-float(trade.entry))*direction)/risk_distance,2) if risk_distance>0 else None
+    reason=str(trade.reason or "").split(" | bar_ts=",1)[0]
     return {
         "id":trade.id,"market":trade.market,"symbol":trade.symbol,"side":trade.side,
         "entry":trade.entry,"stop":trade.stop,"tp1":trade.tp1,"tp2":trade.tp2,
-        "tp3":trade.tp3,"score":trade.score,"timeframe":trade.timeframe,
-        "reward_risk":(round(abs(trade.tp3-trade.entry)/abs(trade.entry-trade.stop),2) if abs(trade.entry-trade.stop)>0 else None),
-        "reason":"إعداد فني مؤكد","status":trade.status,
+        "tp3":trade.tp3,"score":trade.score,"score_type":"technical_quality_not_probability",
+        "timeframe":trade.timeframe,"risk_distance":round(risk_distance,10),
+        "risk_pct":round(risk_distance/abs(float(trade.entry))*100,4) if trade.entry else None,
+        "tp1_r":target_r(trade.tp1),"tp2_r":target_r(trade.tp2),"tp3_r":target_r(trade.tp3),
+        "reward_risk":target_r(trade.tp3),"strategy_fingerprint":market_strategies.STRATEGY_FINGERPRINT,
+        "reason":reason,"status":trade.status,
         "created_at":iso(trade.created_at),"expires_at":iso(trade.expires_at),
         "result_pct":trade.result_pct,"change_pct":trade.change_15m_pct,
     }
@@ -908,8 +916,10 @@ def filter_fresh_signals(signals, universe, now=None):
             current=live_prices.get(signal.get("symbol"))
             side=signal.get("side")
             direction=1.0 if side=="BUY" else -1.0
-            interval_ms=market_strategies.INTERVAL_MS.get(signal.get("timeframe"))
-            if not interval_ms or not candle_time or now_ms-(candle_time+interval_ms)>interval_ms*1.5+120000:
+            timeframe=signal.get("timeframe")
+            candle_end=timeframe_candle_end_ms(candle_time,timeframe) if candle_time else None
+            candle_duration=(candle_end-candle_time) if candle_end is not None else 0
+            if not candle_duration or now_ms-candle_end>candle_duration*1.5+120000:
                 rejected_old+=1
                 continue
             if current is None or min(candle_entry,stop,old_tp1)<=0 or side not in ("BUY","SELL"):
@@ -967,16 +977,28 @@ def expire_stale_trades(market=None):
         db.session.commit()
     return changed
 
+def timeframe_candle_end_ms(stamp_ms,timeframe):
+    """Return the true candle close boundary; monthly bars use calendar months."""
+    stamp_ms=int(stamp_ms)
+    if timeframe=="1M":
+        opened=datetime.fromtimestamp(stamp_ms/1000,tz=timezone.utc)
+        if opened.month==12:
+            closed=datetime(opened.year+1,1,1,tzinfo=timezone.utc)
+        else:
+            closed=datetime(opened.year,opened.month+1,1,tzinfo=timezone.utc)
+        return int(closed.timestamp()*1000)
+    interval_ms=market_strategies.INTERVAL_MS.get(timeframe)
+    return stamp_ms+interval_ms if interval_ms else None
+
+
 def evaluate_trade_outcome_from_bars(trade,rows,now_ms=None):
-    """Replay completed OHLC bars using the trade's own timeframe."""
+    """Replay only fully closed candles that opened at/after the trade entry."""
     now_ms=now_ms if now_ms is not None else int(utcnow().timestamp()*1000)
-    interval_ms=market_strategies.INTERVAL_MS.get(trade.timeframe)
-    if not interval_ms:
+    if trade.timeframe not in market_strategies.INTERVAL_MS:
         return trade.status,0
     try:
         created=aware(trade.created_at)
         created_ms=int(created.timestamp()*1000)
-        first_bar=((created_ms+interval_ms-1)//interval_ms)*interval_ms
     except (AttributeError,TypeError,ValueError,OverflowError):
         return trade.status,0
     status=trade.status
@@ -991,7 +1013,8 @@ def evaluate_trade_outcome_from_bars(trade,rows,now_ms=None):
             low=float(row[3])
             if not all(math.isfinite(value) for value in (high,low)) or high<=0 or low<=0 or high<low:
                 continue
-            if stamp<first_bar or stamp+interval_ms>now_ms:
+            candle_end=timeframe_candle_end_ms(stamp,trade.timeframe)
+            if candle_end is None or stamp<created_ms or candle_end>now_ms:
                 continue
             parsed.append((stamp,high,low))
         except (TypeError,ValueError,OverflowError):
@@ -1115,13 +1138,44 @@ def market_scan_timeframes(market):
     return market_strategies.TIMEFRAMES
 
 
+def classify_market_breadth(up_count,down_count,minimum_share=0.60):
+    """Only apply a hard directional filter when market breadth is decisive."""
+    up_count=max(0,int(up_count or 0))
+    down_count=max(0,int(down_count or 0))
+    total=up_count+down_count
+    if total<=0:
+        return None,0.0
+    up_share=up_count/total
+    down_share=down_count/total
+    if up_share>=minimum_share:
+        return "BUY",round(up_share,4)
+    if down_share>=minimum_share:
+        return "SELL",round(down_share,4)
+    return None,round(max(up_share,down_share),4)
+
+
 def align_signals_with_market_bias(signals, market_bias):
-    """Return only signals aligned with breadth direction and count rejected rows."""
+    """Apply breadth only when decisive; count any directional rejections."""
     rows=list(signals or [])
     if market_bias not in ("BUY","SELL"):
         return rows,0
     aligned=[signal for signal in rows if signal.get("side")==market_bias]
     return aligned,len(rows)-len(aligned)
+
+
+def trade_within_frame_risk_limit(trade):
+    """Use the same timeframe risk ceiling at generation and cached display."""
+    profile=market_strategies.FRAME_PROFILES.get(trade.timeframe)
+    if not profile or not trade.entry or trade.entry<=0:
+        return False
+    risk_pct=abs(float(trade.entry)-float(trade.stop))/abs(float(trade.entry))
+    return math.isfinite(risk_pct) and risk_pct<=float(profile.get("max_risk_pct",0.025))
+
+
+def trade_should_be_superseded(trade,replacement_keys,retained_ids=()):
+    """Retire an open trade only when a new setup replaces its exact symbol/frame."""
+    key=(trade.market,trade.symbol,trade.timeframe)
+    return key in replacement_keys and trade.id not in retained_ids
 
 
 def _run_market_scan_unlocked(market,force=False):
@@ -1158,7 +1212,7 @@ def _run_market_scan_unlocked(market,force=False):
                 bias=meta.get("market_bias")
                 if bias in ("BUY","SELL"):
                     active=[trade for trade in active if trade.side==bias]
-                active=[trade for trade in active if trade.entry>0 and abs(trade.entry-trade.stop)/trade.entry<=0.025]
+                active=[trade for trade in active if trade_within_frame_risk_limit(trade)]
                 active=active[:18]
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True,**meta}
         except (ValueError,TypeError):
@@ -1182,7 +1236,7 @@ def _run_market_scan_unlocked(market,force=False):
     persist_market_snapshot(market,universe,now)
     market_up=sum(1 for item in universe if item.get("change_pct",0)>0)
     market_down=sum(1 for item in universe if item.get("change_pct",0)<0)
-    market_bias="BUY" if market_up>market_down else "SELL" if market_down>market_up else None
+    market_bias,market_bias_strength=classify_market_breadth(market_up,market_down)
     # Update outcomes first, then keep the previous signal batch visible until
     # this scan has successfully analysed enough fresh candles.
     update_trade_outcomes(market,universe)
@@ -1370,11 +1424,18 @@ def _run_market_scan_unlocked(market,force=False):
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.reason.not_like("ADAPTIVE-TREND MTF:%")).update({"status":"superseded"},synchronize_session=False)
-    active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.timeframe.in_(frames_to_scan),Trade.reason.like("ADAPTIVE-TREND MTF:%"))
-    if retained_ids:
-        active_query=active_query.filter(~Trade.id.in_(retained_ids))
-    active_query.update({"status":"superseded"},synchronize_session=False)
+    # Replace only an active trade for the exact same market + symbol + timeframe.
+    # An empty scan, or a signal for another symbol/frame, must never retire it.
+    replacement_keys={(market,signal["symbol"],signal["timeframe"]) for signal in new_signals}
+    if replacement_keys:
+        replaceable=Trade.query.filter(
+            Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
+            Trade.timeframe.in_(frames_to_scan),Trade.reason.like("ADAPTIVE-TREND MTF:%")
+        ).all()
+        for previous_trade in replaceable:
+            key=(previous_trade.market,previous_trade.symbol,previous_trade.timeframe)
+            if trade_should_be_superseded(previous_trade,replacement_keys,retained_ids):
+                previous_trade.status="superseded"
     for signal in new_signals:
         frame=signal["timeframe"]
         db.session.add(Trade(market=market,symbol=signal["symbol"],side=signal["side"],entry=signal["entry"],stop=signal["stop"],tp1=signal["tp1"],tp2=signal["tp2"],tp3=signal["tp3"],score=signal["score"],change_15m_pct=signal["change_pct"],timeframe=frame,reason=signal["reason"],expires_at=now+timedelta(hours=24)))
@@ -1389,7 +1450,7 @@ def _run_market_scan_unlocked(market,force=False):
                             "fresh_matches":fresh_matches,"direction_rejected":direction_rejected,
                             "accepted_signals":len(found),"rejected_stale_candle":freshness["rejected_stale_candle"],
                             "rejected_late_price":freshness["rejected_late_price"],
-                            "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":frames_to_scan,
+                            "market_bias":market_bias,"market_bias_strength":market_bias_strength,"timeframes":list(TIMEFRAMES),"scanned_timeframes":frames_to_scan,
                             "incomplete_timeframes":{frame:{"completed":actual,"required":required}
                                                      for frame,(actual,required) in incomplete_frames.items()},
                             "frame_diagnostics":frame_diagnostics,
@@ -1429,7 +1490,7 @@ def _run_market_scan_unlocked(market,force=False):
             "accepted_signals":len(frame_signals),
             "rejected_stale_candle":freshness_by_frame[frame]["rejected_stale_candle"],
             "rejected_late_price":freshness_by_frame[frame]["rejected_late_price"],
-            "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":[frame],
+            "market_bias":market_bias,"market_bias_strength":market_bias_strength,"timeframes":list(TIMEFRAMES),"scanned_timeframes":[frame],
             "frame_diagnostics":frame_diagnostics[frame],
             "data_status":"partial" if frame_stats[frame]["failed"] else "ready"
         },ensure_ascii=False)

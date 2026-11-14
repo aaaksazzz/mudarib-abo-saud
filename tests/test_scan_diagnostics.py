@@ -1,6 +1,7 @@
 import os
-import unittest
+import unittest\nfrom datetime import datetime, timedelta, timezone
 from unittest.mock import patch
+from types import SimpleNamespace
 
 os.environ["ENABLE_AUTO_SCAN"] = "false"
 
@@ -94,23 +95,95 @@ class ScanDiagnosticsTests(unittest.TestCase):
         )
         self.assertEqual(platform_app.trade_json(trade)["reward_risk"], 3.0)
 
-    def test_scan_filters_signals_against_market_bias(self):
+    def test_scan_filters_signals_only_when_market_breadth_is_decisive(self):
         signals = [
             {"symbol": "LONG", "side": "BUY", "timeframe": "15m"},
             {"symbol": "SHORT", "side": "SELL", "timeframe": "15m"},
         ]
-        aligned, rejected = platform_app.align_signals_with_market_bias(signals, "SELL")
-        self.assertEqual([signal["symbol"] for signal in aligned], ["SHORT"])
+        bias, strength = platform_app.classify_market_breadth(70, 30)
+        self.assertEqual(bias, "BUY")
+        self.assertEqual(strength, 0.7)
+        aligned, rejected = platform_app.align_signals_with_market_bias(signals, bias)
+        self.assertEqual([signal["symbol"] for signal in aligned], ["LONG"])
         self.assertEqual(rejected, 1)
-        neutral, neutral_rejected = platform_app.align_signals_with_market_bias(signals, None)
+        weak_bias, _ = platform_app.classify_market_breadth(54, 46)
+        self.assertIsNone(weak_bias)
+        neutral, neutral_rejected = platform_app.align_signals_with_market_bias(signals, weak_bias)
         self.assertEqual(neutral, signals)
         self.assertEqual(neutral_rejected, 0)
+
+    def test_cached_trade_risk_limit_matches_its_timeframe_profile(self):
+        trade = platform_app.Trade(
+            market="futures", symbol="BTCUSDT", side="BUY", entry=100,
+            stop=90, tp1=110, tp2=120, tp3=130, score=90,
+            timeframe="1w", reason="test", expires_at=platform_app.utcnow()
+        )
+        self.assertTrue(platform_app.trade_within_frame_risk_limit(trade))
+        trade.timeframe="15m"
+        self.assertFalse(platform_app.trade_within_frame_risk_limit(trade))
+
+    def test_trade_json_exposes_risk_targets_and_real_reason(self):
+        trade = platform_app.Trade(
+            market="futures", symbol="BTCUSDT", side="BUY", entry=100,
+            stop=95, tp1=105, tp2=110, tp3=115, score=90,
+            timeframe="15m", reason="ADAPTIVE-TREND: EMA_PULLBACK | bar_ts=123",
+            expires_at=platform_app.utcnow()
+        )
+        payload=platform_app.trade_json(trade)
+        self.assertEqual(payload["risk_pct"], 5.0)
+        self.assertEqual(payload["tp1_r"], 1.0)
+        self.assertEqual(payload["tp2_r"], 2.0)
+        self.assertEqual(payload["tp3_r"], 3.0)
+        self.assertEqual(payload["reason"], "ADAPTIVE-TREND: EMA_PULLBACK")
+        self.assertEqual(payload["score_type"], "technical_quality_not_probability")
+
+    def test_monthly_outcome_tracker_uses_calendar_months_and_ignores_pre_entry_bar(self):
+        created=datetime(2026,1,15,tzinfo=timezone.utc)
+        trade=platform_app.Trade(
+            market="futures",symbol="BTCUSDT",side="BUY",entry=100,
+            stop=95,tp1=105,tp2=110,tp3=115,score=90,timeframe="1M",
+            reason="test",created_at=created,expires_at=created+timedelta(days=90),
+            status="active"
+        )
+        jan=int(datetime(2026,1,1,tzinfo=timezone.utc).timestamp()*1000)
+        feb=int(datetime(2026,2,1,tzinfo=timezone.utc).timestamp()*1000)
+        mar=int(datetime(2026,3,1,tzinfo=timezone.utc).timestamp()*1000)
+        rows=[
+            [jan,100,120,99,110,10],
+            [feb,100,106,99,105,10],
+            [mar,105,120,104,118,10],
+        ]
+        now=int(datetime(2026,3,1,tzinfo=timezone.utc).timestamp()*1000)
+        status,completed=platform_app.evaluate_trade_outcome_from_bars(trade,rows,now)
+        self.assertEqual(status,"tp1_hit")
+        self.assertEqual(completed,1)
 
     def test_legacy_market_signals_route_rejects_unknown_timeframe(self):
         response = platform_app.app.test_client().get(
             "/api/markets/spot/signals?timeframe=5m"
         )
         self.assertEqual(response.status_code, 400)
+
+
+    def test_active_trade_is_not_retired_when_scan_has_no_replacement(self):
+        trade=SimpleNamespace(id=1,market="futures",symbol="BTCUSDT",timeframe="15m")
+        self.assertFalse(platform_app.trade_should_be_superseded(trade,set()))
+
+    def test_new_signal_for_another_symbol_does_not_retire_existing_trade(self):
+        trade=SimpleNamespace(id=1,market="futures",symbol="BTCUSDT",timeframe="15m")
+        replacements={("futures","ETHUSDT","15m")}
+        self.assertFalse(platform_app.trade_should_be_superseded(trade,replacements))
+
+    def test_new_signal_retires_only_same_symbol_and_timeframe_trade(self):
+        trade=SimpleNamespace(id=1,market="futures",symbol="BTCUSDT",timeframe="15m")
+        replacements={("futures","BTCUSDT","15m"),("futures","ETHUSDT","1h")}
+        self.assertTrue(platform_app.trade_should_be_superseded(trade,replacements))
+        self.assertFalse(platform_app.trade_should_be_superseded(trade,replacements,{1}))
+
+    def test_duplicate_candle_keeps_existing_trade_active(self):
+        trade=SimpleNamespace(id=7,market="futures",symbol="BTCUSDT",timeframe="15m")
+        replacements={("futures","BTCUSDT","15m")}
+        self.assertFalse(platform_app.trade_should_be_superseded(trade,replacements,{7}))
 
 
 if __name__ == "__main__":
