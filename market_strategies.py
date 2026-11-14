@@ -123,7 +123,7 @@ def _classify_window(bars, profile=None):
     atr_pct = atr_fast / price
     if volatility_ratio >= 2.30 or atr_pct >= 0.15:
         regime = "STRESS"
-    elif efficiency >= 0.28 and trend_spread >= 0.0012 and volatility_ratio <= 2.10:
+    elif efficiency >= 0.22 and trend_spread >= 0.0008 and volatility_ratio <= 2.10:
         regime = "TREND"
     elif efficiency <= 0.32 and volatility_ratio <= 1.85:
         regime = "RANGE"
@@ -200,9 +200,9 @@ def _trend_signal(highs, lows, closes, ema_fast, ema_slow, atr, periods=CHANNEL_
     # Independent moderate alternative: closed-candle EMA pullback continuation.
     # This path must not depend on a Donchian breakout vote.
     candle_range = max(highs[-1] - lows[-1], current * 1e-9)
-    bullish_close = closes[-1] > closes[-2] and current > (lows[-1] + candle_range * 0.55)
-    bearish_close = closes[-1] < closes[-2] and current < (highs[-1] - candle_range * 0.55)
-    near_fast_ema = abs(current - ema_fast[-1]) <= atr * 0.60
+    bullish_close = closes[-1] > closes[-2] and current > (lows[-1] + candle_range * 0.50)
+    bearish_close = closes[-1] < closes[-2] and current < (highs[-1] - candle_range * 0.50)
+    near_fast_ema = abs(current - ema_fast[-1]) <= atr * 1.00
     if near_fast_ema and up and bullish_close:
         return "BUY", ["EMA_PULLBACK", "EMA_ALIGNMENT"], "TREND_PULLBACK"
     if near_fast_ema and down and bearish_close:
@@ -224,9 +224,9 @@ def _range_signal(opens, highs, lows, closes, period=20):
     upper_zone = upper - width * 0.25
     bullish_rejection = close > op and close >= closes[-2] and (close - lows[-1]) / candle_range >= 0.50
     bearish_rejection = close < op and close <= closes[-2] and (highs[-1] - close) / candle_range >= 0.55
-    if close <= lower_zone and rsi <= 45 and bullish_rejection:
+    if close <= lower_zone and rsi <= 48 and bullish_rejection:
         return "BUY", ["RANGE_LOW_REJECTION", "RSI_OVERSOLD"], "RANGE_MEAN_REVERSION"
-    if close >= upper_zone and rsi >= 55 and bearish_rejection:
+    if close >= upper_zone and rsi >= 52 and bearish_rejection:
         return "SELL", ["RANGE_HIGH_REJECTION", "RSI_OVERBOUGHT"], "RANGE_MEAN_REVERSION"
     return None
 
