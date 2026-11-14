@@ -44,8 +44,9 @@ jobs:
         run: |
           python -m unittest discover -s tests -v
           python - <<'PY'
-          from app import app
+          from app import app, scheduler
           from market_strategies import diagnostic_self_test
+          assert scheduler is None, "ENABLE_AUTO_SCAN=false must disable background jobs in CI"
           assert diagnostic_self_test()["ok"], diagnostic_self_test()
           client = app.test_client()
           for path in ("/health", "/ready", "/api/bootstrap", "/api/trades", "/api/strategy/status", "/api/strategy-status", "/", "/plans", "/journal", "/blog", "/news", "/login", "/register", "/account", "/admin", "/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex", "/styles.css", "/pro-theme.css", "/compat.css", "/platform.js", "/intelligence", "/intelligence.js", "/intelligence.css"):
