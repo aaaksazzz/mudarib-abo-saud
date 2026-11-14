@@ -383,13 +383,24 @@ def public_article_page(slug):
         return json_error("المقال غير موجود",404)
     title=html.escape(article.meta_title or article.title)
     description=html.escape(article.meta_description or article.summary)
-    body="".join("<p>"+html.escape(part.strip())+"</p>" for part in (article.body or "").split("\n\n") if part.strip())
+    body_parts=[]
+    for part in (article.body or "").split("\n\n"):
+        lines=[line.strip() for line in part.splitlines() if line.strip()]
+        if not lines:
+            continue
+        if all(line.startswith("• ") for line in lines):
+            body_parts.append("<ul>"+"".join("<li>"+html.escape(line[2:])+"</li>" for line in lines)+"</ul>")
+        else:
+            body_parts.append("<p>"+html.escape(" ".join(lines))+"</p>")
+    body="".join(body_parts)
     base=os.environ.get("PUBLIC_BASE_URL",request.url_root.rstrip("/")).rstrip("/")
     canonical=base+"/blog/"+article.slug
     locale=(article.language or "ar").replace("_","-")
     siblings=Article.query.filter_by(kind="blog",published=True,canonical_slug=article.canonical_slug or article.slug).all()
     alternates="".join('<link rel="alternate" hreflang="'+html.escape((x.language or "ar").replace("_","-"))+'" href="'+html.escape(base+"/blog/"+x.slug)+'">' for x in siblings)
-    page=f"""<!doctype html><html lang="{html.escape(locale)}" dir="{'rtl' if locale.startswith('ar') else 'ltr'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><meta name="description" content="{description}"><link rel="canonical" href="{html.escape(canonical)}">{alternates}<meta property="og:type" content="article"><meta property="og:title" content="{title}"><meta property="og:description" content="{description}"><meta property="og:url" content="{html.escape(canonical)}"><meta name="robots" content="index,follow"><script type="application/ld+json">{{"@context":"https://schema.org","@type":"Article","headline":{json.dumps(article.title,ensure_ascii=False)},"description":{json.dumps(article.meta_description or article.summary,ensure_ascii=False)},"datePublished":{json.dumps(iso(article.created_at))},"mainEntityOfPage":{json.dumps(canonical)}}}</script></head><body><main><article><h1>{html.escape(article.title)}</h1><p>{description}</p>{body}</article></main></body></html>"""
+    alternates+='<link rel="alternate" hreflang="x-default" href="'+html.escape(base+"/blog/"+(next((x.slug for x in siblings if x.language=="en"),article.slug)))+'">'
+    schema={"@context":"https://schema.org","@type":"BlogPosting","headline":article.title,"description":article.meta_description or article.summary,"datePublished":iso(article.created_at),"dateModified":iso(article.created_at),"inLanguage":locale,"mainEntityOfPage":canonical,"publisher":{"@type":"Organization","name":"SMART TRADING PRO"}}
+    page=f"""<!doctype html><html lang="{html.escape(locale)}" dir="{'rtl' if locale.startswith('ar') else 'ltr'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><meta name="description" content="{description}"><link rel="canonical" href="{html.escape(canonical)}">{alternates}<meta property="og:type" content="article"><meta property="og:title" content="{title}"><meta property="og:description" content="{description}"><meta property="og:url" content="{html.escape(canonical)}"><meta name="twitter:card" content="summary"><meta name="robots" content="index,follow"><script type="application/ld+json">{json.dumps(schema,ensure_ascii=False)}</script><style>body{{margin:0;background:#080d17;color:#e8eef7;font:17px/1.9 system-ui,sans-serif}}main{{max-width:820px;margin:32px auto;padding:24px}}article{{background:#101a29;border:1px solid #26364a;border-radius:18px;padding:clamp(20px,5vw,44px)}}a{{color:#72dcb7;text-decoration:none}}h1{{font-size:clamp(27px,5vw,42px);line-height:1.3}}p,li{{color:#c2cede}}.summary{{font-size:18px;color:#8fe0c2}}ul{{padding-inline-start:26px}}.disclaimer{{border-top:1px solid #26364a;padding-top:16px;font-size:14px}}</style></head><body><main><a href="/">SMART TRADING PRO</a> · <a href="/blog?lang={html.escape(locale)}">المدونة / Blog</a><article><h1>{html.escape(article.title)}</h1><p class="summary">{description}</p>{body}</article></main></body></html>"""
     return page,200,{"Content-Type":"text/html; charset=utf-8","X-Robots-Tag":"index, follow"}
 
 @app.get("/sitemap.xml")
