@@ -8,7 +8,8 @@ import xml.etree.ElementTree as ET
 import html
 import market_adapters
 import market_strategies
-from flask import Flask, request, jsonify, send_from_directory, session, g
+from flask import Flask, request, jsonify, session, g
+import mimetypes
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import func, text, inspect, or_, event
@@ -19,6 +20,17 @@ from flask_limiter.util import get_remote_address
 
 app = Flask(__name__, static_folder=None)
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def send_app_file(filename):
+    """Serve bundled UI assets as response bytes, not file wrappers."""
+    path = os.path.join(APP_DIR, filename)
+    with open(path, "rb") as asset:
+        payload = asset.read()
+    response = app.response_class(payload, status=200, mimetype=mimetypes.guess_type(filename)[0] or "application/octet-stream")
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Content-Length"] = str(len(payload))
+    return response
 database_url=os.environ.get("DATABASE_URL")
 if not database_url:
     data_dir=os.environ.get("DATA_DIR","").strip()
@@ -338,20 +350,20 @@ def visitor_stats():
     })
 
 @app.get("/")
-def home(): return send_from_directory(APP_DIR, "index.html")
+def home(): return send_app_file("index.html")
 
 @app.get("/intelligence")
-def intelligence_page(): return send_from_directory(APP_DIR, "intelligence.html")
+def intelligence_page(): return send_app_file("intelligence.html")
 
 @app.get("/intelligence.js")
-def intelligence_script(): return send_from_directory(APP_DIR, "intelligence.js")
+def intelligence_script(): return send_app_file("intelligence.js")
 
 @app.get("/intelligence.css")
-def intelligence_stylesheet(): return send_from_directory(APP_DIR, "intelligence.css")
+def intelligence_stylesheet(): return send_app_file("intelligence.css")
 @app.get("/market/<market>")
 def market_page_route(market):
     if market not in MARKETS: return json_error("السوق غير معروف",404)
-    return send_from_directory(APP_DIR, "index.html")
+    return send_app_file("index.html")
 
 @app.get("/signal-lab")
 def signal_lab_page():
@@ -360,11 +372,11 @@ def signal_lab_page():
 
 @app.get("/signal-lab.js")
 def signal_lab_script():
-    return send_from_directory(APP_DIR, "signal-lab.js")
+    return send_app_file("signal-lab.js")
 
 @app.get("/signal-lab.css")
 def signal_lab_stylesheet():
-    return send_from_directory(APP_DIR, "signal-lab.css")
+    return send_app_file("signal-lab.css")
 
 @app.get("/api/signal-lab/scan")
 def signal_lab_scan():
@@ -411,16 +423,16 @@ def robots_txt():
 @app.get("/account")
 @app.get("/admin")
 def standalone_section_route():
-    return send_from_directory(APP_DIR, "index.html")
+    return send_app_file("index.html")
 
 @app.get("/styles.css")
-def styles(): return send_from_directory(APP_DIR, "styles.css")
+def styles(): return send_app_file("styles.css")
 @app.get("/platform.js")
-def platform_script(): return send_from_directory(APP_DIR, "platform.js")
+def platform_script(): return send_app_file("platform.js")
 @app.get("/pro-theme.css")
-def pro_theme(): return send_from_directory(APP_DIR, "pro-theme.css")
+def pro_theme(): return send_app_file("pro-theme.css")
 @app.get("/compat.css")
-def compat_styles(): return send_from_directory(APP_DIR, "compat.css")
+def compat_styles(): return send_app_file("compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
     diagnostic=market_strategies.diagnostic_self_test()
