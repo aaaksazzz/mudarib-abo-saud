@@ -1435,7 +1435,10 @@ def intelligence_scan():
     if blocked:
         return blocked
     try:
-        result=run_market_scan(market,force=True)
+        # Page visits must reuse the shared scan cache. Scheduled scans own the
+        # 15-minute refresh cadence; forcing a new scan here duplicates provider
+        # requests whenever users open or refresh a market page.
+        result=run_market_scan(market,force=False)
         checked=int(result.get("analysis_completed",0) or 0)+int(result.get("analysis_failed",0) or 0)
         return jsonify({
             "ok":True,"market":market,
