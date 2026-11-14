@@ -29,6 +29,18 @@ class ScanDiagnosticsTests(unittest.TestCase):
         self.assertEqual(short["_diagnostic_code"], "insufficient_history")
         self.assertEqual(short["_candles_received"], 12)
 
+    def test_build_signal_uses_timeframe_specific_history_requirement(self):
+        monthly_rows=[[i, 100, 101, 99, 100, 10] for i in range(43)]
+        with patch.object(platform_app, "klines", return_value=monthly_rows), patch.object(
+            platform_app.market_strategies, "analyze_all", return_value=None
+        ) as analyze:
+            result=platform_app.build_signal("alpha", {"symbol":"ALPHAUSDT"}, "1M")
+        self.assertNotIn("_data_incomplete", result)
+        self.assertTrue(result["_strategy_rejected"])
+        analyze.assert_called_once()
+        self.assertEqual(analyze.call_args.kwargs["timeframe"], "1M")
+        self.assertIn("diagnostics", analyze.call_args.kwargs)
+
     def test_scan_failure_samples_are_bounded_and_counted(self):
         stats = {"15m": {"failure_reasons": {}, "failure_samples": []}}
         for index in range(8):
