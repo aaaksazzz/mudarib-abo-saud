@@ -139,12 +139,12 @@ class AccountNewsSeoTests(unittest.TestCase):
     def test_build_signal_marks_short_candle_provider_response_incomplete(self):
         with patch.object(platform_app, "klines", return_value=[[i, 100, 101, 99, 100, 10] for i in range(40)]):
             result = platform_app.build_signal("futures", {"symbol": "TESTUSDT"}, "15m")
-        self.assertEqual(result, {"_data_incomplete": True, "_candles_received": 40})
+        self.assertEqual(result, {"_data_incomplete": True, "_candles_received": 40, "_diagnostic_code": "insufficient_history"})
 
     def test_build_signal_marks_non_list_provider_response_incomplete(self):
         with patch.object(platform_app, "klines", return_value=None):
             result = platform_app.build_signal("futures", {"symbol": "TESTUSDT"}, "15m")
-        self.assertEqual(result, {"_data_incomplete": True, "_candles_received": 0})
+        self.assertEqual(result, {"_data_incomplete": True, "_candles_received": 0, "_diagnostic_code": "invalid_candle_payload"})
 
     def test_fresh_signal_rebases_all_targets_to_one_two_three_r(self):
         now = platform_app.utcnow()
