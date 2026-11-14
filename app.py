@@ -1075,10 +1075,13 @@ def update_trade_outcomes(market,tickers):
     db.session.commit()
     return changed
 
-def select_scan_candidates(universe,offset=0,batch_size=80):
-    """Rotate through the full eligible universe without changing signal rules."""
+SCAN_BATCH_SIZE=20
+
+def select_scan_candidates(universe,offset=0,batch_size=SCAN_BATCH_SIZE):
+    """Scan at most 20 eligible assets per cycle and rotate across the full universe."""
     # Prioritise fast-moving assets first (largest absolute 24h move), then liquidity.
-    # Cursor rotation continues into slower assets on subsequent 15m scan cycles.
+    # The persisted cursor advances by 20 each cycle and wraps to index zero,
+    # ensuring continuous coverage without rescanning only the top-ranked assets.
     ranked=sorted(universe,key=lambda x:(abs(float(x.get("change_pct") or 0)),float(x.get("quote_volume") or 0)),reverse=True)
     if not ranked:
         return [],0,0
@@ -1193,7 +1196,7 @@ def _run_market_scan_unlocked(market,force=False):
         cursor=int(cursor_row.value) if cursor_row else 0
     except (TypeError,ValueError):
         cursor=0
-    candidates,next_cursor,scan_offset=select_scan_candidates(universe,cursor,80)
+    candidates,next_cursor,scan_offset=select_scan_candidates(universe,cursor,SCAN_BATCH_SIZE)
     for index,item in enumerate(candidates):
         item["include_microstructure"]=(market in ("spot","futures") and index<12)
     found=[]
