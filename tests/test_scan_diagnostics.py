@@ -94,17 +94,47 @@ class ScanDiagnosticsTests(unittest.TestCase):
         )
         self.assertEqual(platform_app.trade_json(trade)["reward_risk"], 3.0)
 
-    def test_scan_filters_signals_against_market_bias(self):
+    def test_scan_filters_signals_only_when_market_breadth_is_decisive(self):
         signals = [
             {"symbol": "LONG", "side": "BUY", "timeframe": "15m"},
             {"symbol": "SHORT", "side": "SELL", "timeframe": "15m"},
         ]
-        aligned, rejected = platform_app.align_signals_with_market_bias(signals, "SELL")
-        self.assertEqual([signal["symbol"] for signal in aligned], ["SHORT"])
+        bias, strength = platform_app.classify_market_breadth(70, 30)
+        self.assertEqual(bias, "BUY")
+        self.assertEqual(strength, 0.7)
+        aligned, rejected = platform_app.align_signals_with_market_bias(signals, bias)
+        self.assertEqual([signal["symbol"] for signal in aligned], ["LONG"])
         self.assertEqual(rejected, 1)
-        neutral, neutral_rejected = platform_app.align_signals_with_market_bias(signals, None)
+        weak_bias, _ = platform_app.classify_market_breadth(54, 46)
+        self.assertIsNone(weak_bias)
+        neutral, neutral_rejected = platform_app.align_signals_with_market_bias(signals, weak_bias)
         self.assertEqual(neutral, signals)
         self.assertEqual(neutral_rejected, 0)
+
+    def test_cached_trade_risk_limit_matches_its_timeframe_profile(self):
+        trade = platform_app.Trade(
+            market="futures", symbol="BTCUSDT", side="BUY", entry=100,
+            stop=90, tp1=110, tp2=120, tp3=130, score=90,
+            timeframe="1w", reason="test", expires_at=platform_app.utcnow()
+        )
+        self.assertTrue(platform_app.trade_within_frame_risk_limit(trade))
+        trade.timeframe="15m"
+        self.assertFalse(platform_app.trade_within_frame_risk_limit(trade))
+
+    def test_trade_json_exposes_risk_targets_and_real_reason(self):
+        trade = platform_app.Trade(
+            market="futures", symbol="BTCUSDT", side="BUY", entry=100,
+            stop=95, tp1=105, tp2=110, tp3=115, score=90,
+            timeframe="15m", reason="ADAPTIVE-TREND: EMA_PULLBACK | bar_ts=123",
+            expires_at=platform_app.utcnow()
+        )
+        payload=platform_app.trade_json(trade)
+        self.assertEqual(payload["risk_pct"], 5.0)
+        self.assertEqual(payload["tp1_r"], 1.0)
+        self.assertEqual(payload["tp2_r"], 2.0)
+        self.assertEqual(payload["tp3_r"], 3.0)
+        self.assertEqual(payload["reason"], "ADAPTIVE-TREND: EMA_PULLBACK")
+        self.assertEqual(payload["score_type"], "technical_quality_not_probability")
 
     def test_legacy_market_signals_route_rejects_unknown_timeframe(self):
         response = platform_app.app.test_client().get(
