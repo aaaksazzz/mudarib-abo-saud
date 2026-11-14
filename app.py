@@ -17,6 +17,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 app = Flask(__name__, static_folder=None)
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
 database_url=os.environ.get("DATABASE_URL")
 if not database_url:
     data_dir=os.environ.get("DATA_DIR","").strip()
@@ -312,20 +313,20 @@ def visitor_stats():
     })
 
 @app.get("/")
-def home(): return send_from_directory(".", "intelligence.html")
+def home(): return send_from_directory(APP_DIR, "intelligence.html")
 
 @app.get("/intelligence")
-def intelligence_page(): return send_from_directory(".", "intelligence.html")
+def intelligence_page(): return send_from_directory(APP_DIR, "intelligence.html")
 
 @app.get("/intelligence.js")
-def intelligence_script(): return send_from_directory(".", "intelligence.js")
+def intelligence_script(): return send_from_directory(APP_DIR, "intelligence.js")
 
 @app.get("/intelligence.css")
-def intelligence_stylesheet(): return send_from_directory(".", "intelligence.css")
+def intelligence_stylesheet(): return send_from_directory(APP_DIR, "intelligence.css")
 @app.get("/market/<market>")
 def market_page_route(market):
     if market not in MARKETS: return json_error("السوق غير معروف",404)
-    return send_from_directory(".", "intelligence.html")
+    return send_from_directory(APP_DIR, "intelligence.html")
 
 @app.get("/signal-lab")
 def signal_lab_page():
@@ -334,11 +335,11 @@ def signal_lab_page():
 
 @app.get("/signal-lab.js")
 def signal_lab_script():
-    return send_from_directory(".", "signal-lab.js")
+    return send_from_directory(APP_DIR, "signal-lab.js")
 
 @app.get("/signal-lab.css")
 def signal_lab_stylesheet():
-    return send_from_directory(".", "signal-lab.css")
+    return send_from_directory(APP_DIR, "signal-lab.css")
 
 @app.get("/api/signal-lab/scan")
 def signal_lab_scan():
@@ -385,16 +386,16 @@ def robots_txt():
 @app.get("/account")
 @app.get("/admin")
 def standalone_section_route():
-    return send_from_directory(".", "index.html")
+    return send_from_directory(APP_DIR, "index.html")
 
 @app.get("/styles.css")
-def styles(): return send_from_directory(".", "styles.css")
+def styles(): return send_from_directory(APP_DIR, "styles.css")
 @app.get("/platform.js")
-def platform_script(): return send_from_directory(".", "platform.js")
+def platform_script(): return send_from_directory(APP_DIR, "platform.js")
 @app.get("/pro-theme.css")
-def pro_theme(): return send_from_directory(".", "pro-theme.css")
+def pro_theme(): return send_from_directory(APP_DIR, "pro-theme.css")
 @app.get("/compat.css")
-def compat_styles(): return send_from_directory(".", "compat.css")
+def compat_styles(): return send_from_directory(APP_DIR, "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
     diagnostic=market_strategies.diagnostic_self_test()
