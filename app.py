@@ -466,7 +466,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":market_strategies.STRATEGY_FINGERPRINT.startswith("SMART-FLOW-FALSE-SWEEP-MTF-")}
+            "price_action_engine":market_strategies.STRATEGY_FINGERPRINT.startswith("SMART-ADAPTIVE-TREND-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -788,7 +788,7 @@ STRATEGY_FINGERPRINT=market_strategies.STRATEGY_FINGERPRINT
 def strategy_status_summary():
     active_current=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.like("FALSE-SWEEP MTF:%")
+        Trade.reason.like("ADAPTIVE-TREND MTF:%")
     ).count()
     active_legacy=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
@@ -874,7 +874,7 @@ def build_signal(market,item,timeframe):
     if not setup:
         return None
     setup["signal_timeframe"]=timeframe
-    setup["reason"]="FALSE-SWEEP MTF: independent "+timeframe+" confirmed liquidity sweep and reclaim; "+setup.get("reason","")
+    setup["reason"]="ADAPTIVE-TREND MTF: "+timeframe+" confirmed multi-horizon breakout with trend and volatility filters; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -1136,8 +1136,8 @@ def _run_market_scan_unlocked(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             all_frames_current=all(
-                db.session.get(Setting,f"scan-frame:false-sweep:{market}:{frame}") is not None
-                and db.session.get(Setting,f"scan-frame:false-sweep:{market}:{frame}").value==str(timeframe_bucket(frame,now))
+                db.session.get(Setting,f"scan-frame:adaptive-trend:{market}:{frame}") is not None
+                and db.session.get(Setting,f"scan-frame:adaptive-trend:{market}:{frame}").value==str(timeframe_bucket(frame,now))
                 for frame in market_scan_timeframes(market)
             )
             # Throttle repeated failed/partial provider scans too. A healthy
@@ -1149,7 +1149,7 @@ def _run_market_scan_unlocked(market,force=False):
                     meta=json.loads(meta_row.value) if meta_row else {}
                 except (ValueError,TypeError):
                     meta={}
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("FALSE-SWEEP MTF:%")).order_by(Trade.score.desc()).limit(36).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("ADAPTIVE-TREND MTF:%")).order_by(Trade.score.desc()).limit(36).all()
                 bias=meta.get("market_bias")
                 if bias in ("BUY","SELL"):
                     active=[trade for trade in active if trade.side==bias]
@@ -1164,7 +1164,7 @@ def _run_market_scan_unlocked(market,force=False):
     for frame in scan_frames:
         bucket=timeframe_bucket(frame,now)
         frame_buckets[frame]=bucket
-        frame_row=db.session.get(Setting,f"scan-frame:false-sweep:{market}:{frame}")
+        frame_row=db.session.get(Setting,f"scan-frame:adaptive-trend:{market}:{frame}")
         if frame_row is None or frame_row.value!=str(bucket):
             frames_to_scan.append(frame)
     if not frames_to_scan:
@@ -1276,7 +1276,7 @@ def _run_market_scan_unlocked(market,force=False):
         active=Trade.query.filter(
             Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
             Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-            Trade.reason.like("FALSE-SWEEP MTF:%")
+            Trade.reason.like("ADAPTIVE-TREND MTF:%")
         ).order_by(Trade.score.desc()).limit(18).all()
         return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],
                 "updated_at":iso(now),"cached":False,"data_status":"unavailable",
@@ -1314,7 +1314,7 @@ def _run_market_scan_unlocked(market,force=False):
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("FALSE-SWEEP MTF:%"),
+        Trade.reason.like("ADAPTIVE-TREND MTF:%"),
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
@@ -1333,7 +1333,7 @@ def _run_market_scan_unlocked(market,force=False):
         for signal in frame_signals[:3]:
             marker=str(signal["signal_candle_time"])
             key=(signal["symbol"],frame,marker)
-            setting_key=f"signal-candle:false-sweep:{market}:{signal['symbol']}:{frame}"
+            setting_key=f"signal-candle:adaptive-trend:{market}:{signal['symbol']}:{frame}"
             candle_row=db.session.get(Setting,setting_key)
             previous=existing_by_key.get(key)
             if candle_row and candle_row.value==marker:
@@ -1348,9 +1348,9 @@ def _run_market_scan_unlocked(market,force=False):
             new_signals.append(signal)
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("FALSE-SWEEP MTF:%")).update({"status":"superseded"},synchronize_session=False)
+        Trade.reason.not_like("ADAPTIVE-TREND MTF:%")).update({"status":"superseded"},synchronize_session=False)
     active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.timeframe.in_(frames_to_scan),Trade.reason.like("FALSE-SWEEP MTF:%"))
+        Trade.timeframe.in_(frames_to_scan),Trade.reason.like("ADAPTIVE-TREND MTF:%"))
     if retained_ids:
         active_query=active_query.filter(~Trade.id.in_(retained_ids))
     active_query.update({"status":"superseded"},synchronize_session=False)
@@ -1382,7 +1382,7 @@ def _run_market_scan_unlocked(market,force=False):
     else:
         cursor_row.value=str(next_cursor)
     for frame in frames_to_scan:
-        frame_key=f"scan-frame:false-sweep:{market}:{frame}"
+        frame_key=f"scan-frame:adaptive-trend:{market}:{frame}"
         frame_row=db.session.get(Setting,frame_key)
         bucket_value=str(frame_buckets[frame])
         if frame_row is None:
@@ -1416,7 +1416,7 @@ def _run_market_scan_unlocked(market,force=False):
         else:
             frame_meta_row.value=frame_meta
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("FALSE-SWEEP MTF:%")).order_by(Trade.score.desc()).limit(18).all()
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("ADAPTIVE-TREND MTF:%")).order_by(Trade.score.desc()).limit(18).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
             "scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
             "analysis_completed":completed,"analysis_failed":failed,"strategy_matches":strategy_matches,
@@ -1886,7 +1886,7 @@ def market_scan_initial_delay_seconds(index):
     return SCAN_INITIAL_DELAY_SECONDS+max(0,int(index))*spacing
 
 
-# Run the active false-sweep strategy on the staggered 15-minute market schedule.
+# Run the active adaptive-trend strategy on the staggered 15-minute market schedule.
 AUTO_SCAN_ENABLED=os.environ.get("ENABLE_AUTO_SCAN","true").strip().lower() in ("1","true","yes","on")
 scheduler=None
 if AUTO_SCAN_ENABLED:
