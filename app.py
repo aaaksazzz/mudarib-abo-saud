@@ -1103,7 +1103,7 @@ def run_market_scan(market,force=False):
         frame_stats={frame:{"completed":0,"failed":0,"matches":0} for frame in frames_to_scan}
         futures={pool.submit(build_signal,market,item,frame):(item,frame) for item in candidates for frame in frames_to_scan}
         for future in as_completed(futures):
-            _,frame=futures[future]
+            item,frame=futures[future]
             try:
                 signal=future.result()
                 completed+=1
@@ -1129,12 +1129,15 @@ def run_market_scan(market,force=False):
                         market, type(exc).__name__
                     )
                 else:
-                    app.logger.exception("multi-timeframe signal analysis failed for %s",market)
+                    app.logger.warning(
+                        "candle sample skipped: market=%s symbol=%s frame=%s error=%s",
+                        market,item.get("symbol","?"),frame,type(exc).__name__
+                    )
     # Validate completeness separately for every timeframe. A healthy 15m
     # feed must never hide a broken daily/monthly candle provider.
-    required_ratio=0.35 if market=="saudi" else 0.20 if frame=="1M" else 0.80
     incomplete_frames={}
     for frame in frames_to_scan:
+        required_ratio=0.35 if market=="saudi" else 0.20 if frame=="1M" else 0.80
         required=min(len(candidates),max(8 if market=="saudi" else 1,
                                        math.ceil(len(candidates)*required_ratio)))
         actual=frame_stats[frame]["completed"]
