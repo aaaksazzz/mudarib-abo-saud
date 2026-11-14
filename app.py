@@ -1200,6 +1200,13 @@ def run_market_scan(market,force=False):
         details=", ".join(f"{frame}={actual}/{required}" for frame,(actual,required) in incomplete_frames.items())
         app.logger.warning("partial timeframe coverage: market=%s %s",market,details)
     frames_to_scan=complete_frames
+    frame_diagnostics={
+        frame:{"completed":stats["completed"],"failed":stats["failed"],
+               "matches":stats["matches"],
+               "failure_reasons":stats.get("failure_reasons",{}),
+               "failure_samples":stats.get("failure_samples",[])}
+        for frame,stats in frame_stats.items()
+    }
     if not frames_to_scan:
         # Preserve the previous signal batch and record a short retry cooldown.
         if scan_row is None:
@@ -1235,13 +1242,6 @@ def run_market_scan(market,force=False):
                 "incomplete_timeframes":meta_value and json.loads(meta_value)["incomplete_timeframes"],
                 "frame_diagnostics":frame_diagnostics,
                 "timeframes":list(TIMEFRAMES),"scanned_timeframes":[]}
-    frame_diagnostics={
-        frame:{"completed":stats["completed"],"failed":stats["failed"],
-               "matches":stats["matches"],
-               "failure_reasons":stats.get("failure_reasons",{}),
-               "failure_samples":stats.get("failure_samples",[])}
-        for frame,stats in frame_stats.items()
-    }
     if failed:
         app.logger.warning(
             "market scan partial data: market=%s completed=%s failed=%s requested=%s diagnostics=%s",
