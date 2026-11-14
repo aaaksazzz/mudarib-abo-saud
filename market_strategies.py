@@ -221,33 +221,40 @@ def _range_signal(opens, highs, lows, closes, period=20):
     return None
 
 
-def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_micro=False):
+def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_micro=False, diagnostics=None):
+    def reject(reason):
+        if diagnostics is not None:
+            diagnostics[reason] = diagnostics.get(reason, 0) + 1
+        return None
+
     market_profile = PROFILES.get(market)
     if not market_profile or timeframe not in TIMEFRAMES:
-        return None
+        return reject("invalid_market_or_timeframe")
     frame = FRAME_PROFILES[timeframe]
     bars = _finite_rows(rows)
     if not bars or len(bars) < frame["min_bars"]:
-        return None
+        return reject("insufficient_completed_candles")
     opens, highs, lows, closes, volumes = (
         [bar[index] for bar in bars] for index in (1, 2, 3, 4, 5)
     )
     entry = closes[-1]
     regime, regime_confidence, regime_history = _rolling_regime(bars, frame)
-    if regime not in ("TREND", "RANGE") or regime_confidence < 0.75:
-        return None
+    if regime not in ("TREND", "RANGE"):
+        return reject("regime_not_tradeable")
+    if regime_confidence < 0.75:
+        return reject("regime_persistence_below_threshold")
     atr = _atr(highs, lows, closes, frame["atr_fast"])
     atr_slow = _atr(highs, lows, closes, frame["atr_slow"])
     if not math.isfinite(atr) or atr <= 0 or atr_slow <= 0:
-        return None
+        return reject("invalid_atr")
     atr_pct = atr / entry
     volatility_ratio = atr / atr_slow
     if atr_pct > 0.12 or volatility_ratio > 2.10 or volatility_ratio < 0.45:
-        return None
+        return reject("volatility_outside_profile")
     ema_fast = _ema(closes, frame["ema_fast"])
     ema_slow = _ema(closes, frame["ema_slow"])
     if not ema_fast or not ema_slow or ema_fast[-2] is None or ema_slow[-1] is None:
-        return None
+        return reject("ema_unavailable")
 
     selected = (
         _trend_signal(highs, lows, closes, ema_fast, ema_slow, atr, frame["channels"])
@@ -255,10 +262,10 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         else _range_signal(opens, highs, lows, closes, frame["range_period"])
     )
     if not selected:
-        return None
+        return reject("trend_breakout_not_confirmed" if regime == "TREND" else "range_rejection_not_confirmed")
     side, names, method = selected
     if side == "SELL" and not market_profile["allow_short"]:
-        return None
+        return reject("spot_short_blocked")
 
     prior_volumes = [v for v in volumes[-21:-1] if v > 0]
     volume_ratio = None
@@ -267,21 +274,21 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         if average > 0:
             volume_ratio = volumes[-1] / average
             if volume_ratio < (0.75 if regime == "TREND" else 0.50):
-                return None
+                return reject("volume_below_threshold")
 
     buffer = max(atr * 0.25, entry * 0.0002)
     lookback = frame["stop_lookback"]
     stop = min(lows[-lookback:]) - buffer if side == "BUY" else max(highs[-lookback:]) + buffer
     risk = entry - stop if side == "BUY" else stop - entry
     if not math.isfinite(risk) or risk <= 0:
-        return None
+        return reject("invalid_structural_stop")
     risk_atr, risk_pct = risk / atr, risk / entry
     if (risk_atr < frame["min_risk_atr"] or risk_atr > frame["max_risk_atr"]
             or risk_pct > frame["max_risk_pct"]):
-        return None
+        return reject("structural_risk_outside_profile")
     targets = target_prices(entry, side, stop)
     if not targets:
-        return None
+        return reject("invalid_target_geometry")
 
     efficiency = _efficiency_ratio(closes, 20)
     score = 62.0 + 6.0 * len(names) + 8.0 * regime_confidence
@@ -319,8 +326,8 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
     }
 
 
-def analyze_all(market, symbol, rows, timeframe="15m"):
-    return analyze(market, symbol, rows, timeframe=timeframe)
+def analyze_all(market, symbol, rows, timeframe="15m", diagnostics=None):
+    return analyze(market, symbol, rows, timeframe=timeframe, diagnostics=diagnostics)
 
 
 def diagnostic_self_test():
