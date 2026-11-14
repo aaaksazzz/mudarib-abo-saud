@@ -6,7 +6,7 @@ or transitional conditions. Uses completed OHLCV candles only; paper analysis.
 """
 import math
 
-STRATEGY_FINGERPRINT = "SMART-REGIME-ADAPTIVE-ENSEMBLE-MTF-V3-MODERATE-20261114"
+STRATEGY_FINGERPRINT = "SMART-REGIME-ADAPTIVE-ENSEMBLE-MTF-V4-BALANCED-20261114"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 # Independent parameter profiles keep each timeframe's strategy horizon appropriate.
 FRAME_PROFILES = {
@@ -148,7 +148,7 @@ def _rolling_regime(bars, profile=None):
         return "TRANSITION", 0.0, []
     current = labels[-1]
     agreement = sum(label == current for label in labels[-4:]) / min(4, len(labels))
-    if current in ("TREND", "RANGE") and agreement < 0.60:
+    if current in ("TREND", "RANGE") and agreement < 0.50:
         return "TRANSITION", agreement, labels
     return current, agreement, labels
 
@@ -195,9 +195,18 @@ def _trend_signal(highs, lows, closes, ema_fast, ema_slow, atr, periods=CHANNEL_
     if (side == "BUY" and not up) or (side == "SELL" and not down):
         return None
     level = chosen[0][2]
-    if abs(current - level) > atr * 2.0 or highs[-1] - lows[-1] > atr * 2.8:
-        return None
-    return side, [v[1] for v in chosen], "TREND_BREAKOUT"
+    if abs(current - level) <= atr * 2.0 and highs[-1] - lows[-1] <= atr * 2.8:
+        return side, [v[1] for v in chosen], "TREND_BREAKOUT"
+    # Moderate alternative: closed-candle EMA pullback continuation.
+    candle_range = max(highs[-1] - lows[-1], current * 1e-9)
+    bullish_close = closes[-1] > closes[-2] and closes[-1] > (lows[-1] + candle_range * 0.55)
+    bearish_close = closes[-1] < closes[-2] and closes[-1] < (highs[-1] - candle_range * 0.55)
+    near_fast_ema = abs(current - ema_fast[-1]) <= atr * 0.60
+    if near_fast_ema and up and bullish_close:
+        return "BUY", ["EMA_PULLBACK", "EMA_ALIGNMENT"], "TREND_PULLBACK"
+    if near_fast_ema and down and bearish_close:
+        return "SELL", ["EMA_PULLBACK", "EMA_ALIGNMENT"], "TREND_PULLBACK"
+    return None
 
 
 def _range_signal(opens, highs, lows, closes, period=20):
@@ -210,13 +219,13 @@ def _range_signal(opens, highs, lows, closes, period=20):
     rsi = _rsi(closes, 14)
     close, op = closes[-1], opens[-1]
     candle_range = max(highs[-1] - lows[-1], close * 1e-9)
-    lower_zone = lower + width * 0.18
-    upper_zone = upper - width * 0.18
-    bullish_rejection = close > op and close >= closes[-2] and (close - lows[-1]) / candle_range >= 0.55
+    lower_zone = lower + width * 0.25
+    upper_zone = upper - width * 0.25
+    bullish_rejection = close > op and close >= closes[-2] and (close - lows[-1]) / candle_range >= 0.50
     bearish_rejection = close < op and close <= closes[-2] and (highs[-1] - close) / candle_range >= 0.55
-    if close <= lower_zone and rsi <= 42 and bullish_rejection:
+    if close <= lower_zone and rsi <= 45 and bullish_rejection:
         return "BUY", ["RANGE_LOW_REJECTION", "RSI_OVERSOLD"], "RANGE_MEAN_REVERSION"
-    if close >= upper_zone and rsi >= 58 and bearish_rejection:
+    if close >= upper_zone and rsi >= 55 and bearish_rejection:
         return "SELL", ["RANGE_HIGH_REJECTION", "RSI_OVERBOUGHT"], "RANGE_MEAN_REVERSION"
     return None
 
@@ -241,7 +250,7 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
     regime, regime_confidence, regime_history = _rolling_regime(bars, frame)
     if regime not in ("TREND", "RANGE"):
         return reject("regime_not_tradeable")
-    if regime_confidence < 0.60:
+    if regime_confidence < 0.50:
         return reject("regime_persistence_below_threshold")
     atr = _atr(highs, lows, closes, frame["atr_fast"])
     atr_slow = _atr(highs, lows, closes, frame["atr_slow"])
@@ -361,6 +370,6 @@ def diagnostic_self_test():
         "checks": checks, "timeframes": list(TIMEFRAMES),
         "catalog": list(STRATEGY_CATALOG),
         "frame_profiles": {frame: {key: value for key, value in profile.items() if key in ("min_bars", "channels", "ema_fast", "ema_slow", "stop_lookback")} for frame, profile in FRAME_PROFILES.items()},
-        "rule": "moderate rolling regime persistence; one Donchian vote plus EMA alignment for trend; softer range rejection and volume thresholds; stress protection retained; structural ATR stop; 1R/2R/3R",
+        "rule": "moderate regime persistence; Donchian breakout or closed-candle EMA pullback continuation; wider range rejection zone; stress protection retained; structural ATR stop; 1R/2R/3R",
         "score_type": "technical quality, not probability or win rate",
     }
