@@ -94,6 +94,14 @@ class ScanDiagnosticsTests(unittest.TestCase):
         )
         self.assertEqual(platform_app.trade_json(trade)["reward_risk"], 3.0)
 
+    def test_frame_specific_risk_filter_keeps_valid_higher_timeframe_trades(self):
+        daily = type("TradeStub", (), {"timeframe":"1d","entry":100.0,"stop":96.0,"side":"BUY"})()
+        intraday = type("TradeStub", (), {"timeframe":"15m","entry":100.0,"stop":96.0,"side":"BUY"})()
+        wrong_side = type("TradeStub", (), {"timeframe":"1d","entry":100.0,"stop":101.0,"side":"BUY"})()
+        self.assertTrue(platform_app.trade_passes_frame_risk(daily))
+        self.assertFalse(platform_app.trade_passes_frame_risk(intraday))
+        self.assertFalse(platform_app.trade_passes_frame_risk(wrong_side))
+
     def test_scan_filters_signals_against_market_bias(self):
         signals = [
             {"symbol": "LONG", "side": "BUY", "timeframe": "15m"},
