@@ -1302,6 +1302,15 @@ def _run_market_scan_unlocked(market,force=False):
         )
         found.extend(frame_found)
         freshness_by_frame[frame]=frame_freshness
+        # Keep diagnostics scoped to the selected timeframe; never mix the
+        # six independent scans into one misleading set of UI counters.
+        frame_diagnostics[frame]["fresh_matches"]=len(frame_found)
+        frame_diagnostics[frame]["rejected_stale_candle"]=frame_freshness["rejected_stale_candle"]
+        frame_diagnostics[frame]["rejected_late_price"]=frame_freshness["rejected_late_price"]
+        frame_diagnostics[frame]["direction_rejected"]=(
+            sum(1 for signal in frame_found if signal.get("side")!=market_bias)
+            if market_bias in ("BUY","SELL") else 0
+        )
     freshness={key:sum(value[key] for value in freshness_by_frame.values())
                for key in ("rejected_stale_candle","rejected_late_price")}
     fresh_matches=len(found)
@@ -1406,7 +1415,8 @@ def _run_market_scan_unlocked(market,force=False):
             "analysis_failed":frame_stats[frame]["failed"],
             "strategy_matches":frame_stats[frame]["matches"],
             "fresh_matches":len(frame_signals),
-            "direction_rejected":0,"accepted_signals":len(frame_signals),
+            "direction_rejected":frame_diagnostics[frame]["direction_rejected"],
+            "accepted_signals":len(frame_signals),
             "rejected_stale_candle":freshness_by_frame[frame]["rejected_stale_candle"],
             "rejected_late_price":freshness_by_frame[frame]["rejected_late_price"],
             "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":[frame],
@@ -1460,19 +1470,22 @@ def signals(market):
         result=run_market_scan(market,force=False)
         frame_signals=[item for item in result.get("signals",[])
                        if item.get("timeframe")==timeframe]
+        diagnostics=(result.get("frame_diagnostics") or {}).get(timeframe,{})
         return jsonify({
             "ok":True,"market":market,"timeframe":timeframe,
             "signals":frame_signals,"updated_at":result.get("updated_at"),
             "market_closed":market=="saudi" and not saudi_market_is_open(),
             "stale":False,"scan_error":None,
-            "analysis_completed":result.get("analysis_completed",0),
-            "analysis_failed":result.get("analysis_failed",0),
-            "strategy_matches":result.get("strategy_matches",0),
-            "rejected_stale_candle":result.get("rejected_stale_candle",0),
-            "rejected_late_price":result.get("rejected_late_price",0),
+            "analysis_completed":diagnostics.get("completed",result.get("analysis_completed",0)),
+            "analysis_failed":diagnostics.get("failed",result.get("analysis_failed",0)),
+            "strategy_matches":diagnostics.get("matches",result.get("strategy_matches",0)),
+            "fresh_matches":diagnostics.get("fresh_matches",result.get("fresh_matches",0)),
+            "direction_rejected":diagnostics.get("direction_rejected",result.get("direction_rejected",0)),
+            "rejected_stale_candle":diagnostics.get("rejected_stale_candle",result.get("rejected_stale_candle",0)),
+            "rejected_late_price":diagnostics.get("rejected_late_price",result.get("rejected_late_price",0)),
             "data_status":result.get("data_status","unknown"),
             "incomplete_timeframes":result.get("incomplete_timeframes",{}),
-            "frame_diagnostics":result.get("frame_diagnostics",{})
+            "frame_diagnostics":{timeframe:diagnostics} if diagnostics else {}
         })
     except OperationalError as exc:
         db.session.rollback()
