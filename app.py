@@ -787,7 +787,11 @@ def build_signal(market,item,timeframe):
     # Provider coverage varies by symbol/timeframe. Raise a sample error;
     # scanner counts sparse samples without a traceback for every symbol.
     if not isinstance(rows,list) or len(rows)<41:
-        raise ValueError("Insufficient candles: "+str(len(rows) if isinstance(rows,list) else 0)+"/41")
+        # Sparse provider history is an expected per-symbol condition (new listings,
+        # unavailable intervals, or transient partial responses). Return a sentinel
+        # so the scanner can count coverage without raising noisy tracebacks.
+        return {"_data_incomplete":True,
+                "_candles_received":len(rows) if isinstance(rows,list) else 0}
     setup=market_strategies.analyze(market,symbol,rows,timeframe=timeframe)
     if not setup:
         return None
@@ -1106,6 +1110,11 @@ def run_market_scan(market,force=False):
             item,frame=futures[future]
             try:
                 signal=future.result()
+                if isinstance(signal,dict) and signal.get("_data_incomplete"):
+                    failed+=1
+                    frame_stats[frame]["failed"]+=1
+                    frame_stats[frame]["insufficient_candles"]=frame_stats[frame].get("insufficient_candles",0)+1
+                    continue
                 completed+=1
                 frame_stats[frame]["completed"]+=1
                 if signal:
