@@ -1172,6 +1172,12 @@ def trade_within_frame_risk_limit(trade):
     return math.isfinite(risk_pct) and risk_pct<=float(profile.get("max_risk_pct",0.025))
 
 
+def trade_should_be_superseded(trade,replacement_keys,retained_ids=()):
+    """Retire an open trade only when a new setup replaces its exact symbol/frame."""
+    key=(trade.market,trade.symbol,trade.timeframe)
+    return key in replacement_keys and trade.id not in retained_ids
+
+
 def _run_market_scan_unlocked(market,force=False):
     if market not in MARKETS:
         raise ValueError("Unknown market "+str(market))
@@ -1428,7 +1434,7 @@ def _run_market_scan_unlocked(market,force=False):
         ).all()
         for previous_trade in replaceable:
             key=(previous_trade.market,previous_trade.symbol,previous_trade.timeframe)
-            if key in replacement_keys and previous_trade.id not in retained_ids:
+            if trade_should_be_superseded(previous_trade,replacement_keys,retained_ids):
                 previous_trade.status="superseded"
     for signal in new_signals:
         frame=signal["timeframe"]
