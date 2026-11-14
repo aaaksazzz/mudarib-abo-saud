@@ -91,8 +91,8 @@ class ScanDiagnosticsTests(unittest.TestCase):
         self.assertEqual([signal["symbol"] for signal in aligned], ["SHORT"])
         self.assertEqual(rejected, 1)
         neutral, neutral_rejected = platform_app.align_signals_with_market_bias(signals, None)
-        self.assertEqual(neutral, signals)
-        self.assertEqual(neutral_rejected, 0)
+        self.assertEqual(neutral, [])
+        self.assertEqual(neutral_rejected, 2)
 
     def test_legacy_market_signals_route_rejects_unknown_timeframe(self):
         response = platform_app.app.test_client().get(
