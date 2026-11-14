@@ -784,10 +784,10 @@ def build_signal(market,item,timeframe):
     # Each market and timeframe is analysed independently from its own closed candles.
     symbol=item["symbol"]
     rows=klines(market,symbol,timeframe,250)
-    # Providers may not cover every symbol/timeframe. Skip sparse samples;
-    # market-level completeness is measured separately per timeframe.
+    # Provider coverage varies by symbol/timeframe. Raise a sample error;
+    # scanner counts sparse samples without a traceback for every symbol.
     if not isinstance(rows,list) or len(rows)<41:
-        return None
+        raise ValueError("Insufficient candles: "+str(len(rows) if isinstance(rows,list) else 0)+"/41")
     setup=market_strategies.analyze(market,symbol,rows,timeframe=timeframe)
     if not setup:
         return None
