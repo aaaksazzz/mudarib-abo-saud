@@ -466,7 +466,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":market_strategies.STRATEGY_FINGERPRINT.startswith("SMART-ADAPTIVE-TREND-")}
+            "price_action_engine":market_strategies.STRATEGY_FINGERPRINT.startswith("SMART-REGIME-ADAPTIVE-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -652,7 +652,7 @@ def provider_status(m):
     if not item:
         return {"configured":False,"health":"unknown","source":None,"requires_api_key":False}
     return {**item,"configured":True,"health":"not_probed","health_note":"Adapter presence only; live connectivity is not tested by this endpoint",
-            "requires_api_key":False,"access":"public_no_key","analysis":"classic_price_action_15m"}
+            "requires_api_key":False,"access":"public_no_key","analysis":"regime_adaptive_trend_range_mtf"}
 def fetch_json(url,params=None):
     last_error=None
     for attempt in range(3):
@@ -874,7 +874,7 @@ def build_signal(market,item,timeframe):
     if not setup:
         return None
     setup["signal_timeframe"]=timeframe
-    setup["reason"]="ADAPTIVE-TREND MTF: "+timeframe+" confirmed multi-horizon breakout with trend and volatility filters; "+setup.get("reason","")
+    setup["reason"]="ADAPTIVE-TREND MTF: "+timeframe+" regime-adaptive setup; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup

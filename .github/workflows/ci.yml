@@ -56,7 +56,7 @@ jobs:
           assert client.get("/api/bootstrap").status_code == 200
           assert client.get("/api/trades").status_code == 200
           strategy_status = client.get("/api/strategy/status").get_json()
-          assert strategy_status["strategy_fingerprint"].startswith("SMART-FLOW-FALSE-SWEEP-MTF-"), strategy_status
+          assert strategy_status["strategy_fingerprint"].startswith("SMART-REGIME-ADAPTIVE-"), strategy_status
           assert strategy_status["engine"] == "SMART TRADING PRO"
           assert strategy_status["strategy_ready"] is True
           assert strategy_status["manual_only"] is True
