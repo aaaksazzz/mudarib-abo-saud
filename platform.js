@@ -83,51 +83,58 @@ async function overview(root,version=renderVersion){
  }
 }
 async function marketPage(root,market,version=renderVersion){
- try{
-  const timeframe=selectedTimeframe;
-  const [snap,sig,engine]=await Promise.all([api("/api/markets/"+market+"/snapshot"),api("/api/markets/"+market+"/signals?timeframe="+encodeURIComponent(timeframe)),api("/api/strategy-status").catch(()=>null)]);
-  if(version!==renderVersion||currentPage!==market)return;
-  const unavailable=snap.ready===false;
-  const stale=sig.stale===true;
-  const marketClosed=sig.market_closed===true;
-  const warning=unavailable?"":marketClosed?'<div class="notice-bar">السوق السعودي مغلق حاليًا؛ لا تُنشأ فرص دخول جديدة خارج جلسة التداول.</div>':sig.scan_error?'<div class="notice-bar">تعذّر الفحص: '+esc(sig.scan_error)+'</div>':stale&&!sig.updated_at?'<div class="notice-bar">لم يكتمل أول فحص ناجح بعد؛ ننتظر دورة الفحص المجدولة.</div>':stale?'<div class="notice-bar">نتائج هذا الفريم قديمة. ننتظر تحديث الفحص المجدول.</div>':"";
-  const signals=sig.signals||[];
-  const frameLabel=(timeframeOptions.find(x=>x[0]===timeframe)||[])[1]||timeframe;
-  const scanCoverage=sig.scan_universe==null?"نتائج آخر فحص محفوظة":Number(sig.scan_universe)+" أصل في القائمة · تم تحليل "+Number(sig.analysis_completed||0)+" في الدفعة الأخيرة";
-  const emptyDetails=(()=>{
-   if(marketClosed)return "السوق السعودي يعمل من الأحد إلى الخميس؛ التداول المستمر من 10 صباحًا إلى 3 مساءً بتوقيت الرياض. لا تُنشأ فرص دخول جديدة أثناء الإغلاق.";
-   if(!sig.updated_at)return "لم يكتمل فحص ناجح لهذا السوق بعد.";
-   if(sig.stale)return "نتائج الفحص قديمة؛ لن نعرض فرصاً قديمة على أنها فرص حالية.";
-   const completed=Number(sig.analysis_completed||0),failed=Number(sig.analysis_failed||0);
-   const matches=Number(sig.strategy_matches||0),fresh=Number(sig.fresh_matches||0);
-   const rejected=Number(sig.direction_rejected||0),staleBars=Number(sig.rejected_stale_candle||0);
-   const late=Number(sig.rejected_late_price||0);
-   if(completed===0)return "لم تُحلّل أي شموع بنجاح. تحقق من مصدر البيانات لهذا السوق.";
-   if(failed>0&&completed<failed)return "بعض طلبات الشموع فشلت؛ راجع اتصال مزود البيانات.";
-   if(matches===0)return "اكتمل فحص "+completed+" تحليل، لكن لم تتوافق شروط النماذج على شمعة مغلقة.";
-   if(fresh===0)return "ظهرت "+matches+" إعدادات، لكنها استُبعدت بسبب قدم الشمعة أو ابتعاد السعر عن الدخول.";
-
-   return "لا توجد فرصة اجتازت جميع شروط التأكيد حالياً.";
-  })();
-  const tabs='<div class="timeframe-tabs" role="group" aria-label="فريم التحليل">'+timeframeOptions.map(([value,label])=>'<button type="button" class="timeframe-tab'+(value===timeframe?' active':'')+'" data-timeframe="'+value+'" aria-pressed="'+(value===timeframe?'true':'false')+'" title="'+esc(label)+'">'+value+'</button>').join('')+'</div>';
-  const engineData=engine?{engine:engine.engine,fingerprint:engine.strategy_fingerprint||engine.fingerprint,strategy_ready:engine.strategy_ready}:(sig.engine&&(sig.strategy_fingerprint||sig.fingerprint)?{engine:sig.engine,fingerprint:sig.strategy_fingerprint||sig.fingerprint}:null);
-  const installed=engineData&&engineData.fingerprint==="SMART-REGIME-ADAPTIVE-ENSEMBLE-MTF-V2-20261114"&&engineData.engine==="SMART TRADING PRO"&&engineData.strategy_ready!==false;
-  const legacyLabel=engine&&typeof engine.legacy_removed==="boolean"?(engine.legacy_removed?"القديم مستبدل":"جارٍ إيقاف الصفقات القديمة"):"المحرك مطابق";
-  const engineStamp=installed?'<div class="engine-fingerprint"><span class="engine-led"></span><b>بصمة المحرك: '+esc(engineData.fingerprint)+'</b><span>7 أسواق · 6 فريمات مستقلة</span><span class="'+(engine&&engine.legacy_removed?"engine-clean":"engine-pending")+'">'+legacyLabel+'</span></div>':'<div class="engine-fingerprint engine-pending">تعذر تأكيد بصمة المحرك من واجهات الخادم الحالية</div>';
-  root.innerHTML=warning+'<section class="panel market-summary"><div class="panel-head"><div><span class="section-kicker">'+esc(market.toUpperCase())+'</span><h2>'+esc(marketNames[market])+'</h2></div><span class="status-pending">'+(unavailable?"مصدر غير مربوط":"مصدر عام")+'</span></div><div class="direction-row"><div><small>'+(marketClosed?"اتجاه آخر جلسة · 24 ساعة":"اتجاه السوق · 24 ساعة") +'</small><strong>'+esc(snap.direction||"غير متاح")+(snap.side==="BUY"?" · شراء":snap.side==="SELL"?" · بيع":"") +'</strong></div><div><small>الأصول الصاعدة</small><strong class="positive">'+(snap.up??"—")+'</strong></div><div><small>الأصول الهابطة</small><strong class="negative">'+(snap.down??"—")+'</strong></div><div><small>عدد الأصول</small><strong>'+(snap.total??"—")+'</strong></div></div></section>'+engineStamp+tabs+'<div class="section-head"><div><span class="section-kicker">LIVE OPPORTUNITIES · '+esc(timeframe.toUpperCase())+'</span><h2>الصفقات النشطة · '+esc(frameLabel)+'</h2></div><span class="muted-label">'+esc(scanCoverage)+'</span></div><div class="trade-grid" id="tradeCards"></div><p class="data-footnote">آخر فحص: '+esc(sig.updated_at||snap.updated_at||"لم يبدأ بعد")+' · الفريم: '+esc(frameLabel)+' · كل فريم له شموعه وحسابه وأهدافه ووقفه المستقل.</p>';
-  root.querySelectorAll("[data-timeframe]").forEach(button=>button.addEventListener("click",()=>{
-   const next=button.dataset.timeframe;
-   if(!timeframeOptions.some(([value])=>value===next)||next===selectedTimeframe)return;
-   selectedTimeframe=next;
-   marketPage(root,market,version);
-  }));
-  const grid=$("#tradeCards");
-  if(grid)grid.innerHTML=signals.length?signals.map((t,i)=>tradeCard(t,i)).join(""):'<div class="panel empty-state"><b>لا توجد فرص مؤكدة على هذا الفريم حالياً</b><p>'+esc(emptyDetails)+'</p><small class="data-footnote">تم تنفيذ '+Number(sig.analysis_completed||0)+' تحليل · فشل '+Number(sig.analysis_failed||0)+' · توافق النماذج '+Number(sig.strategy_matches||0)+' · شموع قديمة '+Number(sig.rejected_stale_candle||0)+' · دخول متأخر '+Number(sig.rejected_late_price||0)+'</small></div>';
- }catch(e){
-  if(version!==renderVersion||currentPage!==market)return;
-  root.innerHTML='<div class="panel empty-state"><b>تعذر تحميل بيانات السوق</b><p>'+esc(e.message)+'</p><button class="login-btn" id="retryMarket">إعادة المحاولة</button></div>';
-  $("#retryMarket").onclick=()=>openPage(market);
- }
+ const timeframe=selectedTimeframe;
+ const requests=await Promise.allSettled([
+  api("/api/markets/"+market+"/snapshot"),
+  api("/api/markets/"+market+"/signals?timeframe="+encodeURIComponent(timeframe)),
+  api("/api/strategy-status")
+ ]);
+ if(version!==renderVersion||currentPage!==market)return;
+ const snapshotFailed=requests[0].status==="rejected";
+ const signalsFailed=requests[1].status==="rejected";
+ const snap=snapshotFailed?{ok:false,ready:false,direction:"غير متاح",up:null,down:null,total:null,warning:requests[0].reason?.message||"تعذر جلب ملخص السوق"}:requests[0].value;
+ const sig=signalsFailed?{ok:false,signals:[],scan_error:requests[1].reason?.message||"تعذر جلب بيانات الصفقات",data_status:"unavailable"}:requests[1].value;
+ const engine=requests[2].status==="fulfilled"?requests[2].value:null;
+ const unavailable=snap.ready===false;
+ const marketClosed=sig.market_closed===true;
+ const warning=snapshotFailed
+  ?'<div class="notice-bar">تعذّر جلب ملخص السوق: '+esc(snap.warning||"تحقق من اتصال مزود البيانات.")+'</div>'
+  :marketClosed?'<div class="notice-bar">السوق السعودي مغلق حاليًا؛ لا تُنشأ فرص دخول جديدة خارج جلسة التداول.</div>'
+  :sig.scan_error?'<div class="notice-bar">تعذّر تحديث الصفقات: '+esc(sig.scan_error)+' · سيبقى ملخص السوق ظاهرًا.</div>'
+  :sig.stale&&!sig.updated_at?'<div class="notice-bar">لم يكتمل أول فحص ناجح بعد؛ ننتظر دورة الفحص المجدولة.</div>'
+  :sig.stale?'<div class="notice-bar">نتائج هذا الفريم قديمة. ننتظر تحديث الفحص المجدول.</div>':"";
+ const signals=sig.signals||[];
+ const frameLabel=(timeframeOptions.find(x=>x[0]===timeframe)||[])[1]||timeframe;
+ const scanCoverage=sig.scan_universe==null?"نتائج آخر فحص محفوظة":Number(sig.scan_universe)+" أصل في القائمة · تم تحليل "+Number(sig.analysis_completed||0)+" في الدفعة الأخيرة";
+ const emptyDetails=(()=>{
+  if(signalsFailed)return "تعذر الاتصال بواجهة الصفقات لهذا السوق. تفاصيل الخطأ: "+(sig.scan_error||"غير متاحة")+". اتجاه السوق معروض بشكل مستقل إن توفرت بياناته.";
+  if(snapshotFailed&&!sig.updated_at)return "تعذر جلب بيانات ملخص السوق والصفقات. تفاصيل ملخص السوق: "+(snap.warning||"غير متاحة")+".";
+  if(marketClosed)return "السوق السعودي يعمل من الأحد إلى الخميس؛ التداول المستمر من 10 صباحًا إلى 3 مساءً بتوقيت الرياض. لا تُنشأ فرص دخول جديدة أثناء الإغلاق.";
+  if(!sig.updated_at)return "لم يكتمل فحص ناجح لهذا السوق بعد.";
+  if(sig.stale)return "نتائج الفحص قديمة؛ لن نعرض فرصاً قديمة على أنها فرص حالية.";
+  const completed=Number(sig.analysis_completed||0),failed=Number(sig.analysis_failed||0);
+  const matches=Number(sig.strategy_matches||0),fresh=Number(sig.fresh_matches||0);
+  if(completed===0)return "لم تُحلّل أي شموع بنجاح. تحقق من مصدر البيانات لهذا السوق.";
+  if(failed>0&&completed<failed)return "بعض طلبات الشموع فشلت؛ راجع اتصال مزود البيانات.";
+  if(matches===0)return "اكتمل فحص "+completed+" تحليل، لكن لم تتوافق شروط النماذج على شمعة مغلقة.";
+  if(fresh===0)return "ظهرت "+matches+" إعدادات، لكنها استُبعدت بسبب قدم الشمعة أو ابتعاد السعر عن الدخول.";
+  return "لا توجد فرصة اجتازت جميع شروط التأكيد حالياً.";
+ })();
+ const tabs='<div class="timeframe-tabs" role="group" aria-label="فريم التحليل">'+timeframeOptions.map(([value,label])=>'<button type="button" class="timeframe-tab'+(value===timeframe?' active':'')+'" data-timeframe="'+value+'" aria-pressed="'+(value===timeframe?'true':'false')+'" title="'+esc(label)+'">'+value+'</button>').join('')+'</div>';
+ const engineData=engine?{engine:engine.engine,fingerprint:engine.strategy_fingerprint||engine.fingerprint,strategy_ready:engine.strategy_ready}:(sig.engine&&(sig.strategy_fingerprint||sig.fingerprint)?{engine:sig.engine,fingerprint:sig.strategy_fingerprint||sig.fingerprint}:null);
+ const installed=!!(engineData&&String(engineData.fingerprint||"").startsWith("SMART-REGIME-ADAPTIVE-ENSEMBLE-MTF-")&&engineData.engine==="SMART TRADING PRO"&&engineData.strategy_ready!==false);
+ const legacyLabel=engine&&typeof engine.legacy_removed==="boolean"?(engine.legacy_removed?"القديم مستبدل":"جارٍ إيقاف الصفقات القديمة"):"المحرك مطابق";
+ const engineStamp=installed?'<div class="engine-fingerprint"><span class="engine-led"></span><b>بصمة المحرك: '+esc(engineData.fingerprint)+'</b><span>7 أسواق · 6 فريمات مستقلة</span><span class="'+(engine&&engine.legacy_removed?"engine-clean":"engine-pending")+'">'+legacyLabel+'</span></div>':'<div class="engine-fingerprint engine-pending">تعذر تأكيد بصمة المحرك من واجهات الخادم الحالية</div>';
+ root.innerHTML=warning+'<section class="panel market-summary"><div class="panel-head"><div><span class="section-kicker">'+esc(market.toUpperCase())+'</span><h2>'+esc(marketNames[market])+'</h2></div><span class="status-pending">'+(unavailable?"مصدر غير متاح":"مصدر عام")+'</span></div><div class="direction-row"><div><small>'+(marketClosed?"اتجاه آخر جلسة · 24 ساعة":"اتجاه السوق · 24 ساعة") +'</small><strong>'+esc(snap.direction||"غير متاح")+(snap.side==="BUY"?" · شراء":snap.side==="SELL"?" · بيع":"") +'</strong></div><div><small>الأصول الصاعدة</small><strong class="positive">'+(snap.up??"—")+'</strong></div><div><small>الأصول الهابطة</small><strong class="negative">'+(snap.down??"—")+'</strong></div><div><small>عدد الأصول</small><strong>'+(snap.total??"—")+'</strong></div></div></section>'+engineStamp+tabs+'<div class="section-head"><div><span class="section-kicker">LIVE OPPORTUNITIES · '+esc(timeframe.toUpperCase())+'</span><h2>الصفقات النشطة · '+esc(frameLabel)+'</h2></div><span class="muted-label">'+esc(scanCoverage)+'</span></div><div class="trade-grid" id="tradeCards"></div><p class="data-footnote">آخر فحص: '+esc(sig.updated_at||snap.updated_at||"لم يبدأ بعد")+' · الفريم: '+esc(frameLabel)+' · كل فريم له شموعه وحسابه وأهدافه ووقفه المستقل.</p>';
+ root.querySelectorAll("[data-timeframe]").forEach(button=>button.addEventListener("click",()=>{
+  const next=button.dataset.timeframe;
+  if(!timeframeOptions.some(([value])=>value===next)||next===selectedTimeframe)return;
+  selectedTimeframe=next;
+  marketPage(root,market,version);
+ }));
+ const grid=$("#tradeCards");
+ if(grid)grid.innerHTML=signals.length?signals.map((t,i)=>tradeCard(t,i)).join(""):'<div class="panel empty-state"><b>لا توجد فرص مؤكدة على هذا الفريم حالياً</b><p>'+esc(emptyDetails)+'</p><small class="data-footnote">تم تنفيذ '+Number(sig.analysis_completed||0)+' تحليل · فشل '+Number(sig.analysis_failed||0)+' · توافق النماذج '+Number(sig.strategy_matches||0)+' · شموع قديمة '+Number(sig.rejected_stale_candle||0)+' · دخول متأخر '+Number(sig.rejected_late_price||0)+'</small><button class="login-btn" id="retryMarket">إعادة المحاولة</button></div>';
+ const retry=$("#retryMarket");if(retry)retry.onclick=()=>marketPage(root,market,version);
 }
 function tradeCard(t,index=99){
  const buy=t.side==="BUY";
