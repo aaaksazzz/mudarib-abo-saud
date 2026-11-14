@@ -397,11 +397,7 @@ def compat_styles(): return send_from_directory(".", "compat.css")
 def strategy_status():
     # Public status intentionally omits proprietary strategy names, rules and fingerprints.
     return jsonify({"ok":True,"engine":"SMART TRADING PRO","manual_only":True})
-
-@app.get("/health")
-def health():
-    return jsonify({"ok":True,"service":"SMART TRADING PRO","time":iso(utcnow())})
-
+@app.get("/health")def health():    return jsonify({"ok":True,"service":"SMART TRADING PRO","time":iso(utcnow())})
 def persistent_database_configured(dialect,database_path,data_dir):
     """Accept PostgreSQL or SQLite physically located inside an absolute DATA_DIR."""
     if dialect=="postgresql":
@@ -753,18 +749,23 @@ STRATEGY_FINGERPRINT=market_strategies.STRATEGY_FINGERPRINT
 def strategy_status_summary():
     active_current=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.like("BREAKOUT-FVG MTF:%")
+        Trade.reason.like("FALSE-SWEEP MTF:%")
     ).count()
     active_legacy=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
         Trade.reason.like("SMART FLOW MTF QUANT:%")
     ).count()
-    # Keep operational readiness while withholding proprietary strategy details.
+    diagnostic=market_strategies.diagnostic_self_test()
+    active_scheduler=globals().get("scheduler")
     return jsonify({
         "ok":True,"engine":"SMART TRADING PRO",
         "current_active":active_current,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
-        "strategy_ready":True
+        "strategy_fingerprint":market_strategies.STRATEGY_FINGERPRINT,
+        "strategy_ready":bool(diagnostic.get("ok")),
+        "strategy_checks":diagnostic.get("checks",{}),
+        "auto_scan_enabled":bool(globals().get("AUTO_SCAN_ENABLED",False)),
+        "scheduler_running":bool(active_scheduler and active_scheduler.running)
     })
 
 
@@ -781,7 +782,7 @@ def build_signal(market,item,timeframe):
     if not setup:
         return None
     setup["signal_timeframe"]=timeframe
-    setup["reason"]="BREAKOUT-FVG MTF: independent "+timeframe+" swing breakout and FVG; "+setup.get("reason","")
+    setup["reason"]="FALSE-SWEEP MTF: legacy-compatible storage tag; FALSE-SWEEP confirmation on "+timeframe+"; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -797,14 +798,10 @@ def filter_fresh_signals(signals, universe, now=None):
             if item.get("symbol") and math.isfinite(price) and price>0:
                 live_prices[item["symbol"]]=price
         except (TypeError,ValueError):
-            continue
-    accepted=[]
-    rejected_old=0
-    rejected_moved=0
-    for signal in signals:
-        try:
-            candle_time=int(signal.get("signal_candle_time") or 0)
-            candle_entry=float(signal.get("entry") or 0)
+            continue    accepted=[]
+    rejected_old=0    rejected_moved=0
+    for signal in signals:        try:
+            candle_time=int(signal.get("signal_candle_time") or 0)            candle_entry=float(signal.get("entry") or 0)
             stop=float(signal.get("stop") or 0)
             old_tp1=float(signal.get("tp1") or 0)
             current=live_prices.get(signal.get("symbol"))
@@ -849,7 +846,7 @@ def filter_fresh_signals(signals, universe, now=None):
                 rejected_moved+=1
                 continue
             signal["entry"]=current
-            signal["tp1"]=old_tp1
+            signal["tp1"]=targets[0]
             signal["tp2"],signal["tp3"]=targets[1],targets[2]
             signal["risk_distance"]=live_risk
             signal["entry_price_source"]="live_market_quote"
@@ -1034,15 +1031,15 @@ def run_market_scan(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             all_frames_current=all(
-                db.session.get(Setting,f"scan-frame:breakout-fvg:{market}:{frame}") is not None
-                and db.session.get(Setting,f"scan-frame:breakout-fvg:{market}:{frame}").value==str(timeframe_bucket(frame,now))
+                db.session.get(Setting,f"scan-frame:false-sweep:{market}:{frame}") is not None
+                and db.session.get(Setting,f"scan-frame:false-sweep:{market}:{frame}").value==str(timeframe_bucket(frame,now))
                 for frame in market_scan_timeframes(market)
             )
             # Throttle repeated failed/partial provider scans too. A healthy
             # scan is cached for 15 minutes; an incomplete scan is retried after
             # two minutes without making every page request launch 100s of calls.
             if last>now-timedelta(minutes=2) or (last>now-timedelta(minutes=15) and all_frames_current):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("BREAKOUT-FVG MTF:%")).order_by(Trade.score.desc()).limit(18).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("FALSE-SWEEP MTF:%")).order_by(Trade.score.desc()).limit(18).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
                     meta=json.loads(meta_row.value) if meta_row else {}
@@ -1057,7 +1054,7 @@ def run_market_scan(market,force=False):
     for frame in scan_frames:
         bucket=timeframe_bucket(frame,now)
         frame_buckets[frame]=bucket
-        frame_row=db.session.get(Setting,f"scan-frame:breakout-fvg:{market}:{frame}")
+        frame_row=db.session.get(Setting,f"scan-frame:false-sweep:{market}:{frame}")
         if frame_row is None or frame_row.value!=str(bucket):
             frames_to_scan.append(frame)
     if not frames_to_scan:
@@ -1158,7 +1155,7 @@ def run_market_scan(market,force=False):
         active=Trade.query.filter(
             Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
             Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-            Trade.reason.like("BREAKOUT-FVG MTF:%")
+            Trade.reason.like("FALSE-SWEEP MTF:%")
         ).order_by(Trade.score.desc()).limit(18).all()
         return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],
                 "updated_at":iso(now),"cached":False,"data_status":"unavailable",
@@ -1193,26 +1190,22 @@ def run_market_scan(market,force=False):
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("BREAKOUT-FVG MTF:%"),
+        Trade.reason.like("FALSE-SWEEP MTF:%"),
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
-    for trade in existing_rows:
-        marker=trade.reason.rsplit("bar_ts=",1)[-1] if "bar_ts=" in trade.reason else ""
+    for trade in existing_rows:        marker=trade.reason.rsplit("bar_ts=",1)[-1] if "bar_ts=" in trade.reason else ""
         if marker:
-            existing_by_key[(trade.symbol,trade.timeframe,marker)]=trade
-    retained_ids=set()
+            existing_by_key[(trade.symbol,trade.timeframe,marker)]=trade    retained_ids=set()
     new_signals=[]
-    for frame in frames_to_scan:
-        frame_signals=sorted(
+    for frame in frames_to_scan:        frame_signals=sorted(
             (x for x in found if x["timeframe"]==frame),
-            key=lambda x:(x["score"],x.get("quote_volume",0)),
-            reverse=True,
+            key=lambda x:(x["score"],x.get("quote_volume",0)),            reverse=True,
         )
         for signal in frame_signals[:3]:
             marker=str(signal["signal_candle_time"])
             key=(signal["symbol"],frame,marker)
-            setting_key=f"signal-candle:breakout-fvg:{market}:{signal['symbol']}:{frame}"
+            setting_key=f"signal-candle:false-sweep:{market}:{signal['symbol']}:{frame}"
             candle_row=db.session.get(Setting,setting_key)
             previous=existing_by_key.get(key)
             if candle_row and candle_row.value==marker:
@@ -1227,9 +1220,9 @@ def run_market_scan(market,force=False):
             new_signals.append(signal)
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("BREAKOUT-FVG MTF:%")).update({"status":"superseded"},synchronize_session=False)
+        Trade.reason.not_like("FALSE-SWEEP MTF:%")).update({"status":"superseded"},synchronize_session=False)
     active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.timeframe.in_(frames_to_scan),Trade.reason.like("BREAKOUT-FVG MTF:%"))
+        Trade.timeframe.in_(frames_to_scan),Trade.reason.like("FALSE-SWEEP MTF:%"))
     if retained_ids:
         active_query=active_query.filter(~Trade.id.in_(retained_ids))
     active_query.update({"status":"superseded"},synchronize_session=False)
@@ -1260,7 +1253,7 @@ def run_market_scan(market,force=False):
     else:
         cursor_row.value=str(next_cursor)
     for frame in frames_to_scan:
-        frame_key=f"scan-frame:breakout-fvg:{market}:{frame}"
+        frame_key=f"scan-frame:false-sweep:{market}:{frame}"
         frame_row=db.session.get(Setting,frame_key)
         bucket_value=str(frame_buckets[frame])
         if frame_row is None:
@@ -1293,7 +1286,7 @@ def run_market_scan(market,force=False):
         else:
             frame_meta_row.value=frame_meta
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("BREAKOUT-FVG MTF:%")).order_by(Trade.score.desc()).limit(18).all()
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("FALSE-SWEEP MTF:%")).order_by(Trade.score.desc()).limit(18).all()
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
             "scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
             "analysis_completed":completed,"analysis_failed":failed,"strategy_matches":strategy_matches,
@@ -1597,20 +1590,16 @@ def provision_admin_from_env():
         db.session.commit()
         app.logger.info("Initial administrator provisioned from deployment environment")
         return
-    if email_owner is not None and email_owner.id!=admin.id:
-        app.logger.error("Configured ADMIN_EMAIL is already used by another account; admin email was not changed")
+    if email_owner is not None and email_owner.id!=admin.id:        app.logger.error("Configured ADMIN_EMAIL is already used by another account; admin email was not changed")
     else:
         admin.email=admin_email
-    admin.password_hash=generate_password_hash(admin_password)
-    admin.active=True
+    admin.password_hash=generate_password_hash(admin_password)    admin.active=True
     admin.subscription_plan="admin"
     db.session.commit()
     app.logger.info("Existing administrator credentials synchronized from deployment environment")
-
 with app.app_context():
     db.create_all()
-    # Forward-only schema migration for existing production databases.
-    trade_columns={column["name"] for column in inspect(db.engine).get_columns(Trade.__tablename__)}
+    # Forward-only schema migration for existing production databases.    trade_columns={column["name"] for column in inspect(db.engine).get_columns(Trade.__tablename__)}
     if "change_15m_pct" not in trade_columns:
         with db.engine.begin() as connection:
             connection.execute(text(f"ALTER TABLE {Trade.__tablename__} ADD COLUMN change_15m_pct FLOAT"))
@@ -1704,8 +1693,8 @@ def market_scan_initial_delay_seconds(index):
     return SCAN_INITIAL_DELAY_SECONDS+max(0,int(index))*spacing
 
 
-# The previous SMA200/liquidity-sweep scheduler is permanently retired.
-AUTO_SCAN_ENABLED=False
+# Run the active false-sweep strategy on the staggered 15-minute market schedule.
+AUTO_SCAN_ENABLED=True
 scheduler=None
 if AUTO_SCAN_ENABLED:
     # One scheduler worker prevents seven markets from launching together on

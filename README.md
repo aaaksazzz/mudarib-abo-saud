@@ -17,15 +17,14 @@ Production-oriented market intelligence terminal.
 - **Tadawul:** public Saudi Exchange data is preferred, with Yahoo, a public ticker directory and TradingView fallbacks. Saudi equities are not filtered by the $1M threshold; public-feed coverage can be incomplete during provider restrictions.
 - **Forex & Gold:** public Yahoo symbol list; FX tick volume is not represented as exchange-traded dollar volume.
 
-## Active engine: BREAKOUT + MANDATORY FVG · independent multi-timeframe analysis
-- Every market is analysed independently on 15m, 1h, 4h, 1d, 1w and 1M candles. No lower-timeframe direction gate is shared between frames.
-- A BUY requires a confirmed swing-high breakout by a completed candle and a bullish three-candle Fair Value Gap (FVG) below the current price. No bullish FVG means no BUY signal.
-- A SELL requires a confirmed swing-low breakdown by a completed candle and a bearish three-candle FVG above the current price. No bearish FVG means no SELL signal.
-- BUY stop is below the nearest confirmed structural low under the FVG, with a volatility buffer; the primary target is the next prior confirmed swing high above entry.
-- SELL stop is above the nearest confirmed structural high above the FVG, with a volatility buffer; the primary target is the next prior confirmed swing low below entry.
-- Only completed candles are used. Bullish BUY and mirrored bearish SELL setups are detected across all seven markets. On Spot, Alpha and equities, SELL is a manual exit/bearish signal, not a short-sale or automatic order.
-- The UI retains additional risk-ladder fields for compatibility; TP1 represents the structural prior-swing target. Fees, spread and slippage can affect realized reward/risk.
-- No account API keys or automatic order execution are used. A setup is not guaranteed to occur on every asset or timeframe; empty timeframe groups mean the mandatory conditions were not fully met.
+## Active engine: FALSE BREAKOUT / LIQUIDITY SWEEP · independent multi-timeframe analysis
+- Every market is analysed independently on 15m, 1h, 4h, 1d, 1w and 1M completed candles.
+- A BUY requires a sweep below the prior 20-candle low, a bullish reclaim close back above that level, and a later completed candle closing above the sweep candle high.
+- A SELL mirrors the rule: sweep above the prior 20-candle high, bearish reclaim close back below it, then a later completed candle closes below the sweep candle low.
+- The stop is placed beyond the actual sweep extreme with an ATR/price buffer; setups with invalid, excessively wide or wrong-side risk are rejected.
+- TP1, TP2 and TP3 are recalculated from the live entry at 1R, 2R and 3R respectively. A stale or already-extended entry is rejected before publication.
+- The setup score is a rule-based quality score, not a statistically calibrated win probability. No profitability claim is made without reproducible out-of-sample backtests after fees and slippage.
+- No FVG requirement remains in the active strategy. No account API keys or automatic order execution are used. Spot/Alpha/equity SELL signals are bearish/manual-exit signals, not short-sale or automatic orders.
 
 ## Signal engine
 - Each successful timeframe scan replaces that timeframe's live batch, keeping up to three opportunities per market per timeframe. Previous rows remain in trade history and expire after 24 hours.
@@ -39,7 +38,7 @@ Production-oriented market intelligence terminal.
 - Expose port 8080.
 - Prefer a persistent PostgreSQL database through `DATABASE_URL`. SQLite is acceptable only when `DATA_DIR` points to a persistent mounted volume; the default local SQLite path is not production-durable.
 - Configure a persistent random `SECRET_KEY` and `COOKIE_SECURE=true`. The public sentiment dashboard scans on demand and does not require the legacy market scheduler.
-- The retired SMA200/liquidity-sweep scheduler is disabled by default. Do not set `ENABLE_LEGACY_AUTO_SCAN=true` unless intentionally restoring the legacy scanner for diagnostics. The active BREAKOUT-FVG engine scans each configured timeframe independently.
+- The active false-sweep scanner runs on a staggered 15-minute schedule across markets. It uses public candle data and paper/manual signals only.
 - `/ready` requires a durable database configuration (PostgreSQL or an explicitly configured `DATA_DIR` volume) and a persistent `SECRET_KEY`; no background market scheduler is required.
 - Configure `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` (14+ characters) before first boot if first-admin provisioning is needed.
 - Never commit or share secrets. Rotate credentials after any security incident and update them at the provider and deployment environment.
