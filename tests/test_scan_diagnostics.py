@@ -57,6 +57,14 @@ class ScanDiagnosticsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers.get("Location"), "/intelligence")
 
+    def test_market_routes_serve_the_six_timeframe_terminal(self):
+        response = platform_app.app.test_client().get("/market/futures")
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn('id="timeframeFilters"', page)
+        self.assertIn("/intelligence.js?", page)
+        self.assertNotIn('id="dynamicContent"', page)
+
     def test_legacy_market_signals_route_uses_current_scanner_and_filters_frame(self):
         current = {
             "signals": [
