@@ -398,7 +398,6 @@ def strategy_status():
     # Public status intentionally omits proprietary strategy names, rules and fingerprints.
     return jsonify({"ok":True,"engine":"SMART TRADING PRO","manual_only":True})
 @app.get("/health")def health():    return jsonify({"ok":True,"service":"SMART TRADING PRO","time":iso(utcnow())})
-
 def persistent_database_configured(dialect,database_path,data_dir):
     """Accept PostgreSQL or SQLite physically located inside an absolute DATA_DIR."""
     if dialect=="postgresql":
@@ -756,12 +755,17 @@ def strategy_status_summary():
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
         Trade.reason.like("SMART FLOW MTF QUANT:%")
     ).count()
-    # Keep operational readiness while withholding proprietary strategy details.
+    diagnostic=market_strategies.diagnostic_self_test()
+    active_scheduler=globals().get("scheduler")
     return jsonify({
         "ok":True,"engine":"SMART TRADING PRO",
         "current_active":active_current,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
-        "strategy_ready":True
+        "strategy_fingerprint":market_strategies.STRATEGY_FINGERPRINT,
+        "strategy_ready":bool(diagnostic.get("ok")),
+        "strategy_checks":diagnostic.get("checks",{}),
+        "auto_scan_enabled":bool(globals().get("AUTO_SCAN_ENABLED",False)),
+        "scheduler_running":bool(active_scheduler and active_scheduler.running)
     })
 
 
@@ -797,8 +801,7 @@ def filter_fresh_signals(signals, universe, now=None):
             continue    accepted=[]
     rejected_old=0    rejected_moved=0
     for signal in signals:        try:
-            candle_time=int(signal.get("signal_candle_time") or 0)
-            candle_entry=float(signal.get("entry") or 0)
+            candle_time=int(signal.get("signal_candle_time") or 0)            candle_entry=float(signal.get("entry") or 0)
             stop=float(signal.get("stop") or 0)
             old_tp1=float(signal.get("tp1") or 0)
             current=live_prices.get(signal.get("symbol"))
@@ -1197,8 +1200,7 @@ def run_market_scan(market,force=False):
     new_signals=[]
     for frame in frames_to_scan:        frame_signals=sorted(
             (x for x in found if x["timeframe"]==frame),
-            key=lambda x:(x["score"],x.get("quote_volume",0)),
-            reverse=True,
+            key=lambda x:(x["score"],x.get("quote_volume",0)),            reverse=True,
         )
         for signal in frame_signals[:3]:
             marker=str(signal["signal_candle_time"])
@@ -1597,8 +1599,7 @@ def provision_admin_from_env():
     app.logger.info("Existing administrator credentials synchronized from deployment environment")
 with app.app_context():
     db.create_all()
-    # Forward-only schema migration for existing production databases.
-    trade_columns={column["name"] for column in inspect(db.engine).get_columns(Trade.__tablename__)}
+    # Forward-only schema migration for existing production databases.    trade_columns={column["name"] for column in inspect(db.engine).get_columns(Trade.__tablename__)}
     if "change_15m_pct" not in trade_columns:
         with db.engine.begin() as connection:
             connection.execute(text(f"ALTER TABLE {Trade.__tablename__} ADD COLUMN change_15m_pct FLOAT"))
