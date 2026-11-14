@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 import requests
 from functools import lru_cache
+from public_data_routing import request_json as routed_request_json
 from saudi_market_data import official_saudi_quotes
 
 YAHOO_HOSTS=("https://query1.finance.yahoo.com","https://query2.finance.yahoo.com")
@@ -54,10 +55,9 @@ FX_SYMBOLS=[
 ]
 
 def _get(url,params=None):
-    response=requests.get(url,params=params,headers=HEADERS,timeout=(3.05,10))
-    response.raise_for_status()
-    payload=response.json()
-    if not isinstance(payload,dict): raise ValueError("Invalid market-data response")
+    payload=routed_request_json(url,params=params,headers=HEADERS,timeout=(3.05,10))
+    if not isinstance(payload,dict):
+        raise ValueError("Invalid market-data response")
     return payload
 
 def _chart(symbol,interval="15m",period=None):
