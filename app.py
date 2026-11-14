@@ -655,7 +655,9 @@ def provider_status(m):
     route_state=provider_route_status().get(route) if route else None
     return {**item,"configured":True,"health":"not_probed",
             "health_note":"Connectivity is checked during real fetches; status here reports configured routes.",
-            "rotation_policy":"rotate_preferred_host_after_20_successful_fetches",
+            "rotation_policy":("rotate_preferred_host_after_20_successful_fetches"
+                               if route_state and route_state.get("rotation_enabled")
+                               else "single_public_host_no_mirror"),
             "rotation":route_state,"requires_api_key":False,"access":"public_no_key",
             "analysis":"regime_adaptive_trend_range_mtf"}
 
