@@ -55,6 +55,7 @@ class RegimeAdaptiveStrategyTests(unittest.TestCase):
         opens = closes[:]
         highs = [value + 0.4 for value in closes]
         lows = [value - 0.4 for value in closes]
+        closes[-1] = closes[-2] + 0.2
         opens[-1] = closes[-1] - 0.3
         highs[-1] = closes[-1] + 0.4
         lows[-1] = closes[-1] - 0.5
