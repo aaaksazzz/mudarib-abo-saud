@@ -1084,6 +1084,15 @@ def market_scan_timeframes(market):
     return market_strategies.TIMEFRAMES
 
 
+def align_signals_with_market_bias(signals, market_bias):
+    """Return only signals aligned with breadth direction and count rejected rows."""
+    rows=list(signals or [])
+    if market_bias not in ("BUY","SELL"):
+        return rows,0
+    aligned=[signal for signal in rows if signal.get("side")==market_bias]
+    return aligned,len(rows)-len(aligned)
+
+
 def run_market_scan(market,force=False):
     if market not in MARKETS:
         raise ValueError("Unknown market "+str(market))
@@ -1266,11 +1275,7 @@ def run_market_scan(market,force=False):
     # Enforce the broad market breadth direction: a bearish market publishes
     # SELL setups only; a bullish market publishes BUY setups only. Neutral
     # breadth does not invent a directional filter.
-    direction_rejected=0
-    if market_bias in ("BUY","SELL"):
-        aligned=[signal for signal in found if signal.get("side")==market_bias]
-        direction_rejected=len(found)-len(aligned)
-        found=aligned
+    found,direction_rejected=align_signals_with_market_bias(found,market_bias)
     app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,len(found),
                     freshness["rejected_stale_candle"],freshness["rejected_late_price"],market_bias)
