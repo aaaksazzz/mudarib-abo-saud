@@ -2,6 +2,7 @@ import csv
 import io
 import math
 import time
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 import requests
 from functools import lru_cache
@@ -549,6 +550,34 @@ def _aggregate_4h(rows):
     return [buckets[key] for key in sorted(buckets)]
 
 
+def _aggregate_monthly(rows):
+    """Aggregate real weekly OHLCV candles into UTC calendar-month candles."""
+    buckets={}
+    for row in rows or []:
+        if not isinstance(row,(list,tuple)) or len(row)<6:
+            continue
+        try:
+            stamp=int(float(row[0]))
+            op,hi,lo,cl,vol=(float(row[i]) for i in range(1,6))
+            if not all(math.isfinite(x) for x in (op,hi,lo,cl,vol)):
+                continue
+            dt=datetime.fromtimestamp(stamp/1000,timezone.utc)
+            key=(dt.year,dt.month)
+        except (TypeError,ValueError,OverflowError,OSError):
+            continue
+        item=buckets.setdefault(key,{"first":stamp,"open":op,"high":hi,"low":lo,"close":cl,"volume":0.0})
+        item["high"]=max(item["high"],hi)
+        item["low"]=min(item["low"],lo)
+        if stamp<item["first"]:
+            item["first"]=stamp
+            item["open"]=op
+        # Input rows are chronological in the public provider response.
+        item["close"]=cl
+        item["volume"]+=max(0.0,vol)
+    return [[v["first"],v["open"],v["high"],v["low"],v["close"],v["volume"]]
+            for _,v in sorted(buckets.items())]
+
+
 def klines(market,symbol,interval="15m",limit=250):
     yahoo_map={"1m":"1m","15m":"15m","1h":"60m","1d":"1d","1w":"1wk","1M":"1mo"}
     alpha_map={"1m":"1m","15m":"15m","1h":"1h","4h":"4h",
@@ -556,13 +585,22 @@ def klines(market,symbol,interval="15m",limit=250):
     if interval not in ("1m","15m","1h","4h","1d","1w","1M"):
         raise ValueError("Unsupported timeframe "+str(interval))
     if market=="alpha":
-        payload=_get(BINANCE_ALPHA+"/bapi/defi/v1/public/alpha-trade/klines",{"symbol":symbol,"interval":alpha_map[interval],"limit":limit})
+        # Binance Alpha's monthly interval can return empty history even while
+        # weekly candles are available. Build true UTC calendar-month OHLCV
+        # from provider weekly candles; never fabricate or interpolate bars.
+        requested_interval="1w" if interval=="1M" else alpha_map[interval]
+        requested_limit=min(1000,limit*5) if interval=="1M" else limit
+        payload=_get(BINANCE_ALPHA+"/bapi/defi/v1/public/alpha-trade/klines",
+                     {"symbol":symbol,"interval":requested_interval,"limit":requested_limit})
         data=payload.get("data") or []
         rows=[]
         for item in data:
             vals=[item.get(k) for k in ("openTime","open","high","low","close","volume")] if isinstance(item,dict) else item
             if vals and len(vals)>=6:
                 rows.append([int(float(vals[0])),*[float(v or 0) for v in vals[1:6]]])
+        rows.sort(key=lambda row:row[0])
+        if interval=="1M":
+            rows=_aggregate_monthly(rows)
         return rows[-limit:]
     if market in ("spot","futures"):
         base=BINANCE_FUTURES if market=="futures" else BINANCE_SPOT
