@@ -203,3 +203,15 @@ body.light .market-overview-direction>span,body.light .market-overview-direction
 @media(max-width:600px){.market-card{min-height:169px}.market-overview-direction{gap:5px}.market-overview-direction small{font-size:8px}}
 
 .market-card.market-open:focus-visible{outline:2px solid #65dcb6;outline-offset:3px}
+
+
+/* Visible timeframe buttons used by market pages */
+.timeframe-tabs{display:flex!important;align-items:stretch;gap:8px;width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden;padding:8px 2px 12px;margin:12px 0 14px;visibility:visible!important;opacity:1!important;position:relative;z-index:2}
+.timeframe-tab{display:inline-flex!important;flex:1 0 0;min-width:0;min-height:44px;align-items:center;justify-content:center;gap:7px;border:1px solid #34506a;border-radius:10px;background:#101c2b;color:#d5e3f1;padding:9px 8px;font:700 12px system-ui,sans-serif;cursor:pointer}
+.timeframe-tab b{font-size:12px;color:#8de8c9}
+.timeframe-tab span{font-size:10px;white-space:nowrap}
+.timeframe-tab.active{background:#164638;border-color:#43d6ad;color:#fff;box-shadow:0 0 0 1px #43d6ad35}
+.timeframe-tab:focus-visible{outline:2px solid #75a7ff;outline-offset:2px}
+body.light .timeframe-tab{background:#f3f7fa;color:#40556a;border-color:#cbd8e4}
+body.light .timeframe-tab.active{background:#e4f7ef;color:#126c54;border-color:#43b88f}
+@media(max-width:600px){.timeframe-tabs{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;overflow:visible;padding:7px 0 12px}.timeframe-tab{width:100%;min-width:0;min-height:46px;padding:7px 4px;flex-wrap:wrap;gap:3px}.timeframe-tab b{font-size:12px}.timeframe-tab span{font-size:9px}}
