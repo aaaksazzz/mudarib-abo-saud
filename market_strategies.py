@@ -171,7 +171,7 @@ def target_prices(entry, side, stop=None):
     return values if all(math.isfinite(v) and v > 0 for v in values) else None
 
 
-def _trend_signal(highs, lows, closes, ema_fast, ema_slow, atr, periods):
+def _trend_signal(highs, lows, closes, ema_fast, ema_slow, atr, periods=CHANNEL_PERIODS):
     votes = []
     current = closes[-1]
     buffer = max(atr * 0.05, current * 1e-8)
@@ -200,7 +200,7 @@ def _trend_signal(highs, lows, closes, ema_fast, ema_slow, atr, periods):
     return side, [v[1] for v in chosen], "TREND_BREAKOUT"
 
 
-def _range_signal(opens, highs, lows, closes, period):
+def _range_signal(opens, highs, lows, closes, period=20):
     """Fade only a confirmed rejection at the timeframe's outer range."""
     upper = max(highs[-period - 1:-1])
     lower = min(lows[-period - 1:-1])
