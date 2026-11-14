@@ -780,6 +780,53 @@ def strategy_status_summary():
     })
 
 
+def scan_failure_code(exc):
+    """Return a safe, low-cardinality reason; never log provider URLs or payloads."""
+    if isinstance(exc, requests.exceptions.Timeout):
+        return "provider_timeout"
+    if isinstance(exc, requests.exceptions.HTTPError):
+        status=getattr(getattr(exc,"response",None),"status_code",None)
+        if status==429:
+            return "provider_rate_limited"
+        if status in (401,403):
+            return "provider_forbidden"
+        if status==404:
+            return "provider_not_found"
+        if isinstance(status,int) and status>=500:
+            return "provider_server_error"
+        return "provider_http_error"
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return "provider_connection_error"
+    message=str(exc or "").casefold()
+    if "unsupported timeframe" in message:
+        return "unsupported_timeframe"
+    if any(token in message for token in ("no candles","no valid","empty candle","insufficient candles","no yahoo candles")):
+        return "insufficient_history"
+    if "429" in message or "rate limit" in message or "too many requests" in message:
+        return "provider_rate_limited"
+    if "403" in message or "forbidden" in message:
+        return "provider_forbidden"
+    if "404" in message or "not found" in message:
+        return "provider_not_found"
+    if "timed out" in message or "timeout" in message:
+        return "provider_timeout"
+    if "connection" in message or "network" in message:
+        return "provider_connection_error"
+    if isinstance(exc,ValueError):
+        return "invalid_or_missing_provider_data"
+    return "analysis_error"
+
+
+def record_scan_failure(frame_stats,frame,item,code):
+    stats=frame_stats[frame]
+    reasons=stats.setdefault("failure_reasons",{})
+    reasons[code]=reasons.get(code,0)+1
+    samples=stats.setdefault("failure_samples",[])
+    if len(samples)<5:
+        samples.append({"symbol":str((item or {}).get("symbol") or "unknown")[:40],
+                        "timeframe":frame,"reason":code})
+
+
 def build_signal(market,item,timeframe):
     # Each market and timeframe is analysed independently from its own closed candles.
     symbol=item["symbol"]
@@ -787,11 +834,14 @@ def build_signal(market,item,timeframe):
     # Provider coverage varies by symbol/timeframe. Raise a sample error;
     # scanner counts sparse samples without a traceback for every symbol.
     if not isinstance(rows,list) or len(rows)<41:
-        # Sparse provider history is an expected per-symbol condition (new listings,
-        # unavailable intervals, or transient partial responses). Return a sentinel
-        # so the scanner can count coverage without raising noisy tracebacks.
-        return {"_data_incomplete":True,
-                "_candles_received":len(rows) if isinstance(rows,list) else 0}
+        # Preserve the real sample count and distinguish empty responses from
+        # genuinely short histories; never manufacture candles or weaken the rule.
+        received=len(rows) if isinstance(rows,list) else 0
+        reason=("invalid_candle_payload" if not isinstance(rows,list)
+                else "empty_candle_response" if received==0
+                else "insufficient_history")
+        return {"_data_incomplete":True,"_candles_received":received,
+                "_diagnostic_code":reason}
     setup=market_strategies.analyze(market,symbol,rows,timeframe=timeframe)
     if not setup:
         return None
@@ -1104,7 +1154,8 @@ def run_market_scan(market,force=False):
     completed=0
     failed=0
     with ThreadPoolExecutor(max_workers=8) as pool:
-        frame_stats={frame:{"completed":0,"failed":0,"matches":0} for frame in frames_to_scan}
+        frame_stats={frame:{"completed":0,"failed":0,"matches":0,
+                              "failure_reasons":{},"failure_samples":[]} for frame in frames_to_scan}
         futures={pool.submit(build_signal,market,item,frame):(item,frame) for item in candidates for frame in frames_to_scan}
         for future in as_completed(futures):
             item,frame=futures[future]
@@ -1113,7 +1164,7 @@ def run_market_scan(market,force=False):
                 if isinstance(signal,dict) and signal.get("_data_incomplete"):
                     failed+=1
                     frame_stats[frame]["failed"]+=1
-                    frame_stats[frame]["insufficient_candles"]=frame_stats[frame].get("insufficient_candles",0)+1
+                    record_scan_failure(frame_stats,frame,item,signal.get("_diagnostic_code","insufficient_history"))
                     continue
                 completed+=1
                 frame_stats[frame]["completed"]+=1
@@ -1123,25 +1174,13 @@ def run_market_scan(market,force=False):
             except ValueError as exc:
                 failed+=1
                 frame_stats[frame]["failed"]+=1
-                if "Insufficient candles" not in str(exc):
-                    app.logger.warning("candle sample rejected: market=%s frame=%s error=%s",
-                                       market,frame,type(exc).__name__)
+                code=scan_failure_code(exc)
+                record_scan_failure(frame_stats,frame,item,code)
             except Exception as exc:
                 failed+=1
                 frame_stats[frame]["failed"]+=1
-                # Some Saudi tickers are not covered by Yahoo's candle endpoint.
-                # Treat an individual unavailable symbol/frame as a skipped sample,
-                # not as a traceback storm that obscures the market-level result.
-                if market=="saudi":
-                    app.logger.warning(
-                        "candle sample skipped: market=%s error=%s",
-                        market, type(exc).__name__
-                    )
-                else:
-                    app.logger.warning(
-                        "candle sample skipped: market=%s symbol=%s frame=%s error=%s",
-                        market,item.get("symbol","?"),frame,type(exc).__name__
-                    )
+                code=scan_failure_code(exc)
+                record_scan_failure(frame_stats,frame,item,code)
     # Validate completeness separately for every timeframe. A healthy 15m
     # feed must never hide a broken daily/monthly candle provider.
     incomplete_frames={}
@@ -1176,6 +1215,7 @@ def run_market_scan(market,force=False):
             "timeframes":list(TIMEFRAMES),"scanned_timeframes":[],
             "incomplete_timeframes":{frame:{"completed":actual,"required":required}
                                      for frame,(actual,required) in incomplete_frames.items()},
+            "frame_diagnostics":frame_diagnostics,
             "data_status":"unavailable"
         },ensure_ascii=False)
         meta_row=db.session.get(Setting,meta_key)
@@ -1194,10 +1234,18 @@ def run_market_scan(market,force=False):
                 "warning":"تعذر تحديث الشموع حالياً؛ تم الاحتفاظ بآخر الصفقات دون استبدالها.",
                 "incomplete_timeframes":meta_value and json.loads(meta_value)["incomplete_timeframes"],
                 "timeframes":list(TIMEFRAMES),"scanned_timeframes":[]}
+    frame_diagnostics={
+        frame:{"completed":stats["completed"],"failed":stats["failed"],
+               "matches":stats["matches"],
+               "failure_reasons":stats.get("failure_reasons",{}),
+               "failure_samples":stats.get("failure_samples",[])}
+        for frame,stats in frame_stats.items()
+    }
     if failed:
         app.logger.warning(
-            "market scan partial data: market=%s completed=%s failed=%s requested=%s",
-            market,completed,failed,len(futures)
+            "market scan partial data: market=%s completed=%s failed=%s requested=%s diagnostics=%s",
+            market,completed,failed,len(futures),
+            json.dumps({frame:stats["failure_reasons"] for frame,stats in frame_diagnostics.items()},ensure_ascii=False,sort_keys=True)
         )
     strategy_matches=len(found)
     raw_found=found
@@ -1279,7 +1327,8 @@ def run_market_scan(market,force=False):
                             "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":frames_to_scan,
                             "incomplete_timeframes":{frame:{"completed":actual,"required":required}
                                                      for frame,(actual,required) in incomplete_frames.items()},
-                            "data_status":"partial" if incomplete_frames else "ready"},ensure_ascii=False)
+                            "frame_diagnostics":frame_diagnostics,
+                            "data_status":"partial" if incomplete_frames or failed else "ready"},ensure_ascii=False)
     if not meta_row:
         db.session.add(Setting(key=meta_key,value=meta_value))
     else:
@@ -1332,7 +1381,8 @@ def run_market_scan(market,force=False):
             "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":frames_to_scan,
             "incomplete_timeframes":{frame:{"completed":actual,"required":required}
                                      for frame,(actual,required) in incomplete_frames.items()},
-            "data_status":"partial" if incomplete_frames else "ready"}
+            "frame_diagnostics":frame_diagnostics,
+            "data_status":"partial" if incomplete_frames or failed else "ready"}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
     return json_error("محرك التوصيات القديم متوقف؛ استخدم لوحة تحليل حركة السعر",410)
@@ -1448,7 +1498,10 @@ def intelligence_scan():
             "analysis_errors":int(result.get("analysis_failed",0) or 0),
             "signals":[{k:v for k,v in signal.items() if k not in ("reason","strategy","strategy_fingerprint","strategy_votes")} for signal in result.get("signals",[])],
             "updated_at":result.get("updated_at") or iso(utcnow()),
-            "cached":False,"market_bias":result.get("market_bias")
+            "cached":bool(result.get("cached",False)),"market_bias":result.get("market_bias"),
+            "data_status":result.get("data_status","unknown"),
+            "incomplete_timeframes":result.get("incomplete_timeframes",{}),
+            "frame_diagnostics":result.get("frame_diagnostics",{})
         })
     except Exception:
         app.logger.exception("SMART FLOW BREAKOUT-FVG scan failed for %s",market)
