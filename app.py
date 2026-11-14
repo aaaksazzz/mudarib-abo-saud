@@ -111,6 +111,7 @@ def trade_json(trade):
         "id":trade.id,"market":trade.market,"symbol":trade.symbol,"side":trade.side,
         "entry":trade.entry,"stop":trade.stop,"tp1":trade.tp1,"tp2":trade.tp2,
         "tp3":trade.tp3,"score":trade.score,"timeframe":trade.timeframe,
+        "reward_risk":(round(abs(trade.tp3-trade.entry)/abs(trade.entry-trade.stop),2) if abs(trade.entry-trade.stop)>0 else None),
         "reason":"إعداد فني مؤكد","status":trade.status,
         "created_at":iso(trade.created_at),"expires_at":iso(trade.expires_at),
         "result_pct":trade.result_pct,"change_pct":trade.change_15m_pct,
@@ -1083,6 +1084,15 @@ def market_scan_timeframes(market):
     return market_strategies.TIMEFRAMES
 
 
+def align_signals_with_market_bias(signals, market_bias):
+    """Return only signals aligned with breadth direction and count rejected rows."""
+    rows=list(signals or [])
+    if market_bias not in ("BUY","SELL"):
+        return rows,0
+    aligned=[signal for signal in rows if signal.get("side")==market_bias]
+    return aligned,len(rows)-len(aligned)
+
+
 def run_market_scan(market,force=False):
     if market not in MARKETS:
         raise ValueError("Unknown market "+str(market))
@@ -1108,12 +1118,17 @@ def run_market_scan(market,force=False):
             # scan is cached for 15 minutes; an incomplete scan is retried after
             # two minutes without making every page request launch 100s of calls.
             if last>now-timedelta(minutes=2) or (last>now-timedelta(minutes=15) and all_frames_current):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("FALSE-SWEEP MTF:%")).order_by(Trade.score.desc()).limit(18).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
                     meta=json.loads(meta_row.value) if meta_row else {}
                 except (ValueError,TypeError):
                     meta={}
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("FALSE-SWEEP MTF:%")).order_by(Trade.score.desc()).limit(36).all()
+                bias=meta.get("market_bias")
+                if bias in ("BUY","SELL"):
+                    active=[trade for trade in active if trade.side==bias]
+                active=[trade for trade in active if trade.entry>0 and abs(trade.entry-trade.stop)/trade.entry<=0.025]
+                active=active[:18]
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True,**meta}
         except (ValueError,TypeError):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
@@ -1262,9 +1277,10 @@ def run_market_scan(market,force=False):
     freshness={key:sum(value[key] for value in freshness_by_frame.values())
                for key in ("rejected_stale_candle","rejected_late_price")}
     fresh_matches=len(found)
-    # Market breadth is informational only. Each symbol is gated by its own
-    # each timeframe uses its own confirmed false-sweep and reclaim structure.
-    direction_rejected=0
+    # Enforce the broad market breadth direction: a bearish market publishes
+    # SELL setups only; a bullish market publishes BUY setups only. Neutral
+    # breadth does not invent a directional filter.
+    found,direction_rejected=align_signals_with_market_bias(found,market_bias)
     app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,len(found),
                     freshness["rejected_stale_candle"],freshness["rejected_late_price"],market_bias)

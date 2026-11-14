@@ -105,7 +105,7 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
     buffer = max(atr * 0.12, entry * 0.0002)
     stop = setup["sweep_extreme"] - buffer if side == "BUY" else setup["sweep_extreme"] + buffer
     risk = entry - stop if side == "BUY" else stop - entry
-    if not math.isfinite(risk) or risk <= 0 or risk > atr * 8 or risk > entry * 0.08:
+    if not math.isfinite(risk) or risk <= 0 or risk > atr * 8 or risk > entry * 0.025:
         return None
     ladder = target_prices(entry, side, stop)
     if not ladder:
@@ -131,7 +131,7 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
     reason = (
         f"FALSE-SWEEP: {side} liquidity sweep beyond prior {'low' if side == 'BUY' else 'high'}; "
         "reclaim candle closed back inside range; later completed candle closed beyond sweep candle; "
-        "stop beyond sweep extreme; targets fixed at 1R/2R/3R"
+        "stop beyond sweep extreme; maximum stop distance 2.5%; targets fixed at 1R/2R/3R"
     )
     return {
         "side": side, "entry": entry, "stop": stop,

@@ -74,6 +74,26 @@ class ScanDiagnosticsTests(unittest.TestCase):
         self.assertEqual(payload["data_status"], "partial")
         scan.assert_called_once_with("spot", force=False)
 
+    def test_trade_json_includes_calculated_reward_risk(self):
+        trade = platform_app.Trade(
+            market="futures", symbol="BTCUSDT", side="BUY", entry=100,
+            stop=95, tp1=105, tp2=110, tp3=115, score=90,
+            timeframe="15m", reason="test", expires_at=platform_app.utcnow()
+        )
+        self.assertEqual(platform_app.trade_json(trade)["reward_risk"], 3.0)
+
+    def test_scan_filters_signals_against_market_bias(self):
+        signals = [
+            {"symbol": "LONG", "side": "BUY", "timeframe": "15m"},
+            {"symbol": "SHORT", "side": "SELL", "timeframe": "15m"},
+        ]
+        aligned, rejected = platform_app.align_signals_with_market_bias(signals, "SELL")
+        self.assertEqual([signal["symbol"] for signal in aligned], ["SHORT"])
+        self.assertEqual(rejected, 1)
+        neutral, neutral_rejected = platform_app.align_signals_with_market_bias(signals, None)
+        self.assertEqual(neutral, signals)
+        self.assertEqual(neutral_rejected, 0)
+
     def test_legacy_market_signals_route_rejects_unknown_timeframe(self):
         response = platform_app.app.test_client().get(
             "/api/markets/spot/signals?timeframe=5m"
