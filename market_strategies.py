@@ -1,7 +1,10 @@
-"""SMART FLOW: swing breakout confirmed by a mandatory Fair Value Gap (FVG)."""
+"""SMART FLOW: false-breakout liquidity sweep with close-confirmed reclaim.
+
+Signals are analytical only. The engine never places orders.
+"""
 import math
 
-STRATEGY_FINGERPRINT = "SMART-FLOW-BREAKOUT-FVG-MTF-V1-20261111"
+STRATEGY_FINGERPRINT = "SMART-FLOW-FALSE-SWEEP-MTF-V2-20261114"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 SIGNAL_TIMEFRAME = {frame: frame for frame in TIMEFRAMES}
 INTERVAL_MS = {"1m": 60_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000,
@@ -13,7 +16,9 @@ PROFILES = {market: {"allow_short": True} for market in
 
 def _finite_rows(rows):
     parsed = []
-    for row in (rows or [])[:-1]:
+    if not isinstance(rows, list) or len(rows) < 2:
+        return None
+    for row in rows[:-1]:  # Exclude the still-forming final candle.
         if not isinstance(row, (list, tuple)) or len(row) < 6:
             return None
         try:
@@ -38,30 +43,8 @@ def _atr(highs, lows, closes, period=14):
     return sum(sample) / len(sample) if sample else 0.0
 
 
-def _pivots(highs, lows, left=3, right=3):
-    ph, pl = [], []
-    for i in range(left, len(highs) - right):
-        if highs[i] >= max(highs[i-left:i]) and highs[i] > max(highs[i+1:i+right+1]):
-            ph.append(i)
-        if lows[i] <= min(lows[i-left:i]) and lows[i] < min(lows[i+1:i+right+1]):
-            pl.append(i)
-    return ph, pl
-
-
-def _bull_fvgs(highs, lows, start):
-    # Three-candle bullish imbalance: candle C low is above candle A high.
-    return [(i, highs[i-2], lows[i]) for i in range(max(2, start), len(lows))
-            if lows[i] > highs[i-2]]
-
-
-def _bear_fvgs(highs, lows, start):
-    # Three-candle bearish imbalance: candle C high is below candle A low.
-    return [(i, highs[i], lows[i-2]) for i in range(max(2, start), len(lows))
-            if highs[i] < lows[i-2]]
-
-
 def target_prices(entry, side, stop=None):
-    """Risk ladder retained for the UI; the structural previous swing is the primary target."""
+    """Return fixed 1R / 2R / 3R targets from one entry and structural stop."""
     try:
         entry, stop = float(entry), float(stop)
     except (TypeError, ValueError, OverflowError):
@@ -72,129 +55,116 @@ def target_prices(entry, side, stop=None):
     if not math.isfinite(risk) or risk <= 0:
         return None
     sign = 1.0 if side == "BUY" else -1.0
-    result = tuple(entry + sign * risk * n for n in (1, 2, 3))
+    result = tuple(entry + sign * risk * multiple for multiple in (1, 2, 3))
     return result if all(math.isfinite(x) and x > 0 for x in result) else None
 
 
-def _buy_setup(highs, lows, opens, closes, atr, pivot_highs, pivot_lows):
+def _find_sweep_setup(highs, lows, opens, closes, volumes, atr, lookback=20, recent=6):
+    """Find a recent stop-run, reclaim candle, then a later close beyond the sweep candle."""
     n = len(closes)
-    for pivot in reversed([p for p in pivot_highs if p >= n - 60]):
-        breakout = next((j for j in range(pivot + 1, n - 1) if closes[j] > highs[pivot]), None)
-        if breakout is None:
-            continue
-        gaps = [g for g in _bull_fvgs(highs, lows, breakout) if g[2] < closes[-1] and g[1] < closes[-1]]
-        if not gaps:
-            continue
-        gap_idx, gap_low, gap_high = gaps[-1]
-        if gap_idx < n - 12 or gap_low >= gap_high:
-            continue
-        # Gap must remain below price; accept a touch/retest, reject a fully traded-through gap.
-        if lows[-1] < gap_low or closes[-1] <= gap_high:
-            continue
-        lows_below_gap = [p for p in pivot_lows if p < gap_idx and lows[p] < gap_low]
-        if not lows_below_gap:
-            continue
-        stop_anchor = lows[lows_below_gap[-1]]
-        targets = [highs[p] for p in pivot_highs if p < pivot and highs[p] > closes[-1]]
-        if not targets:
-            continue
-        return {"side": "BUY", "breakout": breakout, "gap_index": gap_idx,
-                "gap_low": gap_low, "gap_high": gap_high, "stop_anchor": stop_anchor,
-                "target": min(targets), "broken_level": highs[pivot], "pivot": pivot}
-    return None
-
-
-def _sell_setup(highs, lows, opens, closes, atr, pivot_highs, pivot_lows):
-    n = len(closes)
-    for pivot in reversed([p for p in pivot_lows if p >= n - 60]):
-        breakdown = next((j for j in range(pivot + 1, n - 1) if closes[j] < lows[pivot]), None)
-        if breakdown is None:
-            continue
-        gaps = [g for g in _bear_fvgs(highs, lows, breakdown) if g[1] > closes[-1] and g[2] > closes[-1]]
-        if not gaps:
-            continue
-        gap_idx, gap_low, gap_high = gaps[-1]
-        if gap_idx < n - 12 or gap_low >= gap_high:
-            continue
-        if highs[-1] > gap_high or closes[-1] >= gap_low:
-            continue
-        highs_above_gap = [p for p in pivot_highs if p < gap_idx and highs[p] > gap_high]
-        if not highs_above_gap:
-            continue
-        stop_anchor = highs[highs_above_gap[-1]]
-        targets = [lows[p] for p in pivot_lows if p < pivot and lows[p] < closes[-1]]
-        if not targets:
-            continue
-        return {"side": "SELL", "breakout": breakdown, "gap_index": gap_idx,
-                "gap_low": gap_low, "gap_high": gap_high, "stop_anchor": stop_anchor,
-                "target": max(targets), "broken_level": lows[pivot], "pivot": pivot}
+    first = max(lookback, n - recent - 1)
+    for i in range(n - 2, first - 1, -1):
+        prior_high = max(highs[i - lookback:i])
+        prior_low = min(lows[i - lookback:i])
+        candle_range = max(highs[i] - lows[i], closes[i] * 1e-8)
+        lower_wick = min(opens[i], closes[i]) - lows[i]
+        upper_wick = highs[i] - max(opens[i], closes[i])
+        bullish = lows[i] < prior_low and closes[i] > prior_low and closes[i] > opens[i] and lower_wick / candle_range >= 0.20
+        bearish = highs[i] > prior_high and closes[i] < prior_high and closes[i] < opens[i] and upper_wick / candle_range >= 0.20
+        if bullish and closes[-1] > highs[i]:
+            if any(closes[j] <= lows[i] for j in range(i + 1, n)):
+                continue
+            return {"side": "BUY", "sweep_index": i, "sweep_extreme": lows[i],
+                    "broken_level": prior_low, "wick_ratio": lower_wick / candle_range,
+                    "sweep_volume": volumes[i]}
+        if bearish and closes[-1] < lows[i]:
+            if any(closes[j] >= highs[i] for j in range(i + 1, n)):
+                continue
+            return {"side": "SELL", "sweep_index": i, "sweep_extreme": highs[i],
+                    "broken_level": prior_high, "wick_ratio": upper_wick / candle_range,
+                    "sweep_volume": volumes[i]}
     return None
 
 
 def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_micro=False):
     profile = PROFILES.get(market)
-    if not profile or timeframe not in TIMEFRAMES or not isinstance(rows, list):
+    if not profile or timeframe not in TIMEFRAMES:
         return None
     bars = _finite_rows(rows)
     if not bars or len(bars) < 40:
         return None
-    opens, highs, lows, closes = ([x[k] for x in bars] for k in (1, 2, 3, 4))
+    opens, highs, lows, closes, volumes = ([x[k] for x in bars] for k in (1, 2, 3, 4, 5))
     entry = closes[-1]
     atr = _atr(highs, lows, closes)
     if not math.isfinite(atr) or atr <= 0 or atr / entry > 0.20:
         return None
-    pivot_highs, pivot_lows = _pivots(highs, lows)
-    setup = _buy_setup(highs, lows, opens, closes, atr, pivot_highs, pivot_lows)
-    if not setup and profile["allow_short"]:
-        setup = _sell_setup(highs, lows, opens, closes, atr, pivot_highs, pivot_lows)
-    if not setup:
+    setup = _find_sweep_setup(highs, lows, opens, closes, volumes, atr)
+    if not setup or (setup["side"] == "SELL" and not profile["allow_short"]):
         return None
     side = setup["side"]
-    buffer = max(atr * 0.10, entry * 0.0002)
-    stop = setup["stop_anchor"] - buffer if side == "BUY" else setup["stop_anchor"] + buffer
+    buffer = max(atr * 0.12, entry * 0.0002)
+    stop = setup["sweep_extreme"] - buffer if side == "BUY" else setup["sweep_extreme"] + buffer
     risk = entry - stop if side == "BUY" else stop - entry
-    if risk <= 0 or risk > atr * 10 or risk > entry * 0.08:
+    if not math.isfinite(risk) or risk <= 0 or risk > atr * 8 or risk > entry * 0.08:
         return None
     ladder = target_prices(entry, side, stop)
     if not ladder:
         return None
-    # The previous structural swing is the primary target; only expose a signal if it is ahead of entry.
-    structural_target = setup["target"]
-    if (side == "BUY" and structural_target <= entry) or (side == "SELL" and structural_target >= entry):
-        return None
+
+    sweep_idx = setup["sweep_index"]
+    prior_volumes = volumes[max(0, sweep_idx - 20):sweep_idx]
+    avg_volume = sum(prior_volumes) / max(1, len(prior_volumes))
+    volume_ratio = setup["sweep_volume"] / avg_volume if avg_volume > 0 else 1.0
+    score = 58.0 + min(14.0, max(0.0, (setup["wick_ratio"] - 0.20) * 30.0))
+    if volume_ratio >= 1.5:
+        score += 10.0
+    elif volume_ratio >= 1.15:
+        score += 5.0
+    reclaim_distance = abs(entry - (highs[sweep_idx] if side == "BUY" else lows[sweep_idx]))
+    if reclaim_distance >= atr * 0.25:
+        score += 8.0
+    if risk <= atr * 2.5:
+        score += 5.0
+    score = round(min(95.0, score), 1)
+
     previous_close = closes[-2]
+    reason = (
+        f"FALSE-SWEEP: {side} liquidity sweep beyond prior {'low' if side == 'BUY' else 'high'}; "
+        "reclaim candle closed back inside range; later completed candle closed beyond sweep candle; "
+        "stop beyond sweep extreme; targets fixed at 1R/2R/3R"
+    )
     return {
         "side": side, "entry": entry, "stop": stop,
-        "tp1": structural_target, "tp2": ladder[1], "tp3": ladder[2],
-        "score": 85.0, "timeframe": timeframe,
+        "tp1": ladder[0], "tp2": ladder[1], "tp3": ladder[2],
+        "score": score, "timeframe": timeframe,
         "change_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
         "change_15m_pct": round((entry / previous_close - 1.0) * 100.0, 5) if previous_close else 0.0,
-        "reason": f"BREAKOUT-FVG: {side} swing break confirmed; mandatory {'bullish' if side == 'BUY' else 'bearish'} FVG; nearest structural stop; previous swing target",
-        "signal_candle_time": bars[-1][0], "risk_atr": round(risk / atr, 3),
-        "reward_risk": round(abs(structural_target - entry) / risk, 3), "atr": atr,
-        "fvg_low": setup["gap_low"], "fvg_high": setup["gap_high"],
-        "fvg_candle_time": bars[setup["gap_index"]][0],
-        "swing_origin": setup["stop_anchor"], "broken_level": setup["broken_level"],
-        "structural_target": structural_target, "breakout_candle_time": bars[setup["breakout"]][0],
-        "confirmations": 3, "volume_ratio": None, "range_expansion": None,
-        "strategy_votes": {"BUY": ["swing-high breakout", "bullish FVG below price", "nearest swing-low stop"] if side == "BUY" else [],
-                           "SELL": ["swing-low breakdown", "bearish FVG above price", "nearest swing-high stop"] if side == "SELL" else []},
-        "strategy": "BREAKOUT_FVG_" + market.upper() + "_" + timeframe,
+        "reason": reason, "signal_candle_time": bars[-1][0],
+        "risk_atr": round(risk / atr, 3), "reward_risk": 3.0, "atr": atr,
+        "sweep_extreme": setup["sweep_extreme"], "broken_level": setup["broken_level"],
+        "sweep_candle_time": bars[sweep_idx][0],
+        "sweep_wick_ratio": round(setup["wick_ratio"], 3), "volume_ratio": round(volume_ratio, 3),
+        "confirmations": 3,
+        "strategy_votes": {
+            "BUY": ["سحب سيولة أسفل قاع سابق", "إغلاق استعادة صاعد", "إغلاق لاحق فوق شمعة السحب"] if side == "BUY" else [],
+            "SELL": ["سحب سيولة أعلى قمة سابقة", "إغلاق استعادة هابط", "إغلاق لاحق تحت شمعة السحب"] if side == "SELL" else [],
+        },
+        "strategy": "FALSE_SWEEP_" + market.upper() + "_" + timeframe,
         "strategy_fingerprint": STRATEGY_FINGERPRINT,
     }
 
 
 def diagnostic_self_test():
+    buy, sell = target_prices(100, "BUY", 95), target_prices(100, "SELL", 105)
     checks = {
         "six_independent_timeframes": TIMEFRAMES == ("15m", "1h", "4h", "1d", "1w", "1M"),
-        "both_directions_all_markets": all(PROFILES[m]["allow_short"] for m in PROFILES),
+        "all_markets_supported": all(PROFILES[m]["allow_short"] for m in PROFILES),
         "each_frame_uses_itself": all(SIGNAL_TIMEFRAME[x] == x for x in TIMEFRAMES),
-        "bullish_fvg_definition": _bull_fvgs([10, 11, 12], [9, 10, 11], 2) == [(2, 10, 11)],
-        "bearish_fvg_definition": _bear_fvgs([10, 9, 8], [11, 10, 9], 2) == [(2, 8, 11)],
-        "buy_risk_ladder": target_prices(100, "BUY", 95) == (105.0, 110.0, 115.0),
-        "sell_risk_ladder": target_prices(100, "SELL", 105) == (95.0, 90.0, 85.0),
+        "buy_risk_ladder_1_2_3R": buy == (105.0, 110.0, 115.0),
+        "sell_risk_ladder_1_2_3R": sell == (95.0, 90.0, 85.0),
         "bad_risk_rejected": target_prices(100, "BUY", 101) is None,
+        "forming_candle_excluded": len(_finite_rows([[i, 10, 11, 9, 10, 1] for i in range(41)])) == 40,
     }
     return {"fingerprint": STRATEGY_FINGERPRINT, "ok": all(checks.values()), "checks": checks,
             "timeframes": list(TIMEFRAMES), "signal_timeframes": dict(SIGNAL_TIMEFRAME),
-            "rule": "swing breakout -> mandatory three-candle FVG -> nearest structural stop -> previous swing target; independent timeframe scans"}
+            "rule": "liquidity sweep -> reclaim close -> later close beyond sweep candle -> structural stop -> 1R/2R/3R"}
