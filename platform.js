@@ -83,7 +83,6 @@ async function overview(root,version=renderVersion){
  }
 }
 async function marketPage(root,market,version=renderVersion){
- if(location.pathname===pagePaths[market]){location.replace("/intelligence?market="+encodeURIComponent(market));return;}
  try{
   const timeframe=selectedTimeframe;
   const [snap,sig,engine]=await Promise.all([api("/api/markets/"+market+"/snapshot"),api("/api/markets/"+market+"/signals?timeframe="+encodeURIComponent(timeframe)),api("/api/strategy-status").catch(()=>null)]);

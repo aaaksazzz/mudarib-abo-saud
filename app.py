@@ -313,7 +313,7 @@ def visitor_stats():
     })
 
 @app.get("/")
-def home(): return send_from_directory(APP_DIR, "intelligence.html")
+def home(): return send_from_directory(APP_DIR, "index.html")
 
 @app.get("/intelligence")
 def intelligence_page(): return send_from_directory(APP_DIR, "intelligence.html")
@@ -326,7 +326,7 @@ def intelligence_stylesheet(): return send_from_directory(APP_DIR, "intelligence
 @app.get("/market/<market>")
 def market_page_route(market):
     if market not in MARKETS: return json_error("السوق غير معروف",404)
-    return send_from_directory(APP_DIR, "intelligence.html")
+    return send_from_directory(APP_DIR, "index.html")
 
 @app.get("/signal-lab")
 def signal_lab_page():
@@ -1840,7 +1840,7 @@ def market_scan_initial_delay_seconds(index):
 
 
 # Run the active false-sweep strategy on the staggered 15-minute market schedule.
-AUTO_SCAN_ENABLED=True
+AUTO_SCAN_ENABLED=os.environ.get("ENABLE_AUTO_SCAN","true").strip().lower() in ("1","true","yes","on")
 scheduler=None
 if AUTO_SCAN_ENABLED:
     # One scheduler worker prevents seven markets from launching together on

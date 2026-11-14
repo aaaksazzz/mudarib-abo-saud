@@ -4,16 +4,6 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#080d17">
-  <script>
-    (function () {
-      var parts = location.pathname.split("/");
-      var market = parts[2];
-      var allowed = ["spot", "futures", "alpha", "us-stocks", "us-contracts", "saudi", "forex"];
-      if (parts.length <= 4 && parts[1] === "market" && allowed.indexOf(market) !== -1) {
-        location.replace("/intelligence?market=" + encodeURIComponent(market));
-      }
-    })();
-  </script>
   <meta name="description" content="SMART TRADING PRO — منصة الأسواق والتحليل والتداول الذكي">
   <title>SMART TRADING PRO</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
