@@ -1233,6 +1233,7 @@ def run_market_scan(market,force=False):
                 "updated_at":iso(now),"cached":False,"data_status":"unavailable",
                 "warning":"تعذر تحديث الشموع حالياً؛ تم الاحتفاظ بآخر الصفقات دون استبدالها.",
                 "incomplete_timeframes":meta_value and json.loads(meta_value)["incomplete_timeframes"],
+                "frame_diagnostics":frame_diagnostics,
                 "timeframes":list(TIMEFRAMES),"scanned_timeframes":[]}
     frame_diagnostics={
         frame:{"completed":stats["completed"],"failed":stats["failed"],
@@ -1364,7 +1365,8 @@ def run_market_scan(market,force=False):
             "rejected_stale_candle":freshness_by_frame[frame]["rejected_stale_candle"],
             "rejected_late_price":freshness_by_frame[frame]["rejected_late_price"],
             "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":[frame],
-            "data_status":"ready"
+            "frame_diagnostics":frame_diagnostics[frame],
+            "data_status":"partial" if frame_stats[frame]["failed"] else "ready"
         },ensure_ascii=False)
         if frame_meta_row is None:
             db.session.add(Setting(key=frame_meta_key,value=frame_meta))
