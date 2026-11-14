@@ -33,7 +33,7 @@ Production-oriented market intelligence terminal.
 - No performance claim is made without reproducible per-market backtests.
 
 ## Production deployment
-- Python runtime is pinned by `.python-version` to 3.12.
+- Python runtime is pinned by `.python-version` to 3.15.2.
 - Buildpack startup uses `Procfile`; Docker deployment is also supported.
 - Expose port 8080.
 - Prefer a persistent PostgreSQL database through `DATABASE_URL`. SQLite is acceptable only when `DATA_DIR` points to a persistent mounted volume; the default local SQLite path is not production-durable.
