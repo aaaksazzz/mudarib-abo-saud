@@ -49,10 +49,6 @@ class YahooHistoryWindowTests(unittest.TestCase):
         self.assertEqual(get.call_args.args[1]["range"], "max")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class AlphaMonthlyHistoryTests(unittest.TestCase):
     def test_weekly_ohlcv_aggregates_to_calendar_months(self):
         from datetime import datetime, timezone
@@ -82,6 +78,10 @@ class AlphaMonthlyHistoryTests(unittest.TestCase):
         self.assertEqual(get.call_args.args[1]["interval"],"1w")
         self.assertEqual(get.call_args.args[1]["limit"],1000)
         self.assertTrue(all(len(row)==6 for row in rows))
+
+
+if __name__ == "__main__":
+    unittest.main()
 
 
 if __name__ == "__main__":
