@@ -1124,6 +1124,30 @@ def align_signals_with_market_bias(signals, market_bias):
     return aligned,len(rows)-len(aligned)
 
 
+def trade_passes_frame_risk(trade):
+    """Validate an open trade against its own timeframe risk profile.
+
+    A single 2.5% cap incorrectly hid valid daily, weekly and monthly setups.
+    Keep the strategy's frame-specific structural-risk limits authoritative.
+    """
+    try:
+        profile=market_strategies.FRAME_PROFILES.get(trade.timeframe)
+        entry=float(trade.entry)
+        stop=float(trade.stop)
+        side=str(trade.side)
+        if not profile or not math.isfinite(entry) or not math.isfinite(stop) or entry<=0 or stop<=0:
+            return False
+        if side=="BUY" and stop>=entry:
+            return False
+        if side=="SELL" and stop<=entry:
+            return False
+        if side not in ("BUY","SELL"):
+            return False
+        return abs(entry-stop)/entry <= float(profile["max_risk_pct"])
+    except (AttributeError,TypeError,ValueError,OverflowError,KeyError):
+        return False
+
+
 def _run_market_scan_unlocked(market,force=False):
     if market not in MARKETS:
         raise ValueError("Unknown market "+str(market))
@@ -1154,11 +1178,12 @@ def _run_market_scan_unlocked(market,force=False):
                     meta=json.loads(meta_row.value) if meta_row else {}
                 except (ValueError,TypeError):
                     meta={}
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("ADAPTIVE-TREND MTF:%")).order_by(Trade.score.desc()).limit(36).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("ADAPTIVE-TREND MTF:%")).all()
                 bias=meta.get("market_bias")
                 if bias in ("BUY","SELL"):
                     active=[trade for trade in active if trade.side==bias]
-                active=[trade for trade in active if trade.entry>0 and abs(trade.entry-trade.stop)/trade.entry<=0.025]
+                active=[trade for trade in active if trade_passes_frame_risk(trade)]
+                active.sort(key=lambda trade:trade.score,reverse=True)
                 active=active[:18]
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True,**meta}
         except (ValueError,TypeError):
@@ -1370,11 +1395,17 @@ def _run_market_scan_unlocked(market,force=False):
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.reason.not_like("ADAPTIVE-TREND MTF:%")).update({"status":"superseded"},synchronize_session=False)
-    active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.timeframe.in_(frames_to_scan),Trade.reason.like("ADAPTIVE-TREND MTF:%"))
-    if retained_ids:
-        active_query=active_query.filter(~Trade.id.in_(retained_ids))
-    active_query.update({"status":"superseded"},synchronize_session=False)
+    # Do not erase a live setup just because the latest completed scan found
+    # no replacement. Replace only frames that produced at least one fresh,
+    # direction-aligned candidate; otherwise keep the prior trade until expiry.
+    replacement_frames={frame for frame in frames_to_scan
+                        if any(signal.get("timeframe")==frame for signal in found)}
+    if replacement_frames:
+        active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
+            Trade.timeframe.in_(replacement_frames),Trade.reason.like("ADAPTIVE-TREND MTF:%"))
+        if retained_ids:
+            active_query=active_query.filter(~Trade.id.in_(retained_ids))
+        active_query.update({"status":"superseded"},synchronize_session=False)
     for signal in new_signals:
         frame=signal["timeframe"]
         db.session.add(Trade(market=market,symbol=signal["symbol"],side=signal["side"],entry=signal["entry"],stop=signal["stop"],tp1=signal["tp1"],tp2=signal["tp2"],tp3=signal["tp3"],score=signal["score"],change_15m_pct=signal["change_pct"],timeframe=frame,reason=signal["reason"],expires_at=now+timedelta(hours=24)))
@@ -1438,7 +1469,13 @@ def _run_market_scan_unlocked(market,force=False):
         else:
             frame_meta_row.value=frame_meta
     db.session.commit()
-    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("ADAPTIVE-TREND MTF:%")).order_by(Trade.score.desc()).limit(18).all()
+    active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
+        Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
+        Trade.reason.like("ADAPTIVE-TREND MTF:%")).all()
+    active=[trade for trade in active if trade_passes_frame_risk(trade)
+            and (market_bias not in ("BUY","SELL") or trade.side==market_bias)]
+    active.sort(key=lambda trade:trade.score,reverse=True)
+    active=active[:18]
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
             "scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
             "analysis_completed":completed,"analysis_failed":failed,"strategy_matches":strategy_matches,
