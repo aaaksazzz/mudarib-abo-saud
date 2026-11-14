@@ -111,6 +111,7 @@ def trade_json(trade):
         "id":trade.id,"market":trade.market,"symbol":trade.symbol,"side":trade.side,
         "entry":trade.entry,"stop":trade.stop,"tp1":trade.tp1,"tp2":trade.tp2,
         "tp3":trade.tp3,"score":trade.score,"timeframe":trade.timeframe,
+        "reward_risk":(round(abs(trade.tp3-trade.entry)/abs(trade.entry-trade.stop),2) if abs(trade.entry-trade.stop)>0 else None),
         "reason":"إعداد فني مؤكد","status":trade.status,
         "created_at":iso(trade.created_at),"expires_at":iso(trade.expires_at),
         "result_pct":trade.result_pct,"change_pct":trade.change_15m_pct,
@@ -1262,9 +1263,14 @@ def run_market_scan(market,force=False):
     freshness={key:sum(value[key] for value in freshness_by_frame.values())
                for key in ("rejected_stale_candle","rejected_late_price")}
     fresh_matches=len(found)
-    # Market breadth is informational only. Each symbol is gated by its own
-    # each timeframe uses its own confirmed false-sweep and reclaim structure.
+    # Enforce the broad market breadth direction: a bearish market publishes
+    # SELL setups only; a bullish market publishes BUY setups only. Neutral
+    # breadth does not invent a directional filter.
     direction_rejected=0
+    if market_bias in ("BUY","SELL"):
+        aligned=[signal for signal in found if signal.get("side")==market_bias]
+        direction_rejected=len(found)-len(aligned)
+        found=aligned
     app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,len(found),
                     freshness["rejected_stale_candle"],freshness["rejected_late_price"],market_bias)
