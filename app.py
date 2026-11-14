@@ -861,9 +861,10 @@ def build_signal(market,item,timeframe):
     rows=klines(market,symbol,timeframe,250)
     # Provider coverage varies by symbol/timeframe. Raise a sample error;
     # scanner counts sparse samples without a traceback for every symbol.
-    if not isinstance(rows,list) or len(rows)<41:
-        # Preserve the real sample count and distinguish empty responses from
-        # genuinely short histories; never manufacture candles or weaken the rule.
+    if not isinstance(rows,list) or len(rows)<106:
+        # The strategy needs at least 105 completed candles; _finite_rows drops
+        # the still-forming final candle. Count shorter provider histories as
+        # incomplete data instead of reporting a successful analysis with no setup.
         received=len(rows) if isinstance(rows,list) else 0
         reason=("invalid_candle_payload" if not isinstance(rows,list)
                 else "empty_candle_response" if received==0
