@@ -72,6 +72,8 @@ def request_json(url, params=None, timeout=(3.05, 10), headers=None, method="GET
                 if state["successes"] >= ROTATE_AFTER_SUCCESSES and len(hosts) > 1:
                     state["index"] = (state["index"] + 1) % len(hosts)
                     state["successes"] = 0
+                elif len(hosts) == 1:
+                    state["successes"] = min(state["successes"], ROTATE_AFTER_SUCCESSES)
             return payload
         except (requests.RequestException, ValueError) as exc:
             errors.append(f"{host}: {type(exc).__name__}")
@@ -91,9 +93,11 @@ def provider_route_status():
         return {
             key: {
                 "hosts": list(hosts),
+                "backup_hosts": list(hosts[1:]),
                 "preferred_host": hosts[_STATE[key]["index"]],
                 "successful_fetches_on_host": _STATE[key]["successes"],
-                "rotate_after": ROTATE_AFTER_SUCCESSES,
+                "rotate_after": ROTATE_AFTER_SUCCESSES if len(hosts) > 1 else None,
+                "rotation_enabled": len(hosts) > 1,
                 "last_error": _STATE[key]["last_error"],
                 "requires_api_key": False,
                 "independent_vendor_failover": False,
