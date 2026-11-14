@@ -397,7 +397,11 @@ def compat_styles(): return send_from_directory(".", "compat.css")
 def strategy_status():
     # Public status intentionally omits proprietary strategy names, rules and fingerprints.
     return jsonify({"ok":True,"engine":"SMART TRADING PRO","manual_only":True})
-@app.get("/health")def health():    return jsonify({"ok":True,"service":"SMART TRADING PRO","time":iso(utcnow())})
+
+@app.get("/health")
+def health():
+    return jsonify({"ok":True,"service":"SMART TRADING PRO","time":iso(utcnow())})
+
 def persistent_database_configured(dialect,database_path,data_dir):
     """Accept PostgreSQL or SQLite physically located inside an absolute DATA_DIR."""
     if dialect=="postgresql":
@@ -782,7 +786,7 @@ def build_signal(market,item,timeframe):
     if not setup:
         return None
     setup["signal_timeframe"]=timeframe
-    setup["reason"]="FALSE-SWEEP MTF: legacy-compatible storage tag; FALSE-SWEEP confirmation on "+timeframe+"; "+setup.get("reason","")
+    setup["reason"]="FALSE-SWEEP MTF: independent "+timeframe+" swing breakout and FVG; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -798,10 +802,14 @@ def filter_fresh_signals(signals, universe, now=None):
             if item.get("symbol") and math.isfinite(price) and price>0:
                 live_prices[item["symbol"]]=price
         except (TypeError,ValueError):
-            continue    accepted=[]
-    rejected_old=0    rejected_moved=0
-    for signal in signals:        try:
-            candle_time=int(signal.get("signal_candle_time") or 0)            candle_entry=float(signal.get("entry") or 0)
+            continue
+    accepted=[]
+    rejected_old=0
+    rejected_moved=0
+    for signal in signals:
+        try:
+            candle_time=int(signal.get("signal_candle_time") or 0)
+            candle_entry=float(signal.get("entry") or 0)
             stop=float(signal.get("stop") or 0)
             old_tp1=float(signal.get("tp1") or 0)
             current=live_prices.get(signal.get("symbol"))
@@ -1194,13 +1202,17 @@ def run_market_scan(market,force=False):
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
-    for trade in existing_rows:        marker=trade.reason.rsplit("bar_ts=",1)[-1] if "bar_ts=" in trade.reason else ""
+    for trade in existing_rows:
+        marker=trade.reason.rsplit("bar_ts=",1)[-1] if "bar_ts=" in trade.reason else ""
         if marker:
-            existing_by_key[(trade.symbol,trade.timeframe,marker)]=trade    retained_ids=set()
+            existing_by_key[(trade.symbol,trade.timeframe,marker)]=trade
+    retained_ids=set()
     new_signals=[]
-    for frame in frames_to_scan:        frame_signals=sorted(
+    for frame in frames_to_scan:
+        frame_signals=sorted(
             (x for x in found if x["timeframe"]==frame),
-            key=lambda x:(x["score"],x.get("quote_volume",0)),            reverse=True,
+            key=lambda x:(x["score"],x.get("quote_volume",0)),
+            reverse=True,
         )
         for signal in frame_signals[:3]:
             marker=str(signal["signal_candle_time"])
@@ -1590,16 +1602,20 @@ def provision_admin_from_env():
         db.session.commit()
         app.logger.info("Initial administrator provisioned from deployment environment")
         return
-    if email_owner is not None and email_owner.id!=admin.id:        app.logger.error("Configured ADMIN_EMAIL is already used by another account; admin email was not changed")
+    if email_owner is not None and email_owner.id!=admin.id:
+        app.logger.error("Configured ADMIN_EMAIL is already used by another account; admin email was not changed")
     else:
         admin.email=admin_email
-    admin.password_hash=generate_password_hash(admin_password)    admin.active=True
+    admin.password_hash=generate_password_hash(admin_password)
+    admin.active=True
     admin.subscription_plan="admin"
     db.session.commit()
     app.logger.info("Existing administrator credentials synchronized from deployment environment")
+
 with app.app_context():
     db.create_all()
-    # Forward-only schema migration for existing production databases.    trade_columns={column["name"] for column in inspect(db.engine).get_columns(Trade.__tablename__)}
+    # Forward-only schema migration for existing production databases.
+    trade_columns={column["name"] for column in inspect(db.engine).get_columns(Trade.__tablename__)}
     if "change_15m_pct" not in trade_columns:
         with db.engine.begin() as connection:
             connection.execute(text(f"ALTER TABLE {Trade.__tablename__} ADD COLUMN change_15m_pct FLOAT"))
@@ -1693,7 +1709,7 @@ def market_scan_initial_delay_seconds(index):
     return SCAN_INITIAL_DELAY_SECONDS+max(0,int(index))*spacing
 
 
-# Run the active false-sweep strategy on the staggered 15-minute market schedule.
+# The previous SMA200/liquidity-sweep scheduler is permanently retired.
 AUTO_SCAN_ENABLED=True
 scheduler=None
 if AUTO_SCAN_ENABLED:
