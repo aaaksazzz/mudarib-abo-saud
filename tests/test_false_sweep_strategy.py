@@ -1,3 +1,5 @@
+"""Regression tests for the regime-adaptive strategy engine."""
+
 import unittest
 
 import market_strategies as strategy
