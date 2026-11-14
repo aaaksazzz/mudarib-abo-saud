@@ -168,3 +168,196 @@ def diagnostic_self_test():
     return {"fingerprint": STRATEGY_FINGERPRINT, "ok": all(checks.values()), "checks": checks,
             "timeframes": list(TIMEFRAMES), "signal_timeframes": dict(SIGNAL_TIMEFRAME),
             "rule": "liquidity sweep -> reclaim close -> later close beyond sweep candle -> structural stop -> 1R/2R/3R"}
+
+
+# Independent strategy voting engine. Each rule evaluates the same closed-candle
+# series in isolation; the aggregator ranks a setup by distinct agreeing rules.
+STRATEGY_CATALOG = (
+    "FALSE_SWEEP", "EMA_TREND", "MACD_CROSS", "RSI_REVERSAL",
+    "BOLLINGER_REVERSION", "DONCHIAN_BREAKOUT", "MOMENTUM_ROC",
+    "STOCHASTIC_REVERSAL", "CCI_REVERSAL", "ICHIMOKU_TREND",
+    "SUPERTREND", "ENGULFING_REVERSAL",
+)
+
+
+def _ema(values, period):
+    if len(values) < period:
+        return []
+    alpha = 2.0 / (period + 1.0)
+    out = [sum(values[:period]) / period]
+    for value in values[period:]:
+        out.append(alpha * value + (1.0 - alpha) * out[-1])
+    return [None] * (period - 1) + out
+
+
+def _rsi(values, period=14):
+    if len(values) <= period:
+        return None
+    gains=[]; losses=[]
+    for i in range(1,len(values)):
+        delta=values[i]-values[i-1]
+        gains.append(max(delta,0.0)); losses.append(max(-delta,0.0))
+    avg_gain=sum(gains[:period])/period
+    avg_loss=sum(losses[:period])/period
+    for i in range(period,len(gains)):
+        avg_gain=((period-1)*avg_gain+gains[i])/period
+        avg_loss=((period-1)*avg_loss+losses[i])/period
+    if avg_loss == 0:
+        return 100.0
+    return 100.0-(100.0/(1.0+avg_gain/avg_loss))
+
+
+def _independent_votes(bars):
+    o=[x[1] for x in bars]; h=[x[2] for x in bars]
+    l=[x[3] for x in bars]; c=[x[4] for x in bars]
+    votes=[]
+    def add(name, side, strength=1.0):
+        if side in ("BUY","SELL"):
+            votes.append({"name":name,"side":side,"strength":round(float(strength),3)})
+
+    # EMA trend: fast/slow alignment plus price location.
+    e20,e50=_ema(c,20),_ema(c,50)
+    if e20 and e50 and e20[-1] is not None and e50[-1] is not None:
+        if e20[-1]>e50[-1] and c[-1]>e20[-1]: add("EMA_TREND","BUY")
+        elif e20[-1]<e50[-1] and c[-1]<e20[-1]: add("EMA_TREND","SELL")
+
+    # MACD line/signal crossover confirmed by the latest closed bar.
+    e12,e26=_ema(c,12),_ema(c,26)
+    if e12 and e26 and len(c)>35 and e26[-1] is not None:
+        macd=[(x-y if x is not None and y is not None else None) for x,y in zip(e12,e26)]
+        valid=[x for x in macd if x is not None]
+        sig=_ema(valid,9)
+        if len(valid)>9 and sig and sig[-1] is not None and sig[-2] is not None:
+            if valid[-2]<=sig[-2] and valid[-1]>sig[-1]: add("MACD_CROSS","BUY",1.1)
+            elif valid[-2]>=sig[-2] and valid[-1]<sig[-1]: add("MACD_CROSS","SELL",1.1)
+
+    # RSI exhaustion reversal, requiring a directional close.
+    rsi=_rsi(c)
+    if rsi is not None:
+        if rsi<30 and c[-1]>o[-1]: add("RSI_REVERSAL","BUY")
+        elif rsi>70 and c[-1]<o[-1]: add("RSI_REVERSAL","SELL")
+
+    # Bollinger re-entry after an outside close.
+    if len(c)>=21:
+        window=c[-20:]; mean=sum(window)/20
+        sd=(sum((x-mean)**2 for x in window)/20)**0.5
+        if sd>0 and c[-2]<mean-2*sd and c[-1]>mean-2*sd and c[-1]>o[-1]:
+            add("BOLLINGER_REVERSION","BUY")
+        elif sd>0 and c[-2]>mean+2*sd and c[-1]<mean+2*sd and c[-1]<o[-1]:
+            add("BOLLINGER_REVERSION","SELL")
+
+    # Donchian close breakout against the preceding 20 completed bars.
+    if len(c)>=22:
+        top=max(h[-21:-1]); bottom=min(l[-21:-1])
+        if c[-1]>top: add("DONCHIAN_BREAKOUT","BUY",1.1)
+        elif c[-1]<bottom: add("DONCHIAN_BREAKOUT","SELL",1.1)
+
+    # 10-bar rate-of-change momentum with a 20 EMA filter.
+    if len(c)>=21 and e20 and e20[-1] is not None:
+        roc=c[-1]/c[-11]-1.0
+        if roc>0.015 and c[-1]>e20[-1]: add("MOMENTUM_ROC","BUY")
+        elif roc<-0.015 and c[-1]<e20[-1]: add("MOMENTUM_ROC","SELL")
+
+    # Stochastic oscillator reversal from an extreme zone.
+    if len(c)>=16:
+        lo=min(l[-14:]); hi=max(h[-14:])
+        k=50.0 if hi==lo else 100.0*(c[-1]-lo)/(hi-lo)
+        prev_lo=min(l[-15:-1]); prev_hi=max(h[-15:-1])
+        pk=50.0 if prev_hi==prev_lo else 100.0*(c[-2]-prev_lo)/(prev_hi-prev_lo)
+        if pk<20 and k>=20 and c[-1]>o[-1]: add("STOCHASTIC_REVERSAL","BUY")
+        elif pk>80 and k<=80 and c[-1]<o[-1]: add("STOCHASTIC_REVERSAL","SELL")
+
+    # CCI(20) crossing back through +/-100.
+    if len(c)>=21:
+        tp=[(h[i]+l[i]+c[i])/3 for i in range(len(c))]
+        w=tp[-20:]; avg=sum(w)/20
+        md=sum(abs(x-avg) for x in w)/20
+        prev_w=tp[-21:-1]; prev_avg=sum(prev_w)/20
+        prev_md=sum(abs(x-prev_avg) for x in prev_w)/20
+        cci=0 if md==0 else (tp[-1]-avg)/(0.015*md)
+        pcci=0 if prev_md==0 else (tp[-2]-prev_avg)/(0.015*prev_md)
+        if pcci<=-100 and cci>-100: add("CCI_REVERSAL","BUY")
+        elif pcci>=100 and cci<100: add("CCI_REVERSAL","SELL")
+
+    # Ichimoku cloud trend using standard 9/26/52 periods.
+    if len(c)>=52:
+        tenkan=(max(h[-9:])+min(l[-9:]))/2
+        kijun=(max(h[-26:])+min(l[-26:]))/2
+        span_a=(tenkan+kijun)/2
+        span_b=(max(h[-52:])+min(l[-52:]))/2
+        cloud_top=max(span_a,span_b); cloud_bottom=min(span_a,span_b)
+        if c[-1]>cloud_top and tenkan>kijun: add("ICHIMOKU_TREND","BUY",1.1)
+        elif c[-1]<cloud_bottom and tenkan<kijun: add("ICHIMOKU_TREND","SELL",1.1)
+
+    # ATR-band Supertrend direction.
+    if len(c)>=16:
+        atr=_atr(h,l,c,14)
+        mid=(h[-1]+l[-1])/2
+        upper=mid+3*atr; lower=mid-3*atr
+        if c[-1]>upper: add("SUPERTREND","BUY",1.1)
+        elif c[-1]<lower: add("SUPERTREND","SELL",1.1)
+
+    # Two-candle engulfing reversal.
+    if len(c)>=2:
+        bull=(c[-2]<o[-2] and c[-1]>o[-1] and o[-1]<=c[-2] and c[-1]>=o[-2])
+        bear=(c[-2]>o[-2] and c[-1]<o[-1] and o[-1]>=c[-2] and c[-1]<=o[-2])
+        if bull: add("ENGULFING_REVERSAL","BUY")
+        elif bear: add("ENGULFING_REVERSAL","SELL")
+    return votes
+
+
+def analyze_all(market, symbol, rows, timeframe="15m"):
+    """Run every catalog rule separately and return the strongest consensus setup."""
+    bars=_finite_rows(rows)
+    if not bars or len(bars)<60:
+        return None
+    results=[]
+    sweep=analyze(market,symbol,rows,timeframe=timeframe)
+    if sweep:
+        results.append({"name":"FALSE_SWEEP","side":sweep["side"],"strength":1.2,"setup":sweep})
+    votes=_independent_votes(bars)
+    results.extend(votes)
+    if not results:
+        return None
+    by_side={"BUY":[],"SELL":[]}
+    for vote in results:
+        by_side[vote["side"]].append(vote)
+    buy, sell=by_side["BUY"],by_side["SELL"]
+    chosen=buy if len(buy)>len(sell) else sell if len(sell)>len(buy) else []
+    if not chosen:
+        return None
+    # Require at least two independent rules; ties/opposition are not published.
+    if len(chosen)<2:
+        return None
+    side=chosen[0]["side"]
+    setup=next((x.get("setup") for x in chosen if x.get("setup")),None)
+    if not setup:
+        entry=bars[-1][4]
+        atr=_atr([x[2] for x in bars],[x[3] for x in bars],[x[4] for x in bars])
+        if not math.isfinite(atr) or atr<=0:
+            return None
+        stop=entry-1.5*atr if side=="BUY" else entry+1.5*atr
+        targets=target_prices(entry,side,stop)
+        if not targets:
+            return None
+        setup={"side":side,"entry":entry,"stop":stop,"tp1":targets[0],"tp2":targets[1],"tp3":targets[2],
+               "score":55.0,"timeframe":timeframe,"signal_candle_time":bars[-1][0],
+               "atr":atr,"risk_atr":1.5,"reward_risk":3.0,"reason":"Independent strategy consensus"}
+    else:
+        setup=dict(setup)
+        if setup["side"]!=side:
+            return None
+    count=len(chosen)
+    names=[x["name"] for x in chosen]
+    total=len(results)
+    setup.update({
+        "strategy":"CONSENSUS_"+side,
+        "strategy_fingerprint":"STP-INDEPENDENT-CONSENSUS-V1",
+        "strategy_count":count,
+        "strategy_total":len(STRATEGY_CATALOG),
+        "strategy_names":names,
+        "strategy_votes":{"BUY":[x["name"] for x in buy],"SELL":[x["name"] for x in sell]},
+        "score":round(min(99.0,50.0+count*4.0+sum(x.get("strength",1.0)-1.0 for x in chosen)*5.0),1),
+        "reason":"CONSENSUS "+side+" "+str(count)+"/"+str(len(STRATEGY_CATALOG))+" independent strategies: "+", ".join(names),
+    })
+    return setup
