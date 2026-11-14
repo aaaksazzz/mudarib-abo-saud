@@ -1112,10 +1112,12 @@ def market_scan_timeframes(market):
 
 
 def align_signals_with_market_bias(signals, market_bias):
-    """Return only signals aligned with breadth direction and count rejected rows."""
+    """Publish only setups matching a confirmed broad-market direction."""
     rows=list(signals or [])
     if market_bias not in ("BUY","SELL"):
-        return rows,0
+        # A tied/unclear breadth is not a third neutral trading direction.
+        # Suppress both sides until the market has a measurable bias.
+        return [],len(rows)
     aligned=[signal for signal in rows if signal.get("side")==market_bias]
     return aligned,len(rows)-len(aligned)
 
