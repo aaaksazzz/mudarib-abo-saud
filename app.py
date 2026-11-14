@@ -1356,7 +1356,7 @@ def _run_market_scan_unlocked(market,force=False):
     active_query.update({"status":"superseded"},synchronize_session=False)
     for signal in new_signals:
         frame=signal["timeframe"]
-        db.session.add(Trade(market=market,symbol=signal["symbol"],side=signal["side"],entry=signal["entry"],stop=signal["stop"],tp1=signal["tp1"],tp2=signal["tp2"],tp3=signal["tp3"],score=signal["score"],change_15m_pct=signal["change_pct"],timeframe=frame,reason=signal["reason"],expires_at=now+timedelta(hours=24)))
+        db.session.add(Trade(market=market,symbol=signal["symbol"],side=signal["side"],entry=signal["entry"],stop=signal["stop"],tp1=signal["tp1"],tp2=signal["tp2"],tp3=signal["tp3"],score=signal["score"],change_15m_pct=float(signal.get("change_pct",signal.get("change_15m_pct",0.0)) or 0.0),timeframe=frame,reason=signal["reason"],expires_at=now+timedelta(hours=24)))
     if not scan_row:
         scan_row=Setting(key=scan_key,value=iso(now)); db.session.add(scan_row)
     else:
