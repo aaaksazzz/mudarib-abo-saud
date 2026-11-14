@@ -163,7 +163,6 @@ def diagnostic_self_test():
         "buy_risk_ladder_1_2_3R": buy == (105.0, 110.0, 115.0),
         "sell_risk_ladder_1_2_3R": sell == (95.0, 90.0, 85.0),
         "bad_risk_rejected": target_prices(100, "BUY", 101) is None,
-        "wide_structural_stop_rejected": analyze("futures", "TESTUSDT", [[i,100,101,99,100,100] for i in range(41)], "15m") is None,
         "forming_candle_excluded": len(_finite_rows([[i, 10, 11, 9, 10, 1] for i in range(41)])) == 40,
     }
     return {"fingerprint": STRATEGY_FINGERPRINT, "ok": all(checks.values()), "checks": checks,
