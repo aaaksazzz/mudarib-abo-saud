@@ -2,6 +2,7 @@ import os, re, secrets, hashlib, hmac, time, json, math, shutil
 from datetime import datetime, timedelta, timezone
 from functools import wraps, lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 import requests
 import xml.etree.ElementTree as ET
 import html
@@ -11,7 +12,7 @@ from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import func, text, inspect, or_, event
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -40,21 +41,30 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(days=7),
     MAX_CONTENT_LENGTH=2 * 1024 * 1024,
 )
-db=SQLAlchemy(app)
-
 SQLITE_DATABASE=database_url.startswith("sqlite:")
+app.config["SQLALCHEMY_ENGINE_OPTIONS"]={
+    "pool_pre_ping":True,
+    **({"connect_args":{"timeout":30}} if SQLITE_DATABASE else {})
+}
+db=SQLAlchemy(app)
 
 def configure_sqlite_connection(dbapi_connection, connection_record):
     if not SQLITE_DATABASE:
         return
     cursor=dbapi_connection.cursor()
-    cursor.execute("PRAGMA busy_timeout=15000")
-    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=30000")
     cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
 
 with app.app_context():
     event.listen(db.engine,"connect",configure_sqlite_connection)
+    if SQLITE_DATABASE:
+        # Set WAL once during single-threaded startup. Reissuing journal_mode
+        # on every pooled connection can itself contend for SQLite's write lock.
+        with db.engine.connect() as connection:
+            connection.exec_driver_sql("PRAGMA journal_mode=WAL")
+            connection.exec_driver_sql("PRAGMA wal_autocheckpoint=1000")
 limiter=Limiter(get_remote_address,app=app,default_limits=["300 per hour"],storage_uri=os.environ.get("RATE_LIMIT_STORAGE_URI","memory://"))
 MARKETS=("spot","futures","alpha","us-stocks","us-contracts","saudi","forex")
 SECTION_DEFAULTS={k:True for k in ("overview",)+MARKETS+("strategies","journal","blog","news")}
@@ -251,6 +261,9 @@ def public_article(a):
             "created_at":iso(a.created_at)}
 
 @app.before_request
+_VISITOR_TRACKING_LOCK=threading.Lock()
+_VISITOR_TRACKED_TODAY=set()
+
 def count_site_visitor():
     # Count real HTML page visitors only; never count API, assets, health checks or bots.
     path=request.path or "/"
@@ -270,27 +283,39 @@ def count_site_visitor():
     visitor_hash=hmac.new(app.config["SECRET_KEY"].encode("utf-8"),visitor_id.encode("utf-8"),hashlib.sha256).hexdigest()
     now=utcnow()
     local_day=now.astimezone(timezone(timedelta(hours=3))).date()
-    try:
-        visitor=db.session.get(Visitor,visitor_hash)
-        if visitor is None:
-            visitor=Visitor(visitor_hash=visitor_hash,first_seen=now,last_seen=now)
-            db.session.add(visitor)
-            db.session.flush()
-        else:
-            visitor.last_seen=now
-        day_key=(visitor_hash,local_day)
-        if db.session.get(DailyVisitor,day_key) is None:
-            db.session.add(DailyVisitor(visitor_hash=visitor_hash,visit_date=local_day,first_seen=now))
-        db.session.commit()
-        g.stp_visitor_cookie=visitor_id
-    except IntegrityError:
-        db.session.rollback()
-        # A concurrent first request may already have inserted this visitor.
-        g.stp_visitor_cookie=visitor_id
-    except Exception as exc:
-        db.session.rollback()
-        # Analytics must never prevent the requested page from rendering.
-        app.logger.warning("visitor tracking skipped: %s",type(exc).__name__)
+    day_key=(visitor_hash,local_day)
+    g.stp_visitor_cookie=visitor_id
+    # A browser may navigate across several market pages in one session.
+    # Record at most one analytics write per visitor/day in this process.
+    with _VISITOR_TRACKING_LOCK:
+        if day_key in _VISITOR_TRACKED_TODAY:
+            return
+        for attempt in range(3):
+            try:
+                visitor=db.session.get(Visitor,visitor_hash)
+                if visitor is None:
+                    db.session.add(Visitor(visitor_hash=visitor_hash,first_seen=now,last_seen=now))
+                    db.session.flush()
+                if db.session.get(DailyVisitor,day_key) is None:
+                    db.session.add(DailyVisitor(visitor_hash=visitor_hash,visit_date=local_day,first_seen=now))
+                db.session.commit()
+                _VISITOR_TRACKED_TODAY.add(day_key)
+                break
+            except IntegrityError:
+                db.session.rollback()
+                _VISITOR_TRACKED_TODAY.add(day_key)
+                break
+            except OperationalError as exc:
+                db.session.rollback()
+                if "locked" not in str(exc).lower() or attempt==2:
+                    app.logger.warning("visitor tracking skipped: %s",type(exc).__name__)
+                    break
+                time.sleep(0.15*(attempt+1))
+            except Exception as exc:
+                db.session.rollback()
+                # Analytics must never prevent the requested page from rendering.
+                app.logger.warning("visitor tracking skipped: %s",type(exc).__name__)
+                break
 
 @app.after_request
 def set_visitor_cookie(response):
@@ -1094,7 +1119,7 @@ def align_signals_with_market_bias(signals, market_bias):
     return aligned,len(rows)-len(aligned)
 
 
-def run_market_scan(market,force=False):
+def _run_market_scan_unlocked(market,force=False):
     if market not in MARKETS:
         raise ValueError("Unknown market "+str(market))
     now=utcnow()
@@ -1403,6 +1428,20 @@ def run_market_scan(market,force=False):
                                      for frame,(actual,required) in incomplete_frames.items()},
             "frame_diagnostics":frame_diagnostics,
             "data_status":"partial" if incomplete_frames or failed else "ready"}
+_MARKET_SCAN_LOCK=threading.Lock()
+
+def run_market_scan(market,force=False):
+    """Serialize full-market scans; SQLite permits only one writer at a time."""
+    if market not in MARKETS:
+        raise ValueError("Unknown market "+str(market))
+    acquired=_MARKET_SCAN_LOCK.acquire(timeout=120)
+    if not acquired:
+        raise RuntimeError("Market scan is busy; retry shortly")
+    try:
+        return _run_market_scan_unlocked(market,force)
+    finally:
+        _MARKET_SCAN_LOCK.release()
+
 @app.get("/api/markets/<market>/signals")
 def signals(market):
     # Backward-compatible adapter for older market clients. All clients use the
@@ -1433,7 +1472,15 @@ def signals(market):
             "incomplete_timeframes":result.get("incomplete_timeframes",{}),
             "frame_diagnostics":result.get("frame_diagnostics",{})
         })
+    except OperationalError as exc:
+        db.session.rollback()
+        if "locked" in str(exc).lower():
+            app.logger.warning("SQLite busy while serving market=%s; client may retry",market)
+            return jsonify({"ok":False,"error":"قاعدة البيانات مشغولة مؤقتاً؛ أعد المحاولة بعد لحظات."}),503,{"Retry-After":"10","Cache-Control":"no-store"}
+        app.logger.exception("Database operation failed for market=%s",market)
+        return json_error("تعذر قراءة بيانات السوق من قاعدة البيانات",503)
     except Exception:
+        db.session.rollback()
         app.logger.exception("Current market signal adapter failed for %s",market)
         return json_error("تعذر تحميل بيانات السوق حالياً",502)
 
