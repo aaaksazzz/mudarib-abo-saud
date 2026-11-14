@@ -1118,12 +1118,17 @@ def run_market_scan(market,force=False):
             # scan is cached for 15 minutes; an incomplete scan is retried after
             # two minutes without making every page request launch 100s of calls.
             if last>now-timedelta(minutes=2) or (last>now-timedelta(minutes=15) and all_frames_current):
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("FALSE-SWEEP MTF:%")).order_by(Trade.score.desc()).limit(18).all()
                 meta_row=db.session.get(Setting,"scan-meta:"+market)
                 try:
                     meta=json.loads(meta_row.value) if meta_row else {}
                 except (ValueError,TypeError):
                     meta={}
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("FALSE-SWEEP MTF:%")).order_by(Trade.score.desc()).limit(36).all()
+                bias=meta.get("market_bias")
+                if bias in ("BUY","SELL"):
+                    active=[trade for trade in active if trade.side==bias]
+                active=[trade for trade in active if trade.entry>0 and abs(trade.entry-trade.stop)/trade.entry<=0.025]
+                active=active[:18]
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True,**meta}
         except (ValueError,TypeError):
             app.logger.warning("Invalid scan timestamp for %s; forcing a fresh scan",market)
