@@ -432,7 +432,8 @@ def public_article_page(slug):
 def sitemap_xml():
     base=os.environ.get("PUBLIC_BASE_URL",request.url_root.rstrip("/")).rstrip("/")
     rows=Article.query.filter_by(kind="blog",published=True).order_by(Article.created_at.desc()).limit(5000).all()
-    entries="".join("<url><loc>"+html.escape(base+"/blog/"+html.escape(x.slug))+"</loc><lastmod>"+(x.created_at.date().isoformat() if x.created_at else utcnow().date().isoformat())+"</lastmod></url>" for x in rows)
+    language_urls="".join("<url><loc>"+html.escape(base+"/blog?lang="+code)+"</loc></url>" for code in ("ar","en","es","de","id","pt","tr","fr","hi"))
+    entries="<url><loc>"+html.escape(base+"/")+"</loc></url>"+language_urls+"".join("<url><loc>"+html.escape(base+"/blog/"+html.escape(x.slug))+"</loc><lastmod>"+(x.created_at.date().isoformat() if x.created_at else utcnow().date().isoformat())+"</lastmod></url>" for x in rows)
     xml='<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+entries+"</urlset>"
     return xml,200,{"Content-Type":"application/xml; charset=utf-8"}
 @app.get("/robots.txt")
@@ -1992,6 +1993,54 @@ if AUTO_SCAN_ENABLED:
         # Importing from a non-main thread (e.g. certain test runners) cannot
         # register process signal handlers; normal application startup is main-thread.
         app.logger.warning("could not register graceful scheduler SIGTERM handler")
+
+
+BLOG_LANGUAGES=("ar","en","es","de","id","pt","tr","fr","hi")
+_blog_scheduler=None
+
+def scheduled_daily_blog_publish():
+    """Publish one complete multilingual editorial batch prepared by the editor."""
+    with app.app_context():
+        try:
+            queued=Article.query.filter(
+                Article.kind=="blog",Article.published.is_(False),
+                Article.canonical_slug.like("daily-queue-%")
+            ).order_by(Article.created_at.asc()).all()
+            batches={}
+            for article in queued:
+                batches.setdefault(article.canonical_slug,[]).append(article)
+            for canonical,articles in batches.items():
+                if set(BLOG_LANGUAGES).issubset({article.language for article in articles}):
+                    for article in articles:
+                        if article.language in BLOG_LANGUAGES:
+                            article.published=True
+                    db.session.commit()
+                    app.logger.info("daily multilingual blog batch published: canonical=%s languages=%s",canonical,len(BLOG_LANGUAGES))
+                    return
+            app.logger.info("daily blog publisher idle: no complete unpublished nine-language batch is queued")
+        except Exception as exc:
+            db.session.rollback()
+            app.logger.exception("daily blog publishing failed: %s",type(exc).__name__)
+        finally:
+            db.session.remove()
+
+def start_daily_blog_scheduler():
+    global _blog_scheduler
+    if _blog_scheduler is not None and _blog_scheduler.running:
+        return
+    _blog_scheduler=BackgroundScheduler(timezone="Asia/Riyadh")
+    _blog_scheduler.add_job(
+        scheduled_daily_blog_publish,"cron",hour=6,minute=15,
+        id="daily-multilingual-trading-blog",replace_existing=True,
+        max_instances=1,coalesce=True,misfire_grace_time=3600
+    )
+    _blog_scheduler.start()
+    app.logger.info("daily multilingual blog scheduler registered: 06:15 Asia/Riyadh")
+
+try:
+    start_daily_blog_scheduler()
+except Exception:
+    app.logger.exception("daily blog scheduler could not start")
 
 if __name__=="__main__":
     app.run(host="0.0.0.0",port=int(os.environ.get("PORT","8080")))
