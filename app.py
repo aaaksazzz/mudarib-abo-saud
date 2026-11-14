@@ -1288,6 +1288,37 @@ def _run_market_scan_unlocked(market,force=False):
                "strategy_rejections":stats.get("strategy_rejections",{})}
         for frame,stats in frame_stats.items()
     }
+    # A scan cycle often has only one timeframe due. Rehydrate the other
+    # five from their own persisted metadata so the UI never implies that
+    # unscanned timeframes have zero diagnostics or zero activity.
+    for frame in TIMEFRAMES:
+        if frame in frame_diagnostics:
+            continue
+        saved_row=db.session.get(Setting,f"scan-meta:{market}:{frame}")
+        if not saved_row:
+            frame_diagnostics[frame]={"completed":0,"failed":0,"matches":0,
+                                      "failure_reasons":{},"failure_samples":[],
+                                      "strategy_rejections":{},"not_scanned":True}
+            continue
+        try:
+            saved=json.loads(saved_row.value)
+            saved_diag=saved.get("frame_diagnostics") or saved
+            frame_diagnostics[frame]={
+                "completed":int(saved_diag.get("completed",saved.get("analysis_completed",0)) or 0),
+                "failed":int(saved_diag.get("failed",saved.get("analysis_failed",0)) or 0),
+                "matches":int(saved_diag.get("matches",saved.get("strategy_matches",0)) or 0),
+                "failure_reasons":saved_diag.get("failure_reasons",{}),
+                "failure_samples":saved_diag.get("failure_samples",[]),
+                "strategy_rejections":saved_diag.get("strategy_rejections",{}),
+                "rejected_stale_candle":saved_diag.get("rejected_stale_candle",saved.get("rejected_stale_candle",0)),
+                "rejected_late_price":saved_diag.get("rejected_late_price",saved.get("rejected_late_price",0)),
+                "direction_rejected":saved_diag.get("direction_rejected",saved.get("direction_rejected",0)),
+                "not_scanned":True
+            }
+        except (ValueError,TypeError,AttributeError):
+            frame_diagnostics[frame]={"completed":0,"failed":0,"matches":0,
+                                      "failure_reasons":{},"failure_samples":[],
+                                      "strategy_rejections":{},"not_scanned":True}
     if not frames_to_scan:
         # Preserve the previous signal batch and record a short retry cooldown.
         if scan_row is None:
