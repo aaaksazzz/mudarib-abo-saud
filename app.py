@@ -845,7 +845,7 @@ def build_signal(market,item,timeframe):
                 else "insufficient_history")
         return {"_data_incomplete":True,"_candles_received":received,
                 "_diagnostic_code":reason}
-    setup=market_strategies.analyze(market,symbol,rows,timeframe=timeframe)
+    setup=market_strategies.analyze_all(market,symbol,rows,timeframe=timeframe)
     if not setup:
         return None
     setup["signal_timeframe"]=timeframe
