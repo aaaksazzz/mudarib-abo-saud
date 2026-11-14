@@ -9,7 +9,7 @@ from functools import lru_cache
 from saudi_market_data import official_saudi_quotes
 from public_data_routing import request_json as routed_request_json
 
-YAHOO_HOSTS=("https://query1.finance.yahoo.com","https://query2.finance.yahoo.com")
+YAHOO_HOSTS=("https://query1.finance.yahoo.com",)
 YAHOO=YAHOO_HOSTS[0]
 BINANCE_ALPHA="https://www.binance.com"
 HEADERS={"User-Agent":"Mozilla/5.0 (compatible; SMART-TRADING-PRO/1.0)","Accept":"application/json"}
