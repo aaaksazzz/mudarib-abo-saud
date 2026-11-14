@@ -61,10 +61,12 @@ jobs:
           assert strategy_status["strategy_ready"] is True
           assert strategy_status["manual_only"] is True
           assert client.get("/api/strategy/status").get_json()["manual_only"] is True
-          for path in ("/", "/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex"):
+          home = client.get("/")
+          assert home.status_code == 200 and b'SMART TRADING PRO' in home.data and b'/platform.js?' in home.data, ("/", home.status_code, home.data[:300])
+          for path in ("/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex"):
             page = client.get(path)
-            assert page.status_code == 200 and b'SMART TRADING PRO' in page.data and b'/platform.js?' in page.data, (path, page.status_code, page.data[:300])
-            assert b'/intelligence?market=' not in page.data, (path, "legacy market redirect remains")
+            assert page.status_code == 200 and b'SMART TRADING PRO' in page.data, (path, page.status_code, page.data[:300])
+            assert b'id="timeframeFilters"' in page.data and b'/intelligence.js?' in page.data and b'/intelligence.css?' in page.data, (path, "dedicated timeframe terminal missing")
           assert client.get("/compat.css").status_code == 200
           print("route and static asset smoke tests passed")
           PY
