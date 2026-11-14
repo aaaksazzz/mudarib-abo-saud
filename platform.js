@@ -85,7 +85,11 @@ async function overview(root,version=renderVersion){
 async function marketPage(root,market,version=renderVersion){
  try{
   const timeframe=selectedTimeframe;
-  const [snap,sig,engine]=await Promise.all([api("/api/markets/"+market+"/snapshot"),api("/api/markets/"+market+"/signals?timeframe="+encodeURIComponent(timeframe)),api("/api/strategy-status").catch(()=>null)]);
+  const results=await Promise.allSettled([api("/api/markets/"+market+"/snapshot"),api("/api/markets/"+market+"/signals?timeframe="+encodeURIComponent(timeframe)),api("/api/strategy-status")]);
+  if(results[0].status==="rejected")throw results[0].reason;
+  const snap=results[0].value;
+  const sig=results[1].status==="fulfilled"?results[1].value:{ok:false,signals:[],stale:true,scan_error:results[1].reason?.message||"تعذر جلب الصفقات حالياً"};
+  const engine=results[2].status==="fulfilled"?results[2].value:null;
   if(version!==renderVersion||currentPage!==market)return;
   const unavailable=snap.ready===false;
   const stale=sig.stale===true;
