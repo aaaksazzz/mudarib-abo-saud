@@ -16,6 +16,7 @@ Production-oriented market intelligence terminal.
 - **US contracts:** the supported Yahoo futures-symbol list is filtered at $1M estimated 24-hour USD notional using each contract's multiplier; it is not a complete exchange directory.
 - **Tadawul:** public Saudi Exchange data is preferred, with Yahoo, a public ticker directory and TradingView fallbacks. Saudi equities are not filtered by the $1M threshold; public-feed coverage can be incomplete during provider restrictions.
 - **Forex & Gold:** public Yahoo symbol list; FX tick volume is not represented as exchange-traded dollar volume.
+- **Public mirror rotation:** Binance Spot and USD-M Futures use their public mirror host pools; Yahoo-backed markets rotate between query1/query2. The preferred mirror changes after every 20 successful JSON fetches, and transport/rate-limit/server failures trigger immediate failover. These are no-key public endpoints; mirrors of the same vendor are not independent data providers. Binance Alpha currently has one supported public host and therefore no mirror rotation. Saudi data retains the official Saudi Exchange primary feed with Yahoo/TradingView fallbacks where the data type permits.
 
 ## Active engine: FALSE BREAKOUT / LIQUIDITY SWEEP · independent multi-timeframe analysis
 - Every market is analysed independently on 15m, 1h, 4h, 1d, 1w and 1M completed candles.

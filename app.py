@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 import html
 import market_adapters
 import market_strategies
+from public_data_routing import request_json as routed_request_json, provider_route_status
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -638,41 +639,33 @@ def update_admin_contact():
 def market_list():
     return jsonify({"ok":True,"markets":[{"id":m,"enabled":section_enabled(m),"provider":provider_status(m)} for m in MARKETS]})
 def provider_status(m):
-    # Report actual adapter topology honestly. A second hostname for the same
-    # vendor is a mirror, not an independent data provider or a proven failover.
     providers={
-        "spot":{"primary":"Binance Spot public API","backup":"Binance API mirror hosts","backup_type":"same_vendor_mirror","independent_backup":False},
-        "futures":{"primary":"Binance USD-M Futures public API","backup":"Binance Futures API mirror hosts","backup_type":"same_vendor_mirror","independent_backup":False},
-        "alpha":{"primary":"Binance Alpha public API","backup":None,"backup_type":"none","independent_backup":False},
-        "us-stocks":{"primary":"Yahoo Finance US screener/chart","backup":"Yahoo Finance secondary hostname","backup_type":"same_vendor_mirror","independent_backup":False},
-        "us-contracts":{"primary":"Yahoo Finance futures quotes/chart","backup":"Yahoo Finance secondary hostname","backup_type":"same_vendor_mirror","independent_backup":False},
-        "saudi":{"primary":"Saudi Exchange official feed","backup":"Yahoo Finance charts/screener; TradingView scanner for quotes/universe","backup_type":"partial_market_data","independent_backup":True},
-        "forex":{"primary":"Yahoo Finance FX/metals chart","backup":"Yahoo Finance secondary hostname","backup_type":"same_vendor_mirror","independent_backup":False},
+        "spot":{"primary":"Binance Spot public endpoints","backup":"Binance api1-api4 public mirrors","backup_type":"same_vendor_mirror","independent_backup":False,"route":"binance_spot"},
+        "futures":{"primary":"Binance USD-M Futures public endpoints","backup":"Binance Futures fapi1-fapi4 public mirrors","backup_type":"same_vendor_mirror","independent_backup":False,"route":"binance_futures"},
+        "alpha":{"primary":"Binance Alpha public endpoints","backup":None,"backup_type":"none","independent_backup":False,"route":"binance_alpha"},
+        "us-stocks":{"primary":"Yahoo Finance public screener/chart","backup":"Yahoo query2 public mirror","backup_type":"same_vendor_mirror","independent_backup":False,"route":"yahoo_finance"},
+        "us-contracts":{"primary":"Yahoo Finance public futures chart","backup":"Yahoo query2 public mirror","backup_type":"same_vendor_mirror","independent_backup":False,"route":"yahoo_finance"},
+        "saudi":{"primary":"Saudi Exchange official public feed","backup":"Yahoo Finance public charts/screener; TradingView public scanner","backup_type":"independent_partial_market_data","independent_backup":True,"route":"yahoo_finance"},
+        "forex":{"primary":"Yahoo Finance public FX/metals chart","backup":"Yahoo query2 public mirror","backup_type":"same_vendor_mirror","independent_backup":False,"route":"yahoo_finance"},
     }
     item=providers.get(m)
     if not item:
         return {"configured":False,"health":"unknown","source":None,"requires_api_key":False}
-    return {**item,"configured":True,"health":"not_probed","health_note":"Adapter presence only; live connectivity is not tested by this endpoint",
-            "requires_api_key":False,"access":"public_no_key","analysis":"regime_adaptive_trend_range_mtf"}
+    route=item.get("route")
+    route_state=provider_route_status().get(route) if route else None
+    return {**item,"configured":True,"health":"not_probed",
+            "health_note":"Connectivity is checked during real fetches; status here reports configured routes.",
+            "rotation_policy":("rotate_preferred_host_after_20_successful_fetches"
+                               if route_state and route_state.get("rotation_enabled")
+                               else "single_public_host_no_mirror"),
+            "rotation":route_state,"requires_api_key":False,"access":"public_no_key",
+            "analysis":"regime_adaptive_trend_range_mtf"}
+
 def fetch_json(url,params=None):
-    last_error=None
-    for attempt in range(3):
-        try:
-            response=requests.get(url,params=params,timeout=(3.05,8),headers={"User-Agent":"SMART-TRADING-PRO/1.1"})
-            if response.status_code==429 or response.status_code>=500:
-                response.raise_for_status()
-            response.raise_for_status()
-            payload=response.json()
-            if not isinstance(payload,(dict,list)):
-                raise ValueError("Unexpected market-data response")
-            return payload
-        except (requests.Timeout,requests.ConnectionError,requests.HTTPError,ValueError) as exc:
-            last_error=exc
-            status=getattr(getattr(exc,"response",None),"status_code",None)
-            if attempt==2 or (status is not None and status<500 and status!=429):
-                raise
-            time.sleep(0.25*(attempt+1))
-    raise last_error
+    return routed_request_json(
+        url,params=params,timeout=(3.05,8),
+        headers={"User-Agent":"SMART-TRADING-PRO/1.1"}
+    )
 @lru_cache(maxsize=2)
 def market_symbols(market):
     if market=="spot":
