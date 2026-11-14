@@ -11,11 +11,11 @@ class FalseSweepStrategyTests(unittest.TestCase):
         closes = [100.0] * 30
         volumes = [100.0] * 30
         if side == "BUY":
-            opens[25], highs[25], lows[25], closes[25] = 100.0, 100.5, 98.0, 99.4
+            opens[25], highs[25], lows[25], closes[25] = 98.9, 100.5, 98.0, 99.4
             opens[26], highs[26], lows[26], closes[26] = 99.5, 101.1, 99.3, 100.8
             closes[27:] = [100.7, 100.9, 100.9]
         else:
-            opens[25], highs[25], lows[25], closes[25] = 100.0, 102.0, 99.5, 100.6
+            opens[25], highs[25], lows[25], closes[25] = 101.0, 102.0, 99.5, 100.6
             opens[26], highs[26], lows[26], closes[26] = 100.5, 100.7, 98.9, 99.2
             closes[27:] = [99.3, 99.1, 99.1]
         return opens, highs, lows, closes, volumes
