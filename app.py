@@ -2041,10 +2041,12 @@ def start_daily_blog_scheduler():
     _blog_scheduler.start()
     app.logger.info("daily multilingual blog scheduler registered: 06:15 Asia/Riyadh")
 
-try:
-    start_daily_blog_scheduler()
-except Exception:
-    app.logger.exception("daily blog scheduler could not start")
+ENABLE_DAILY_BLOG_PUBLISH=os.environ.get("ENABLE_DAILY_BLOG_PUBLISH","true").strip().lower() in ("1","true","yes","on")
+if ENABLE_DAILY_BLOG_PUBLISH:
+    try:
+        start_daily_blog_scheduler()
+    except Exception:
+        app.logger.exception("daily blog scheduler could not start")
 
 if __name__=="__main__":
     app.run(host="0.0.0.0",port=int(os.environ.get("PORT","8080")))
