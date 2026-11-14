@@ -1840,7 +1840,7 @@ def market_scan_initial_delay_seconds(index):
 
 
 # Run the active false-sweep strategy on the staggered 15-minute market schedule.
-AUTO_SCAN_ENABLED=True
+AUTO_SCAN_ENABLED=os.environ.get("ENABLE_AUTO_SCAN","true").strip().lower() in ("1","true","yes","on")
 scheduler=None
 if AUTO_SCAN_ENABLED:
     # One scheduler worker prevents seven markets from launching together on
