@@ -45,7 +45,7 @@ jobs:
         run: |
           python -m unittest discover -s tests -v
           python - <<'PY'
-          from app import app, scheduler
+          from app import app, scheduler, scheduled_daily_blog_publish
           from market_strategies import diagnostic_self_test
           assert scheduler is None, "ENABLE_AUTO_SCAN=false must disable background jobs in CI"
           assert diagnostic_self_test()["ok"], diagnostic_self_test()
@@ -57,9 +57,10 @@ jobs:
           assert client.get("/api/bootstrap").status_code == 200
           assert client.get("/api/visitors/stats").get_json()["ok"] is True
           assert client.get("/sitemap.xml").status_code == 200
+          scheduled_daily_blog_publish()
           for lang in ("ar", "en", "es", "de", "id", "pt", "tr", "fr", "hi"):
               blog = client.get(f"/api/content/blog?lang={lang}").get_json()
-              assert len(blog["items"]) >= 2, (lang, blog)
+              assert len(blog["items"]) >= 3, (lang, blog)
           assert client.get("/blog/risk-ar").status_code == 200
           assert client.get("/api/trades").status_code == 200
           strategy_status = client.get("/api/strategy/status").get_json()
