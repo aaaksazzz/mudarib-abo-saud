@@ -40,20 +40,28 @@ jobs:
           SECRET_KEY: ci-test-secret-key-not-for-production
           COOKIE_SECURE: "false"
           ENABLE_AUTO_SCAN: "false"
+          ENABLE_DAILY_BLOG_PUBLISH: "false"
           DATABASE_URL: sqlite:///ci-market-tests.db
         run: |
           python -m unittest discover -s tests -v
           python - <<'PY'
-          from app import app, scheduler
+          from app import app, scheduler, scheduled_daily_blog_publish
           from market_strategies import diagnostic_self_test
           assert scheduler is None, "ENABLE_AUTO_SCAN=false must disable background jobs in CI"
           assert diagnostic_self_test()["ok"], diagnostic_self_test()
           client = app.test_client()
-          for path in ("/health", "/ready", "/api/bootstrap", "/api/trades", "/api/strategy/status", "/api/strategy-status", "/", "/plans", "/journal", "/blog", "/news", "/login", "/register", "/account", "/admin", "/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex", "/styles.css", "/pro-theme.css", "/compat.css", "/platform.js", "/intelligence", "/intelligence.js", "/intelligence.css"):
+          for path in ("/health", "/ready", "/api/bootstrap", "/api/trades", "/api/strategy/status", "/api/strategy-status", "/", "/plans", "/journal", "/blog", "/news", "/login", "/register", "/account", "/admin", "/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex", "/sitemap.xml", "/robots.txt", "/blog?lang=en", "/styles.css", "/pro-theme.css", "/compat.css", "/platform.js", "/intelligence", "/intelligence.js", "/intelligence.css"):
             response = client.get(path)
             assert response.status_code in (200, 503), (path, response.status_code, response.data[:300])
           assert client.get("/health").get_json()["ok"] is True
           assert client.get("/api/bootstrap").status_code == 200
+          assert client.get("/api/visitors/stats").get_json()["ok"] is True
+          assert client.get("/sitemap.xml").status_code == 200
+          scheduled_daily_blog_publish()
+          for lang in ("ar", "en", "es", "de", "id", "pt", "tr", "fr", "hi"):
+              blog = client.get(f"/api/content/blog?lang={lang}").get_json()
+              assert len(blog["items"]) >= 3, (lang, blog)
+          assert client.get("/blog/risk-ar").status_code == 200
           assert client.get("/api/trades").status_code == 200
           strategy_status = client.get("/api/strategy/status").get_json()
           assert strategy_status["strategy_fingerprint"].startswith("SMART-REGIME-ADAPTIVE-"), strategy_status

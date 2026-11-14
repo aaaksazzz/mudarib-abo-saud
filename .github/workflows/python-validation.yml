@@ -20,4 +20,6 @@ jobs:
       - name: Compile all Python modules
         run: python -m compileall -q .
       - name: Run regression tests
+        env:
+          ENABLE_DAILY_BLOG_PUBLISH: "false"
         run: python -m unittest discover -s tests -v
