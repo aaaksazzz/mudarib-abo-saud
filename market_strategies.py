@@ -172,8 +172,12 @@ def target_prices(entry, side, stop=None):
 
 
 def _trend_signal(highs, lows, closes, ema_fast, ema_slow, atr, periods=CHANNEL_PERIODS):
-    votes = []
     current = closes[-1]
+    up = ema_fast[-1] > ema_slow[-1] and ema_fast[-1] >= ema_fast[-2] and current > ema_fast[-1]
+    down = ema_fast[-1] < ema_slow[-1] and ema_fast[-1] <= ema_fast[-2] and current < ema_fast[-1]
+
+    # First accept a confirmed Donchian breakout aligned with the EMA trend.
+    votes = []
     buffer = max(atr * 0.05, current * 1e-8)
     for period in periods:
         upper = max(highs[-period - 1:-1])
@@ -184,23 +188,20 @@ def _trend_signal(highs, lows, closes, ema_fast, ema_slow, atr, periods=CHANNEL_
             votes.append(("SELL", "DONCHIAN_" + str(period), lower))
     buys = [v for v in votes if v[0] == "BUY"]
     sells = [v for v in votes if v[0] == "SELL"]
-    if len(buys) >= 1 and len(buys) > len(sells):
-        side, chosen = "BUY", buys
-    elif len(sells) >= 1 and len(sells) > len(buys):
-        side, chosen = "SELL", sells
-    else:
-        return None
-    up = ema_fast[-1] > ema_slow[-1] and ema_fast[-1] >= ema_fast[-2] and closes[-1] > ema_fast[-1]
-    down = ema_fast[-1] < ema_slow[-1] and ema_fast[-1] <= ema_fast[-2] and closes[-1] < ema_fast[-1]
-    if (side == "BUY" and not up) or (side == "SELL" and not down):
-        return None
-    level = chosen[0][2]
-    if abs(current - level) <= atr * 2.0 and highs[-1] - lows[-1] <= atr * 2.8:
-        return side, [v[1] for v in chosen], "TREND_BREAKOUT"
-    # Moderate alternative: closed-candle EMA pullback continuation.
+    if len(buys) >= 1 and len(buys) > len(sells) and up:
+        level = buys[0][2]
+        if abs(current - level) <= atr * 2.0 and highs[-1] - lows[-1] <= atr * 2.8:
+            return "BUY", [v[1] for v in buys], "TREND_BREAKOUT"
+    if len(sells) >= 1 and len(sells) > len(buys) and down:
+        level = sells[0][2]
+        if abs(current - level) <= atr * 2.0 and highs[-1] - lows[-1] <= atr * 2.8:
+            return "SELL", [v[1] for v in sells], "TREND_BREAKOUT"
+
+    # Independent moderate alternative: closed-candle EMA pullback continuation.
+    # This path must not depend on a Donchian breakout vote.
     candle_range = max(highs[-1] - lows[-1], current * 1e-9)
-    bullish_close = closes[-1] > closes[-2] and closes[-1] > (lows[-1] + candle_range * 0.55)
-    bearish_close = closes[-1] < closes[-2] and closes[-1] < (highs[-1] - candle_range * 0.55)
+    bullish_close = closes[-1] > closes[-2] and current > (lows[-1] + candle_range * 0.55)
+    bearish_close = closes[-1] < closes[-2] and current < (highs[-1] - candle_range * 0.55)
     near_fast_ema = abs(current - ema_fast[-1]) <= atr * 0.60
     if near_fast_ema and up and bullish_close:
         return "BUY", ["EMA_PULLBACK", "EMA_ALIGNMENT"], "TREND_PULLBACK"
