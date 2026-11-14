@@ -72,6 +72,7 @@ jobs:
           platform = client.get("/platform.js").data
           for frame in (b"15m", b"1h", b"4h", b"1d", b"1w", b"1M"):
             assert frame in platform, ("missing timeframe", frame)
+          assert b"data-timeframe" in platform and b"timeframe-tab" in platform, "visible timeframe buttons are missing"
           for path in ("/", "/market/futures"):
             page = client.get(path)
             assert len(page.data) > 1000 and b"/platform.js?v=20261114.timeframe-buttons-v1" in page.data, (path, len(page.data))
