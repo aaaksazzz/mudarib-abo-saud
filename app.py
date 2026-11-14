@@ -352,7 +352,9 @@ def intelligence_stylesheet(): return send_from_directory(APP_DIR, "intelligence
 @app.get("/market/<market>")
 def market_page_route(market):
     if market not in MARKETS: return json_error("السوق غير معروف",404)
-    return send_from_directory(APP_DIR, "index.html")
+    # Market URLs must serve the dedicated terminal with the six working
+    # timeframe controls, not the retired single-page shell.
+    return send_from_directory(APP_DIR, "intelligence.html")
 
 @app.get("/signal-lab")
 def signal_lab_page():
