@@ -916,8 +916,10 @@ def filter_fresh_signals(signals, universe, now=None):
             current=live_prices.get(signal.get("symbol"))
             side=signal.get("side")
             direction=1.0 if side=="BUY" else -1.0
-            interval_ms=market_strategies.INTERVAL_MS.get(signal.get("timeframe"))
-            if not interval_ms or not candle_time or now_ms-(candle_time+interval_ms)>interval_ms*1.5+120000:
+            timeframe=signal.get("timeframe")
+            candle_end=timeframe_candle_end_ms(candle_time,timeframe) if candle_time else None
+            candle_duration=(candle_end-candle_time) if candle_end is not None else 0
+            if not candle_duration or now_ms-candle_end>candle_duration*1.5+120000:
                 rejected_old+=1
                 continue
             if current is None or min(candle_entry,stop,old_tp1)<=0 or side not in ("BUY","SELL"):
@@ -975,16 +977,28 @@ def expire_stale_trades(market=None):
         db.session.commit()
     return changed
 
+def timeframe_candle_end_ms(stamp_ms,timeframe):
+    """Return the true candle close boundary; monthly bars use calendar months."""
+    stamp_ms=int(stamp_ms)
+    if timeframe=="1M":
+        opened=datetime.fromtimestamp(stamp_ms/1000,tz=timezone.utc)
+        if opened.month==12:
+            closed=datetime(opened.year+1,1,1,tzinfo=timezone.utc)
+        else:
+            closed=datetime(opened.year,opened.month+1,1,tzinfo=timezone.utc)
+        return int(closed.timestamp()*1000)
+    interval_ms=market_strategies.INTERVAL_MS.get(timeframe)
+    return stamp_ms+interval_ms if interval_ms else None
+
+
 def evaluate_trade_outcome_from_bars(trade,rows,now_ms=None):
-    """Replay completed OHLC bars using the trade's own timeframe."""
+    """Replay only fully closed candles that opened at/after the trade entry."""
     now_ms=now_ms if now_ms is not None else int(utcnow().timestamp()*1000)
-    interval_ms=market_strategies.INTERVAL_MS.get(trade.timeframe)
-    if not interval_ms:
+    if trade.timeframe not in market_strategies.INTERVAL_MS:
         return trade.status,0
     try:
         created=aware(trade.created_at)
         created_ms=int(created.timestamp()*1000)
-        first_bar=((created_ms+interval_ms-1)//interval_ms)*interval_ms
     except (AttributeError,TypeError,ValueError,OverflowError):
         return trade.status,0
     status=trade.status
@@ -999,7 +1013,8 @@ def evaluate_trade_outcome_from_bars(trade,rows,now_ms=None):
             low=float(row[3])
             if not all(math.isfinite(value) for value in (high,low)) or high<=0 or low<=0 or high<low:
                 continue
-            if stamp<first_bar or stamp+interval_ms>now_ms:
+            candle_end=timeframe_candle_end_ms(stamp,trade.timeframe)
+            if candle_end is None or stamp<created_ms or candle_end>now_ms:
                 continue
             parsed.append((stamp,high,low))
         except (TypeError,ValueError,OverflowError):
