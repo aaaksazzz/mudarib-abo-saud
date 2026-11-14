@@ -1459,8 +1459,8 @@ def run_market_scan(market,force=False):
 
 @app.get("/api/markets/<market>/signals")
 def signals(market):
-    # Backward-compatible adapter for older market clients. All clients use the
-    # current SMART FLOW scanner and its shared cache; no legacy strategy runs.
+    # Market-page reads are deliberately lightweight: the background scheduler
+    # owns scans; this endpoint only returns the committed batch for one frame.
     if market not in MARKETS:
         return json_error("السوق غير معروف",404)
     timeframe=str(request.args.get("timeframe","15m")).strip()
@@ -1470,33 +1470,63 @@ def signals(market):
     if blocked:
         return blocked
     try:
-        result=run_market_scan(market,force=False)
-        frame_signals=[item for item in result.get("signals",[])
-                       if item.get("timeframe")==timeframe]
+        now=utcnow()
+        frame_meta_row=db.session.get(Setting,"scan-meta:"+market+":"+timeframe)
+        frame_scan_row=db.session.get(Setting,"scan:"+market+":"+timeframe)
+        frame_state=db.session.get(Setting,"scan-frame:adaptive-trend:"+market+":"+timeframe)
+        try:
+            meta=json.loads(frame_meta_row.value) if frame_meta_row else {}
+        except (TypeError,ValueError):
+            meta={}
+        frame_is_current=bool(
+            frame_state
+            and frame_state.value==str(timeframe_bucket(timeframe,now))
+            and frame_scan_row
+            and frame_meta_row
+        )
+        market_bias=meta.get("market_bias")
+        active=Trade.query.filter(
+            Trade.market==market,Trade.timeframe==timeframe,
+            Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,
+            Trade.reason.like("ADAPTIVE-TREND MTF:%")
+        ).order_by(Trade.score.desc()).limit(3).all() if frame_is_current else []
+        if market_bias not in ("BUY","SELL"):
+            active=[]
+        else:
+            active=[trade for trade in active if trade.side==market_bias]
+        updated_at=frame_scan_row.value if frame_scan_row else None
+        data_status=meta.get("data_status","pending") if frame_is_current else ("stale" if updated_at else "pending")
         return jsonify({
             "ok":True,"market":market,"timeframe":timeframe,
-            "signals":frame_signals,"updated_at":result.get("updated_at"),
+            "signals":[trade_json(trade) for trade in active],
+            "updated_at":updated_at,
             "market_closed":market=="saudi" and not saudi_market_is_open(),
-            "stale":False,"scan_error":None,
-            "analysis_completed":result.get("analysis_completed",0),
-            "analysis_failed":result.get("analysis_failed",0),
-            "strategy_matches":result.get("strategy_matches",0),
-            "rejected_stale_candle":result.get("rejected_stale_candle",0),
-            "rejected_late_price":result.get("rejected_late_price",0),
-            "data_status":result.get("data_status","unknown"),
-            "incomplete_timeframes":result.get("incomplete_timeframes",{}),
-            "frame_diagnostics":result.get("frame_diagnostics",{})
+            "stale":not frame_is_current,"scan_error":None,
+            "scan_universe":meta.get("scan_universe"),
+            "scan_batch_size":meta.get("scan_batch_size"),
+            "analysis_completed":meta.get("analysis_completed",0),
+            "analysis_failed":meta.get("analysis_failed",0),
+            "strategy_matches":meta.get("strategy_matches",0),
+            "fresh_matches":meta.get("fresh_matches",0),
+            "direction_rejected":meta.get("direction_rejected",0),
+            "accepted_signals":meta.get("accepted_signals",0),
+            "rejected_stale_candle":meta.get("rejected_stale_candle",0),
+            "rejected_late_price":meta.get("rejected_late_price",0),
+            "market_bias":market_bias,"data_status":data_status,
+            "incomplete_timeframes":({timeframe:{"completed":0,"required":meta.get("required_samples",0)}}
+                                     if not frame_is_current else {}),
+            "frame_diagnostics":meta.get("frame_diagnostics",{})
         })
     except OperationalError as exc:
         db.session.rollback()
         if "locked" in str(exc).lower():
-            app.logger.warning("SQLite busy while serving market=%s; client may retry",market)
+            app.logger.warning("SQLite busy while serving market=%s timeframe=%s",market,timeframe)
             return jsonify({"ok":False,"error":"قاعدة البيانات مشغولة مؤقتاً؛ أعد المحاولة بعد لحظات."}),503,{"Retry-After":"10","Cache-Control":"no-store"}
-        app.logger.exception("Database operation failed for market=%s",market)
+        app.logger.exception("Database operation failed for market=%s timeframe=%s",market,timeframe)
         return json_error("تعذر قراءة بيانات السوق من قاعدة البيانات",503)
     except Exception:
         db.session.rollback()
-        app.logger.exception("Current market signal adapter failed for %s",market)
+        app.logger.exception("Current market signal read failed for %s timeframe=%s",market,timeframe)
         return json_error("تعذر تحميل بيانات السوق حالياً",502)
 
 @app.get("/api/trades")
