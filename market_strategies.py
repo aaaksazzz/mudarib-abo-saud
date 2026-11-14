@@ -176,7 +176,7 @@ STRATEGY_CATALOG = (
     "FALSE_SWEEP", "EMA_TREND", "MACD_CROSS", "RSI_REVERSAL",
     "BOLLINGER_REVERSION", "DONCHIAN_BREAKOUT", "MOMENTUM_ROC",
     "STOCHASTIC_REVERSAL", "CCI_REVERSAL", "ICHIMOKU_TREND",
-    "SUPERTREND", "ENGULFING_REVERSAL",
+    "ATR_CHANNEL_BREAKOUT", "ENGULFING_REVERSAL",
 )
 
 
@@ -289,13 +289,13 @@ def _independent_votes(bars):
         if c[-1]>cloud_top and tenkan>kijun: add("ICHIMOKU_TREND","BUY",1.1)
         elif c[-1]<cloud_bottom and tenkan<kijun: add("ICHIMOKU_TREND","SELL",1.1)
 
-    # ATR-band Supertrend direction.
+    # ATR channel breakout (not labelled as Supertrend; no trailing-band state is calculated).
     if len(c)>=16:
         atr=_atr(h,l,c,14)
         mid=(h[-1]+l[-1])/2
         upper=mid+3*atr; lower=mid-3*atr
-        if c[-1]>upper: add("SUPERTREND","BUY",1.1)
-        elif c[-1]<lower: add("SUPERTREND","SELL",1.1)
+        if c[-1]>upper: add("ATR_CHANNEL_BREAKOUT","BUY",1.1)
+        elif c[-1]<lower: add("ATR_CHANNEL_BREAKOUT","SELL",1.1)
 
     # Two-candle engulfing reversal.
     if len(c)>=2:
