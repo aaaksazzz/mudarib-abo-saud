@@ -50,8 +50,37 @@ function renderSignals(signals){
  paint(selectedFrame);
 }
 function showEmpty(message){$("#results").innerHTML='<div class="empty-state"><b>لا توجد صفقات مؤكدة حالياً</b><br>'+esc(message)+'</div>'}
-async function runScan(m){if(scanBusy.has(m)||currentMarket!==m)return;scanBusy.add(m);$("#signalCount").textContent="جارٍ الفحص";$("#results").innerHTML='<div class="loading-state">يتم فحص السوق بحثاً عن صفقات مستوفية للشروط…</div>';try{const d=await getJSON("/api/intelligence/scan?market="+encodeURIComponent(m));if(currentMarket!==m)return;const signals=Array.isArray(d.signals)?d.signals:[];$("#signalCount").textContent=fmt(signals.length)+" صفقة";renderSignals(signals);const incomplete=Object.keys(d.incomplete_timeframes||{});if(d.data_status==="partial"||incomplete.length){const frames=incomplete.length?incomplete.join("، "):"بعض العينات";$("#results").insertAdjacentHTML("afterbegin",'<div class="frame-empty" role="status">تنبيه: بيانات الفحص جزئية في '+esc(frames)+'؛ لم تُخفَ الأخطاء، وقد لا تكون نتائج هذه الفريمات مكتملة. عدد العينات غير المكتملة: '+fmt(d.analysis_errors||0)+'.</div>')}}catch(e){if(currentMarket===m){$("#signalCount").textContent="تعذر الفحص";showEmpty(e.message)}}finally{scanBusy.delete(m)}}
-async function openMarket(m){currentMarket=m;selectedFrame="all";$("#homeView").hidden=true;$("#marketView").hidden=false;$("#topTitle").textContent=markets[m].name;$("#marketEnglish").textContent=markets[m].english;$("#marketTitle").textContent=markets[m].name;$("#marketDesc").textContent=markets[m].desc;document.querySelectorAll("[data-market]").forEach(a=>a.classList.toggle("active",a.dataset.market===m));$("#providerState").textContent="جاري التحقق من البيانات";$("#marketDirection").textContent="جارٍ التحميل";$("#snapshotUpdated").textContent="—";$("#snapshotStatus").textContent="—";$("#results").innerHTML='<div class="loading-state">يتم تجهيز السوق…</div>';await loadSnapshot(m);await runScan(m);if(refreshTimer)clearInterval(refreshTimer);refreshTimer=setInterval(async()=>{if(currentMarket===m&&document.visibilityState==="visible"){await loadSnapshot(m);await runScan(m)}},15*60*1000)}
+const rejectionLabels={
+ regime_not_tradeable:"حالة السوق غير مناسبة",regime_persistence_below_threshold:"ثبات الاتجاه غير كافٍ",
+ trend_breakout_not_confirmed:"لا يوجد اختراق أو ارتداد مؤكد",range_rejection_not_confirmed:"لا يوجد ارتداد مؤكد من النطاق",
+ volume_below_threshold:"حجم التداول منخفض",structural_risk_outside_profile:"وقف الخسارة خارج نطاق الفريم",
+ volatility_outside_profile:"التذبذب خارج النطاق",spot_short_blocked:"البيع غير مسموح في السوق الفوري",
+ insufficient_completed_candles:"شموع مكتملة غير كافية",invalid_atr:"بيانات التذبذب غير صالحة",
+ invalid_structural_stop:"وقف الخسارة غير صالح",invalid_target_geometry:"حساب الأهداف غير صالح",
+ ema_unavailable:"المتوسطات غير مكتملة",provider_timeout:"انتهت مهلة مصدر البيانات",
+ provider_rate_limited:"مصدر البيانات يحد الطلبات",provider_forbidden:"المصدر رفض الوصول",
+ provider_not_found:"الفريم غير مدعوم من المصدر",insufficient_history:"تاريخ الشموع غير كافٍ"
+};
+function diagnosticPanel(data){
+ const frames=Object.entries(data.frame_diagnostics||{});
+ if(!frames.length)return "";
+ const cards=frames.map(([frame,s])=>{
+  const reasons={...(s.strategy_rejections||{}),...(s.failure_reasons||{})};
+  const top=Object.entries(reasons).sort((a,b)=>Number(b[1])-Number(a[1])).slice(0,3);
+  const why=top.length?top.map(([key,count])=>(rejectionLabels[key]||key.replaceAll("_"," "))+" ("+fmt(count)+")").join(" · "):"لم تُسجل أسباب رفض";
+  return '<div class="diagnostic-frame"><b>'+esc(frame)+'</b><span>تحليل '+fmt(s.completed||0)+' · فرص أولية '+fmt(s.matches||0)+' · أخطاء '+fmt(s.failed||0)+'</span><small>'+esc(why)+'</small><small>استبعاد: شموع قديمة '+fmt(s.rejected_stale_candle||0)+' · دخول متأخر '+fmt(s.rejected_late_price||0)+' · عكس اتجاه السوق '+fmt(s.direction_rejected||0)+'</small></div>';
+ }).join("");
+ return '<section class="scan-diagnostics"><b>تشخيص الفحص · لماذا لم تظهر صفقة؟</b>'+cards+'</section>';
+}
+async function loadEngineFingerprint(){
+ try{
+  const s=await getJSON("/api/strategy-status");
+  const el=$("#engineFingerprint");
+  if(el)el.textContent=(s.strategy_fingerprint||"بصمة المحرك غير متاحة")+(s.strategy_ready?" · جاهز":" · يحتاج مراجعة");
+ }catch(_){const el=$("#engineFingerprint");if(el)el.textContent="تعذر قراءة بصمة المحرك"}
+}
+async function runScan(m){if(scanBusy.has(m)||currentMarket!==m)return;scanBusy.add(m);$("#signalCount").textContent="جارٍ الفحص";$("#results").innerHTML='<div class="loading-state">يتم فحص السوق بحثاً عن صفقات مستوفية للشروط…</div>';try{const d=await getJSON("/api/intelligence/scan?market="+encodeURIComponent(m));if(currentMarket!==m)return;const signals=Array.isArray(d.signals)?d.signals:[];$("#signalCount").textContent=fmt(signals.length)+" صفقة";renderSignals(signals);if(!signals.length||d.data_status==="partial")$("#results").insertAdjacentHTML("afterbegin",diagnosticPanel(d));const incomplete=Object.keys(d.incomplete_timeframes||{});if(d.data_status==="partial"||incomplete.length){const frames=incomplete.length?incomplete.join("، "):"بعض العينات";$("#results").insertAdjacentHTML("afterbegin",'<div class="frame-empty" role="status">تنبيه: بيانات الفحص جزئية في '+esc(frames)+'؛ لم تُخفَ الأخطاء، وقد لا تكون نتائج هذه الفريمات مكتملة. عدد العينات غير المكتملة: '+fmt(d.analysis_errors||0)+'.</div>')}}catch(e){if(currentMarket===m){$("#signalCount").textContent="تعذر الفحص";showEmpty(e.message)}}finally{scanBusy.delete(m)}}
+async function openMarket(m){currentMarket=m;selectedFrame="all";$("#homeView").hidden=true;$("#marketView").hidden=false;$("#topTitle").textContent=markets[m].name;$("#marketEnglish").textContent=markets[m].english;$("#marketTitle").textContent=markets[m].name;$("#marketDesc").textContent=markets[m].desc;document.querySelectorAll("[data-market]").forEach(a=>a.classList.toggle("active",a.dataset.market===m));$("#providerState").textContent="جاري التحقق من البيانات";$("#marketDirection").textContent="جارٍ التحميل";$("#snapshotUpdated").textContent="—";$("#snapshotStatus").textContent="—";$("#results").innerHTML='<div class="loading-state">يتم تجهيز السوق…</div>';await Promise.all([loadSnapshot(m),loadEngineFingerprint()]);await runScan(m);if(refreshTimer)clearInterval(refreshTimer);refreshTimer=setInterval(async()=>{if(currentMarket===m&&document.visibilityState==="visible"){await loadSnapshot(m);await runScan(m)}},15*60*1000)}
 function openHome(){currentMarket=null;if(refreshTimer)clearInterval(refreshTimer);$("#marketView").hidden=true;$("#homeView").hidden=false;$("#topTitle").textContent="مركز الأسواق الذكي";document.querySelectorAll("[data-market]").forEach(a=>a.classList.remove("active"));loadHome();loadVisitorStats()}
 function init(){const m=routeMarket();$("#date").textContent=new Intl.DateTimeFormat("ar-SA",{dateStyle:"medium"}).format(new Date());$("#theme").addEventListener("click",()=>document.body.classList.toggle("light"));$("#menuToggle").addEventListener("click",()=>document.body.classList.toggle("menu-open"));$("#scrim").addEventListener("click",()=>document.body.classList.remove("menu-open"));document.querySelectorAll("[data-market]").forEach(a=>a.addEventListener("click",e=>{if(e.metaKey||e.ctrlKey)return;e.preventDefault();history.pushState({},"",a.href);document.body.classList.remove("menu-open");openMarket(a.dataset.market)}));document.querySelector("[data-home]").addEventListener("click",e=>{if(e.metaKey||e.ctrlKey)return;e.preventDefault();history.pushState({},"","/");document.body.classList.remove("menu-open");openHome()});window.addEventListener("popstate",()=>{const next=routeMarket();next?openMarket(next):openHome()});if(m)openMarket(m);else openHome()}
 document.addEventListener("DOMContentLoaded",init);
