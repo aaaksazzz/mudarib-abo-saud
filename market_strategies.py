@@ -6,16 +6,16 @@ or transitional conditions. Uses completed OHLCV candles only; paper analysis.
 """
 import math
 
-STRATEGY_FINGERPRINT = "SMART-REGIME-ADAPTIVE-ENSEMBLE-MTF-V5-BALANCED-20261114"
+STRATEGY_FINGERPRINT = "SMART-REGIME-ADAPTIVE-ENSEMBLE-MTF-V6-BALANCED-20261114"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 # Independent parameter profiles keep each timeframe's strategy horizon appropriate.
 FRAME_PROFILES = {
-    "15m": {"ema_fast": 20, "ema_slow": 50, "channels": (20, 55, 100), "range_period": 20, "atr_fast": 14, "atr_slow": 50, "min_bars": 105, "regime_window": 80, "regime_min_bars": 60, "regime_step": 5, "stop_lookback": 10, "min_risk_atr": 0.35, "max_risk_atr": 4.0, "max_risk_pct": 0.025},
-    "1h": {"ema_fast": 18, "ema_slow": 48, "channels": (18, 48, 96), "range_period": 18, "atr_fast": 14, "atr_slow": 48, "min_bars": 102, "regime_window": 78, "regime_min_bars": 58, "regime_step": 5, "stop_lookback": 10, "min_risk_atr": 0.35, "max_risk_atr": 4.0, "max_risk_pct": 0.03},
-    "4h": {"ema_fast": 16, "ema_slow": 40, "channels": (16, 40, 80), "range_period": 16, "atr_fast": 14, "atr_slow": 40, "min_bars": 88, "regime_window": 72, "regime_min_bars": 54, "regime_step": 4, "stop_lookback": 9, "min_risk_atr": 0.35, "max_risk_atr": 4.2, "max_risk_pct": 0.04},
-    "1d": {"ema_fast": 20, "ema_slow": 50, "channels": (15, 40, 80), "range_period": 15, "atr_fast": 14, "atr_slow": 40, "min_bars": 88, "regime_window": 72, "regime_min_bars": 54, "regime_step": 4, "stop_lookback": 9, "min_risk_atr": 0.35, "max_risk_atr": 4.5, "max_risk_pct": 0.06},
-    "1w": {"ema_fast": 12, "ema_slow": 36, "channels": (12, 30, 60), "range_period": 12, "atr_fast": 10, "atr_slow": 30, "min_bars": 68, "regime_window": 60, "regime_min_bars": 45, "regime_step": 3, "stop_lookback": 8, "min_risk_atr": 0.35, "max_risk_atr": 5.0, "max_risk_pct": 0.10},
-    "1M": {"ema_fast": 6, "ema_slow": 18, "channels": (6, 18, 36), "range_period": 6, "atr_fast": 6, "atr_slow": 24, "min_bars": 42, "regime_window": 40, "regime_min_bars": 36, "regime_step": 2, "stop_lookback": 6, "min_risk_atr": 0.35, "max_risk_atr": 6.0, "max_risk_pct": 0.18},
+    "15m": {"ema_fast": 20, "ema_slow": 50, "channels": (20, 55, 100), "range_period": 20, "atr_fast": 14, "atr_slow": 50, "min_bars": 105, "regime_window": 80, "regime_min_bars": 60, "regime_step": 5, "stop_lookback": 10, "min_risk_atr": 0.35, "max_risk_atr": 4.0, "max_risk_pct": 0.035},
+    "1h": {"ema_fast": 18, "ema_slow": 48, "channels": (18, 48, 96), "range_period": 18, "atr_fast": 14, "atr_slow": 48, "min_bars": 102, "regime_window": 78, "regime_min_bars": 58, "regime_step": 5, "stop_lookback": 10, "min_risk_atr": 0.35, "max_risk_atr": 4.0, "max_risk_pct": 0.04},
+    "4h": {"ema_fast": 16, "ema_slow": 40, "channels": (16, 40, 80), "range_period": 16, "atr_fast": 14, "atr_slow": 40, "min_bars": 88, "regime_window": 72, "regime_min_bars": 54, "regime_step": 4, "stop_lookback": 9, "min_risk_atr": 0.35, "max_risk_atr": 4.2, "max_risk_pct": 0.05},
+    "1d": {"ema_fast": 20, "ema_slow": 50, "channels": (15, 40, 80), "range_period": 15, "atr_fast": 14, "atr_slow": 40, "min_bars": 88, "regime_window": 72, "regime_min_bars": 54, "regime_step": 4, "stop_lookback": 9, "min_risk_atr": 0.35, "max_risk_atr": 4.5, "max_risk_pct": 0.07},
+    "1w": {"ema_fast": 12, "ema_slow": 36, "channels": (12, 30, 60), "range_period": 12, "atr_fast": 10, "atr_slow": 30, "min_bars": 68, "regime_window": 60, "regime_min_bars": 45, "regime_step": 3, "stop_lookback": 8, "min_risk_atr": 0.35, "max_risk_atr": 5.0, "max_risk_pct": 0.12},
+    "1M": {"ema_fast": 6, "ema_slow": 18, "channels": (6, 18, 36), "range_period": 6, "atr_fast": 6, "atr_slow": 24, "min_bars": 42, "regime_window": 40, "regime_min_bars": 36, "regime_step": 2, "stop_lookback": 6, "min_risk_atr": 0.35, "max_risk_atr": 6.0, "max_risk_pct": 0.20},
 }
 SIGNAL_TIMEFRAME = {frame: frame for frame in TIMEFRAMES}
 INTERVAL_MS = {
@@ -190,7 +190,7 @@ def _trend_signal(highs, lows, closes, ema_fast, ema_slow, atr, periods=CHANNEL_
     sells = [v for v in votes if v[0] == "SELL"]
     if len(buys) >= 1 and len(buys) > len(sells) and up:
         level = buys[0][2]
-        if abs(current - level) <= atr * 2.0 and highs[-1] - lows[-1] <= atr * 2.8:
+        if abs(current - level) <= atr * 2.5 and highs[-1] - lows[-1] <= atr * 2.8:
             return "BUY", [v[1] for v in buys], "TREND_BREAKOUT"
     if len(sells) >= 1 and len(sells) > len(buys) and down:
         level = sells[0][2]
@@ -202,7 +202,7 @@ def _trend_signal(highs, lows, closes, ema_fast, ema_slow, atr, periods=CHANNEL_
     candle_range = max(highs[-1] - lows[-1], current * 1e-9)
     bullish_close = closes[-1] > closes[-2] and current > (lows[-1] + candle_range * 0.40)
     bearish_close = closes[-1] < closes[-2] and current < (highs[-1] - candle_range * 0.40)
-    near_fast_ema = abs(current - ema_fast[-1]) <= atr * 1.00
+    near_fast_ema = abs(current - ema_fast[-1]) <= atr * 1.25
     if near_fast_ema and up and bullish_close:
         return "BUY", ["EMA_PULLBACK", "EMA_ALIGNMENT"], "TREND_PULLBACK"
     if near_fast_ema and down and bearish_close:
@@ -222,8 +222,8 @@ def _range_signal(opens, highs, lows, closes, period=20):
     candle_range = max(highs[-1] - lows[-1], close * 1e-9)
     lower_zone = lower + width * 0.35
     upper_zone = upper - width * 0.35
-    bullish_rejection = close > op and close >= closes[-2] and (close - lows[-1]) / candle_range >= 0.50
-    bearish_rejection = close < op and close <= closes[-2] and (highs[-1] - close) / candle_range >= 0.55
+    bullish_rejection = close > op and close >= closes[-2] and (close - lows[-1]) / candle_range >= 0.45
+    bearish_rejection = close < op and close <= closes[-2] and (highs[-1] - close) / candle_range >= 0.50
     if close <= lower_zone and rsi <= 52 and bullish_rejection:
         return "BUY", ["RANGE_LOW_REJECTION", "RSI_OVERSOLD"], "RANGE_MEAN_REVERSION"
     if close >= upper_zone and rsi >= 48 and bearish_rejection:
