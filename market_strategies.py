@@ -8,6 +8,15 @@ import math
 
 STRATEGY_FINGERPRINT = "SMART-REGIME-ADAPTIVE-ENSEMBLE-MTF-V2-20261114"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
+# Independent parameter profiles keep each timeframe's strategy horizon appropriate.
+FRAME_PROFILES = {
+    "15m": {"ema_fast": 20, "ema_slow": 50, "channels": (20, 55, 100), "range_period": 20, "atr_fast": 14, "atr_slow": 50, "min_bars": 105, "regime_window": 80, "regime_min_bars": 60, "regime_step": 5, "stop_lookback": 10, "min_risk_atr": 0.35, "max_risk_atr": 4.0, "max_risk_pct": 0.025},
+    "1h": {"ema_fast": 18, "ema_slow": 48, "channels": (18, 48, 96), "range_period": 18, "atr_fast": 14, "atr_slow": 48, "min_bars": 102, "regime_window": 78, "regime_min_bars": 58, "regime_step": 5, "stop_lookback": 10, "min_risk_atr": 0.35, "max_risk_atr": 4.0, "max_risk_pct": 0.03},
+    "4h": {"ema_fast": 16, "ema_slow": 40, "channels": (16, 40, 80), "range_period": 16, "atr_fast": 14, "atr_slow": 40, "min_bars": 88, "regime_window": 72, "regime_min_bars": 54, "regime_step": 4, "stop_lookback": 9, "min_risk_atr": 0.35, "max_risk_atr": 4.2, "max_risk_pct": 0.04},
+    "1d": {"ema_fast": 20, "ema_slow": 50, "channels": (15, 40, 80), "range_period": 15, "atr_fast": 14, "atr_slow": 40, "min_bars": 88, "regime_window": 72, "regime_min_bars": 54, "regime_step": 4, "stop_lookback": 9, "min_risk_atr": 0.35, "max_risk_atr": 4.5, "max_risk_pct": 0.06},
+    "1w": {"ema_fast": 12, "ema_slow": 36, "channels": (12, 30, 60), "range_period": 12, "atr_fast": 10, "atr_slow": 30, "min_bars": 68, "regime_window": 60, "regime_min_bars": 45, "regime_step": 3, "stop_lookback": 8, "min_risk_atr": 0.35, "max_risk_atr": 5.0, "max_risk_pct": 0.10},
+    "1M": {"ema_fast": 6, "ema_slow": 18, "channels": (6, 18, 36), "range_period": 6, "atr_fast": 6, "atr_slow": 24, "min_bars": 42, "regime_window": 40, "regime_min_bars": 36, "regime_step": 2, "stop_lookback": 6, "min_risk_atr": 0.35, "max_risk_atr": 6.0, "max_risk_pct": 0.18},
+}
 SIGNAL_TIMEFRAME = {frame: frame for frame in TIMEFRAMES}
 INTERVAL_MS = {
     "1m": 60_000, "15m": 900_000, "1h": 3_600_000,
@@ -94,21 +103,23 @@ def _rsi(values, period=14):
     return 100.0 - (100.0 / (1.0 + gains / losses))
 
 
-def _classify_window(bars):
-    if len(bars) < 60:
+def _classify_window(bars, profile=None):
+    profile = profile or FRAME_PROFILES["15m"]
+    if len(bars) < profile["regime_min_bars"]:
         return "INSUFFICIENT", 0.0, 0.0, 0.0
     highs = [b[2] for b in bars]
     lows = [b[3] for b in bars]
     closes = [b[4] for b in bars]
-    atr_fast = _atr(highs, lows, closes, 14)
-    atr_slow = _atr(highs, lows, closes, 50)
+    atr_fast = _atr(highs, lows, closes, profile["atr_fast"])
+    atr_slow = _atr(highs, lows, closes, profile["atr_slow"])
     price = closes[-1]
     if price <= 0 or atr_fast <= 0 or atr_slow <= 0:
         return "STRESS", 0.0, 0.0, 0.0
-    efficiency = _efficiency_ratio(closes, 20)
+    efficiency = _efficiency_ratio(closes, min(20, profile["regime_min_bars"] // 2))
     volatility_ratio = atr_fast / atr_slow
-    ema20, ema50 = _ema(closes, 20), _ema(closes, 50)
-    trend_spread = abs(ema20[-1] / ema50[-1] - 1.0) if ema20[-1] and ema50[-1] else 0.0
+    ema_fast = _ema(closes, profile["ema_fast"])
+    ema_slow = _ema(closes, profile["ema_slow"])
+    trend_spread = abs(ema_fast[-1] / ema_slow[-1] - 1.0) if ema_fast[-1] and ema_slow[-1] else 0.0
     atr_pct = atr_fast / price
     if volatility_ratio >= 2.10 or atr_pct >= 0.12:
         regime = "STRESS"
@@ -121,14 +132,16 @@ def _classify_window(bars):
     return regime, efficiency, volatility_ratio, atr_pct
 
 
-def _rolling_regime(bars):
-    """Use only trailing windows; require regime persistence to avoid flip-flops."""
+def _rolling_regime(bars, profile=None):
+    """Use trailing, timeframe-scaled windows; require regime persistence."""
+    profile = profile or FRAME_PROFILES["15m"]
     labels = []
     end = len(bars)
+    window, step = profile["regime_window"], profile["regime_step"]
     for offset in range(5, -1, -1):
-        stop = end - offset * 5
-        sample = bars[max(0, stop - 80):stop]
-        label, _, _, _ = _classify_window(sample)
+        stop = end - offset * step
+        sample = bars[max(0, stop - window):stop]
+        label, _, _, _ = _classify_window(sample, profile)
         if label != "INSUFFICIENT":
             labels.append(label)
     if not labels:
@@ -158,11 +171,11 @@ def target_prices(entry, side, stop=None):
     return values if all(math.isfinite(v) and v > 0 for v in values) else None
 
 
-def _trend_signal(highs, lows, closes, ema20, ema50, atr):
+def _trend_signal(highs, lows, closes, ema_fast, ema_slow, atr, periods=CHANNEL_PERIODS):
     votes = []
     current = closes[-1]
     buffer = max(atr * 0.05, current * 1e-8)
-    for period in CHANNEL_PERIODS:
+    for period in periods:
         upper = max(highs[-period - 1:-1])
         lower = min(lows[-period - 1:-1])
         if current > upper + buffer:
@@ -177,8 +190,8 @@ def _trend_signal(highs, lows, closes, ema20, ema50, atr):
         side, chosen = "SELL", sells
     else:
         return None
-    up = ema20[-1] > ema50[-1] and ema20[-1] >= ema20[-2] and closes[-1] > ema20[-1]
-    down = ema20[-1] < ema50[-1] and ema20[-1] <= ema20[-2] and closes[-1] < ema20[-1]
+    up = ema_fast[-1] > ema_slow[-1] and ema_fast[-1] >= ema_fast[-2] and closes[-1] > ema_fast[-1]
+    down = ema_fast[-1] < ema_slow[-1] and ema_fast[-1] <= ema_fast[-2] and closes[-1] < ema_fast[-1]
     if (side == "BUY" and not up) or (side == "SELL" and not down):
         return None
     level = chosen[0][2]
@@ -187,10 +200,10 @@ def _trend_signal(highs, lows, closes, ema20, ema50, atr):
     return side, [v[1] for v in chosen], "TREND_BREAKOUT"
 
 
-def _range_signal(opens, highs, lows, closes):
-    """Fade only a confirmed rejection at the outer 20-bar range."""
-    upper = max(highs[-21:-1])
-    lower = min(lows[-21:-1])
+def _range_signal(opens, highs, lows, closes, period=20):
+    """Fade only a confirmed rejection at the timeframe's outer range."""
+    upper = max(highs[-period - 1:-1])
+    lower = min(lows[-period - 1:-1])
     width = upper - lower
     if width <= 0:
         return None
@@ -209,36 +222,42 @@ def _range_signal(opens, highs, lows, closes):
 
 
 def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_micro=False):
-    profile = PROFILES.get(market)
-    if not profile or timeframe not in TIMEFRAMES:
+    market_profile = PROFILES.get(market)
+    if not market_profile or timeframe not in TIMEFRAMES:
         return None
+    frame = FRAME_PROFILES[timeframe]
     bars = _finite_rows(rows)
-    if not bars or len(bars) < 105:
+    if not bars or len(bars) < frame["min_bars"]:
         return None
     opens, highs, lows, closes, volumes = (
         [bar[index] for bar in bars] for index in (1, 2, 3, 4, 5)
     )
     entry = closes[-1]
-    regime, regime_confidence, regime_history = _rolling_regime(bars)
+    regime, regime_confidence, regime_history = _rolling_regime(bars, frame)
     if regime not in ("TREND", "RANGE") or regime_confidence < 0.75:
         return None
-    atr = _atr(highs, lows, closes, 14)
-    atr_slow = _atr(highs, lows, closes, 50)
+    atr = _atr(highs, lows, closes, frame["atr_fast"])
+    atr_slow = _atr(highs, lows, closes, frame["atr_slow"])
     if not math.isfinite(atr) or atr <= 0 or atr_slow <= 0:
         return None
     atr_pct = atr / entry
     volatility_ratio = atr / atr_slow
     if atr_pct > 0.12 or volatility_ratio > 2.10 or volatility_ratio < 0.45:
         return None
-    ema20, ema50 = _ema(closes, 20), _ema(closes, 50)
-    if not ema20 or not ema50 or ema20[-2] is None or ema50[-1] is None:
+    ema_fast = _ema(closes, frame["ema_fast"])
+    ema_slow = _ema(closes, frame["ema_slow"])
+    if not ema_fast or not ema_slow or ema_fast[-2] is None or ema_slow[-1] is None:
         return None
 
-    selected = _trend_signal(highs, lows, closes, ema20, ema50, atr) if regime == "TREND" else _range_signal(opens, highs, lows, closes)
+    selected = (
+        _trend_signal(highs, lows, closes, ema_fast, ema_slow, atr, frame["channels"])
+        if regime == "TREND"
+        else _range_signal(opens, highs, lows, closes, frame["range_period"])
+    )
     if not selected:
         return None
     side, names, method = selected
-    if side == "SELL" and not profile["allow_short"]:
+    if side == "SELL" and not market_profile["allow_short"]:
         return None
 
     prior_volumes = [v for v in volumes[-21:-1] if v > 0]
@@ -251,12 +270,14 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
                 return None
 
     buffer = max(atr * 0.25, entry * 0.0002)
-    stop = min(lows[-10:]) - buffer if side == "BUY" else max(highs[-10:]) + buffer
+    lookback = frame["stop_lookback"]
+    stop = min(lows[-lookback:]) - buffer if side == "BUY" else max(highs[-lookback:]) + buffer
     risk = entry - stop if side == "BUY" else stop - entry
     if not math.isfinite(risk) or risk <= 0:
         return None
     risk_atr, risk_pct = risk / atr, risk / entry
-    if risk_atr < 0.35 or risk_atr > 4.0 or risk_pct > 0.025:
+    if (risk_atr < frame["min_risk_atr"] or risk_atr > frame["max_risk_atr"]
+            or risk_pct > frame["max_risk_pct"]):
         return None
     targets = target_prices(entry, side, stop)
     if not targets:
@@ -318,6 +339,9 @@ def diagnostic_self_test():
         "seven_markets": len(PROFILES) == 7,
         "spot_short_disabled": PROFILES["spot"]["allow_short"] is False,
         "trend_and_range_engines": callable(_trend_signal) and callable(_range_signal),
+        "six_frame_profiles": set(FRAME_PROFILES) == set(TIMEFRAMES),
+        "frame_specific_parameters": len({tuple(sorted(v.items())) for v in FRAME_PROFILES.values()}) == len(TIMEFRAMES),
+        "monthly_history_requirement": FRAME_PROFILES["1M"]["min_bars"] < FRAME_PROFILES["15m"]["min_bars"],
         "stress_regime_detected": _classify_window(stress_sample)[0] == "STRESS",
         "buy_targets_1R_2R_3R": buy == (105.0, 110.0, 115.0),
         "sell_targets_1R_2R_3R": sell == (95.0, 90.0, 85.0),
@@ -329,6 +353,7 @@ def diagnostic_self_test():
         "fingerprint": STRATEGY_FINGERPRINT, "ok": all(checks.values()),
         "checks": checks, "timeframes": list(TIMEFRAMES),
         "catalog": list(STRATEGY_CATALOG),
+        "frame_profiles": {frame: {key: value for key, value in profile.items() if key in ("min_bars", "channels", "ema_fast", "ema_slow", "stop_lookback")} for frame, profile in FRAME_PROFILES.items()},
         "rule": "rolling regime persistence; trend breakout or range rejection; stress/transition no-trade; structural ATR stop; 1R/2R/3R",
         "score_type": "technical quality, not probability or win rate",
     }
