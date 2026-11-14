@@ -136,10 +136,15 @@ class AccountNewsSeoTests(unittest.TestCase):
         self.assertEqual(platform_app.market_strategies.SIGNAL_TIMEFRAME,
                          {frame: frame for frame in expected})
 
-    def test_build_signal_rejects_short_candle_provider_response(self):
+    def test_build_signal_marks_short_candle_provider_response_incomplete(self):
         with patch.object(platform_app, "klines", return_value=[[i, 100, 101, 99, 100, 10] for i in range(40)]):
-            with self.assertRaisesRegex(ValueError, "Insufficient candles"):
-                platform_app.build_signal("futures", {"symbol": "TESTUSDT"}, "15m")
+            result = platform_app.build_signal("futures", {"symbol": "TESTUSDT"}, "15m")
+        self.assertEqual(result, {"_data_incomplete": True, "_candles_received": 40})
+
+    def test_build_signal_marks_non_list_provider_response_incomplete(self):
+        with patch.object(platform_app, "klines", return_value=None):
+            result = platform_app.build_signal("futures", {"symbol": "TESTUSDT"}, "15m")
+        self.assertEqual(result, {"_data_incomplete": True, "_candles_received": 0})
 
     def test_fresh_signal_rebases_all_targets_to_one_two_three_r(self):
         now = platform_app.utcnow()
