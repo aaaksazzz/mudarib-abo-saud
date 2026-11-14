@@ -104,4 +104,3 @@ def provider_route_status():
             }
             for key, hosts in ROUTES.items()
         }
-}
