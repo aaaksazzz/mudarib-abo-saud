@@ -1418,11 +1418,18 @@ def _run_market_scan_unlocked(market,force=False):
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.reason.not_like("ADAPTIVE-TREND MTF:%")).update({"status":"superseded"},synchronize_session=False)
-    active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.timeframe.in_(frames_to_scan),Trade.reason.like("ADAPTIVE-TREND MTF:%"))
-    if retained_ids:
-        active_query=active_query.filter(~Trade.id.in_(retained_ids))
-    active_query.update({"status":"superseded"},synchronize_session=False)
+    # Replace only an active trade for the exact same market + symbol + timeframe.
+    # An empty scan, or a signal for another symbol/frame, must never retire it.
+    replacement_keys={(market,signal["symbol"],signal["timeframe"]) for signal in new_signals}
+    if replacement_keys:
+        replaceable=Trade.query.filter(
+            Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
+            Trade.timeframe.in_(frames_to_scan),Trade.reason.like("ADAPTIVE-TREND MTF:%")
+        ).all()
+        for previous_trade in replaceable:
+            key=(previous_trade.market,previous_trade.symbol,previous_trade.timeframe)
+            if key in replacement_keys and previous_trade.id not in retained_ids:
+                previous_trade.status="superseded"
     for signal in new_signals:
         frame=signal["timeframe"]
         db.session.add(Trade(market=market,symbol=signal["symbol"],side=signal["side"],entry=signal["entry"],stop=signal["stop"],tp1=signal["tp1"],tp2=signal["tp2"],tp3=signal["tp3"],score=signal["score"],change_15m_pct=signal["change_pct"],timeframe=frame,reason=signal["reason"],expires_at=now+timedelta(hours=24)))
