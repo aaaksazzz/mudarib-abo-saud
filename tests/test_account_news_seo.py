@@ -181,5 +181,26 @@ class AccountNewsSeoTests(unittest.TestCase):
 
 
 
+    def test_market_page_scan_reuses_shared_cache_instead_of_forcing_rescan(self):
+        result = {
+            "analysis_completed": 12,
+            "analysis_failed": 2,
+            "scan_universe": 80,
+            "scan_offset": 0,
+            "accepted_signals": 0,
+            "signals": [],
+            "updated_at": "2026-11-14T00:00:00+00:00",
+            "market_bias": "SELL",
+        }
+        with patch.object(platform_app, "run_market_scan", return_value=result) as scan:
+            response = self.client.get(
+                "/api/intelligence/scan?market=spot", base_url=self.base_url
+            )
+        self.assertEqual(response.status_code, 200, response.get_json())
+        scan.assert_called_once_with("spot", force=False)
+        self.assertEqual(response.get_json()["checked_assets"], 14)
+        self.assertEqual(response.get_json()["signals"], [])
+
+
 if __name__ == "__main__":
     unittest.main()
