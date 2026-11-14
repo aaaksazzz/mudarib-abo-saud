@@ -397,7 +397,6 @@ def compat_styles(): return send_from_directory(".", "compat.css")
 def strategy_status():
     # Public status intentionally omits proprietary strategy names, rules and fingerprints.
     return jsonify({"ok":True,"engine":"SMART TRADING PRO","manual_only":True})
-
 @app.get("/health")
 def health():
     return jsonify({"ok":True,"service":"SMART TRADING PRO","time":iso(utcnow())})
@@ -797,8 +796,7 @@ def filter_fresh_signals(signals, universe, now=None):
             if item.get("symbol") and math.isfinite(price) and price>0:
                 live_prices[item["symbol"]]=price
         except (TypeError,ValueError):
-            continue
-    accepted=[]
+            continue    accepted=[]
     rejected_old=0
     rejected_moved=0
     for signal in signals:
@@ -849,7 +847,7 @@ def filter_fresh_signals(signals, universe, now=None):
                 rejected_moved+=1
                 continue
             signal["entry"]=current
-            signal["tp1"]=old_tp1
+            signal["tp1"]=targets[0]
             signal["tp2"],signal["tp3"]=targets[1],targets[2]
             signal["risk_distance"]=live_risk
             signal["entry_price_source"]="live_market_quote"
@@ -1197,8 +1195,7 @@ def run_market_scan(market,force=False):
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
-    for trade in existing_rows:
-        marker=trade.reason.rsplit("bar_ts=",1)[-1] if "bar_ts=" in trade.reason else ""
+    for trade in existing_rows:        marker=trade.reason.rsplit("bar_ts=",1)[-1] if "bar_ts=" in trade.reason else ""
         if marker:
             existing_by_key[(trade.symbol,trade.timeframe,marker)]=trade
     retained_ids=set()
@@ -1597,8 +1594,7 @@ def provision_admin_from_env():
         db.session.commit()
         app.logger.info("Initial administrator provisioned from deployment environment")
         return
-    if email_owner is not None and email_owner.id!=admin.id:
-        app.logger.error("Configured ADMIN_EMAIL is already used by another account; admin email was not changed")
+    if email_owner is not None and email_owner.id!=admin.id:        app.logger.error("Configured ADMIN_EMAIL is already used by another account; admin email was not changed")
     else:
         admin.email=admin_email
     admin.password_hash=generate_password_hash(admin_password)
@@ -1705,7 +1701,7 @@ def market_scan_initial_delay_seconds(index):
 
 
 # The previous SMA200/liquidity-sweep scheduler is permanently retired.
-AUTO_SCAN_ENABLED=False
+AUTO_SCAN_ENABLED=True
 scheduler=None
 if AUTO_SCAN_ENABLED:
     # One scheduler worker prevents seven markets from launching together on
