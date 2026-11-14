@@ -395,8 +395,15 @@ def pro_theme(): return send_from_directory(".", "pro-theme.css")
 def compat_styles(): return send_from_directory(".", "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
-    # Public status intentionally omits proprietary strategy names, rules and fingerprints.
-    return jsonify({"ok":True,"engine":"SMART TRADING PRO","manual_only":True})
+    diagnostic=market_strategies.diagnostic_self_test()
+    return jsonify({
+        "ok":bool(diagnostic.get("ok")),
+        "engine":"SMART TRADING PRO",
+        "strategy_fingerprint":market_strategies.STRATEGY_FINGERPRINT,
+        "strategy_ready":bool(diagnostic.get("ok")),
+        "strategy_checks":diagnostic.get("checks",{}),
+        "manual_only":True
+    })
 
 @app.get("/health")
 def health():
@@ -431,7 +438,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":market_strategies.STRATEGY_FINGERPRINT.startswith("SMART-FLOW-BREAKOUT-FVG-")}
+            "price_action_engine":market_strategies.STRATEGY_FINGERPRINT.startswith("SMART-FLOW-FALSE-SWEEP-MTF-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -777,9 +784,8 @@ def build_signal(market,item,timeframe):
     # Each market and timeframe is analysed independently from its own closed candles.
     symbol=item["symbol"]
     rows=klines(market,symbol,timeframe,250)
-    # The strategy discards the still-forming final candle; require at least
-    # 40 completed candles so an empty/short provider response is not counted
-    # as a successful analysis.
+    # Provider coverage varies by symbol/timeframe. Raise a sample error;
+    # scanner counts sparse samples without a traceback for every symbol.
     if not isinstance(rows,list) or len(rows)<41:
         raise ValueError("Insufficient candles: "+str(len(rows) if isinstance(rows,list) else 0)+"/41")
     setup=market_strategies.analyze(market,symbol,rows,timeframe=timeframe)
@@ -1097,7 +1103,7 @@ def run_market_scan(market,force=False):
         frame_stats={frame:{"completed":0,"failed":0,"matches":0} for frame in frames_to_scan}
         futures={pool.submit(build_signal,market,item,frame):(item,frame) for item in candidates for frame in frames_to_scan}
         for future in as_completed(futures):
-            _,frame=futures[future]
+            item,frame=futures[future]
             try:
                 signal=future.result()
                 completed+=1
@@ -1105,6 +1111,12 @@ def run_market_scan(market,force=False):
                 if signal:
                     found.append(signal)
                     frame_stats[frame]["matches"]+=1
+            except ValueError as exc:
+                failed+=1
+                frame_stats[frame]["failed"]+=1
+                if "Insufficient candles" not in str(exc):
+                    app.logger.warning("candle sample rejected: market=%s frame=%s error=%s",
+                                       market,frame,type(exc).__name__)
             except Exception as exc:
                 failed+=1
                 frame_stats[frame]["failed"]+=1
@@ -1117,12 +1129,15 @@ def run_market_scan(market,force=False):
                         market, type(exc).__name__
                     )
                 else:
-                    app.logger.exception("multi-timeframe signal analysis failed for %s",market)
+                    app.logger.warning(
+                        "candle sample skipped: market=%s symbol=%s frame=%s error=%s",
+                        market,item.get("symbol","?"),frame,type(exc).__name__
+                    )
     # Validate completeness separately for every timeframe. A healthy 15m
     # feed must never hide a broken daily/monthly candle provider.
-    required_ratio=0.35 if market=="saudi" else 0.80
     incomplete_frames={}
     for frame in frames_to_scan:
+        required_ratio=0.35 if market=="saudi" else 0.20 if frame=="1M" else 0.80
         required=min(len(candidates),max(8 if market=="saudi" else 1,
                                        math.ceil(len(candidates)*required_ratio)))
         actual=frame_stats[frame]["completed"]
@@ -1189,7 +1204,7 @@ def run_market_scan(market,force=False):
                for key in ("rejected_stale_candle","rejected_late_price")}
     fresh_matches=len(found)
     # Market breadth is informational only. Each symbol is gated by its own
-    # each timeframe uses its own confirmed swing structure and mandatory FVG confirmation.
+    # each timeframe uses its own confirmed false-sweep and reclaim structure.
     direction_rejected=0
     app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,len(found),

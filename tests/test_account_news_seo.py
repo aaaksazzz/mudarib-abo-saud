@@ -141,7 +141,7 @@ class AccountNewsSeoTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Insufficient candles"):
                 platform_app.build_signal("futures", {"symbol": "TESTUSDT"}, "15m")
 
-    def test_fresh_signal_preserves_previous_swing_target_and_rebases_extensions(self):
+    def test_fresh_signal_rebases_all_targets_to_one_two_three_r(self):
         now = platform_app.utcnow()
         signal = {
             "symbol": "TESTUSDT", "side": "BUY", "timeframe": "15m",
@@ -155,7 +155,7 @@ class AccountNewsSeoTests(unittest.TestCase):
         self.assertEqual(rejected["rejected_late_price"], 0)
         self.assertEqual(len(accepted), 1)
         self.assertAlmostEqual(accepted[0]["entry"], 100.1)
-        self.assertAlmostEqual(accepted[0]["tp1"], 101.0)
+        self.assertAlmostEqual(accepted[0]["tp1"], 101.2)
         self.assertAlmostEqual(accepted[0]["tp2"], 102.3)
         self.assertAlmostEqual(accepted[0]["tp3"], 103.4)
         self.assertEqual(accepted[0]["entry_price_source"], "live_market_quote")

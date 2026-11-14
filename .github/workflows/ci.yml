@@ -42,8 +42,11 @@ jobs:
           assert client.get("/health").get_json()["ok"] is True
           assert client.get("/api/bootstrap").status_code == 200
           assert client.get("/api/trades").status_code == 200
-          assert client.get("/api/strategy/status").get_json()["fingerprint"].startswith("SMART-FLOW-BREAKOUT-FVG-")
-          assert client.get("/api/strategy/status").get_json()["engine"] == "market_strategies"
+          strategy_status = client.get("/api/strategy/status").get_json()
+          assert strategy_status["strategy_fingerprint"].startswith("SMART-FLOW-FALSE-SWEEP-MTF-"), strategy_status
+          assert strategy_status["engine"] == "SMART TRADING PRO"
+          assert strategy_status["strategy_ready"] is True
+          assert strategy_status["manual_only"] is True
           assert client.get("/api/strategy/status").get_json()["manual_only"] is True
           for path in ("/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex"):
             page = client.get(path)
