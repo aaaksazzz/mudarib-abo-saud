@@ -277,8 +277,12 @@ def seed_initial_blog_articles():
         ))
         inserted += 1
     if inserted:
-        db.session.commit()
-        app.logger.info("multilingual blog starter articles inserted: %s", inserted)
+        try:
+            db.session.commit()
+            app.logger.info("multilingual blog starter articles inserted: %s", inserted)
+        except IntegrityError:
+            db.session.rollback()
+            app.logger.info("multilingual blog starter articles already inserted by another worker")
 
 _VISITOR_TRACKING_LOCK=threading.Lock()
 _VISITOR_TRACKED_TODAY=set()
