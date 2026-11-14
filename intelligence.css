@@ -22,3 +22,14 @@
 .light .visitor-stats{background:#e9f3f1}
 .light .visitor-stat{background:#fff}
 @media(max-width:520px){.visitor-stats{padding:14px}.visitor-stats-heading{align-items:flex-start;flex-direction:column}.visitor-stat-grid{gap:7px}.visitor-stat{padding:10px;gap:8px}.visitor-stat strong{font-size:19px}.visitor-stat small{font-size:9px}}
+
+/* Scan diagnostics and strategy identity */
+.market-state{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+#engineFingerprint{display:block;max-width:min(72vw,430px);color:var(--muted);font:9px/1.4 Inter,monospace;overflow-wrap:anywhere;text-align:end}
+.scan-diagnostics{margin:0 0 14px;padding:13px;border:1px solid var(--line);border-radius:13px;background:var(--panel);display:grid;gap:10px}
+.scan-diagnostics> b{font-size:12px;color:var(--text)}
+.diagnostic-frame{display:grid;grid-template-columns:52px 1fr;gap:4px 9px;padding:9px 0;border-top:1px solid var(--line);font-size:10px}
+.diagnostic-frame>b{grid-row:span 3;color:var(--accent);font:700 11px Inter,monospace}
+.diagnostic-frame>span{color:var(--text)}
+.diagnostic-frame>small{color:var(--muted);line-height:1.6}
+@media(max-width:600px){.market-state{align-items:flex-start}.scan-diagnostics{padding:10px}.diagnostic-frame{grid-template-columns:42px 1fr}}
