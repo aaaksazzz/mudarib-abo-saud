@@ -58,7 +58,7 @@ class RegimeAdaptiveStrategyTests(unittest.TestCase):
         closes[-1] = closes[-2] + 0.2
         opens[-1] = closes[-1] - 0.3
         highs[-1] = closes[-1] + 0.4
-        lows[-1] = closes[-1] - 0.5
+        lows[-1] = closes[-1] - 0.6
         signal = strategy._range_signal(opens, highs, lows, closes)
         self.assertIsNotNone(signal)
         self.assertEqual(signal[0], "BUY")
