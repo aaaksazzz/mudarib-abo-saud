@@ -27,7 +27,7 @@ Production-oriented market intelligence terminal.
 
 ## Signal engine
 - Each successful timeframe scan replaces that timeframe's live batch, keeping up to three opportunities per market per timeframe. Previous rows remain in trade history and expire after 24 hours.
-- The background scanner runs each market on a staggered 15-minute schedule. Market-page requests reuse cached scan results when available; a cache miss can still invoke the serialized scanner, so the first uncached request may take longer.
+- The background scanner runs each market on a staggered 15-minute schedule. Market-page signal requests only read the committed result for the selected market and timeframe; they never launch a heavy scan synchronously.
 - Expired records are also cleaned when the journal is read.
 - No performance claim is made without reproducible per-market backtests.
 
