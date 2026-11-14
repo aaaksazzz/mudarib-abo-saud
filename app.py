@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 import html
 import market_adapters
 import market_strategies
+from blog_seed import seed_blog_articles
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -395,9 +396,37 @@ def public_article_page(slug):
 def sitemap_xml():
     base=os.environ.get("PUBLIC_BASE_URL",request.url_root.rstrip("/")).rstrip("/")
     rows=Article.query.filter_by(kind="blog",published=True).order_by(Article.created_at.desc()).limit(5000).all()
-    entries="".join("<url><loc>"+html.escape(base+"/blog/"+html.escape(x.slug))+"</loc><lastmod>"+(x.created_at.date().isoformat() if x.created_at else utcnow().date().isoformat())+"</lastmod></url>" for x in rows)
-    xml='<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+entries+"</urlset>"
+    by_canonical={}
+    for article in rows:
+        by_canonical.setdefault(article.canonical_slug or article.slug,[]).append(article)
+    entries=["<url><loc>"+html.escape(base+"/")+"</loc></url>","<url><loc>"+html.escape(base+"/blog")+"</loc></url>"]
+    for article in rows:
+        alternates="".join(
+            '<xhtml:link rel="alternate" hreflang="'+html.escape((sibling.language or "ar").replace("_","-"))+'" href="'+html.escape(base+"/blog/"+sibling.slug)+'"/>'
+            for sibling in by_canonical.get(article.canonical_slug or article.slug,[])
+        )
+        entries.append("<url><loc>"+html.escape(base+"/blog/"+article.slug)+"</loc><lastmod>"+(article.created_at.date().isoformat() if article.created_at else utcnow().date().isoformat())+"</lastmod>"+alternates+"</url>")
+    xml='<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">'+ "".join(entries)+"</urlset>"
     return xml,200,{"Content-Type":"application/xml; charset=utf-8"}
+
+@app.get("/blog")
+def blog_index_page():
+    language=(request.args.get("lang","ar").strip().lower() or "ar")
+    if language not in ("ar","en","es","de","id","pt","tr","fr","hi"):
+        language="ar"
+    rows=Article.query.filter_by(kind="blog",published=True,language=language).order_by(Article.created_at.desc()).limit(100).all()
+    base=os.environ.get("PUBLIC_BASE_URL",request.url_root.rstrip("/")).rstrip("/")
+    labels={"ar":"المدونة التعليمية","en":"Trading Education Blog","es":"Blog educativo de trading","de":"Trading-Lernblog","id":"Blog Edukasi Trading","pt":"Blog de educação em trading","tr":"İşlem Eğitim Blogu","fr":"Blog éducatif sur le trading","hi":"ट्रेडिंग शिक्षा ब्लॉग"}
+    title=labels[language]+" | SMART TRADING PRO"
+    descriptions={"ar":"مقالات تداول تعليمية عن إدارة المخاطر والتحليل الفني وحجم التداول والانضباط، متاحة بتسع لغات.","en":"Trading education on risk management, technical analysis, volume and disciplined trading in nine languages.","es":"Educación sobre trading, gestión del riesgo, análisis técnico y disciplina en nueve idiomas.","de":"Trading-Wissen zu Risikomanagement, technischer Analyse und Disziplin in neun Sprachen.","id":"Edukasi trading tentang manajemen risiko, analisis teknikal, volume, dan disiplin dalam sembilan bahasa.","pt":"Conteúdo educativo sobre risco, análise técnica, volume e disciplina em nove idiomas.","tr":"Risk yönetimi, teknik analiz, hacim ve disiplin hakkında dokuz dilde işlem eğitimi.","fr":"Des articles éducatifs sur le risque, l'analyse technique et la discipline en neuf langues.","hi":"जोखिम प्रबंधन, तकनीकी विश्लेषण और अनुशासन पर नौ भाषाओं में ट्रेडिंग शिक्षा."}
+    description=descriptions[language]
+    cards="".join('<article class="article"><span>'+html.escape((article.language or language).upper())+'</span><h2><a href="/blog/'+html.escape(article.slug)+'">'+html.escape(article.title)+'</a></h2><p>'+html.escape(article.summary)+'</p></article>' for article in rows)
+    if not cards:
+        cards='<p class="empty">इस भाषा में लेख उपलब्ध नहीं हैं। दूसरी भाषा चुनें।</p>'
+    language_links=" ".join('<a href="/blog?lang='+code+'" hreflang="'+code+'">'+name+'</a>' for code,name in [("ar","العربية"),("en","English"),("es","Español"),("de","Deutsch"),("id","Bahasa Indonesia"),("pt","Português"),("tr","Türkçe"),("fr","Français"),("hi","हिन्दी")])
+    page=f"""<!doctype html><html lang="{language}" dir="{'rtl' if language=='ar' else 'ltr'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html.escape(title)}</title><meta name="description" content="{html.escape(description)}"><link rel="canonical" href="{html.escape(base+'/blog?lang='+language)}"><meta name="robots" content="index,follow"><meta property="og:type" content="website"><meta property="og:title" content="{html.escape(title)}"><meta property="og:description" content="{html.escape(description)}"><style>body{{margin:0;background:#080d17;color:#e8eef7;font:16px/1.8 system-ui,sans-serif}}main{{max-width:1050px;margin:auto;padding:28px 18px}}a{{color:#72dcb7;text-decoration:none}}header,.article{{background:#101a29;border:1px solid #26364a;border-radius:16px;padding:18px;margin:14px 0}}header{{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap}}h1{{font-size:clamp(26px,4vw,40px);margin:8px 0}}.langs{{display:flex;gap:12px;flex-wrap:wrap;margin:20px 0}}.article h2{{font-size:20px;margin:6px 0}}.article p{{color:#b6c5d8}}.article span{{font-size:11px;color:#79dcb8}}.empty{{padding:24px}}</style></head><body><main><header><a href="/">SMART TRADING PRO</a><a href="/blog">المدونة / Blog</a></header><h1>{html.escape(title)}</h1><p>{html.escape(description)}</p><nav class="langs" aria-label="Languages">{language_links}</nav><section>{cards}</section></main></body></html>"""
+    return page,200,{"Content-Type":"text/html; charset=utf-8","X-Robots-Tag":"index, follow"}
+
 @app.get("/robots.txt")
 def robots_txt():
     base=os.environ.get("PUBLIC_BASE_URL",request.url_root.rstrip("/")).rstrip("/")
@@ -405,7 +434,6 @@ def robots_txt():
 
 @app.get("/plans")
 @app.get("/journal")
-@app.get("/blog")
 @app.get("/news")
 @app.get("/login")
 @app.get("/register")
@@ -1828,6 +1856,9 @@ with app.app_context():
         if column_name not in article_columns:
             with db.engine.begin() as connection:
                 connection.execute(text(f"ALTER TABLE {Article.__tablename__} ADD COLUMN {column_name} {column_type}"))
+    seeded_articles=seed_blog_articles(Article,db)
+    if seeded_articles:
+        app.logger.info("Seeded %s multilingual educational blog articles",seeded_articles)
     provision_admin_from_env()
 
 
