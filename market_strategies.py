@@ -552,3 +552,14 @@ def analyze_all(market, symbol, rows, timeframe="15m"):
         ),
     })
     return setup
+
+
+# Reserve one catalog slot for the original structural false-sweep strategy:
+# 999 parameterized variants + 1 separately evaluated false-sweep rule = 1,000.
+STRATEGY_VARIANTS = STRATEGY_VARIANTS[:999] + ({
+    "id": "FALSE_SWEEP",
+    "family": "FALSE_SWEEP",
+    "period": 20,
+    "level": 0,
+},)
+STRATEGY_CATALOG = tuple(x["id"] for x in STRATEGY_VARIANTS)
