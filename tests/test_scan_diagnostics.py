@@ -1,5 +1,5 @@
 import os
-import unittest
+import unittest\nfrom datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 os.environ["ENABLE_AUTO_SCAN"] = "false"
@@ -135,6 +135,27 @@ class ScanDiagnosticsTests(unittest.TestCase):
         self.assertEqual(payload["tp3_r"], 3.0)
         self.assertEqual(payload["reason"], "ADAPTIVE-TREND: EMA_PULLBACK")
         self.assertEqual(payload["score_type"], "technical_quality_not_probability")
+
+    def test_monthly_outcome_tracker_uses_calendar_months_and_ignores_pre_entry_bar(self):
+        created=datetime(2026,1,15,tzinfo=timezone.utc)
+        trade=platform_app.Trade(
+            market="futures",symbol="BTCUSDT",side="BUY",entry=100,
+            stop=95,tp1=105,tp2=110,tp3=115,score=90,timeframe="1M",
+            reason="test",created_at=created,expires_at=created+timedelta(days=90),
+            status="active"
+        )
+        jan=int(datetime(2026,1,1,tzinfo=timezone.utc).timestamp()*1000)
+        feb=int(datetime(2026,2,1,tzinfo=timezone.utc).timestamp()*1000)
+        mar=int(datetime(2026,3,1,tzinfo=timezone.utc).timestamp()*1000)
+        rows=[
+            [jan,100,120,99,110,10],
+            [feb,100,106,99,105,10],
+            [mar,105,120,104,118,10],
+        ]
+        now=int(datetime(2026,3,1,tzinfo=timezone.utc).timestamp()*1000)
+        status,completed=platform_app.evaluate_trade_outcome_from_bars(trade,rows,now)
+        self.assertEqual(status,"tp1_hit")
+        self.assertEqual(completed,1)
 
     def test_legacy_market_signals_route_rejects_unknown_timeframe(self):
         response = platform_app.app.test_client().get(
