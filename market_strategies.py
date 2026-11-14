@@ -383,7 +383,7 @@ def diagnostic_self_test():
         "spot_short_disabled": PROFILES["spot"]["allow_short"] is False,
         "trend_and_range_engines": callable(_trend_signal) and callable(_range_signal),
         "spot_reversal_engine": callable(_spot_reversal_signal),
-        "spot_reversal_long_only": _spot_reversal_signal([10,10,10,10], [11,11,11,11], [9,9,9,8], [10,10,10,10.8]) is not None,
+        "spot_reversal_long_only": _spot_reversal_signal([10,10,10,10], [11,11,11,11], [9,9,9,8], [10,10,10,10.8], lookback=2) is not None,
         "six_frame_profiles": set(FRAME_PROFILES) == set(TIMEFRAMES),
         "frame_specific_parameters": len({tuple(sorted(v.items())) for v in FRAME_PROFILES.values()}) == len(TIMEFRAMES),
         "monthly_history_requirement": FRAME_PROFILES["1M"]["min_bars"] < FRAME_PROFILES["15m"]["min_bars"],
