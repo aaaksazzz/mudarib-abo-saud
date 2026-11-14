@@ -1,26 +1,38 @@
 name: Platform CI
 on:
   push:
-    branches: [main, "rebuild/**"]
+    branches: [main, "rebuild/**", "upgrade-runtime-**"]
   pull_request:
     branches: [main]
 jobs:
   validate:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.15.2"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
       - name: Check browser JavaScript
         run: |
           node --check platform.js
           node --check intelligence.js
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip check
+      - name: Report runtime versions
+        run: |
+          python --version
+          node --version
+          python -m pip freeze
       - name: Compile backend
         run: python -m compileall -q app.py market_adapters.py market_strategies.py
       - name: Run backend regression tests
