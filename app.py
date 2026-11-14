@@ -786,7 +786,7 @@ def build_signal(market,item,timeframe):
     if not setup:
         return None
     setup["signal_timeframe"]=timeframe
-    setup["reason"]="FALSE-SWEEP MTF: independent "+timeframe+" swing breakout and FVG; "+setup.get("reason","")
+    setup["reason"]="FALSE-SWEEP MTF: independent "+timeframe+" confirmed liquidity sweep and reclaim; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -1709,7 +1709,7 @@ def market_scan_initial_delay_seconds(index):
     return SCAN_INITIAL_DELAY_SECONDS+max(0,int(index))*spacing
 
 
-# The previous SMA200/liquidity-sweep scheduler is permanently retired.
+# Run the active false-sweep strategy on the staggered 15-minute market schedule.
 AUTO_SCAN_ENABLED=True
 scheduler=None
 if AUTO_SCAN_ENABLED:
