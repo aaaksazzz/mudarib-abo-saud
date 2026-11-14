@@ -1111,6 +1111,12 @@ def run_market_scan(market,force=False):
                 if signal:
                     found.append(signal)
                     frame_stats[frame]["matches"]+=1
+            except ValueError as exc:
+                failed+=1
+                frame_stats[frame]["failed"]+=1
+                if "Insufficient candles" not in str(exc):
+                    app.logger.warning("candle sample rejected: market=%s frame=%s error=%s",
+                                       market,frame,type(exc).__name__)
             except Exception as exc:
                 failed+=1
                 frame_stats[frame]["failed"]+=1
