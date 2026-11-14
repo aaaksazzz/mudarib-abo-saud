@@ -328,7 +328,8 @@ def market_page_route(market):
 
 @app.get("/signal-lab")
 def signal_lab_page():
-    return send_from_directory(".", "intelligence.html")
+    # The standalone liquidity lab is retired; send old bookmarks to the live terminal.
+    return app.response_class("",status=302,headers={"Location":"/intelligence"})
 
 @app.get("/signal-lab.js")
 def signal_lab_script():
@@ -1387,7 +1388,37 @@ def run_market_scan(market,force=False):
             "data_status":"partial" if incomplete_frames or failed else "ready"}
 @app.get("/api/markets/<market>/signals")
 def signals(market):
-    return json_error("محرك التوصيات القديم متوقف؛ استخدم لوحة تحليل حركة السعر",410)
+    # Backward-compatible adapter for older market clients. All clients use the
+    # current SMART FLOW scanner and its shared cache; no legacy strategy runs.
+    if market not in MARKETS:
+        return json_error("السوق غير معروف",404)
+    timeframe=str(request.args.get("timeframe","15m")).strip()
+    if timeframe not in TIMEFRAMES:
+        return json_error("الفريم غير مدعوم",400)
+    blocked=gate_section(market)
+    if blocked:
+        return blocked
+    try:
+        result=run_market_scan(market,force=False)
+        frame_signals=[item for item in result.get("signals",[])
+                       if item.get("timeframe")==timeframe]
+        return jsonify({
+            "ok":True,"market":market,"timeframe":timeframe,
+            "signals":frame_signals,"updated_at":result.get("updated_at"),
+            "market_closed":market=="saudi" and not saudi_market_is_open(),
+            "stale":False,"scan_error":None,
+            "analysis_completed":result.get("analysis_completed",0),
+            "analysis_failed":result.get("analysis_failed",0),
+            "strategy_matches":result.get("strategy_matches",0),
+            "rejected_stale_candle":result.get("rejected_stale_candle",0),
+            "rejected_late_price":result.get("rejected_late_price",0),
+            "data_status":result.get("data_status","unknown"),
+            "incomplete_timeframes":result.get("incomplete_timeframes",{}),
+            "frame_diagnostics":result.get("frame_diagnostics",{})
+        })
+    except Exception:
+        app.logger.exception("Current market signal adapter failed for %s",market)
+        return json_error("تعذر تحميل بيانات السوق حالياً",502)
 
 @app.get("/api/trades")
 def trade_history():
