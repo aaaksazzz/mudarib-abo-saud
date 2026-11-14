@@ -307,18 +307,23 @@ def diagnostic_self_test():
     sell = target_prices(100.0, "SELL", 105.0)
     sample = [[i, 100, 101, 99, 100, 10] for i in range(106)]
     parsed = _finite_rows(sample)
+    stress_sample = []
+    for i in range(80):
+        amplitude = 0.15 if i < 60 else 8.0
+        close = 100.0 + (amplitude if i % 2 else -amplitude)
+        stress_sample.append((i, close, close + amplitude, close - amplitude, close, 100.0))
     checks = {
         "regime_engine_fingerprint": STRATEGY_FINGERPRINT.startswith("SMART-REGIME-ADAPTIVE-"),
         "six_timeframes": TIMEFRAMES == ("15m", "1h", "4h", "1d", "1w", "1M"),
         "seven_markets": len(PROFILES) == 7,
         "spot_short_disabled": PROFILES["spot"]["allow_short"] is False,
         "trend_and_range_engines": callable(_trend_signal) and callable(_range_signal),
-        "stress_guard_present": "STRESS" in _classify_window([[i,100,101,99,100,10] for i in range(80)])[0] or True,
+        "stress_regime_detected": _classify_window(stress_sample)[0] == "STRESS",
         "buy_targets_1R_2R_3R": buy == (105.0, 110.0, 115.0),
         "sell_targets_1R_2R_3R": sell == (95.0, 90.0, 85.0),
         "invalid_stop_rejected": target_prices(100.0, "BUY", 101.0) is None,
         "forming_candle_excluded": parsed is not None and len(parsed) == 105,
-        "flat_market_not_trend": _classify_window([[i,100,101,99,100,10] for i in range(80)])[0] != "TREND",
+        "flat_market_classified_as_range": _classify_window([[i,100,101,99,100,10] for i in range(80)])[0] == "RANGE",
     }
     return {
         "fingerprint": STRATEGY_FINGERPRINT, "ok": all(checks.values()),
