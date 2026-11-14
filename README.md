@@ -17,18 +17,17 @@ Production-oriented market intelligence terminal.
 - **Tadawul:** public Saudi Exchange data is preferred, with Yahoo, a public ticker directory and TradingView fallbacks. Saudi equities are not filtered by the $1M threshold; public-feed coverage can be incomplete during provider restrictions.
 - **Forex & Gold:** public Yahoo symbol list; FX tick volume is not represented as exchange-traded dollar volume.
 
-## Active engine: FALSE BREAKOUT / LIQUIDITY SWEEP · independent multi-timeframe analysis
-- Every market is analysed independently on 15m, 1h, 4h, 1d, 1w and 1M completed candles.
-- A BUY requires a sweep below the prior 20-candle low, a bullish reclaim close back above that level, and a later completed candle closing above the sweep candle high.
-- A SELL mirrors the rule: sweep above the prior 20-candle high, bearish reclaim close back below it, then a later completed candle closes below the sweep candle low.
-- The stop is placed beyond the actual sweep extreme with an ATR/price buffer; setups with invalid, excessively wide or wrong-side risk are rejected.
-- TP1, TP2 and TP3 are recalculated from the live entry at 1R, 2R and 3R respectively. A stale or already-extended entry is rejected before publication.
-- The setup score is a rule-based quality score, not a statistically calibrated win probability. No profitability claim is made without reproducible out-of-sample backtests after fees and slippage.
-- No FVG requirement remains in the active strategy. No account API keys or automatic order execution are used. Spot/Alpha/equity SELL signals are bearish/manual-exit signals, not short-sale or automatic orders.
+## Active engine: REGIME-ADAPTIVE ENSEMBLE · independent multi-timeframe analysis
+- The current implementation is SMART-REGIME-ADAPTIVE-ENSEMBLE-MTF-V2-20261114; older false-sweep / SMART FLOW labels are not the active engine.
+- Every supported market uses separate completed OHLCV analysis on 15m, 1h, 4h, 1d, 1w and 1M. Provider history is never fabricated; insufficient candle history is reported as incomplete data.
+- A rolling regime classifier selects trend, range, stress or transition. Trend conditions use Donchian 20/55/100 breakout confirmation with EMA20/EMA50 direction; range conditions use outer-channel rejection with RSI confirmation. Stress and transition regimes do not publish setups.
+- Structural stops use the recent swing and an ATR buffer. TP1, TP2 and TP3 are set at 1R, 2R and 3R. Risk outside the configured ATR/price limits is rejected.
+- The score is a technical-quality score, not a statistically calibrated win probability. No profitability claim is made without reproducible out-of-sample backtests after fees and slippage.
+- No account API keys or automatic order execution are used. Spot SELL signals are bearish/manual-exit signals, not short-sale or automatic orders.
 
 ## Signal engine
 - Each successful timeframe scan replaces that timeframe's live batch, keeping up to three opportunities per market per timeframe. Previous rows remain in trade history and expire after 24 hours.
-- Market-page requests only read committed results and never launch heavy scans synchronously.
+- The background scanner runs each market on a staggered 15-minute schedule. Market-page requests reuse cached scan results when available; a cache miss can still invoke the serialized scanner, so the first uncached request may take longer.
 - Expired records are also cleaned when the journal is read.
 - No performance claim is made without reproducible per-market backtests.
 
@@ -37,8 +36,8 @@ Production-oriented market intelligence terminal.
 - Buildpack startup uses `Procfile`; Docker deployment is also supported.
 - Expose port 8080.
 - Prefer a persistent PostgreSQL database through `DATABASE_URL`. SQLite is acceptable only when `DATA_DIR` points to a persistent mounted volume; the default local SQLite path is not production-durable.
-- Configure a persistent random `SECRET_KEY` and `COOKIE_SECURE=true`. The public sentiment dashboard scans on demand and does not require the legacy market scheduler.
-- The active false-sweep scanner runs on a staggered 15-minute schedule across markets. It uses public candle data and paper/manual signals only.
+- Configure a persistent random `SECRET_KEY` and `COOKIE_SECURE=true`. Keep `ENABLE_AUTO_SCAN=true` unless scheduled scanning is intentionally disabled.
+- The active regime-adaptive scanner runs on a staggered 15-minute schedule across markets. It uses public candle data and paper/manual signals only.
 - `/ready` requires a durable database configuration (PostgreSQL or an explicitly configured `DATA_DIR` volume) and a persistent `SECRET_KEY`; no background market scheduler is required.
 - Configure `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` (14+ characters) before first boot if first-admin provisioning is needed.
 - Never commit or share secrets. Rotate credentials after any security incident and update them at the provider and deployment environment.
