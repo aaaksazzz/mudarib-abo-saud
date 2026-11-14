@@ -1,7 +1,7 @@
 # Production deployment checklist
 
 ## Northflank
-1. Keep the Buildpack runtime pinned by the root `.python-version` file (Python 3.12); the root `Procfile` defines the web process.
+1. Keep the Buildpack runtime pinned by the root `.python-version` file (Python 3.15.2); the root `Procfile` defines the web process.
 2. Expose HTTP port **8080**.
 3. Configure a persistent PostgreSQL database and set `DATABASE_URL`. Do not rely on ephemeral SQLite for production accounts or trades.
 4. Set a persistent random `SECRET_KEY`; changing it on every restart invalidates user sessions.
