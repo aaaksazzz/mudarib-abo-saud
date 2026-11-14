@@ -8,7 +8,8 @@ import xml.etree.ElementTree as ET
 import html
 import market_adapters
 import market_strategies
-from flask import Flask, request, jsonify, send_from_directory, session, g
+from flask import Flask, request, jsonify, session, g
+import mimetypes
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import func, text, inspect, or_, event
@@ -19,6 +20,17 @@ from flask_limiter.util import get_remote_address
 
 app = Flask(__name__, static_folder=None)
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def send_app_file(filename):
+    """Serve bundled UI assets as response bytes, not file wrappers."""
+    path = os.path.join(APP_DIR, filename)
+    with open(path, "rb") as asset:
+        payload = asset.read()
+    response = app.response_class(payload, status=200, mimetype=mimetypes.guess_type(filename)[0] or "application/octet-stream")
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Content-Length"] = str(len(payload))
+    return response
 database_url=os.environ.get("DATABASE_URL")
 if not database_url:
     data_dir=os.environ.get("DATA_DIR","").strip()
@@ -338,20 +350,20 @@ def visitor_stats():
     })
 
 @app.get("/")
-def home(): return send_from_directory(APP_DIR, "index.html")
+def home(): return send_app_file("index.html")
 
 @app.get("/intelligence")
-def intelligence_page(): return send_from_directory(APP_DIR, "intelligence.html")
+def intelligence_page(): return send_app_file("intelligence.html")
 
 @app.get("/intelligence.js")
-def intelligence_script(): return send_from_directory(APP_DIR, "intelligence.js")
+def intelligence_script(): return send_app_file("intelligence.js")
 
 @app.get("/intelligence.css")
-def intelligence_stylesheet(): return send_from_directory(APP_DIR, "intelligence.css")
+def intelligence_stylesheet(): return send_app_file("intelligence.css")
 @app.get("/market/<market>")
 def market_page_route(market):
     if market not in MARKETS: return json_error("السوق غير معروف",404)
-    return send_from_directory(APP_DIR, "index.html")
+    return send_app_file("index.html")
 
 @app.get("/signal-lab")
 def signal_lab_page():
@@ -360,11 +372,11 @@ def signal_lab_page():
 
 @app.get("/signal-lab.js")
 def signal_lab_script():
-    return send_from_directory(APP_DIR, "signal-lab.js")
+    return send_app_file("signal-lab.js")
 
 @app.get("/signal-lab.css")
 def signal_lab_stylesheet():
-    return send_from_directory(APP_DIR, "signal-lab.css")
+    return send_app_file("signal-lab.css")
 
 @app.get("/api/signal-lab/scan")
 def signal_lab_scan():
@@ -411,16 +423,16 @@ def robots_txt():
 @app.get("/account")
 @app.get("/admin")
 def standalone_section_route():
-    return send_from_directory(APP_DIR, "index.html")
+    return send_app_file("index.html")
 
 @app.get("/styles.css")
-def styles(): return send_from_directory(APP_DIR, "styles.css")
+def styles(): return send_app_file("styles.css")
 @app.get("/platform.js")
-def platform_script(): return send_from_directory(APP_DIR, "platform.js")
+def platform_script(): return send_app_file("platform.js")
 @app.get("/pro-theme.css")
-def pro_theme(): return send_from_directory(APP_DIR, "pro-theme.css")
+def pro_theme(): return send_app_file("pro-theme.css")
 @app.get("/compat.css")
-def compat_styles(): return send_from_directory(APP_DIR, "compat.css")
+def compat_styles(): return send_app_file("compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
     diagnostic=market_strategies.diagnostic_self_test()
@@ -861,9 +873,10 @@ def build_signal(market,item,timeframe):
     rows=klines(market,symbol,timeframe,250)
     # Provider coverage varies by symbol/timeframe. Raise a sample error;
     # scanner counts sparse samples without a traceback for every symbol.
-    if not isinstance(rows,list) or len(rows)<41:
-        # Preserve the real sample count and distinguish empty responses from
-        # genuinely short histories; never manufacture candles or weaken the rule.
+    if not isinstance(rows,list) or len(rows)<106:
+        # The strategy needs at least 105 completed candles; _finite_rows drops
+        # the still-forming final candle. Count shorter provider histories as
+        # incomplete data instead of reporting a successful analysis with no setup.
         received=len(rows) if isinstance(rows,list) else 0
         reason=("invalid_candle_payload" if not isinstance(rows,list)
                 else "empty_candle_response" if received==0
@@ -1111,10 +1124,12 @@ def market_scan_timeframes(market):
 
 
 def align_signals_with_market_bias(signals, market_bias):
-    """Return only signals aligned with breadth direction and count rejected rows."""
+    """Publish only setups matching a confirmed broad-market direction."""
     rows=list(signals or [])
     if market_bias not in ("BUY","SELL"):
-        return rows,0
+        # A tied/unclear breadth is not a third neutral trading direction.
+        # Suppress both sides until the market has a measurable bias.
+        return [],len(rows)
     aligned=[signal for signal in rows if signal.get("side")==market_bias]
     return aligned,len(rows)-len(aligned)
 
@@ -1444,8 +1459,8 @@ def run_market_scan(market,force=False):
 
 @app.get("/api/markets/<market>/signals")
 def signals(market):
-    # Backward-compatible adapter for older market clients. All clients use the
-    # current SMART FLOW scanner and its shared cache; no legacy strategy runs.
+    # Market-page reads are deliberately lightweight: the background scheduler
+    # owns scans; this endpoint only returns the committed batch for one frame.
     if market not in MARKETS:
         return json_error("السوق غير معروف",404)
     timeframe=str(request.args.get("timeframe","15m")).strip()
@@ -1455,33 +1470,63 @@ def signals(market):
     if blocked:
         return blocked
     try:
-        result=run_market_scan(market,force=False)
-        frame_signals=[item for item in result.get("signals",[])
-                       if item.get("timeframe")==timeframe]
+        now=utcnow()
+        frame_meta_row=db.session.get(Setting,"scan-meta:"+market+":"+timeframe)
+        frame_scan_row=db.session.get(Setting,"scan:"+market+":"+timeframe)
+        frame_state=db.session.get(Setting,"scan-frame:adaptive-trend:"+market+":"+timeframe)
+        try:
+            meta=json.loads(frame_meta_row.value) if frame_meta_row else {}
+        except (TypeError,ValueError):
+            meta={}
+        frame_is_current=bool(
+            frame_state
+            and frame_state.value==str(timeframe_bucket(timeframe,now))
+            and frame_scan_row
+            and frame_meta_row
+        )
+        market_bias=meta.get("market_bias")
+        active=Trade.query.filter(
+            Trade.market==market,Trade.timeframe==timeframe,
+            Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,
+            Trade.reason.like("ADAPTIVE-TREND MTF:%")
+        ).order_by(Trade.score.desc()).limit(3).all() if frame_is_current else []
+        if market_bias not in ("BUY","SELL"):
+            active=[]
+        else:
+            active=[trade for trade in active if trade.side==market_bias]
+        updated_at=frame_scan_row.value if frame_scan_row else None
+        data_status=meta.get("data_status","pending") if frame_is_current else ("stale" if updated_at else "pending")
         return jsonify({
             "ok":True,"market":market,"timeframe":timeframe,
-            "signals":frame_signals,"updated_at":result.get("updated_at"),
+            "signals":[trade_json(trade) for trade in active],
+            "updated_at":updated_at,
             "market_closed":market=="saudi" and not saudi_market_is_open(),
-            "stale":False,"scan_error":None,
-            "analysis_completed":result.get("analysis_completed",0),
-            "analysis_failed":result.get("analysis_failed",0),
-            "strategy_matches":result.get("strategy_matches",0),
-            "rejected_stale_candle":result.get("rejected_stale_candle",0),
-            "rejected_late_price":result.get("rejected_late_price",0),
-            "data_status":result.get("data_status","unknown"),
-            "incomplete_timeframes":result.get("incomplete_timeframes",{}),
-            "frame_diagnostics":result.get("frame_diagnostics",{})
+            "stale":not frame_is_current,"scan_error":None,
+            "scan_universe":meta.get("scan_universe"),
+            "scan_batch_size":meta.get("scan_batch_size"),
+            "analysis_completed":meta.get("analysis_completed",0),
+            "analysis_failed":meta.get("analysis_failed",0),
+            "strategy_matches":meta.get("strategy_matches",0),
+            "fresh_matches":meta.get("fresh_matches",0),
+            "direction_rejected":meta.get("direction_rejected",0),
+            "accepted_signals":meta.get("accepted_signals",0),
+            "rejected_stale_candle":meta.get("rejected_stale_candle",0),
+            "rejected_late_price":meta.get("rejected_late_price",0),
+            "market_bias":market_bias,"data_status":data_status,
+            "incomplete_timeframes":({timeframe:{"completed":0,"required":meta.get("required_samples",0)}}
+                                     if not frame_is_current else {}),
+            "frame_diagnostics":meta.get("frame_diagnostics",{})
         })
     except OperationalError as exc:
         db.session.rollback()
         if "locked" in str(exc).lower():
-            app.logger.warning("SQLite busy while serving market=%s; client may retry",market)
+            app.logger.warning("SQLite busy while serving market=%s timeframe=%s",market,timeframe)
             return jsonify({"ok":False,"error":"قاعدة البيانات مشغولة مؤقتاً؛ أعد المحاولة بعد لحظات."}),503,{"Retry-After":"10","Cache-Control":"no-store"}
-        app.logger.exception("Database operation failed for market=%s",market)
+        app.logger.exception("Database operation failed for market=%s timeframe=%s",market,timeframe)
         return json_error("تعذر قراءة بيانات السوق من قاعدة البيانات",503)
     except Exception:
         db.session.rollback()
-        app.logger.exception("Current market signal adapter failed for %s",market)
+        app.logger.exception("Current market signal read failed for %s timeframe=%s",market,timeframe)
         return json_error("تعذر تحميل بيانات السوق حالياً",502)
 
 @app.get("/api/trades")
