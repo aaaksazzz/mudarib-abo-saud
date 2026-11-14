@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from functools import wraps, lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+import signal
 import requests
 import xml.etree.ElementTree as ET
 import html
@@ -1931,6 +1932,29 @@ if AUTO_SCAN_ENABLED:
             next_run_time=utcnow()+timedelta(seconds=market_scan_initial_delay_seconds(index))
         )
     scheduler.start()
+
+    # Gunicorn sends SIGTERM during deploy/restart. Stop accepting scheduled
+    # scans and wait for an in-flight scan (including its nested analysis pool)
+    # before allowing Python interpreter shutdown to begin.
+    _previous_sigterm_handler=signal.getsignal(signal.SIGTERM)
+
+    def _graceful_scheduler_sigterm(signum, frame):
+        try:
+            if scheduler is not None and scheduler.running:
+                scheduler.shutdown(wait=True)
+        except Exception:
+            app.logger.exception("scheduler shutdown failed during SIGTERM")
+        if callable(_previous_sigterm_handler):
+            _previous_sigterm_handler(signum, frame)
+        elif _previous_sigterm_handler == signal.SIG_DFL:
+            raise SystemExit(0)
+
+    try:
+        signal.signal(signal.SIGTERM, _graceful_scheduler_sigterm)
+    except ValueError:
+        # Importing from a non-main thread (e.g. certain test runners) cannot
+        # register process signal handlers; normal application startup is main-thread.
+        app.logger.warning("could not register graceful scheduler SIGTERM handler")
 
 if __name__=="__main__":
     app.run(host="0.0.0.0",port=int(os.environ.get("PORT","8080")))
