@@ -1,6 +1,7 @@
 import os
 import unittest\nfrom datetime import datetime, timedelta, timezone
 from unittest.mock import patch
+from types import SimpleNamespace
 
 os.environ["ENABLE_AUTO_SCAN"] = "false"
 
@@ -162,6 +163,27 @@ class ScanDiagnosticsTests(unittest.TestCase):
             "/api/markets/spot/signals?timeframe=5m"
         )
         self.assertEqual(response.status_code, 400)
+
+
+    def test_active_trade_is_not_retired_when_scan_has_no_replacement(self):
+        trade=SimpleNamespace(id=1,market="futures",symbol="BTCUSDT",timeframe="15m")
+        self.assertFalse(platform_app.trade_should_be_superseded(trade,set()))
+
+    def test_new_signal_for_another_symbol_does_not_retire_existing_trade(self):
+        trade=SimpleNamespace(id=1,market="futures",symbol="BTCUSDT",timeframe="15m")
+        replacements={("futures","ETHUSDT","15m")}
+        self.assertFalse(platform_app.trade_should_be_superseded(trade,replacements))
+
+    def test_new_signal_retires_only_same_symbol_and_timeframe_trade(self):
+        trade=SimpleNamespace(id=1,market="futures",symbol="BTCUSDT",timeframe="15m")
+        replacements={("futures","BTCUSDT","15m"),("futures","ETHUSDT","1h")}
+        self.assertTrue(platform_app.trade_should_be_superseded(trade,replacements))
+        self.assertFalse(platform_app.trade_should_be_superseded(trade,replacements,{1}))
+
+    def test_duplicate_candle_keeps_existing_trade_active(self):
+        trade=SimpleNamespace(id=7,market="futures",symbol="BTCUSDT",timeframe="15m")
+        replacements={("futures","BTCUSDT","15m")}
+        self.assertFalse(platform_app.trade_should_be_superseded(trade,replacements,{7}))
 
 
 if __name__ == "__main__":
