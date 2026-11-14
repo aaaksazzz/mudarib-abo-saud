@@ -6,7 +6,7 @@ or transitional conditions. Uses completed OHLCV candles only; paper analysis.
 """
 import math
 
-STRATEGY_FINGERPRINT = "SMART-REGIME-ADAPTIVE-ENSEMBLE-MTF-V6-BALANCED-20261114"
+STRATEGY_FINGERPRINT = "SMART-REGIME-ADAPTIVE-ENSEMBLE-MTF-V7-SPOT-REVERSAL-20261115"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 # Independent parameter profiles keep each timeframe's strategy horizon appropriate.
 FRAME_PROFILES = {
@@ -35,6 +35,7 @@ STRATEGY_CATALOG = (
     "REGIME_PERSISTENCE_CONFIRMATION",
     "VOLATILITY_STRESS_GUARD",
     "STRUCTURAL_ATR_RISK",
+    "SPOT_FALSE_BREAKDOWN_RECLAIM",
 )
 
 
@@ -231,6 +232,22 @@ def _range_signal(opens, highs, lows, closes, period=20):
     return None
 
 
+
+def _spot_reversal_signal(opens, highs, lows, closes, lookback=10):
+    """Confirm a long-only false breakdown: sweep a prior low, reclaim it, and close strong."""
+    if len(closes) < lookback + 2:
+        return None
+    prior_swing_low = min(lows[-lookback - 1:-1])
+    candle_range = max(highs[-1] - lows[-1], closes[-1] * 1e-9)
+    reclaimed = closes[-1] > prior_swing_low
+    swept = lows[-1] < prior_swing_low
+    bullish = closes[-1] > opens[-1] and closes[-1] > closes[-2]
+    strong_close = (closes[-1] - lows[-1]) / candle_range >= 0.60
+    if swept and reclaimed and bullish and strong_close:
+        return "BUY", ["PRIOR_LOW_SWEEP", "LEVEL_RECLAIM", "BULLISH_CLOSE"], "SPOT_FALSE_BREAKDOWN_RECLAIM"
+    return None
+
+
 def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_micro=False, diagnostics=None):
     def reject(reason):
         if diagnostics is not None:
@@ -271,6 +288,15 @@ def analyze(market, symbol, rows, timeframe="15m", microstructure=None, include_
         if regime == "TREND"
         else _range_signal(opens, highs, lows, closes, frame["range_period"])
     )
+    # Spot is long-only. In a broad downtrend, do not translate bearish setups
+    # into trades; independently allow only a completed-candle false-breakdown
+    # reclaim with a strong bullish close.
+    if market == "spot" and (not selected or selected[0] == "SELL"):
+        reversal = _spot_reversal_signal(opens, highs, lows, closes, frame["stop_lookback"])
+        if reversal:
+            selected = reversal
+        elif selected and selected[0] == "SELL":
+            return reject("spot_short_blocked")
     if not selected:
         return reject("trend_breakout_not_confirmed" if regime == "TREND" else "range_rejection_not_confirmed")
     side, names, method = selected
@@ -356,6 +382,8 @@ def diagnostic_self_test():
         "seven_markets": len(PROFILES) == 7,
         "spot_short_disabled": PROFILES["spot"]["allow_short"] is False,
         "trend_and_range_engines": callable(_trend_signal) and callable(_range_signal),
+        "spot_reversal_engine": callable(_spot_reversal_signal),
+        "spot_reversal_long_only": _spot_reversal_signal([10,10,10,10], [11,11,11,11], [9,9,9,8], [10,10,10,10.8], lookback=2) is not None,
         "six_frame_profiles": set(FRAME_PROFILES) == set(TIMEFRAMES),
         "frame_specific_parameters": len({tuple(sorted(v.items())) for v in FRAME_PROFILES.values()}) == len(TIMEFRAMES),
         "monthly_history_requirement": FRAME_PROFILES["1M"]["min_bars"] < FRAME_PROFILES["15m"]["min_bars"],
@@ -371,6 +399,6 @@ def diagnostic_self_test():
         "checks": checks, "timeframes": list(TIMEFRAMES),
         "catalog": list(STRATEGY_CATALOG),
         "frame_profiles": {frame: {key: value for key, value in profile.items() if key in ("min_bars", "channels", "ema_fast", "ema_slow", "stop_lookback")} for frame, profile in FRAME_PROFILES.items()},
-        "rule": "balanced regime persistence; broadened trend classification; Donchian breakout or closed-candle EMA pullback continuation; wider range rejection zone; stress protection retained; structural ATR stop; 1R/2R/3R",
+        "rule": "balanced regime persistence; broadened trend classification; Donchian breakout or closed-candle EMA pullback continuation; wider range rejection zone; spot-only false-breakdown reclaim in downtrends; stress protection retained; structural ATR stop; 1R/2R/3R",
         "score_type": "technical quality, not probability or win rate",
     }
