@@ -361,3 +361,194 @@ def analyze_all(market, symbol, rows, timeframe="15m"):
         "reason":"CONSENSUS "+side+" "+str(count)+"/"+str(len(STRATEGY_CATALOG))+" independent strategies: "+", ".join(names),
     })
     return setup
+
+
+# STP strategy laboratory: 1,000 separately evaluated rule variants.
+# Variants are unique parameterized rules within ten distinct strategy families.
+# Consensus is capped at one vote per family to prevent parameter variants from
+# manufacturing an artificial majority.
+_VARIANT_FAMILIES = (
+    "EMA_TREND", "RSI_REVERSAL", "BOLLINGER_REENTRY", "DONCHIAN_BREAKOUT",
+    "ROC_MOMENTUM", "STOCHASTIC_REVERSAL", "CCI_REVERSAL",
+    "ATR_CHANNEL_BREAKOUT", "VOLUME_BREAKOUT", "CANDLE_MOMENTUM",
+)
+_VARIANT_PERIODS = (6, 8, 10, 12, 14, 18, 20, 24, 30, 40)
+_VARIANT_LEVELS = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
+STRATEGY_VARIANTS = tuple(
+    {
+        "id": f"{family}_P{period}_L{level:02d}",
+        "family": family,
+        "period": period,
+        "level": level,
+    }
+    for family in _VARIANT_FAMILIES
+    for period in _VARIANT_PERIODS
+    for level in _VARIANT_LEVELS
+)
+STRATEGY_CATALOG = tuple(x["id"] for x in STRATEGY_VARIANTS)
+STRATEGY_CATALOG_VERSION = "STP-1000-RULE-VARIANTS-V1"
+
+
+def _variant_vote(rule, opens, highs, lows, closes, volumes):
+    """Evaluate one unique family/period/threshold rule on completed candles."""
+    family, p, level = rule["family"], rule["period"], rule["level"]
+    n = len(closes)
+    if n < max(45, p + 3):
+        return None
+    # Ten level settings are deliberately distinct and deterministic.
+    threshold = level / 10.0
+    side = None
+    if family == "EMA_TREND":
+        fast = _ema(closes, p)
+        slow_period = p + 12 + level * 3
+        slow = _ema(closes, slow_period)
+        if fast and slow and fast[-1] is not None and slow[-1] is not None:
+            if fast[-1] > slow[-1] and closes[-1] > fast[-1] and fast[-1] >= fast[-2]:
+                side = "BUY"
+            elif fast[-1] < slow[-1] and closes[-1] < fast[-1] and fast[-1] <= fast[-2]:
+                side = "SELL"
+    elif family == "RSI_REVERSAL":
+        value = _rsi(closes, p)
+        low = 20.0 + level * 2.0
+        high = 100.0 - low
+        if value is not None:
+            if value <= low and closes[-1] > opens[-1]: side = "BUY"
+            elif value >= high and closes[-1] < opens[-1]: side = "SELL"
+    elif family == "BOLLINGER_REENTRY":
+        window = closes[-p:]
+        mean = sum(window) / p
+        sd = (sum((x - mean) ** 2 for x in window) / p) ** 0.5
+        mult = 1.4 + level * 0.12
+        if sd > 0:
+            upper, lower = mean + mult * sd, mean - mult * sd
+            prev = closes[-p-1:-1]
+            pm = sum(prev) / p
+            psd = (sum((x-pm)**2 for x in prev)/p)**0.5
+            if closes[-2] < pm-mult*psd and closes[-1] > lower and closes[-1] > opens[-1]:
+                side = "BUY"
+            elif closes[-2] > pm+mult*psd and closes[-1] < upper and closes[-1] < opens[-1]:
+                side = "SELL"
+    elif family == "DONCHIAN_BREAKOUT":
+        top, bottom = max(highs[-p-1:-1]), min(lows[-p-1:-1])
+        pad = threshold * _atr(highs, lows, closes, min(14, p))
+        if closes[-1] > top + pad: side = "BUY"
+        elif closes[-1] < bottom - pad: side = "SELL"
+    elif family == "ROC_MOMENTUM":
+        roc = closes[-1] / closes[-p-1] - 1.0
+        cutoff = 0.001 + threshold * 0.02
+        if roc > cutoff: side = "BUY"
+        elif roc < -cutoff: side = "SELL"
+    elif family == "STOCHASTIC_REVERSAL":
+        hh, ll = max(highs[-p:]), min(lows[-p:])
+        prev_hh, prev_ll = max(highs[-p-1:-1]), min(lows[-p-1:-1])
+        k = 50.0 if hh == ll else 100.0 * (closes[-1]-ll)/(hh-ll)
+        pk = 50.0 if prev_hh == prev_ll else 100.0*(closes[-2]-prev_ll)/(prev_hh-prev_ll)
+        low_zone = 10.0 + level * 3.0
+        high_zone = 100.0 - low_zone
+        if pk < low_zone and k >= low_zone and closes[-1] > opens[-1]: side = "BUY"
+        elif pk > high_zone and k <= high_zone and closes[-1] < opens[-1]: side = "SELL"
+    elif family == "CCI_REVERSAL":
+        typical = [(highs[i]+lows[i]+closes[i])/3.0 for i in range(n)]
+        window = typical[-p:]
+        mean = sum(window)/p
+        dev = sum(abs(x-mean) for x in window)/p
+        prev = typical[-p-1:-1]
+        pmean = sum(prev)/p
+        pdev = sum(abs(x-pmean) for x in prev)/p
+        cci = 0.0 if dev == 0 else (typical[-1]-mean)/(0.015*dev)
+        pcci = 0.0 if pdev == 0 else (typical[-2]-pmean)/(0.015*pdev)
+        band = 80.0 + level * 10.0
+        if pcci <= -band and cci > -band: side = "BUY"
+        elif pcci >= band and cci < band: side = "SELL"
+    elif family == "ATR_CHANNEL_BREAKOUT":
+        atr = _atr(highs, lows, closes, p)
+        center = _ema(closes, p)
+        mult = 0.8 + level * 0.2
+        if center and center[-1] is not None and atr > 0:
+            if closes[-1] > center[-1] + mult*atr: side = "BUY"
+            elif closes[-1] < center[-1] - mult*atr: side = "SELL"
+    elif family == "VOLUME_BREAKOUT":
+        avg = sum(volumes[-p-1:-1]) / p
+        ratio = volumes[-1] / avg if avg > 0 else 0.0
+        prior_high, prior_low = max(highs[-p-1:-1]), min(lows[-p-1:-1])
+        required = 1.0 + threshold * 1.5
+        if ratio >= required and closes[-1] > prior_high: side = "BUY"
+        elif ratio >= required and closes[-1] < prior_low: side = "SELL"
+    elif family == "CANDLE_MOMENTUM":
+        span = max(highs[-1]-lows[-1], closes[-1]*1e-9)
+        body = abs(closes[-1]-opens[-1]) / span
+        prior_up = sum(1 for i in range(-p, -1) if closes[i] > opens[i])
+        prior_down = (p-1)-prior_up
+        required_body = 0.35 + threshold * 0.05
+        if closes[-1] > opens[-1] and body >= required_body and prior_up >= (p-1)*0.6:
+            side = "BUY"
+        elif closes[-1] < opens[-1] and body >= required_body and prior_down >= (p-1)*0.6:
+            side = "SELL"
+    return {"name": rule["id"], "family": family, "side": side} if side else None
+
+
+def analyze_all(market, symbol, rows, timeframe="15m"):
+    """Evaluate 1,000 rule variants; require agreement from distinct families."""
+    if market not in PROFILES or timeframe not in TIMEFRAMES:
+        return None
+    bars = _finite_rows(rows)
+    if not bars or len(bars) < 60:
+        return None
+    opens, highs, lows, closes, volumes = ([x[k] for x in bars] for k in (1, 2, 3, 4, 5))
+    variants = [v for rule in STRATEGY_VARIANTS
+                if (v := _variant_vote(rule, opens, highs, lows, closes, volumes))]
+    # Keep the legacy false-sweep rule as a separate, named family vote.
+    sweep = analyze(market, symbol, rows, timeframe=timeframe)
+    if sweep:
+        variants.append({"name": "FALSE_SWEEP", "family": "FALSE_SWEEP", "side": sweep["side"]})
+    family_sides = {"BUY": {}, "SELL": {}}
+    for vote in variants:
+        family_sides[vote["side"]].setdefault(vote["family"], []).append(vote["name"])
+    buy_families, sell_families = family_sides["BUY"], family_sides["SELL"]
+    if len(buy_families) > len(sell_families):
+        side, chosen_families = "BUY", buy_families
+    elif len(sell_families) > len(buy_families):
+        side, chosen_families = "SELL", sell_families
+    else:
+        return None
+    # Two distinct families minimum: parameter variants cannot create fake consensus.
+    if len(chosen_families) < 2:
+        return None
+    chosen_names = [name for names in chosen_families.values() for name in names]
+    entry = closes[-1]
+    atr = _atr(highs, lows, closes)
+    if not math.isfinite(atr) or atr <= 0:
+        return None
+    sweep_setup = sweep if sweep and sweep["side"] == side else None
+    if sweep_setup:
+        setup = dict(sweep_setup)
+    else:
+        stop = entry - 1.5*atr if side == "BUY" else entry + 1.5*atr
+        targets = target_prices(entry, side, stop)
+        if not targets:
+            return None
+        setup = {
+            "side": side, "entry": entry, "stop": stop,
+            "tp1": targets[0], "tp2": targets[1], "tp3": targets[2],
+            "timeframe": timeframe, "signal_candle_time": bars[-1][0],
+            "atr": atr, "risk_atr": 1.5, "reward_risk": 3.0,
+        }
+    setup.update({
+        "strategy": "CONSENSUS_" + side,
+        "strategy_fingerprint": STRATEGY_CATALOG_VERSION,
+        "strategy_count": len(chosen_names),
+        "strategy_family_count": len(chosen_families),
+        "strategy_total": len(STRATEGY_CATALOG),
+        "strategy_names": chosen_names,
+        "strategy_families": list(chosen_families.keys()),
+        "strategy_votes": {
+            "BUY": list(buy_families.keys()),
+            "SELL": list(sell_families.keys()),
+        },
+        "score": round(min(99.0, 50.0 + len(chosen_families)*4.0 + min(20, len(chosen_names))*0.25), 1),
+        "reason": (
+            "CONSENSUS " + side + " | " + str(len(chosen_names)) + " agreeing rule variants across "
+            + str(len(chosen_families)) + " distinct families"
+        ),
+    })
+    return setup
