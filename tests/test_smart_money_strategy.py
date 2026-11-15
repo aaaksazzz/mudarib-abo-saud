@@ -9,17 +9,17 @@ def candle(i, op=100, high=101, low=99, close=100, volume=10):
 
 def bullish_reversal_rows():
     bars = [candle(i) for i in range(21)]
-    bars[5] = candle(5, 97, 99, 95, 98)
-    bars[8] = candle(8, 103, 105, 102, 104)
-    bars[12] = candle(12, 97, 99, 94, 96)
-    bars[15] = candle(15, 104, 108, 103, 107)
-    bars[16] = candle(16, 107, 108, 106, 107)
-    bars[17] = candle(17, 108, 109, 107, 108)
-    bars[18] = candle(18, 110, 112, 109, 111)
-    bars[19] = candle(19, 110, 111, 108, 109)
-    bars[20] = candle(20, 108, 110, 107.5, 109.5)
+    bars[5] = candle(5, 99.2, 100.2, 98.8, 99.8)
+    bars[8] = candle(8, 100.8, 101.5, 100.4, 101.2)
+    bars[12] = candle(12, 99.4, 100, 98.4, 99.2)
+    bars[15] = candle(15, 100.8, 102.1, 100.6, 101.9)
+    bars[16] = candle(16, 101.9, 102.0, 101.7, 101.9)
+    bars[17] = candle(17, 102.0, 102.2, 101.9, 102.1)
+    bars[18] = candle(18, 102.5, 103.0, 102.4, 102.8)
+    bars[19] = candle(19, 102.8, 103.0, 102.2, 102.6)
+    bars[20] = candle(20, 102.3, 103.0, 101.9, 102.7)
     # Final row is intentionally forming and must be ignored.
-    bars.append(candle(21, 109.5, 110, 109, 109.7))
+    bars.append(candle(21, 102.7, 102.9, 102.5, 102.8))
     return bars
 
 
