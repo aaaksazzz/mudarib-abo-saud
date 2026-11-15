@@ -10,6 +10,7 @@ import html
 import market_adapters
 import market_strategies
 import smart_money_strategy
+import capital_shield_strategy
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -427,19 +428,15 @@ def pro_theme(): return send_from_directory(APP_DIR, "pro-theme.css")
 def compat_styles(): return send_from_directory(APP_DIR, "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
-    diagnostic=market_strategies.diagnostic_self_test()
-    secondary=smart_money_strategy.diagnostic_self_test()
+    diagnostic=capital_shield_strategy.diagnostic_self_test()
     return jsonify({
-        "ok":bool(diagnostic.get("ok") and secondary.get("ok")),
-        "engine":"SMART TRADING PRO",
-        "strategy_fingerprint":market_strategies.STRATEGY_FINGERPRINT,
+        "ok":bool(diagnostic.get("ok")),
+        "engine":"STP CAPITAL SHIELD V10",
+        "strategy_fingerprint":capital_shield_strategy.STRATEGY_FINGERPRINT,
         "strategy_ready":bool(diagnostic.get("ok")),
         "strategy_checks":diagnostic.get("checks",{}),
-        "secondary_engine":"SMART MONEY",
-        "secondary_fingerprint":smart_money_strategy.STRATEGY_FINGERPRINT,
-        "secondary_ready":bool(secondary.get("ok")),
-        "secondary_checks":secondary.get("checks",{}),
-        "manual_only":True
+        "manual_only":True,
+        "fallback_engine":None
     })
 
 @app.get("/health")
@@ -475,7 +472,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":market_strategies.STRATEGY_FINGERPRINT.startswith("SMART-REGIME-ADAPTIVE-")}
+            "price_action_engine":capital_shield_strategy.diagnostic_self_test().get("ok",False)}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -790,70 +787,53 @@ def klines(market,symbol,interval,limit=120):
     base=BINANCE_FUTURES if market=="futures" else BINANCE_SPOT
     path="/fapi/v1/klines" if market=="futures" else "/api/v3/klines"
     return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit})
-TIMEFRAMES=market_strategies.TIMEFRAMES
+TIMEFRAMES=capital_shield_strategy.TIMEFRAMES
 
-STRATEGY_FINGERPRINT="STP-ADAPTIVE-QUANT-V8-SMART-MONEY-PRIMARY-20261115"
+STRATEGY_FINGERPRINT=capital_shield_strategy.STRATEGY_FINGERPRINT
 @app.get("/api/strategy-status")
 def strategy_status_summary():
+    now=utcnow()
+    legacy_query=Trade.query.filter(
+        Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,
+        or_(Trade.reason.like("ADAPTIVE-TREND MTF:%"),
+            Trade.reason.like("SMART FLOW MTF QUANT:%"),
+            Trade.reason.like("SMART FLOW QUANT:%"))
+    )
+    legacy_active=legacy_query.count()
+    if legacy_active:
+        legacy_query.update({"status":"superseded"},synchronize_session=False)
+        db.session.commit()
     active_current=Trade.query.filter(
-        Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.like("ADAPTIVE-TREND MTF:%")
+        Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,
+        Trade.reason.like("CAPITAL-SHIELD MTF:%")
     ).count()
-    active_legacy=Trade.query.filter(
-        Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.like("SMART FLOW MTF QUANT:%")
-    ).count()
-    fallback=market_strategies.diagnostic_self_test()
-    primary=smart_money_strategy.diagnostic_self_test()
+    diagnostic=capital_shield_strategy.diagnostic_self_test()
     active_scheduler=globals().get("scheduler")
     return jsonify({
-        "ok":True,"engine":"STP ADAPTIVE QUANT V8",
-        "current_active":active_current,"legacy_active":active_legacy,
-        "legacy_removed":active_legacy==0,"manual_only":True,
-        "strategy_fingerprint":STRATEGY_FINGERPRINT,
-        "strategy_ready":bool(primary.get("ok") and fallback.get("ok")),
-        "strategy_checks":{
-            "smart_money_primary":primary.get("checks",{}),
-            "regime_adaptive_fallback":fallback.get("checks",{})
-        },
-        "secondary_engine":"REGIME-ADAPTIVE V7 FALLBACK",
-        "secondary_fingerprint":market_strategies.STRATEGY_FINGERPRINT,
-        "secondary_ready":bool(fallback.get("ok")),
-        "secondary_checks":fallback.get("checks",{}),
+        "ok":bool(diagnostic.get("ok")),
+        "engine":"STP CAPITAL SHIELD V10",
+        "current_active":active_current,
+        "legacy_active":0,
+        "legacy_retired":legacy_active,
+        "legacy_removed":True,
+        "manual_only":True,
+        "strategy_fingerprint":capital_shield_strategy.STRATEGY_FINGERPRINT,
+        "strategy_ready":bool(diagnostic.get("ok")),
+        "strategy_checks":diagnostic.get("checks",{}),
         "auto_scan_enabled":bool(globals().get("AUTO_SCAN_ENABLED",False)),
-        "scheduler_running":bool(active_scheduler and active_scheduler.running)
+        "scheduler_running":bool(active_scheduler and active_scheduler.running),
+        "fallback_engine":None
     })
 
 
 @app.get("/api/strategy/smart-money")
 def smart_money_strategy_status():
-    market=str(request.args.get("market","")).strip().lower()
-    if market not in MARKETS:
-        return json_error("السوق غير معروف",404)
-    row=db.session.get(Setting,"smart-money-signals:"+market)
-    if not row:
-        return jsonify({"ok":True,"market":market,"engine":"SMART MONEY",
-                        "fingerprint":smart_money_strategy.STRATEGY_FINGERPRINT,
-                        "signals":[],"frame_diagnostics":{},"updated_at":None,
-                        "note":"لم تكتمل أول دورة مقارنة لهذا السوق بعد."})
-    try:
-        payload=json.loads(row.value)
-        if not isinstance(payload,dict):
-            raise ValueError("invalid payload")
-    except (TypeError,ValueError):
-        return json_error("تعذر قراءة نتائج محرك SMART MONEY",500)
-    now_ms=int(utcnow().timestamp()*1000)
-    fresh=[]
-    for signal in payload.get("signals",[]):
-        try:
-            interval=smart_money_strategy.INTERVAL_MS.get(signal.get("timeframe"))
-            candle=int(signal.get("signal_candle_time") or 0)
-            if interval and candle and now_ms-(candle+interval)<=interval*1.5+120000:
-                fresh.append(signal)
-        except (TypeError,ValueError,AttributeError):
-            continue
-    payload["signals"]=fresh
-    return jsonify({"ok":True,**payload})
+    return jsonify({
+        "ok":True,"enabled":False,"retired":True,
+        "engine":"STP CAPITAL SHIELD V10",
+        "fingerprint":capital_shield_strategy.STRATEGY_FINGERPRINT,
+        "signals":[],"note":"تم إيقاف محرك SMART MONEY القديم بعد استبداله بمحرك واحد."
+    })
 
 
 def scan_failure_code(exc):
@@ -904,14 +884,10 @@ def record_scan_failure(frame_stats,frame,item,code):
 
 
 def build_signal(market,item,timeframe):
-    """STP Adaptive Quant V8: smart-money structure primary, V7 adaptive fallback.
-
-    Uses completed candles only. Both paths remain paper-analysis only.
-    """
+    """STP Capital Shield V10 single strategy; no legacy or fallback engine."""
     symbol=item["symbol"]
     rows=klines(market,symbol,timeframe,250)
-    frame_profile=market_strategies.FRAME_PROFILES.get(timeframe)
-    required_rows=(int(frame_profile["min_bars"])+1) if frame_profile else 106
+    required_rows=capital_shield_strategy.MIN_BARS.get(timeframe,30)+1
     if not isinstance(rows,list) or len(rows)<required_rows:
         received=len(rows) if isinstance(rows,list) else 0
         reason=("invalid_candle_payload" if not isinstance(rows,list)
@@ -919,68 +895,31 @@ def build_signal(market,item,timeframe):
                 else "insufficient_history")
         return {"_data_incomplete":True,"_candles_received":received,
                 "_diagnostic_code":reason}
-
-    smart_money_setup=None
-    smart_money_rejections={}
+    rejections={}
     try:
-        smart_money_setup=smart_money_strategy.analyze(
-            market,symbol,rows,timeframe=timeframe,diagnostics=smart_money_rejections
+        setup=capital_shield_strategy.analyze(
+            market,symbol,rows,timeframe=timeframe,diagnostics=rejections
         )
-        if smart_money_setup:
-            smart_money_setup["quote_volume"]=item.get("quote_volume",0)
     except Exception:
-        app.logger.exception("V8 primary SMART MONEY analysis failed: %s %s %s",market,symbol,timeframe)
-
-    fallback_rejections={}
-    fallback_setup=market_strategies.analyze_all(
-        market,symbol,rows,timeframe=timeframe,diagnostics=fallback_rejections
-    )
-
-    # Prefer a confirmed liquidity/structure setup. Retain V7 as a measured
-    # fallback so the new primary does not unnecessarily starve the scanner.
-    if smart_money_setup:
-        setup=dict(smart_money_setup)
-        setup["engine_path"]="SMART_MONEY_PRIMARY"
-        if fallback_setup and fallback_setup.get("side")==setup.get("side"):
-            setup["score"]=round(min(97.0,max(float(setup.get("score",0)),
-                                             float(fallback_setup.get("score",0)))+4.0),1)
-            setup["confluence"]="SMART_MONEY_PLUS_REGIME_ADAPTIVE"
-            setup["reason"]=setup.get("reason","")+"; V7 regime confluence"
-        elif fallback_setup and fallback_setup.get("side")!=setup.get("side"):
-            setup["score"]=round(max(50.0,float(setup.get("score",0))-6.0),1)
-            setup["confluence"]="SMART_MONEY_PRIMARY_WITH_REGIME_CONFLICT"
-            setup["reason"]=setup.get("reason","")+"; regime engine disagreement (confidence haircut)"
-        else:
-            setup["confluence"]="SMART_MONEY_STRUCTURE_ONLY"
-    else:
-        setup=fallback_setup
-        if setup:
-            setup["engine_path"]="REGIME_ADAPTIVE_FALLBACK"
-            setup["confluence"]="REGIME_ADAPTIVE_FALLBACK_NO_SMART_MONEY_SETUP"
-            setup["reason"]=setup.get("reason","")+"; V8 fallback because no confirmed liquidity/structure setup"
-
+        app.logger.exception("V10 CAPITAL SHIELD analysis failed: %s %s %s",market,symbol,timeframe)
+        return {"_strategy_rejected":True,"_strategy_rejection_reasons":{"strategy_analysis_error":1}}
     if not setup:
         return {"_strategy_rejected":True,
-                "_strategy_rejection_reasons":{
-                    "v8_no_valid_setup":1,
-                    **({"smart_money_"+k:v for k,v in smart_money_rejections.items()}),
-                    **({"adaptive_fallback_"+k:v for k,v in fallback_rejections.items()})
-                },
-                "_smart_money_setup":None,
-                "_smart_money_rejection_reasons":smart_money_rejections}
-
-    setup["_smart_money_setup"]=dict(smart_money_setup) if smart_money_setup else None
-    setup["_smart_money_rejection_reasons"]=smart_money_rejections
+                "_strategy_rejection_reasons":rejections or {"no_valid_setup":1},
+                "_smart_money_setup":None,"_smart_money_rejection_reasons":{}}
+    setup["quote_volume"]=item.get("quote_volume",0)
     setup["signal_timeframe"]=timeframe
-    setup["strategy_fingerprint"]=STRATEGY_FINGERPRINT
-    setup["strategy"]="STP_ADAPTIVE_QUANT_V8_"+market.upper()+"_"+timeframe
-    setup["strategy_names"]=list(setup.get("confirmations") or setup.get("strategy_names") or [])
+    setup["strategy_fingerprint"]=capital_shield_strategy.STRATEGY_FINGERPRINT
+    setup["strategy"]="STP_CAPITAL_SHIELD_V10_"+market.upper()+"_"+timeframe
+    setup["strategy_names"]=list(setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
-    setup["strategy_total"]=4
-    setup["reason"]="ADAPTIVE-TREND MTF: "+timeframe+" STP ADAPTIVE QUANT V8; "+setup.get("reason","")
-    setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
-                  "status":"active","timeframe":timeframe})
+    setup["strategy_total"]=6
+    setup["reason"]="CAPITAL-SHIELD MTF: "+timeframe+" STP CAPITAL SHIELD V10; "+setup.get("reason","")
+    setup.update({"market":market,"symbol":symbol,"status":"active","timeframe":timeframe})
+    setup["_smart_money_setup"]=None
+    setup["_smart_money_rejection_reasons"]={}
     return setup
+
 
 def filter_fresh_signals(signals, universe, now=None):
     """Reject stale/moved setups and anchor execution levels to the live quote."""
@@ -1267,7 +1206,7 @@ def timeframe_bucket(frame,now):
 
 def market_scan_timeframes(market):
     """Expose the same independently-calculated frames for every supported market."""
-    return market_strategies.TIMEFRAMES
+    return capital_shield_strategy.TIMEFRAMES
 
 
 def align_signals_with_market_bias(signals, market_bias):
@@ -1280,17 +1219,11 @@ def align_signals_with_market_bias(signals, market_bias):
 
 
 def trade_passes_frame_risk(trade):
-    """Validate an open trade against its own timeframe risk profile.
-
-    A single 2.5% cap incorrectly hid valid daily, weekly and monthly setups.
-    Keep the strategy's frame-specific structural-risk limits authoritative.
-    """
+    """Validate stop direction and the V10 timeframe-specific risk ceiling."""
     try:
-        profile=market_strategies.FRAME_PROFILES.get(trade.timeframe)
-        entry=float(trade.entry)
-        stop=float(trade.stop)
-        side=str(trade.side)
-        if not profile or not math.isfinite(entry) or not math.isfinite(stop) or entry<=0 or stop<=0:
+        max_risk=capital_shield_strategy.MAX_RISK_PCT.get(trade.timeframe)
+        entry=float(trade.entry); stop=float(trade.stop); side=str(trade.side)
+        if not max_risk or not all(math.isfinite(x) and x>0 for x in (entry,stop)):
             return False
         if side=="BUY" and stop>=entry:
             return False
@@ -1298,8 +1231,8 @@ def trade_passes_frame_risk(trade):
             return False
         if side not in ("BUY","SELL"):
             return False
-        return abs(entry-stop)/entry <= float(profile["max_risk_pct"])
-    except (AttributeError,TypeError,ValueError,OverflowError,KeyError):
+        return abs(entry-stop)/entry <= float(max_risk)
+    except (AttributeError,TypeError,ValueError,OverflowError):
         return False
 
 
@@ -1310,7 +1243,10 @@ def _run_market_scan_unlocked(market,force=False):
     # Retire all still-open signals produced by the replaced single-timeframe engine.
     Trade.query.filter(
         Trade.market==market, Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.expires_at>now, Trade.reason.like("SMART FLOW QUANT:%")
+        Trade.expires_at>now,
+        or_(Trade.reason.like("SMART FLOW QUANT:%"),
+            Trade.reason.like("SMART FLOW MTF QUANT:%"),
+            Trade.reason.like("ADAPTIVE-TREND MTF:%"))
     ).update({"status":"superseded"}, synchronize_session=False)
     db.session.commit()
     expire_stale_trades(market)
