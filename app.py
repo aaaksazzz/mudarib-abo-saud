@@ -8,7 +8,6 @@ import requests
 import xml.etree.ElementTree as ET
 import html
 import market_adapters
-import market_strategies
 import smart_money_strategy
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
@@ -427,18 +426,14 @@ def pro_theme(): return send_from_directory(APP_DIR, "pro-theme.css")
 def compat_styles(): return send_from_directory(APP_DIR, "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
-    diagnostic=market_strategies.diagnostic_self_test()
-    secondary=smart_money_strategy.diagnostic_self_test()
+    diagnostic=smart_money_strategy.diagnostic_self_test()
     return jsonify({
-        "ok":bool(diagnostic.get("ok") and secondary.get("ok")),
-        "engine":"SMART TRADING PRO",
-        "strategy_fingerprint":market_strategies.STRATEGY_FINGERPRINT,
+        "ok":bool(diagnostic.get("ok")),
+        "engine":"STP ICT/SMC REVERSAL",
+        "strategy_fingerprint":STRATEGY_FINGERPRINT,
         "strategy_ready":bool(diagnostic.get("ok")),
         "strategy_checks":diagnostic.get("checks",{}),
-        "secondary_engine":"SMART MONEY",
-        "secondary_fingerprint":smart_money_strategy.STRATEGY_FINGERPRINT,
-        "secondary_ready":bool(secondary.get("ok")),
-        "secondary_checks":secondary.get("checks",{}),
+        "retired_engines":["REGIME-ADAPTIVE V7","STP ADAPTIVE QUANT V8"],
         "manual_only":True
     })
 
@@ -475,7 +470,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":market_strategies.STRATEGY_FINGERPRINT.startswith("SMART-REGIME-ADAPTIVE-")}
+            "price_action_engine":smart_money_strategy.STRATEGY_FINGERPRINT.startswith("STP-ICT-SMC-REVERSAL-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -954,7 +949,7 @@ def filter_fresh_signals(signals, universe, now=None):
             current=live_prices.get(signal.get("symbol"))
             side=signal.get("side")
             direction=1.0 if side=="BUY" else -1.0
-            interval_ms=market_strategies.INTERVAL_MS.get(signal.get("timeframe"))
+            interval_ms=smart_money_strategy.INTERVAL_MS.get(signal.get("timeframe"))
             if not interval_ms or not candle_time or now_ms-(candle_time+interval_ms)>interval_ms*1.5+120000:
                 rejected_old+=1
                 continue
@@ -985,7 +980,7 @@ def filter_fresh_signals(signals, universe, now=None):
                 continue
             # Keep TP1 anchored to the previous structural swing. Only the
             # extension targets are recalculated from the live quote.
-            targets=market_strategies.target_prices(current,side,stop)
+            targets=smart_money_strategy.target_prices(current,side,stop)
             if not targets:
                 rejected_moved+=1
                 continue
@@ -1046,7 +1041,7 @@ def filter_fresh_smart_money_signals(signals,universe,now=None):
             if (side=="BUY" and (current<=stop or target<=current)) or (side=="SELL" and (current>=stop or target>=current)):
                 late+=1
                 continue
-            targets=market_strategies.target_prices(current,side,stop)
+            targets=smart_money_strategy.target_prices(current,side,stop)
             if not targets:
                 late+=1
                 continue
@@ -1073,7 +1068,7 @@ def expire_stale_trades(market=None):
 def evaluate_trade_outcome_from_bars(trade,rows,now_ms=None):
     """Replay completed OHLC bars using the trade's own timeframe."""
     now_ms=now_ms if now_ms is not None else int(utcnow().timestamp()*1000)
-    interval_ms=market_strategies.INTERVAL_MS.get(trade.timeframe)
+    interval_ms=smart_money_strategy.INTERVAL_MS.get(trade.timeframe)
     if not interval_ms:
         return trade.status,0
     try:
@@ -1215,7 +1210,7 @@ def timeframe_bucket(frame,now):
 
 def market_scan_timeframes(market):
     """Expose the same independently-calculated frames for every supported market."""
-    return market_strategies.TIMEFRAMES
+    return smart_money_strategy.TIMEFRAMES
 
 
 def align_signals_with_market_bias(signals, market_bias):
@@ -1234,7 +1229,7 @@ def trade_passes_frame_risk(trade):
     Keep the strategy's frame-specific structural-risk limits authoritative.
     """
     try:
-        profile=market_strategies.FRAME_PROFILES.get(trade.timeframe)
+        profile=smart_money_strategy.FRAME_PROFILES.get(trade.timeframe)
         entry=float(trade.entry)
         stop=float(trade.stop)
         side=str(trade.side)
@@ -1281,7 +1276,7 @@ def _run_market_scan_unlocked(market,force=False):
                     meta=json.loads(meta_row.value) if meta_row else {}
                 except (ValueError,TypeError):
                     meta={}
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("ADAPTIVE-TREND MTF:%")).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("STP ICT/SMC REVERSAL MTF:%")).all()
                 bias=meta.get("market_bias")
                 if bias in ("BUY","SELL"):
                     active=[trade for trade in active if trade.side==bias]
@@ -1461,7 +1456,7 @@ def _run_market_scan_unlocked(market,force=False):
         active=Trade.query.filter(
             Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
             Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-            Trade.reason.like("ADAPTIVE-TREND MTF:%")
+            Trade.reason.like("STP ICT/SMC REVERSAL MTF:%")
         ).order_by(Trade.score.desc()).limit(18).all()
         return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],
                 "updated_at":iso(now),"cached":False,"data_status":"unavailable",
@@ -1515,7 +1510,7 @@ def _run_market_scan_unlocked(market,force=False):
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("ADAPTIVE-TREND MTF:%"),
+        Trade.reason.like("STP ICT/SMC REVERSAL MTF:%"),
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
@@ -1549,7 +1544,7 @@ def _run_market_scan_unlocked(market,force=False):
             new_signals.append(signal)
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("ADAPTIVE-TREND MTF:%")).update({"status":"superseded"},synchronize_session=False)
+        Trade.reason.not_like("STP ICT/SMC REVERSAL MTF:%")).update({"status":"superseded"},synchronize_session=False)
     # Do not erase a live setup just because the latest completed scan found
     # no replacement. Replace only frames that produced at least one fresh,
     # direction-aligned candidate; otherwise keep the prior trade until expiry.
@@ -1557,7 +1552,7 @@ def _run_market_scan_unlocked(market,force=False):
                         if any(signal.get("timeframe")==frame for signal in found)}
     if replacement_frames:
         active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-            Trade.timeframe.in_(replacement_frames),Trade.reason.like("ADAPTIVE-TREND MTF:%"))
+            Trade.timeframe.in_(replacement_frames),Trade.reason.like("STP ICT/SMC REVERSAL MTF:%"))
         if retained_ids:
             active_query=active_query.filter(~Trade.id.in_(retained_ids))
         active_query.update({"status":"superseded"},synchronize_session=False)
@@ -1667,7 +1662,7 @@ def _run_market_scan_unlocked(market,force=False):
     db.session.commit()
     active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-        Trade.reason.like("ADAPTIVE-TREND MTF:%")).all()
+        Trade.reason.like("STP ICT/SMC REVERSAL MTF:%")).all()
     active=[trade for trade in active if trade_passes_frame_risk(trade)
             and (market_bias not in ("BUY","SELL") or trade.side==market_bias)]
     active.sort(key=lambda trade:trade.score,reverse=True)
