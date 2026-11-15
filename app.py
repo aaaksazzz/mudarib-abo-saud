@@ -792,7 +792,7 @@ def klines(market,symbol,interval,limit=120):
     return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit})
 TIMEFRAMES=market_strategies.TIMEFRAMES
 
-STRATEGY_FINGERPRINT="STP-ADAPTIVE-QUANT-V8-SMART-MONEY-PRIMARY-20261115"
+STRATEGY_FINGERPRINT="STP-ADAPTIVE-QUANT-V9-SMART-MONEY-BALANCED-DIRECTION-20261115"
 @app.get("/api/strategy-status")
 def strategy_status_summary():
     active_current=Trade.query.filter(
@@ -807,11 +807,13 @@ def strategy_status_summary():
     primary=smart_money_strategy.diagnostic_self_test()
     active_scheduler=globals().get("scheduler")
     return jsonify({
-        "ok":True,"engine":"STP ADAPTIVE QUANT V8",
+        "ok":True,"engine":"STP ADAPTIVE QUANT V9",
         "current_active":active_current,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
-        "strategy_ready":bool(primary.get("ok") and fallback.get("ok")),
+        "strategy_ready":bool(primary.get("ok") and fallback.get("ok") and scanner_diagnostic_self_test().get("ok")),
+        "scanner_ready":scanner_diagnostic_self_test().get("ok"),
+        "scanner_checks":scanner_diagnostic_self_test().get("checks",{}),,
         "strategy_checks":{
             "smart_money_primary":primary.get("checks",{}),
             "regime_adaptive_fallback":fallback.get("checks",{})
@@ -1270,13 +1272,55 @@ def market_scan_timeframes(market):
     return market_strategies.TIMEFRAMES
 
 
-def align_signals_with_market_bias(signals, market_bias):
-    """Return only signals aligned with breadth direction and count rejected rows."""
-    rows=list(signals or [])
-    if market_bias not in ("BUY","SELL"):
-        return rows,0
-    aligned=[signal for signal in rows if signal.get("side")==market_bias]
-    return aligned,len(rows)-len(aligned)
+def align_signals_with_market_bias(signals, market_bias, market=None):
+    """Treat breadth as context, not an absolute veto of confirmed structure.
+
+    Liquidity sweeps and breaks of structure can reverse 24h breadth. Keep
+    these setups with a modest quality haircut; Spot remains long-only.
+    """
+    accepted=[]
+    rejected=0
+    for signal in list(signals or []):
+        side=signal.get("side")
+        if side not in ("BUY","SELL") or (market=="spot" and side!="BUY"):
+            rejected+=1
+            continue
+        if market_bias not in ("BUY","SELL"):
+            signal["market_bias"]="NEUTRAL"
+            signal["market_alignment"]="NEUTRAL"
+        elif side==market_bias:
+            signal["market_bias"]=market_bias
+            signal["market_alignment"]="ALIGNED"
+        else:
+            signal["market_bias"]=market_bias
+            signal["market_alignment"]="COUNTERTREND_STRUCTURE"
+            try:
+                signal["score"]=round(max(50.0,float(signal.get("score",50.0))-5.0),1)
+            except (TypeError,ValueError,OverflowError):
+                signal["score"]=50.0
+            reason=str(signal.get("reason") or "")
+            if "countertrend vs breadth" not in reason.lower():
+                signal["reason"]=(reason+"; confirmed countertrend setup vs 24h breadth").strip("; ")
+        accepted.append(signal)
+    return accepted,rejected
+
+
+def scanner_diagnostic_self_test():
+    sample=[{"side":"BUY","score":80.0},{"side":"SELL","score":80.0}]
+    kept,rejected=align_signals_with_market_bias(sample,"BUY","futures")
+    spot,spot_rejected=align_signals_with_market_bias([{"side":"BUY","score":80.0}],"SELL","spot")
+    short,short_rejected=align_signals_with_market_bias([{"side":"SELL","score":80.0}],"BUY","spot")
+    universe=[{"symbol":str(i),"change_pct":float(i),"quote_volume":1.0} for i in range(105)]
+    batch,next_offset,start=select_scan_candidates(universe,80,80)
+    checks={
+        "countertrend_structure_retained":len(kept)==2 and rejected==0 and kept[1].get("market_alignment")=="COUNTERTREND_STRUCTURE",
+        "countertrend_quality_haircut":kept[1].get("score")==75.0,
+        "spot_buy_survives_bearish_breadth":len(spot)==1 and spot_rejected==0 and spot[0].get("side")=="BUY",
+        "spot_short_stays_blocked":len(short)==0 and short_rejected==1,
+        "candidate_rotation_wraps":len(batch)==80 and next_offset==55 and start==80,
+        "all_six_timeframes":tuple(market_scan_timeframes("futures"))==TIMEFRAMES,
+    }
+    return {"ok":all(checks.values()),"checks":checks}
 
 
 def trade_passes_frame_risk(trade):
@@ -1525,8 +1569,9 @@ def _run_market_scan_unlocked(market,force=False):
         [signal for signal in smart_money_found if signal.get("timeframe") in frames_to_scan],
         universe,utcnow()
     )
+    smart_money_countertrend=sum(1 for signal in smart_money_fresh if market_bias in ("BUY","SELL") and signal.get("side")!=market_bias)
     smart_money_fresh,smart_money_direction_rejected=align_signals_with_market_bias(
-        smart_money_fresh,market_bias
+        smart_money_fresh,market_bias,market
     )
     if failed:
         app.logger.warning(
@@ -1549,20 +1594,24 @@ def _run_market_scan_unlocked(market,force=False):
         frame_diagnostics[frame]["fresh_matches"]=len(frame_found)
         frame_diagnostics[frame]["rejected_stale_candle"]=frame_freshness["rejected_stale_candle"]
         frame_diagnostics[frame]["rejected_late_price"]=frame_freshness["rejected_late_price"]
-        frame_diagnostics[frame]["direction_rejected"]=(
-            sum(1 for signal in frame_found if signal.get("side")!=market_bias)
-            if market_bias in ("BUY","SELL") else 0
+        frame_diagnostics[frame]["countertrend_signals"]=sum(
+            1 for signal in frame_found if market_bias in ("BUY","SELL") and signal.get("side")!=market_bias
         )
     freshness={key:sum(value[key] for value in freshness_by_frame.values())
                for key in ("rejected_stale_candle","rejected_late_price")}
     fresh_matches=len(found)
-    # Enforce the broad market breadth direction: a bearish market publishes
-    # SELL setups only; a bullish market publishes BUY setups only. Neutral
-    # breadth does not invent a directional filter.
-    found,direction_rejected=align_signals_with_market_bias(found,market_bias)
-    app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s",
+    # Breadth is a contextual quality filter, not a hard veto: confirmed
+    # countertrend structure remains eligible with a modest score reduction.
+    # Spot remains long-only and rejects every SELL setup.
+    countertrend_signals=sum(1 for signal in found if market_bias in ("BUY","SELL") and signal.get("side")!=market_bias)
+    found,direction_rejected=align_signals_with_market_bias(found,market_bias,market)
+    for frame in frames_to_scan:
+        frame_signals=[signal for signal in found if signal.get("timeframe")==frame]
+        frame_diagnostics[frame]["direction_rejected"]=sum(1 for signal in raw_found if signal.get("timeframe")==frame and market=="spot" and signal.get("side")!="BUY")
+        frame_diagnostics[frame]["countertrend_signals"]=sum(1 for signal in frame_signals if signal.get("market_alignment")=="COUNTERTREND_STRUCTURE")
+    app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s countertrend=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,len(found),
-                    freshness["rejected_stale_candle"],freshness["rejected_late_price"],market_bias)
+                    freshness["rejected_stale_candle"],freshness["rejected_late_price"],market_bias,countertrend_signals)
     # Keep the same 15m candle from being republished every scheduler cycle.
     existing_rows=Trade.query.filter(
         Trade.market==market,
@@ -1625,6 +1674,7 @@ def _run_market_scan_unlocked(market,force=False):
     meta_value=json.dumps({"scan_universe":len(universe),"scan_batch_size":len(candidates),"scan_offset":scan_offset,
                             "analysis_completed":completed,"analysis_failed":failed,"strategy_matches":strategy_matches,
                             "fresh_matches":fresh_matches,"direction_rejected":direction_rejected,
+                            "countertrend_signals":countertrend_signals,
                             "accepted_signals":len(found),"rejected_stale_candle":freshness["rejected_stale_candle"],
                             "rejected_late_price":freshness["rejected_late_price"],
                             "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":frames_to_scan,
@@ -1664,6 +1714,7 @@ def _run_market_scan_unlocked(market,force=False):
             "strategy_matches":frame_stats[frame]["matches"],
             "fresh_matches":len(frame_signals),
             "direction_rejected":frame_diagnostics[frame]["direction_rejected"],
+            "countertrend_signals":frame_diagnostics[frame].get("countertrend_signals",0),
             "accepted_signals":len(frame_signals),
             "rejected_stale_candle":freshness_by_frame[frame]["rejected_stale_candle"],
             "rejected_late_price":freshness_by_frame[frame]["rejected_late_price"],
@@ -1698,6 +1749,7 @@ def _run_market_scan_unlocked(market,force=False):
             "rejected_stale_candle":smart_money_freshness["rejected_stale_candle"],
             "rejected_late_price":smart_money_freshness["rejected_late_price"],
             "direction_rejected":smart_money_direction_rejected,
+            "countertrend_signals":smart_money_countertrend,
         }
     smart_payload={
         "market":market,"engine":"SMART MONEY",
