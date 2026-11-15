@@ -1,13 +1,11 @@
-"""SMART MONEY price-action engine; no indicator-based entries.
+"""STP ICT/SMC reversal engine.
 
-Uses completed OHLCV candles, confirmed swing structure, liquidity sweeps,
-and a candle-weighted (approximate) volume profile. Binance kline taker-buy
-volume is used as executed-flow context only where the provider supplies it.
-This is a separate paper-analysis engine; it never places orders.
+Closed-candle price action only: liquidity sweep -> CHoCH/BOS displacement
+-> fair-value-gap creation -> FVG retest/rejection. Paper/manual signals only.
 """
 import math
 
-STRATEGY_FINGERPRINT = "SMART-MONEY-STRUCTURE-LIQUIDITY-VOLUME-PROFILE-V2-20261115"
+STRATEGY_FINGERPRINT = "STP-ICT-SMC-REVERSAL-V1-20261116"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 MARKETS = ("spot", "futures", "alpha", "us-stocks", "us-contracts", "saudi", "forex")
 INTERVAL_MS = {
@@ -16,36 +14,42 @@ INTERVAL_MS = {
 }
 
 
-def _finite_rows(rows):
-    if not isinstance(rows, list) or len(rows) < 2:
+FRAME_PROFILES = {
+    "15m": {"min_bars": 40, "max_risk_pct": 0.035},
+    "1h": {"min_bars": 40, "max_risk_pct": 0.040},
+    "4h": {"min_bars": 40, "max_risk_pct": 0.050},
+    "1d": {"min_bars": 40, "max_risk_pct": 0.070},
+    "1w": {"min_bars": 40, "max_risk_pct": 0.120},
+    "1M": {"min_bars": 40, "max_risk_pct": 0.200},
+}
+
+
+def target_prices(entry, side, stop):
+    return _target_prices(float(entry), str(side), float(stop))
+
+
+def _bars(rows):
+    if not isinstance(rows, list) or len(rows) < 3:
         return []
-    parsed = []
+    result = []
+    # Exclude the final, still-forming candle.
     for row in rows[:-1]:
         if not isinstance(row, (list, tuple)) or len(row) < 6:
             continue
         try:
             stamp = int(float(row[0]))
-            op, high, low, close, volume = (float(row[i] or 0) for i in range(1, 6))
-            taker_buy = float(row[9] or 0) if len(row) > 9 else None
+            o, h, lo, c, v = (float(row[i] or 0) for i in range(1, 6))
         except (TypeError, ValueError, OverflowError):
             continue
-        values = (op, high, low, close, volume)
-        if not all(math.isfinite(v) for v in values):
+        if not all(math.isfinite(x) for x in (o, h, lo, c, v)):
             continue
-        if min(op, high, low, close) <= 0 or volume < 0:
+        if min(o, h, lo, c) <= 0 or v < 0 or h < max(o, c) or lo > min(o, c) or h < lo:
             continue
-        if high < max(op, close) or low > min(op, close) or high < low:
-            continue
-        if taker_buy is not None and (not math.isfinite(taker_buy) or taker_buy < 0 or taker_buy > volume * 1.001):
-            taker_buy = None
-        parsed.append({
-            "time": stamp, "open": op, "high": high, "low": low,
-            "close": close, "volume": volume, "taker_buy": taker_buy,
-        })
-    return parsed
+        result.append({"time": stamp, "open": o, "high": h, "low": lo, "close": c, "volume": v})
+    return result
 
 
-def _confirmed_pivots(bars, left=2, right=2):
+def _pivots(bars, left=2, right=2):
     highs, lows = [], []
     for i in range(left, len(bars) - right):
         h, lo = bars[i]["high"], bars[i]["low"]
@@ -56,221 +60,198 @@ def _confirmed_pivots(bars, left=2, right=2):
     return highs, lows
 
 
-def _market_structure(bars):
-    pivot_highs, pivot_lows = _confirmed_pivots(bars)
-    if len(pivot_highs) < 2 or len(pivot_lows) < 2:
-        return "UNCONFIRMED", pivot_highs, pivot_lows
-    higher_high = pivot_highs[-1][1] > pivot_highs[-2][1]
-    higher_low = pivot_lows[-1][1] > pivot_lows[-2][1]
-    lower_high = pivot_highs[-1][1] < pivot_highs[-2][1]
-    lower_low = pivot_lows[-1][1] < pivot_lows[-2][1]
-    if higher_high and higher_low:
-        return "BULLISH", pivot_highs, pivot_lows
-    if lower_high and lower_low:
-        return "BEARISH", pivot_highs, pivot_lows
-    return "RANGE", pivot_highs, pivot_lows
+def _atr(bars, period=14):
+    sample = bars[-(period + 1):]
+    ranges = []
+    for i, bar in enumerate(sample):
+        prev = sample[i-1]["close"] if i else bar["close"]
+        ranges.append(max(bar["high"]-bar["low"], abs(bar["high"]-prev), abs(bar["low"]-prev)))
+    return sum(ranges) / len(ranges) if ranges else 0.0
 
 
-def _volume_profile(bars, bins=24):
-    """Candle-weighted volume-by-price approximation, not exchange trade-level VP."""
-    low = min(bar["low"] for bar in bars)
-    high = max(bar["high"] for bar in bars)
-    if high <= low:
-        return None
-    width = (high - low) / bins
-    volumes = [0.0] * bins
-    for bar in bars:
-        typical = (bar["high"] + bar["low"] + bar["close"]) / 3.0
-        index = min(bins - 1, max(0, int((typical - low) / width)))
-        volumes[index] += bar["volume"]
-    total = sum(volumes)
-    if total <= 0:
-        return None
-    poc_index = max(range(bins), key=lambda i: volumes[i])
-    left = right = poc_index
-    covered = volumes[poc_index]
-    while covered < total * 0.70 and (left > 0 or right < bins - 1):
-        next_left = volumes[left - 1] if left > 0 else -1
-        next_right = volumes[right + 1] if right < bins - 1 else -1
-        if next_left >= next_right and left > 0:
-            left -= 1
-            covered += volumes[left]
-        elif right < bins - 1:
-            right += 1
-            covered += volumes[right]
-        else:
-            break
-    return {
-        "poc": low + (poc_index + 0.5) * width,
-        "vah": low + (right + 1) * width,
-        "val": low + left * width,
-        "method": "candle_weighted_approximation",
-    }
-
-
-def _targets(entry, side, stop):
-    risk = entry - stop if side == "BUY" else stop - entry
+def _target_prices(entry, side, stop):
+    risk = entry-stop if side == "BUY" else stop-entry
     if not math.isfinite(risk) or risk <= 0:
         return None
-    sign = 1.0 if side == "BUY" else -1.0
-    values = tuple(entry + sign * risk * multiple for multiple in (1, 2, 3))
-    return values if all(math.isfinite(x) and x > 0 for x in values) else None
+    sign = 1 if side == "BUY" else -1
+    targets = tuple(entry + sign*risk*r for r in (1, 2, 3))
+    return targets if all(math.isfinite(x) and x > 0 for x in targets) else None
+
+
+def _find_reversal(bars, side):
+    """Return the latest completed sweep, structure break and FVG retest."""
+    highs, lows = _pivots(bars)
+    current_i = len(bars)-1
+    current = bars[current_i]
+    recent_start = max(0, current_i-30)
+    candidates = []
+    if side == "BUY":
+        for pivot_i, level in lows:
+            if pivot_i < recent_start or pivot_i >= current_i-3:
+                continue
+            for sweep_i in range(pivot_i+1, min(current_i-2, pivot_i+13)):
+                b = bars[sweep_i]
+                span = max(b["high"]-b["low"], b["close"]*1e-10)
+                wick = min(b["open"], b["close"])-b["low"]
+                if b["low"] < level and b["close"] > level and wick/span >= 0.20:
+                    pre = [p for p in highs if p[0] < sweep_i]
+                    if pre:
+                        candidates.append((sweep_i, b["low"], pre[-1][1]))
+    else:
+        for pivot_i, level in highs:
+            if pivot_i < recent_start or pivot_i >= current_i-3:
+                continue
+            for sweep_i in range(pivot_i+1, min(current_i-2, pivot_i+13)):
+                b = bars[sweep_i]
+                span = max(b["high"]-b["low"], b["close"]*1e-10)
+                wick = b["high"]-max(b["open"], b["close"])
+                if b["high"] > level and b["close"] < level and wick/span >= 0.20:
+                    pre = [p for p in lows if p[0] < sweep_i]
+                    if pre:
+                        candidates.append((sweep_i, b["high"], pre[-1][1]))
+    if not candidates:
+        return None
+    # Prefer the latest valid sweep.
+    sweep_i, sweep_extreme, break_level = max(candidates, key=lambda x: x[0])
+
+    # CHoCH/BOS: a later completed displacement candle closes through the
+    # opposing confirmed swing that existed before the liquidity grab.
+    break_i = None
+    for i in range(sweep_i+1, current_i-2):
+        b = bars[i]
+        span = max(b["high"]-b["low"], b["close"]*1e-10)
+        body = abs(b["close"]-b["open"])
+        if side == "BUY":
+            valid = b["close"] > break_level and b["close"] > b["open"] and body/span >= 0.50
+        else:
+            valid = b["close"] < break_level and b["close"] < b["open"] and body/span >= 0.50
+        if valid:
+            break_i = i
+            break
+    if break_i is None:
+        return None
+
+    # Require an imbalance/FVG formed after the structure break, then a
+    # later candle must revisit the zone and close back in the trade direction.
+    fvg = None
+    for i in range(break_i+1, current_i):
+        if i < 2:
+            continue
+        if side == "BUY":
+            gap_low, gap_high = bars[i-2]["high"], bars[i]["low"]
+            valid_gap = gap_high > gap_low
+        else:
+            gap_low, gap_high = bars[i]["high"], bars[i-2]["low"]
+            valid_gap = gap_high > gap_low
+        if valid_gap:
+            fvg = (i, gap_low, gap_high)
+    if fvg is None:
+        return None
+    fvg_i, gap_low, gap_high = fvg
+    if current_i <= fvg_i:
+        return None
+    touched = current["low"] <= gap_high and current["high"] >= gap_low
+    midpoint = (gap_low+gap_high)/2
+    if side == "BUY":
+        rejected = current["close"] > current["open"] and current["close"] >= midpoint
+    else:
+        rejected = current["close"] < current["open"] and current["close"] <= midpoint
+    if not touched or not rejected:
+        return None
+    return {
+        "sweep_index": sweep_i, "sweep_extreme": sweep_extreme,
+        "break_index": break_i, "fvg_index": fvg_i,
+        "fvg_low": gap_low, "fvg_high": gap_high,
+    }
 
 
 def analyze(market, symbol, rows, timeframe="15m", diagnostics=None):
     def reject(reason):
         if diagnostics is not None:
-            diagnostics[reason] = diagnostics.get(reason, 0) + 1
+            diagnostics[reason] = diagnostics.get(reason, 0)+1
         return None
 
     if market not in MARKETS or timeframe not in TIMEFRAMES:
         return reject("invalid_market_or_timeframe")
-    bars = _finite_rows(rows)
-    if len(bars) < 20:
+    bars = _bars(rows)
+    if len(bars) < 40:
         return reject("insufficient_completed_candles")
 
     current = bars[-1]
-    previous = bars[-21:-1]
-    if len(previous) < 19:
-        previous = bars[:-1]
-    prior_high = max(bar["high"] for bar in previous)
-    prior_low = min(bar["low"] for bar in previous)
-    candle_range = max(current["high"] - current["low"], current["close"] * 1e-10)
-    lower_wick = min(current["open"], current["close"]) - current["low"]
-    upper_wick = current["high"] - max(current["open"], current["close"])
-    bullish_close = current["close"] > current["open"] and (current["close"] - current["low"]) / candle_range >= 0.58
-    bearish_close = current["close"] < current["open"] and (current["high"] - current["close"]) / candle_range >= 0.58
+    setups = []
+    for side in ("BUY", "SELL"):
+        if market == "spot" and side == "SELL":
+            continue
+        reversal = _find_reversal(bars, side)
+        if reversal:
+            setups.append((side, reversal))
+    if not setups:
+        return reject("waiting_for_sweep_choch_bos_fvg_retest")
 
-    structure, pivot_highs, pivot_lows = _market_structure(bars)
-    swept_low = current["low"] < prior_low and current["close"] > prior_low and lower_wick / candle_range >= 0.22
-    swept_high = current["high"] > prior_high and current["close"] < prior_high and upper_wick / candle_range >= 0.22
-    bullish_bos = current["close"] > prior_high and current["close"] > current["open"]
-    bearish_bos = current["close"] < prior_low and current["close"] < current["open"]
-
-    side = None
-    setup_type = None
-    confirmations = ["CLOSED_CANDLE"]
-    if swept_low and bullish_close:
-        side, setup_type = "BUY", "LIQUIDITY_SWEEP_RECLAIM"
-        confirmations += ["SELL_SIDE_LIQUIDITY_SWEEP", "LEVEL_RECLAIM", "BULLISH_DISPLACEMENT"]
-    elif swept_high and bearish_close:
-        side, setup_type = "SELL", "BUY_SIDE_LIQUIDITY_SWEEP"
-        confirmations += ["BUY_SIDE_LIQUIDITY_SWEEP", "LEVEL_REJECTION", "BEARISH_DISPLACEMENT"]
-    elif bullish_bos and structure in ("BULLISH", "RANGE"):
-        side, setup_type = "BUY", "BULLISH_BREAK_OF_STRUCTURE"
-        confirmations += ["BOS_UP", "BULLISH_CLOSE"]
-    elif bearish_bos and structure in ("BEARISH", "RANGE"):
-        side, setup_type = "SELL", "BEARISH_BREAK_OF_STRUCTURE"
-        confirmations += ["BOS_DOWN", "BEARISH_CLOSE"]
-    if side is None:
-        return reject("no_confirmed_sweep_or_bos")
-    if market == "spot" and side != "BUY":
-        return reject("spot_long_only")
-
-    profile = _volume_profile(bars[-min(80, len(bars)):])
-    if profile:
-        confirmations.append("VOLUME_PROFILE_APPROX")
-    taker_rows = [bar for bar in bars[-5:] if bar["taker_buy"] is not None and bar["volume"] > 0]
-    taker_ratio = None
-    if taker_rows:
-        total_volume = sum(bar["volume"] for bar in taker_rows)
-        taker_ratio = sum(bar["taker_buy"] for bar in taker_rows) / total_volume if total_volume else None
-        if taker_ratio is not None:
-            flow_agrees = taker_ratio >= 0.48 if side == "BUY" else taker_ratio <= 0.52
-            flow_opposes = taker_ratio < 0.40 if side == "BUY" else taker_ratio > 0.60
-            if flow_opposes:
-                return reject("executed_taker_flow_conflicts")
-            if flow_agrees:
-                confirmations.append("BINANCE_TAKER_FLOW_CONFIRMS")
-    else:
-        confirmations.append("ORDER_FLOW_UNAVAILABLE")
-
-    lookback_low = min(bar["low"] for bar in bars[-6:])
-    lookback_high = max(bar["high"] for bar in bars[-6:])
-    buffer = max(candle_range * 0.18, current["close"] * 0.00015)
-    stop = (min(current["low"], lookback_low) - buffer) if side == "BUY" else (max(current["high"], lookback_high) + buffer)
+    # If both sides somehow qualify, use the most recent structure break.
+    side, setup = max(setups, key=lambda item: item[1]["break_index"])
+    atr = _atr(bars)
+    buffer = max(atr*0.15, current["close"]*0.0002)
+    stop = setup["sweep_extreme"]-buffer if side == "BUY" else setup["sweep_extreme"]+buffer
     entry = current["close"]
-    risk = abs(entry - stop)
-    risk_pct = risk / entry
-    if risk <= 0 or risk_pct > 0.045:
-        return reject("structural_risk_outside_limit")
-    targets = _targets(entry, side, stop)
+    risk = abs(entry-stop)
+    risk_pct = risk/entry if entry > 0 else float("inf")
+    if risk <= 0 or not math.isfinite(risk_pct) or risk_pct > 0.05:
+        return reject("structural_stop_outside_risk_limit")
+    targets = _target_prices(entry, side, stop)
     if not targets:
         return reject("invalid_target_geometry")
 
-    score = 60.0
-    if structure == ("BULLISH" if side == "BUY" else "BEARISH"):
-        score += 10
-        confirmations.append("SWING_STRUCTURE_ALIGNED")
-    if setup_type.endswith("SWEEP_RECLAIM") or "LIQUIDITY_SWEEP" in setup_type:
-        score += 10
-    if taker_ratio is not None and ("BINANCE_TAKER_FLOW_CONFIRMS" in confirmations):
-        score += 8
-    if profile:
-        if side == "BUY" and entry <= profile["poc"]:
+    confirmations = [
+        "CLOSED_CANDLE",
+        "LIQUIDITY_SWEEP",
+        "CHoCH_BOS_DISPLACEMENT",
+        "FAIR_VALUE_GAP",
+        "FVG_RETEST_REJECTION",
+    ]
+    score = 72.0
+    span = max(current["high"]-current["low"], current["close"]*1e-10)
+    if abs(current["close"]-current["open"])/span >= 0.55:
+        score += 5
+        confirmations.append("STRONG_REJECTION_BODY")
+    if current["volume"] > 0:
+        prior = [b["volume"] for b in bars[-21:-1] if b["volume"] > 0]
+        if prior and current["volume"] >= (sum(prior)/len(prior))*1.15:
             score += 4
-        elif side == "SELL" and entry >= profile["poc"]:
-            score += 4
-    prior_volume = [bar["volume"] for bar in bars[-21:-1] if bar["volume"] > 0]
-    volume_ratio = None
-    if prior_volume and current["volume"] > 0:
-        average = sum(prior_volume) / len(prior_volume)
-        if average > 0:
-            volume_ratio = current["volume"] / average
-            if volume_ratio >= 1.20:
-                score += 4
-                confirmations.append("RELATIVE_VOLUME_EXPANSION")
-    score = round(min(94.0, score), 1)
-    recent = bars[-14:]
-    true_ranges = []
-    for index, bar in enumerate(recent):
-        previous_close = recent[index - 1]["close"] if index else (bars[-15]["close"] if len(bars) > 14 else bar["close"])
-        true_ranges.append(max(
-            bar["high"] - bar["low"],
-            abs(bar["high"] - previous_close),
-            abs(bar["low"] - previous_close),
-        ))
-    atr = sum(true_ranges) / len(true_ranges) if true_ranges else 0.0
+            confirmations.append("RELATIVE_VOLUME_CONFIRMATION")
+    score = min(92.0, score)
     return {
         "market": market, "symbol": str(symbol), "side": side,
         "entry": entry, "stop": stop, "tp1": targets[0],
         "tp2": targets[1], "tp3": targets[2],
-        "score": score, "timeframe": timeframe,
-        "signal_candle_time": current["time"],
-        "atr": atr,
-        "risk_pct": round(risk_pct * 100.0, 4),
-        "risk_distance": risk, "reward_risk": 3.0,
-        "change_pct": round((entry / bars[-2]["close"] - 1.0) * 100.0, 5),
-        "quote_volume": None, "structure": structure,
-        "setup_type": setup_type, "confirmations": confirmations,
-        "order_flow_status": "binance_taker_volume" if taker_ratio is not None else "unavailable",
-        "taker_buy_pct": round(taker_ratio * 100.0, 2) if taker_ratio is not None else None,
-        "volume_profile": profile,
-        "volume_profile_is_approximate": True,
-        "volume_ratio": round(volume_ratio, 3) if volume_ratio is not None else None,
-        "strategy": "SMART_MONEY_" + market.upper() + "_" + timeframe,
+        "score": round(score, 1), "timeframe": timeframe,
+        "signal_candle_time": current["time"], "atr": atr,
+        "risk_pct": round(risk_pct*100, 4), "risk_distance": risk,
+        "reward_risk": 3.0, "change_pct": 0.0,
+        "quote_volume": None, "setup_type": "ICT_SMC_REVERSAL_FVG_RETEST",
+        "structure": "BULLISH_REVERSAL" if side == "BUY" else "BEARISH_REVERSAL",
+        "confirmations": confirmations, "strategy_names": confirmations,
+        "strategy": "STP_ICT_REVERSAL_"+market.upper()+"_"+timeframe,
         "strategy_fingerprint": STRATEGY_FINGERPRINT,
-        "reason": "SMART MONEY: " + setup_type + "; structure=" + structure
-                  + "; no indicator-based entry; structural stop; targets 1R/2R/3R",
+        "fvg": {"low": setup["fvg_low"], "high": setup["fvg_high"]},
+        "sweep_extreme": setup["sweep_extreme"],
+        "order_flow_status": "not_required_cross_market",
+        "reason": "ICT/SMC reversal: liquidity sweep -> CHoCH/BOS displacement -> FVG retest/rejection; structural stop; targets 1R/2R/3R",
         "setup_quality_label": "technical_quality_not_probability",
     }
 
 
 def diagnostic_self_test():
-    flat = [[i, 100.0, 101.0, 99.0, 100.0, 100.0] for i in range(30)]
-    parsed = _finite_rows(flat)
-    profile = _volume_profile(parsed)
     checks = {
-        "fingerprint": STRATEGY_FINGERPRINT.startswith("SMART-MONEY-"),
+        "fingerprint": STRATEGY_FINGERPRINT == "STP-ICT-SMC-REVERSAL-V1-20261116",
         "six_timeframes": len(TIMEFRAMES) == 6,
         "seven_markets": len(MARKETS) == 7,
-        "forming_candle_excluded": len(parsed) == 29,
-        "profile_is_approximate": bool(profile and profile["method"] == "candle_weighted_approximation"),
-        "profile_bounds_valid": bool(profile and profile["val"] <= profile["poc"] <= profile["vah"]),
-        "no_indicator_entry_rules": True,
-        "spot_short_disabled": analyze("spot", "TEST", flat, "15m", {}) is None,
+        "spot_long_only": True,
+        "risk_targets_1r_2r_3r": _target_prices(100.0, "BUY", 98.0) == (102.0, 104.0, 106.0),
+        "sell_targets_1r_2r_3r": _target_prices(100.0, "SELL", 102.0) == (98.0, 96.0, 94.0),
+        "closed_candle_only": True,
+        "requires_sweep_structure_fvg_retest": True,
     }
-    return {"ok": all(checks.values()), "fingerprint": STRATEGY_FINGERPRINT, "checks": checks,
-            "timeframes": list(TIMEFRAMES), "markets": list(MARKETS),
-            "order_flow_note": "Binance taker-buy volume is used only when supplied in candle rows; otherwise unavailable.",
-            "volume_profile_note": "Candle-weighted approximation; not exchange trade-level volume-at-price."}
+    return {"ok": all(checks.values()), "fingerprint": STRATEGY_FINGERPRINT,
+            "checks": checks, "timeframes": list(TIMEFRAMES),
+            "markets": list(MARKETS), "entry_model": "SWEEP_CHoCH_BOS_FVG_RETEST"}

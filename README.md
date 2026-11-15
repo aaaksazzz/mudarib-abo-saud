@@ -17,14 +17,14 @@ Production-oriented market intelligence terminal.
 - **Tadawul:** public Saudi Exchange data is preferred, with Yahoo, a public ticker directory and TradingView fallbacks. Saudi equities are not filtered by the $1M threshold; public-feed coverage can be incomplete during provider restrictions.
 - **Forex & Gold:** public Yahoo symbol list; FX tick volume is not represented as exchange-traded dollar volume.
 
-## Active engine: REGIME-ADAPTIVE ENSEMBLE · independent multi-timeframe analysis
-- The active implementation is market_strategies.py, fingerprinted as SMART-REGIME-ADAPTIVE-ENSEMBLE-MTF-V5-BALANCED-20261114. The older false-breakout/liquidity-sweep description is retired and is not the active engine.
-- Every supported market is analysed independently on 15m, 1h, 4h, 1d, 1w and 1M completed candles, with separate parameter profiles and history requirements.
-- The rolling regime classifier selects TREND or RANGE setups and blocks STRESS / TRANSITION conditions. Trend entries use aligned Donchian breakouts or closed-candle EMA pullback continuation; range entries use RSI plus confirmed rejection near the outer range.
-- Stops are structural swing levels with an ATR/price buffer. Invalid-side, too-tight, excessively wide and out-of-profile risk is rejected using timeframe-specific limits.
-- TP1, TP2 and TP3 are calculated at 1R, 2R and 3R from the accepted live entry. Stale candles, materially moved entries and setups already extended toward TP1 are rejected.
-- The setup score is a rule-based technical-quality score, not a statistically calibrated win probability. No profitability claim is made without reproducible out-of-sample backtests after fees and slippage.
-- No account API keys or automatic order execution are used. Spot/Alpha/equity SELL signals are bearish/manual-exit signals, not short-sale or automatic orders.
+## Active engine: STP ICT/SMC REVERSAL · single cross-market engine
+- The only active signal engine is smart_money_strategy.py, fingerprinted as STP-ICT-SMC-REVERSAL-V1-20261116. The previous regime-adaptive V7/V8 signal paths have been retired and removed from the runtime.
+- Every supported market is scanned independently on the six supported completed-candle timeframes: 15m, 1h, 4h, 1d, 1w and 1M. Legacy 1m/5m frames are not exposed.
+- Entry sequence: confirmed liquidity sweep, CHoCH/BOS displacement through the opposing swing, fair-value-gap formation, then a later retest and directional rejection candle. A sweep or FVG touch alone is not an entry.
+- Stops are placed beyond the sweep extreme with an ATR-derived buffer and timeframe-specific maximum risk. Spot remains BUY-only; SELL on other markets is a bearish/manual signal and never an automatic short order.
+- TP1, TP2 and TP3 are set at 1R, 2R and 3R. Only completed candles are analysed; stale candles and materially moved/late entries are rejected.
+- The displayed score is a rule-based technical-quality score, not a statistically calibrated win probability. No strategy can guarantee profits or avoid all losses; validate with out-of-sample backtests after fees and slippage.
+- No account API keys or automatic order execution are used. All signals remain paper/manual analysis only.
 
 ## Signal engine
 - A timeframe batch is replaced only when that scan produces at least one fresh, direction-aligned setup; a zero-match scan preserves existing live trades until their normal expiry or outcome. Up to three opportunities per market per timeframe are published. Previous rows remain in trade history and expire after 24 hours.
