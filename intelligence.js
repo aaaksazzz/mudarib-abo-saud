@@ -82,7 +82,7 @@ async function loadEngineFingerprint(){
 }
 function smartMoneySignalCard(x){
  const profile=x.volume_profile||{};
- const flow=x.order_flow_status==="binance_taker_volume"?("ضغط شراء منفذ "+fmt(x.taker_buy_pct)+"%"):"تدفق الأوامر غير متاح لهذا المصدر";
+ const flow=x.order_flow_status==="binance_taker_volume"?("نسبة الشراء المنفذ "+fmt(x.taker_buy_pct)+"%"):"تدفق الأوامر غير متاح لهذا المصدر";
  const vp=profile.poc?("POC "+fmt(profile.poc)+" · VAL "+fmt(profile.val)+" · VAH "+fmt(profile.vah)):"ملف الحجم غير متاح";
  return signalCard(x).replace("</article>",'<div class="smart-money-details"><b>'+esc(x.setup_type||"PRICE_ACTION")+'</b><span>'+esc(x.structure||"—")+' · '+esc(flow)+'</span><small>'+esc(vp)+'</small></div></article>');
 }
