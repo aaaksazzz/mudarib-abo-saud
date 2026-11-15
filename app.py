@@ -789,7 +789,7 @@ def klines(market,symbol,interval,limit=120):
     return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit})
 TIMEFRAMES=capital_shield_strategy.TIMEFRAMES
 
-STRATEGY_FINGERPRINT="STP-ADAPTIVE-QUANT-V8-SMART-MONEY-PRIMARY-20261115"
+STRATEGY_FINGERPRINT=capital_shield_strategy.STRATEGY_FINGERPRINT
 @app.get("/api/strategy-status")
 def strategy_status_summary():
     now=utcnow()
