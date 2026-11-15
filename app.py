@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 import html
 import market_adapters
 import market_strategies
+import smart_money_strategy
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -427,12 +428,17 @@ def compat_styles(): return send_from_directory(APP_DIR, "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
     diagnostic=market_strategies.diagnostic_self_test()
+    secondary=smart_money_strategy.diagnostic_self_test()
     return jsonify({
-        "ok":bool(diagnostic.get("ok")),
+        "ok":bool(diagnostic.get("ok") and secondary.get("ok")),
         "engine":"SMART TRADING PRO",
         "strategy_fingerprint":market_strategies.STRATEGY_FINGERPRINT,
         "strategy_ready":bool(diagnostic.get("ok")),
         "strategy_checks":diagnostic.get("checks",{}),
+        "secondary_engine":"SMART MONEY",
+        "secondary_fingerprint":smart_money_strategy.STRATEGY_FINGERPRINT,
+        "secondary_ready":bool(secondary.get("ok")),
+        "secondary_checks":secondary.get("checks",{}),
         "manual_only":True
     })
 
@@ -798,6 +804,7 @@ def strategy_status_summary():
         Trade.reason.like("SMART FLOW MTF QUANT:%")
     ).count()
     diagnostic=market_strategies.diagnostic_self_test()
+    secondary=smart_money_strategy.diagnostic_self_test()
     active_scheduler=globals().get("scheduler")
     return jsonify({
         "ok":True,"engine":"SMART TRADING PRO",
@@ -806,9 +813,33 @@ def strategy_status_summary():
         "strategy_fingerprint":market_strategies.STRATEGY_FINGERPRINT,
         "strategy_ready":bool(diagnostic.get("ok")),
         "strategy_checks":diagnostic.get("checks",{}),
+        "secondary_engine":"SMART MONEY",
+        "secondary_fingerprint":smart_money_strategy.STRATEGY_FINGERPRINT,
+        "secondary_ready":bool(secondary.get("ok")),
+        "secondary_checks":secondary.get("checks",{}),
         "auto_scan_enabled":bool(globals().get("AUTO_SCAN_ENABLED",False)),
         "scheduler_running":bool(active_scheduler and active_scheduler.running)
     })
+
+
+@app.get("/api/strategy/smart-money")
+def smart_money_strategy_status():
+    market=str(request.args.get("market","")).strip().lower()
+    if market not in MARKETS:
+        return json_error("السوق غير معروف",404)
+    row=db.session.get(Setting,"smart-money-signals:"+market)
+    if not row:
+        return jsonify({"ok":True,"market":market,"engine":"SMART MONEY",
+                        "fingerprint":smart_money_strategy.STRATEGY_FINGERPRINT,
+                        "signals":[],"frame_diagnostics":{},"updated_at":None,
+                        "note":"لم تكتمل أول دورة مقارنة لهذا السوق بعد."})
+    try:
+        payload=json.loads(row.value)
+        if not isinstance(payload,dict):
+            raise ValueError("invalid payload")
+    except (TypeError,ValueError):
+        return json_error("تعذر قراءة نتائج محرك SMART MONEY",500)
+    return jsonify({"ok":True,**payload})
 
 
 def scan_failure_code(exc):
@@ -873,13 +904,27 @@ def build_signal(market,item,timeframe):
                 else "insufficient_history")
         return {"_data_incomplete":True,"_candles_received":received,
                 "_diagnostic_code":reason}
+    smart_money_setup=None
+    smart_money_rejections={}
+    try:
+        smart_money_setup=smart_money_strategy.analyze(
+            market,symbol,rows,timeframe=timeframe,diagnostics=smart_money_rejections
+        )
+        if smart_money_setup:
+            smart_money_setup["quote_volume"]=item.get("quote_volume",0)
+    except Exception:
+        app.logger.exception("SMART MONEY secondary analysis failed: %s %s %s",market,symbol,timeframe)
     strategy_rejections={}
     setup=market_strategies.analyze_all(
         market,symbol,rows,timeframe=timeframe,diagnostics=strategy_rejections
     )
     if not setup:
         return {"_strategy_rejected":True,
-                "_strategy_rejection_reasons":strategy_rejections or {"no_setup":"no_valid_pattern"}}
+                "_strategy_rejection_reasons":strategy_rejections or {"no_setup":"no_valid_pattern"},
+                "_smart_money_setup":smart_money_setup,
+                "_smart_money_rejection_reasons":smart_money_rejections}
+    setup["_smart_money_setup"]=smart_money_setup
+    setup["_smart_money_rejection_reasons"]=smart_money_rejections
     setup["signal_timeframe"]=timeframe
     setup["reason"]="ADAPTIVE-TREND MTF: "+timeframe+" regime-adaptive setup; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
@@ -957,6 +1002,63 @@ def filter_fresh_signals(signals, universe, now=None):
         except (TypeError,ValueError,OverflowError):
             rejected_moved+=1
     return accepted,{"rejected_stale_candle":rejected_old,"rejected_late_price":rejected_moved}
+
+
+def filter_fresh_smart_money_signals(signals,universe,now=None):
+    """Apply the same closed-candle freshness discipline without indicator dependencies."""
+    now=now or utcnow()
+    now_ms=int(now.timestamp()*1000)
+    prices={}
+    for item in universe:
+        try:
+            price=float(item.get("price") or 0)
+            if item.get("symbol") and math.isfinite(price) and price>0:
+                prices[item["symbol"]]=price
+        except (TypeError,ValueError,OverflowError):
+            continue
+    accepted=[]
+    stale=late=0
+    for signal in signals or []:
+        try:
+            frame=signal.get("timeframe")
+            interval=smart_money_strategy.INTERVAL_MS.get(frame)
+            candle=int(signal.get("signal_candle_time") or 0)
+            entry=float(signal.get("entry") or 0)
+            stop=float(signal.get("stop") or 0)
+            target=float(signal.get("tp1") or 0)
+            side=signal.get("side")
+            current=prices.get(signal.get("symbol"))
+            if not interval or not candle or now_ms-(candle+interval)>interval*1.5+120000:
+                stale+=1
+                continue
+            if current is None or min(entry,stop,target)<=0 or side not in ("BUY","SELL"):
+                late+=1
+                continue
+            risk=abs(entry-stop)
+            target_distance=abs(target-entry)
+            direction=1.0 if side=="BUY" else -1.0
+            favorable=(current-entry)*direction
+            if risk<=0 or target_distance<=0 or favorable>=target_distance*0.80:
+                late+=1
+                continue
+            if abs(current-entry)>max(risk*0.35,target_distance*0.50):
+                late+=1
+                continue
+            if (side=="BUY" and (current<=stop or target<=current)) or (side=="SELL" and (current>=stop or target>=current)):
+                late+=1
+                continue
+            targets=market_strategies.target_prices(current,side,stop)
+            if not targets:
+                late+=1
+                continue
+            signal["entry"]=current
+            signal["tp1"],signal["tp2"],signal["tp3"]=targets
+            signal["risk_distance"]=abs(current-stop)
+            signal["entry_price_source"]="live_market_quote"
+            accepted.append(signal)
+        except (TypeError,ValueError,OverflowError):
+            late+=1
+    return accepted,{"rejected_stale_candle":stale,"rejected_late_price":late}
 
 
 def expire_stale_trades(market=None):
@@ -1225,10 +1327,12 @@ def _run_market_scan_unlocked(market,force=False):
     for index,item in enumerate(candidates):
         item["include_microstructure"]=(market in ("spot","futures") and index<12)
     found=[]
+    smart_money_found=[]
     completed=0
     failed=0
     with ThreadPoolExecutor(max_workers=8) as pool:
         frame_stats={frame:{"completed":0,"failed":0,"matches":0,
+                              "smart_money_matches":0,"smart_money_rejections":{},
                               "failure_reasons":{},"failure_samples":[],
                               "strategy_rejections":{}} for frame in frames_to_scan}
         futures={pool.submit(build_signal,market,item,frame):(item,frame) for item in candidates for frame in frames_to_scan}
@@ -1236,6 +1340,16 @@ def _run_market_scan_unlocked(market,force=False):
             item,frame=futures[future]
             try:
                 signal=future.result()
+                if isinstance(signal,dict):
+                    secondary_setup=signal.pop("_smart_money_setup",None)
+                    secondary_rejections=signal.pop("_smart_money_rejection_reasons",{}) or {}
+                    if secondary_setup:
+                        smart_money_found.append(secondary_setup)
+                        frame_stats[frame]["smart_money_matches"]+=1
+                    else:
+                        reasons=frame_stats[frame]["smart_money_rejections"]
+                        for reason,count in secondary_rejections.items():
+                            reasons[reason]=reasons.get(reason,0)+int(count or 0)
                 if isinstance(signal,dict) and signal.get("_data_incomplete"):
                     failed+=1
                     frame_stats[frame]["failed"]+=1
@@ -1283,6 +1397,8 @@ def _run_market_scan_unlocked(market,force=False):
     frame_diagnostics={
         frame:{"completed":stats["completed"],"failed":stats["failed"],
                "matches":stats["matches"],
+               "smart_money_matches":stats.get("smart_money_matches",0),
+               "smart_money_rejections":stats.get("smart_money_rejections",{}),
                "failure_reasons":stats.get("failure_reasons",{}),
                "failure_samples":stats.get("failure_samples",[]),
                "strategy_rejections":stats.get("strategy_rejections",{})}
@@ -1354,6 +1470,13 @@ def _run_market_scan_unlocked(market,force=False):
                 "incomplete_timeframes":meta_value and json.loads(meta_value)["incomplete_timeframes"],
                 "frame_diagnostics":frame_diagnostics,
                 "timeframes":list(TIMEFRAMES),"scanned_timeframes":[]}
+    smart_money_fresh,smart_money_freshness=filter_fresh_smart_money_signals(
+        [signal for signal in smart_money_found if signal.get("timeframe") in frames_to_scan],
+        universe,utcnow()
+    )
+    smart_money_fresh,smart_money_direction_rejected=align_signals_with_market_bias(
+        smart_money_fresh,market_bias
+    )
     if failed:
         app.logger.warning(
             "market scan partial data: market=%s completed=%s failed=%s requested=%s diagnostics=%s",
@@ -1501,6 +1624,45 @@ def _run_market_scan_unlocked(market,force=False):
             db.session.add(Setting(key=frame_meta_key,value=frame_meta))
         else:
             frame_meta_row.value=frame_meta
+    # Keep a separate, inspectable paper-signal snapshot for the independent engine.
+    smart_key="smart-money-signals:"+market
+    smart_row=db.session.get(Setting,smart_key)
+    try:
+        previous_smart=json.loads(smart_row.value) if smart_row else {}
+        smart_frames=dict(previous_smart.get("signals_by_frame") or {})
+    except (TypeError,ValueError,AttributeError):
+        smart_frames={}
+    smart_frame_diagnostics=dict(previous_smart.get("frame_diagnostics") or {}) if isinstance(previous_smart,dict) else {}
+    for frame in frames_to_scan:
+        frame_rows=[x for x in smart_money_fresh if x.get("timeframe")==frame]
+        frame_rows.sort(key=lambda x:(x.get("score",0),x.get("quote_volume",0) or 0),reverse=True)
+        smart_frames[frame]=frame_rows[:3]
+        smart_frame_diagnostics[frame]={
+            "completed":frame_stats[frame]["completed"],
+            "matches":frame_stats[frame].get("smart_money_matches",0),
+            "fresh_matches":len(frame_rows),
+            "rejections":frame_stats[frame].get("smart_money_rejections",{}),
+            "rejected_stale_candle":smart_money_freshness["rejected_stale_candle"],
+            "rejected_late_price":smart_money_freshness["rejected_late_price"],
+            "direction_rejected":smart_money_direction_rejected,
+        }
+    smart_payload={
+        "market":market,"engine":"SMART MONEY",
+        "fingerprint":smart_money_strategy.STRATEGY_FINGERPRINT,
+        "updated_at":iso(now),"market_bias":market_bias,
+        "signals_by_frame":smart_frames,
+        "signals":[signal for frame in TIMEFRAMES for signal in smart_frames.get(frame,[])],
+        "frame_diagnostics":smart_frame_diagnostics,
+        "scanned_timeframes":frames_to_scan,
+        "order_flow_note":"ضغط الصفقات المنفذة متاح فقط عندما يرسله مزود الشموع (مثل Binance taker-buy volume)؛ وإلا يظهر غير متاح.",
+        "volume_profile_note":"ملف الحجم محسوب كتقريب موزون بحجم الشمعة، وليس بيانات حجم منفذة على كل مستوى سعري.",
+        "comparison_note":"هذه إشارات ورقية مستقلة؛ لا تمثل نسبة نجاح أو مقارنة أداء تاريخية."
+    }
+    smart_value=json.dumps(smart_payload,ensure_ascii=False,allow_nan=False)
+    if smart_row is None:
+        db.session.add(Setting(key=smart_key,value=smart_value))
+    else:
+        smart_row.value=smart_value
     db.session.commit()
     active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
