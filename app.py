@@ -427,18 +427,21 @@ def pro_theme(): return send_from_directory(APP_DIR, "pro-theme.css")
 def compat_styles(): return send_from_directory(APP_DIR, "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
-    diagnostic=market_strategies.diagnostic_self_test()
-    secondary=smart_money_strategy.diagnostic_self_test()
+    primary=smart_money_strategy.diagnostic_self_test()
+    fallback=market_strategies.diagnostic_self_test()
     return jsonify({
-        "ok":bool(diagnostic.get("ok") and secondary.get("ok")),
-        "engine":"SMART TRADING PRO",
-        "strategy_fingerprint":market_strategies.STRATEGY_FINGERPRINT,
-        "strategy_ready":bool(diagnostic.get("ok")),
-        "strategy_checks":diagnostic.get("checks",{}),
-        "secondary_engine":"SMART MONEY",
-        "secondary_fingerprint":smart_money_strategy.STRATEGY_FINGERPRINT,
-        "secondary_ready":bool(secondary.get("ok")),
-        "secondary_checks":secondary.get("checks",{}),
+        "ok":bool(primary.get("ok") and fallback.get("ok")),
+        "engine":"STP ADAPTIVE QUANT V8",
+        "strategy_fingerprint":STRATEGY_FINGERPRINT,
+        "strategy_ready":bool(primary.get("ok") and fallback.get("ok")),
+        "strategy_checks":{
+            "smart_money_primary":primary.get("checks",{}),
+            "regime_adaptive_fallback":fallback.get("checks",{})
+        },
+        "secondary_engine":"REGIME-ADAPTIVE V7 FALLBACK",
+        "secondary_fingerprint":market_strategies.STRATEGY_FINGERPRINT,
+        "secondary_ready":bool(fallback.get("ok")),
+        "secondary_checks":fallback.get("checks",{}),
         "manual_only":True
     })
 
@@ -475,7 +478,8 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":market_strategies.STRATEGY_FINGERPRINT.startswith("SMART-REGIME-ADAPTIVE-")}
+            "primary_smart_money_engine":smart_money_strategy.STRATEGY_FINGERPRINT.startswith("SMART-MONEY-"),
+            "regime_adaptive_fallback":market_strategies.STRATEGY_FINGERPRINT.startswith("SMART-REGIME-ADAPTIVE-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
