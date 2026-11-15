@@ -9,7 +9,7 @@ import math
 STRATEGY_FINGERPRINT = "STP-CAPITAL-SHIELD-V10-20261116"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 MARKETS = ("spot", "futures", "alpha", "us-stocks", "us-contracts", "saudi", "forex")
-MIN_BARS = {"15m": 30, "1h": 30, "4h": 30, "1d": 30, "1w": 26, "1M": 24}
+MIN_BARS = {"15m": 105, "1h": 102, "4h": 88, "1d": 88, "1w": 68, "1M": 42}
 MAX_RISK_PCT = {"15m": 0.035, "1h": 0.04, "4h": 0.05, "1d": 0.07, "1w": 0.12, "1M": 0.20}
 INTERVAL_MS = {"15m": 900_000, "1h": 3_600_000, "4h": 14_400_000,
                "1d": 86_400_000, "1w": 604_800_000, "1M": 2_678_400_000}
