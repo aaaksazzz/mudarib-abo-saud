@@ -1627,10 +1627,12 @@ def _run_market_scan_unlocked(market,force=False):
     # Keep a separate, inspectable paper-signal snapshot for the independent engine.
     smart_key="smart-money-signals:"+market
     smart_row=db.session.get(Setting,smart_key)
+    previous_smart={}
     try:
         previous_smart=json.loads(smart_row.value) if smart_row else {}
         smart_frames=dict(previous_smart.get("signals_by_frame") or {})
     except (TypeError,ValueError,AttributeError):
+        previous_smart={}
         smart_frames={}
     smart_frame_diagnostics=dict(previous_smart.get("frame_diagnostics") or {}) if isinstance(previous_smart,dict) else {}
     for frame in frames_to_scan:
