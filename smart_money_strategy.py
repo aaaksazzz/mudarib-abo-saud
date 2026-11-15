@@ -7,7 +7,7 @@ This is a separate paper-analysis engine; it never places orders.
 """
 import math
 
-STRATEGY_FINGERPRINT = "SMART-MONEY-STRUCTURE-LIQUIDITY-VOLUME-PROFILE-V1-20261115"
+STRATEGY_FINGERPRINT = "SMART-MONEY-STRUCTURE-LIQUIDITY-VOLUME-PROFILE-V2-20261115"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 MARKETS = ("spot", "futures", "alpha", "us-stocks", "us-contracts", "saudi", "forex")
 INTERVAL_MS = {
@@ -221,12 +221,23 @@ def analyze(market, symbol, rows, timeframe="15m", diagnostics=None):
                 score += 4
                 confirmations.append("RELATIVE_VOLUME_EXPANSION")
     score = round(min(94.0, score), 1)
+    recent = bars[-14:]
+    true_ranges = []
+    for index, bar in enumerate(recent):
+        previous_close = recent[index - 1]["close"] if index else (bars[-15]["close"] if len(bars) > 14 else bar["close"])
+        true_ranges.append(max(
+            bar["high"] - bar["low"],
+            abs(bar["high"] - previous_close),
+            abs(bar["low"] - previous_close),
+        ))
+    atr = sum(true_ranges) / len(true_ranges) if true_ranges else 0.0
     return {
         "market": market, "symbol": str(symbol), "side": side,
         "entry": entry, "stop": stop, "tp1": targets[0],
         "tp2": targets[1], "tp3": targets[2],
         "score": score, "timeframe": timeframe,
         "signal_candle_time": current["time"],
+        "atr": atr,
         "risk_pct": round(risk_pct * 100.0, 4),
         "risk_distance": risk, "reward_risk": 3.0,
         "change_pct": round((entry / bars[-2]["close"] - 1.0) * 100.0, 5),
