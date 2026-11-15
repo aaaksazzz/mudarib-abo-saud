@@ -174,7 +174,7 @@ def diagnostic_self_test():
         if side == "BUY":
             rows[-2] = [30, 100.0, 100.8, 98.0, 100.6, 180.0]
         else:
-            rows[-2] = [30, 102.0, 102.0, 99.2, 99.4, 180.0]
+            rows[-2] = [30, 100.0, 102.0, 99.2, 99.4, 180.0]
         rows[-1] = [31, 100.0, 101.0, 99.0, 100.0, 100.0]  # forming candle
         return rows
     buy = analyze("futures", "TEST", sample("BUY"), "15m")
