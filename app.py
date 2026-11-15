@@ -1374,7 +1374,7 @@ def _run_market_scan_unlocked(market,force=False):
         cursor=int(cursor_row.value) if cursor_row else 0
     except (TypeError,ValueError):
         cursor=0
-    candidates,next_cursor,scan_offset=select_scan_candidates(universe,cursor,80)
+    candidates,next_cursor,scan_offset=select_scan_candidates(universe,cursor,20)
     for index,item in enumerate(candidates):
         item["include_microstructure"]=(market in ("spot","futures") and index<12)
     found=[]
