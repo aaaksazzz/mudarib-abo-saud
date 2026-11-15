@@ -14,6 +14,20 @@ INTERVAL_MS = {
 }
 
 
+FRAME_PROFILES = {
+    "15m": {"min_bars": 40, "max_risk_pct": 0.035},
+    "1h": {"min_bars": 40, "max_risk_pct": 0.040},
+    "4h": {"min_bars": 40, "max_risk_pct": 0.050},
+    "1d": {"min_bars": 40, "max_risk_pct": 0.070},
+    "1w": {"min_bars": 40, "max_risk_pct": 0.120},
+    "1M": {"min_bars": 40, "max_risk_pct": 0.200},
+}
+
+
+def target_prices(entry, side, stop):
+    return _target_prices(float(entry), str(side), float(stop))
+
+
 def _bars(rows):
     if not isinstance(rows, list) or len(rows) < 3:
         return []
