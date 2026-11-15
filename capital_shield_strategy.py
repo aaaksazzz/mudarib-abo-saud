@@ -169,24 +169,24 @@ def analyze(market, symbol, rows, timeframe="15m", diagnostics=None):
 def diagnostic_self_test():
     def sample(side):
         rows = []
-        for i in range(32):
+        for i in range(107):
             rows.append([i, 100.0, 101.0, 99.0, 100.0, 100.0])
         if side == "BUY":
-            rows[-2] = [30, 100.0, 100.8, 98.0, 100.6, 180.0]
+            rows[-2] = [105, 100.0, 100.8, 98.0, 100.6, 180.0]
         else:
-            rows[-2] = [30, 100.0, 102.0, 99.2, 99.4, 180.0]
-        rows[-1] = [31, 100.0, 101.0, 99.0, 100.0, 100.0]  # forming candle
+            rows[-2] = [105, 100.0, 102.0, 99.2, 99.4, 180.0]
+        rows[-1] = [106, 100.0, 101.0, 99.0, 100.0, 100.0]  # forming candle
         return rows
     buy = analyze("futures", "TEST", sample("BUY"), "15m")
     sell = analyze("futures", "TEST", sample("SELL"), "15m")
     spot_sell = analyze("spot", "TEST", sample("SELL"), "15m")
-    flat = [[i, 100.0, 101.0, 99.0, 100.0, 100.0] for i in range(32)]
+    flat = [[i, 100.0, 101.0, 99.0, 100.0, 100.0] for i in range(107)]
     no_setup = analyze("futures", "TEST", flat, "15m")
     checks = {
         "fingerprint_matches": STRATEGY_FINGERPRINT == "STP-CAPITAL-SHIELD-V10-20261116",
         "all_seven_markets": len(MARKETS) == 7,
         "six_timeframes": len(TIMEFRAMES) == 6,
-        "completed_candles_only": len(_bars(sample("BUY"))) == 31,
+        "completed_candles_only": len(_bars(sample("BUY"))) == 106,
         "bullish_sweep_detected": bool(buy and buy["side"] == "BUY"),
         "bearish_sweep_detected": bool(sell and sell["side"] == "SELL"),
         "spot_is_long_only": spot_sell is None,
