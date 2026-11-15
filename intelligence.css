@@ -33,3 +33,12 @@
 .diagnostic-frame>span{color:var(--text)}
 .diagnostic-frame>small{color:var(--muted);line-height:1.6}
 @media(max-width:600px){.market-state{align-items:flex-start}.scan-diagnostics{padding:10px}.diagnostic-frame{grid-template-columns:42px 1fr}}
+
+/* Independent SMART MONEY comparison engine */
+.smart-money-panel{margin-top:16px}
+.smart-money-results{display:grid;grid-template-columns:1fr;gap:8px}
+.smart-money-details{display:grid;gap:4px;margin-top:9px;padding-top:8px;border-top:1px solid var(--line);font-size:9px;color:var(--muted);line-height:1.7}
+.smart-money-details b{color:var(--green);font-size:10px}
+.smart-money-details small,.smart-money-rejections{color:var(--muted);font-size:9px;line-height:1.7}
+.smart-money-footnote{margin-top:10px;padding-top:9px;border-top:1px solid var(--line);color:var(--muted);font-size:9px;line-height:1.8}
+.smart-money-rejections{display:block;margin:7px 2px 12px}
