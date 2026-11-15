@@ -790,36 +790,29 @@ def klines(market,symbol,interval,limit=120):
     base=BINANCE_FUTURES if market=="futures" else BINANCE_SPOT
     path="/fapi/v1/klines" if market=="futures" else "/api/v3/klines"
     return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit})
-TIMEFRAMES=market_strategies.TIMEFRAMES
+TIMEFRAMES=smart_money_strategy.TIMEFRAMES
 
-STRATEGY_FINGERPRINT="STP-ADAPTIVE-QUANT-V8-SMART-MONEY-PRIMARY-20261115"
+STRATEGY_FINGERPRINT=smart_money_strategy.STRATEGY_FINGERPRINT
 @app.get("/api/strategy-status")
 def strategy_status_summary():
     active_current=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.like("ADAPTIVE-TREND MTF:%")
+        Trade.reason.like("STP ICT/SMC REVERSAL MTF:%")
     ).count()
     active_legacy=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
         Trade.reason.like("SMART FLOW MTF QUANT:%")
     ).count()
-    fallback=market_strategies.diagnostic_self_test()
     primary=smart_money_strategy.diagnostic_self_test()
     active_scheduler=globals().get("scheduler")
     return jsonify({
-        "ok":True,"engine":"STP ADAPTIVE QUANT V8",
+        "ok":True,"engine":"STP ICT/SMC REVERSAL",
         "current_active":active_current,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
-        "strategy_ready":bool(primary.get("ok") and fallback.get("ok")),
-        "strategy_checks":{
-            "smart_money_primary":primary.get("checks",{}),
-            "regime_adaptive_fallback":fallback.get("checks",{})
-        },
-        "secondary_engine":"REGIME-ADAPTIVE V7 FALLBACK",
-        "secondary_fingerprint":market_strategies.STRATEGY_FINGERPRINT,
-        "secondary_ready":bool(fallback.get("ok")),
-        "secondary_checks":fallback.get("checks",{}),
+        "strategy_ready":bool(primary.get("ok")),
+        "strategy_checks":primary.get("checks",{}),
+        "retired_engines":["REGIME-ADAPTIVE V7","STP ADAPTIVE QUANT V8"],
         "auto_scan_enabled":bool(globals().get("AUTO_SCAN_ENABLED",False)),
         "scheduler_running":bool(active_scheduler and active_scheduler.running)
     })
@@ -904,14 +897,10 @@ def record_scan_failure(frame_stats,frame,item,code):
 
 
 def build_signal(market,item,timeframe):
-    """STP Adaptive Quant V8: smart-money structure primary, V7 adaptive fallback.
-
-    Uses completed candles only. Both paths remain paper-analysis only.
-    """
+    """Single active engine: ICT/SMC reversal across all supported markets."""
     symbol=item["symbol"]
     rows=klines(market,symbol,timeframe,250)
-    frame_profile=market_strategies.FRAME_PROFILES.get(timeframe)
-    required_rows=(int(frame_profile["min_bars"])+1) if frame_profile else 106
+    required_rows=41
     if not isinstance(rows,list) or len(rows)<required_rows:
         received=len(rows) if isinstance(rows,list) else 0
         reason=("invalid_candle_payload" if not isinstance(rows,list)
@@ -919,65 +908,24 @@ def build_signal(market,item,timeframe):
                 else "insufficient_history")
         return {"_data_incomplete":True,"_candles_received":received,
                 "_diagnostic_code":reason}
-
-    smart_money_setup=None
-    smart_money_rejections={}
+    rejections={}
     try:
-        smart_money_setup=smart_money_strategy.analyze(
-            market,symbol,rows,timeframe=timeframe,diagnostics=smart_money_rejections
+        setup=smart_money_strategy.analyze(
+            market,symbol,rows,timeframe=timeframe,diagnostics=rejections
         )
-        if smart_money_setup:
-            smart_money_setup["quote_volume"]=item.get("quote_volume",0)
     except Exception:
-        app.logger.exception("V8 primary SMART MONEY analysis failed: %s %s %s",market,symbol,timeframe)
-
-    fallback_rejections={}
-    fallback_setup=market_strategies.analyze_all(
-        market,symbol,rows,timeframe=timeframe,diagnostics=fallback_rejections
-    )
-
-    # Prefer a confirmed liquidity/structure setup. Retain V7 as a measured
-    # fallback so the new primary does not unnecessarily starve the scanner.
-    if smart_money_setup:
-        setup=dict(smart_money_setup)
-        setup["engine_path"]="SMART_MONEY_PRIMARY"
-        if fallback_setup and fallback_setup.get("side")==setup.get("side"):
-            setup["score"]=round(min(97.0,max(float(setup.get("score",0)),
-                                             float(fallback_setup.get("score",0)))+4.0),1)
-            setup["confluence"]="SMART_MONEY_PLUS_REGIME_ADAPTIVE"
-            setup["reason"]=setup.get("reason","")+"; V7 regime confluence"
-        elif fallback_setup and fallback_setup.get("side")!=setup.get("side"):
-            setup["score"]=round(max(50.0,float(setup.get("score",0))-6.0),1)
-            setup["confluence"]="SMART_MONEY_PRIMARY_WITH_REGIME_CONFLICT"
-            setup["reason"]=setup.get("reason","")+"; regime engine disagreement (confidence haircut)"
-        else:
-            setup["confluence"]="SMART_MONEY_STRUCTURE_ONLY"
-    else:
-        setup=fallback_setup
-        if setup:
-            setup["engine_path"]="REGIME_ADAPTIVE_FALLBACK"
-            setup["confluence"]="REGIME_ADAPTIVE_FALLBACK_NO_SMART_MONEY_SETUP"
-            setup["reason"]=setup.get("reason","")+"; V8 fallback because no confirmed liquidity/structure setup"
-
+        app.logger.exception("ICT/SMC reversal analysis failed: %s %s %s",market,symbol,timeframe)
+        return {"_strategy_rejected":True,"_strategy_rejection_reasons":{"engine_error":1}}
     if not setup:
         return {"_strategy_rejected":True,
-                "_strategy_rejection_reasons":{
-                    "v8_no_valid_setup":1,
-                    **({"smart_money_"+k:v for k,v in smart_money_rejections.items()}),
-                    **({"adaptive_fallback_"+k:v for k,v in fallback_rejections.items()})
-                },
-                "_smart_money_setup":None,
-                "_smart_money_rejection_reasons":smart_money_rejections}
-
-    setup["_smart_money_setup"]=dict(smart_money_setup) if smart_money_setup else None
-    setup["_smart_money_rejection_reasons"]=smart_money_rejections
+                "_strategy_rejection_reasons":rejections or {"no_confirmed_reversal":1}}
     setup["signal_timeframe"]=timeframe
     setup["strategy_fingerprint"]=STRATEGY_FINGERPRINT
-    setup["strategy"]="STP_ADAPTIVE_QUANT_V8_"+market.upper()+"_"+timeframe
-    setup["strategy_names"]=list(setup.get("confirmations") or setup.get("strategy_names") or [])
+    setup["strategy"]="STP_ICT_REVERSAL_"+market.upper()+"_"+timeframe
+    setup["strategy_names"]=list(setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
-    setup["strategy_total"]=4
-    setup["reason"]="ADAPTIVE-TREND MTF: "+timeframe+" STP ADAPTIVE QUANT V8; "+setup.get("reason","")
+    setup["strategy_total"]=5
+    setup["reason"]="STP ICT/SMC REVERSAL MTF: "+timeframe+"; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
