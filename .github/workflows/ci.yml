@@ -34,7 +34,7 @@ jobs:
           node --version
           python -m pip freeze
       - name: Compile backend
-        run: python -m compileall -q app.py market_adapters.py market_strategies.py
+        run: python -m compileall -q app.py market_adapters.py market_strategies.py smart_money_strategy.py
       - name: Run backend regression tests
         env:
           SECRET_KEY: ci-test-secret-key-not-for-production
@@ -46,6 +46,8 @@ jobs:
           python - <<'PY'
           from app import app, scheduler
           from market_strategies import diagnostic_self_test
+          from smart_money_strategy import diagnostic_self_test as smart_money_diagnostic_self_test
+          assert smart_money_diagnostic_self_test()["ok"], smart_money_diagnostic_self_test()
           assert scheduler is None, "ENABLE_AUTO_SCAN=false must disable background jobs in CI"
           assert diagnostic_self_test()["ok"], diagnostic_self_test()
           client = app.test_client()
@@ -59,7 +61,10 @@ jobs:
           assert strategy_status["strategy_fingerprint"].startswith("SMART-REGIME-ADAPTIVE-"), strategy_status
           assert strategy_status["engine"] == "SMART TRADING PRO"
           assert strategy_status["strategy_ready"] is True
+          assert strategy_status["secondary_ready"] is True
+          assert strategy_status["secondary_fingerprint"].startswith("SMART-MONEY-")
           assert strategy_status["manual_only"] is True
+          assert client.get("/api/strategy/smart-money?market=spot").status_code == 200
           assert client.get("/api/strategy/status").get_json()["manual_only"] is True
           home = client.get("/")
           assert home.status_code == 200 and b'SMART TRADING PRO' in home.data and b'/platform.js?' in home.data, ("/", home.status_code, home.data[:300])
