@@ -839,6 +839,17 @@ def smart_money_strategy_status():
             raise ValueError("invalid payload")
     except (TypeError,ValueError):
         return json_error("تعذر قراءة نتائج محرك SMART MONEY",500)
+    now_ms=int(utcnow().timestamp()*1000)
+    fresh=[]
+    for signal in payload.get("signals",[]):
+        try:
+            interval=smart_money_strategy.INTERVAL_MS.get(signal.get("timeframe"))
+            candle=int(signal.get("signal_candle_time") or 0)
+            if interval and candle and now_ms-(candle+interval)<=interval*1.5+120000:
+                fresh.append(signal)
+        except (TypeError,ValueError,AttributeError):
+            continue
+    payload["signals"]=fresh
     return jsonify({"ok":True,**payload})
 
 
