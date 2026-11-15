@@ -1600,16 +1600,16 @@ def _run_market_scan_unlocked(market,force=False):
     freshness={key:sum(value[key] for value in freshness_by_frame.values())
                for key in ("rejected_stale_candle","rejected_late_price")}
     fresh_matches=len(found)
-    # Enforce the broad market breadth direction: a bearish market publishes
-    # SELL setups only; a bullish market publishes BUY setups only. Neutral
-    # breadth does not invent a directional filter.
+    # Breadth is a contextual quality filter, not a hard veto: confirmed
+    # countertrend structure remains eligible with a modest score reduction.
+    # Spot remains long-only and rejects every SELL setup.
     countertrend_signals=sum(1 for signal in found if market_bias in ("BUY","SELL") and signal.get("side")!=market_bias)
     found,direction_rejected=align_signals_with_market_bias(found,market_bias,market)
     for frame in frames_to_scan:
         frame_signals=[signal for signal in found if signal.get("timeframe")==frame]
         frame_diagnostics[frame]["direction_rejected"]=sum(1 for signal in raw_found if signal.get("timeframe")==frame and market=="spot" and signal.get("side")!="BUY")
         frame_diagnostics[frame]["countertrend_signals"]=sum(1 for signal in frame_signals if signal.get("market_alignment")=="COUNTERTREND_STRUCTURE")
-    app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s",
+    app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s countertrend=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,len(found),
                     freshness["rejected_stale_candle"],freshness["rejected_late_price"],market_bias,countertrend_signals)
     # Keep the same 15m candle from being republished every scheduler cycle.
