@@ -470,7 +470,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":smart_money_strategy.STRATEGY_FINGERPRINT.startswith("STP-ICT-SMC-REVERSAL-")}
+            "price_action_engine":smart_money_strategy.STRATEGY_FINGERPRINT.startswith("STP-ICT-SMC-INVERSE-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -1214,7 +1214,7 @@ def market_scan_timeframes(market):
 
 
 def align_signals_with_market_bias(signals, market_bias):
-    """Return only signals aligned with breadth direction and count rejected rows."""
+    """Return only contrarian signals opposite to breadth direction."""
     rows=list(signals or [])
     if market_bias not in ("BUY","SELL"):
         return rows,0
