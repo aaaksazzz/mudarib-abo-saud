@@ -795,7 +795,7 @@ def strategy_status_summary():
     now=utcnow()
     legacy_query=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>now,
-        or_(Trade.reason.like("ADAPTIVE-TREND MTF:%"),
+        or_(Trade.reason.like("CAPITAL-SHIELD MTF:%"),
             Trade.reason.like("SMART FLOW MTF QUANT:%"),
             Trade.reason.like("SMART FLOW QUANT:%"))
     )
@@ -909,6 +909,9 @@ def build_signal(market,item,timeframe):
                 "_smart_money_setup":None,"_smart_money_rejection_reasons":{}}
     setup["quote_volume"]=item.get("quote_volume",0)
     setup["signal_timeframe"]=timeframe
+    setup["direction_timeframe"]=capital_shield_strategy.EXECUTION_TO_DIRECTION.get(timeframe)
+    setup["execution_timeframe"]=timeframe
+    setup["timeframe_route"]="HIGHER_TIMEFRAME_DIRECTION_TO_LOWER_EXECUTION"
     setup["strategy_fingerprint"]=capital_shield_strategy.STRATEGY_FINGERPRINT
     setup["strategy"]="STP_CAPITAL_SHIELD_V10_"+market.upper()+"_"+timeframe
     setup["strategy_names"]=list(setup.get("confirmations") or [])
@@ -1206,7 +1209,7 @@ def timeframe_bucket(frame,now):
 
 def market_scan_timeframes(market):
     """Expose the same independently-calculated frames for every supported market."""
-    return capital_shield_strategy.TIMEFRAMES
+    return capital_shield_strategy.SCAN_TIMEFRAMES
 
 
 def align_signals_with_market_bias(signals, market_bias):
@@ -1246,7 +1249,7 @@ def _run_market_scan_unlocked(market,force=False):
         Trade.expires_at>now,
         or_(Trade.reason.like("SMART FLOW QUANT:%"),
             Trade.reason.like("SMART FLOW MTF QUANT:%"),
-            Trade.reason.like("ADAPTIVE-TREND MTF:%"))
+            Trade.reason.like("CAPITAL-SHIELD MTF:%"))
     ).update({"status":"superseded"}, synchronize_session=False)
     db.session.commit()
     expire_stale_trades(market)
@@ -1256,8 +1259,8 @@ def _run_market_scan_unlocked(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             all_frames_current=all(
-                db.session.get(Setting,f"scan-frame:adaptive-trend:{market}:{frame}") is not None
-                and db.session.get(Setting,f"scan-frame:adaptive-trend:{market}:{frame}").value==str(timeframe_bucket(frame,now))
+                db.session.get(Setting,f"scan-frame:capital-shield:{market}:{frame}") is not None
+                and db.session.get(Setting,f"scan-frame:capital-shield:{market}:{frame}").value==str(timeframe_bucket(frame,now))
                 for frame in market_scan_timeframes(market)
             )
             # Throttle repeated failed/partial provider scans too. A healthy
@@ -1269,7 +1272,7 @@ def _run_market_scan_unlocked(market,force=False):
                     meta=json.loads(meta_row.value) if meta_row else {}
                 except (ValueError,TypeError):
                     meta={}
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("ADAPTIVE-TREND MTF:%")).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("CAPITAL-SHIELD MTF:%")).all()
                 bias=meta.get("market_bias")
                 if bias in ("BUY","SELL"):
                     active=[trade for trade in active if trade.side==bias]
@@ -1285,7 +1288,7 @@ def _run_market_scan_unlocked(market,force=False):
     for frame in scan_frames:
         bucket=timeframe_bucket(frame,now)
         frame_buckets[frame]=bucket
-        frame_row=db.session.get(Setting,f"scan-frame:adaptive-trend:{market}:{frame}")
+        frame_row=db.session.get(Setting,f"scan-frame:capital-shield:{market}:{frame}")
         if frame_row is None or frame_row.value!=str(bucket):
             frames_to_scan.append(frame)
     if not frames_to_scan:
@@ -1449,7 +1452,7 @@ def _run_market_scan_unlocked(market,force=False):
         active=Trade.query.filter(
             Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
             Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-            Trade.reason.like("ADAPTIVE-TREND MTF:%")
+            Trade.reason.like("CAPITAL-SHIELD MTF:%")
         ).order_by(Trade.score.desc()).limit(18).all()
         return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],
                 "updated_at":iso(now),"cached":False,"data_status":"unavailable",
@@ -1503,7 +1506,7 @@ def _run_market_scan_unlocked(market,force=False):
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("ADAPTIVE-TREND MTF:%"),
+        Trade.reason.like("CAPITAL-SHIELD MTF:%"),
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
@@ -1522,7 +1525,7 @@ def _run_market_scan_unlocked(market,force=False):
         for signal in frame_signals[:3]:
             marker=str(signal["signal_candle_time"])
             key=(signal["symbol"],frame,marker)
-            setting_key=f"signal-candle:adaptive-trend:{market}:{signal['symbol']}:{frame}"
+            setting_key=f"signal-candle:capital-shield:{market}:{signal['symbol']}:{frame}"
             candle_row=db.session.get(Setting,setting_key)
             previous=existing_by_key.get(key)
             if candle_row and candle_row.value==marker:
@@ -1537,7 +1540,7 @@ def _run_market_scan_unlocked(market,force=False):
             new_signals.append(signal)
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("ADAPTIVE-TREND MTF:%")).update({"status":"superseded"},synchronize_session=False)
+        Trade.reason.not_like("CAPITAL-SHIELD MTF:%")).update({"status":"superseded"},synchronize_session=False)
     # Do not erase a live setup just because the latest completed scan found
     # no replacement. Replace only frames that produced at least one fresh,
     # direction-aligned candidate; otherwise keep the prior trade until expiry.
@@ -1545,7 +1548,7 @@ def _run_market_scan_unlocked(market,force=False):
                         if any(signal.get("timeframe")==frame for signal in found)}
     if replacement_frames:
         active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-            Trade.timeframe.in_(replacement_frames),Trade.reason.like("ADAPTIVE-TREND MTF:%"))
+            Trade.timeframe.in_(replacement_frames),Trade.reason.like("CAPITAL-SHIELD MTF:%"))
         if retained_ids:
             active_query=active_query.filter(~Trade.id.in_(retained_ids))
         active_query.update({"status":"superseded"},synchronize_session=False)
@@ -1577,7 +1580,7 @@ def _run_market_scan_unlocked(market,force=False):
     else:
         cursor_row.value=str(next_cursor)
     for frame in frames_to_scan:
-        frame_key=f"scan-frame:adaptive-trend:{market}:{frame}"
+        frame_key=f"scan-frame:capital-shield:{market}:{frame}"
         frame_row=db.session.get(Setting,frame_key)
         bucket_value=str(frame_buckets[frame])
         if frame_row is None:
@@ -1655,7 +1658,7 @@ def _run_market_scan_unlocked(market,force=False):
     db.session.commit()
     active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-        Trade.reason.like("ADAPTIVE-TREND MTF:%")).all()
+        Trade.reason.like("CAPITAL-SHIELD MTF:%")).all()
     active=[trade for trade in active if trade_passes_frame_risk(trade)
             and (market_bias not in ("BUY","SELL") or trade.side==market_bias)]
     active.sort(key=lambda trade:trade.score,reverse=True)
