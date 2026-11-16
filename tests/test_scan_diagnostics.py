@@ -111,13 +111,13 @@ class ScanDiagnosticsTests(unittest.TestCase):
         self.assertFalse(platform_app.trade_passes_frame_risk(intraday))
         self.assertFalse(platform_app.trade_passes_frame_risk(wrong_side))
 
-    def test_scan_filters_signals_against_market_bias(self):
+    def test_inverse_scan_filters_signals_against_market_bias(self):
         signals = [
             {"symbol": "LONG", "side": "BUY", "timeframe": "15m"},
             {"symbol": "SHORT", "side": "SELL", "timeframe": "15m"},
         ]
         aligned, rejected = platform_app.align_signals_with_market_bias(signals, "SELL")
-        self.assertEqual([signal["symbol"] for signal in aligned], ["SHORT"])
+        self.assertEqual([signal["symbol"] for signal in aligned], ["LONG"])
         self.assertEqual(rejected, 1)
         neutral, neutral_rejected = platform_app.align_signals_with_market_bias(signals, None)
         self.assertEqual(neutral, signals)
