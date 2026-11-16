@@ -21,6 +21,9 @@ def bullish_reversal_rows():
     prefix = [candle(i) for i in range(25)]
     shifted = [[row[0] + 25, *row[1:]] for row in pattern]
     bars = prefix + shifted
+    # The last completed candle must actually retest the bullish FVG and reject upward.
+    bars.append(candle(45, 102.1, 102.5, 102.1, 102.35))
+    # This final candle remains forming and must be excluded by the engine.
     bars.append(candle(46, 102.7, 102.9, 102.5, 102.8))
     return bars
 
@@ -34,7 +37,8 @@ class ICTInverseStrategyTests(unittest.TestCase):
         self.assertEqual(strategy.target_prices(100, "BUY", 98), (102, 104, 106))
 
     def test_former_bullish_setup_now_generates_sell_with_mirrored_risk(self):
-        signal = strategy.analyze("futures", "TESTUSDT", bullish_reversal_rows(), "15m")
+        # The fixture's structural risk is above the 15m cap but inside the 1h cap.
+        signal = strategy.analyze("futures", "TESTUSDT", bullish_reversal_rows(), "1h")
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "SELL")
         self.assertGreater(signal["stop"], signal["entry"])
@@ -45,7 +49,7 @@ class ICTInverseStrategyTests(unittest.TestCase):
         self.assertIn("CONTRARIAN_DIRECTION_INVERSION", signal["confirmations"])
 
     def test_spot_can_emit_inverse_sell_signal(self):
-        signal = strategy.analyze("spot", "TEST", bullish_reversal_rows(), "15m")
+        signal = strategy.analyze("spot", "TEST", bullish_reversal_rows(), "1h")
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "SELL")
 
