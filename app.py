@@ -796,7 +796,7 @@ def strategy_status_summary():
     ).count()
     active_legacy=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.like("SMART FLOW MTF QUANT:%")
+        Trade.reason.not_like("STP ICT/SMC REVERSAL MTF:%")
     ).count()
     primary=smart_money_strategy.diagnostic_self_test()
     active_scheduler=globals().get("scheduler")

@@ -34,7 +34,7 @@ jobs:
           node --version
           python -m pip freeze
       - name: Compile backend
-        run: python -m compileall -q app.py market_adapters.py market_strategies.py smart_money_strategy.py
+        run: python -m compileall -q app.py market_adapters.py smart_money_strategy.py
       - name: Run backend regression tests
         env:
           SECRET_KEY: ci-test-secret-key-not-for-production
@@ -45,11 +45,9 @@ jobs:
           python -m unittest discover -s tests -v
           python - <<'PY'
           from app import app, scheduler
-          from market_strategies import diagnostic_self_test
           from smart_money_strategy import diagnostic_self_test as smart_money_diagnostic_self_test
           assert smart_money_diagnostic_self_test()["ok"], smart_money_diagnostic_self_test()
           assert scheduler is None, "ENABLE_AUTO_SCAN=false must disable background jobs in CI"
-          assert diagnostic_self_test()["ok"], diagnostic_self_test()
           client = app.test_client()
           for path in ("/health", "/ready", "/api/bootstrap", "/api/trades", "/api/strategy/status", "/api/strategy-status", "/", "/plans", "/journal", "/blog", "/news", "/login", "/register", "/account", "/admin", "/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex", "/styles.css", "/pro-theme.css", "/compat.css", "/platform.js", "/intelligence", "/intelligence.js", "/intelligence.css"):
             response = client.get(path)
@@ -58,12 +56,15 @@ jobs:
           assert client.get("/api/bootstrap").status_code == 200
           assert client.get("/api/trades").status_code == 200
           strategy_status = client.get("/api/strategy/status").get_json()
-          assert strategy_status["strategy_fingerprint"].startswith("SMART-REGIME-ADAPTIVE-"), strategy_status
-          assert strategy_status["engine"] == "SMART TRADING PRO"
+          assert strategy_status["strategy_fingerprint"].startswith("STP-ICT-SMC-REVERSAL-"), strategy_status
+          assert strategy_status["engine"] == "STP ICT/SMC REVERSAL"
           assert strategy_status["strategy_ready"] is True
-          assert strategy_status["secondary_ready"] is True
-          assert strategy_status["secondary_fingerprint"].startswith("SMART-MONEY-")
           assert strategy_status["manual_only"] is True
+          status_summary = client.get("/api/strategy-status").get_json()
+          assert status_summary["strategy_fingerprint"].startswith("STP-ICT-SMC-REVERSAL-"), status_summary
+          assert status_summary["strategy_ready"] is True
+          assert status_summary["legacy_removed"] is True, status_summary
+          assert status_summary["manual_only"] is True
           assert client.get("/api/strategy/smart-money?market=spot").status_code == 200
           assert client.get("/api/strategy/status").get_json()["manual_only"] is True
           home = client.get("/")
