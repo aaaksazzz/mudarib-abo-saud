@@ -1218,7 +1218,7 @@ def align_signals_with_market_bias(signals, market_bias):
     rows=list(signals or [])
     if market_bias not in ("BUY","SELL"):
         return rows,0
-    aligned=[signal for signal in rows if signal.get("side")==market_bias]
+    aligned=[signal for signal in rows if signal.get("side")!=market_bias]
     return aligned,len(rows)-len(aligned)
 
 
@@ -1493,7 +1493,7 @@ def _run_market_scan_unlocked(market,force=False):
         frame_diagnostics[frame]["rejected_stale_candle"]=frame_freshness["rejected_stale_candle"]
         frame_diagnostics[frame]["rejected_late_price"]=frame_freshness["rejected_late_price"]
         frame_diagnostics[frame]["direction_rejected"]=(
-            sum(1 for signal in frame_found if signal.get("side")!=market_bias)
+            sum(1 for signal in frame_found if signal.get("side")==market_bias)
             if market_bias in ("BUY","SELL") else 0
         )
     freshness={key:sum(value[key] for value in freshness_by_frame.values())
