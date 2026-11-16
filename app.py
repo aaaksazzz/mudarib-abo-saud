@@ -1531,7 +1531,8 @@ def _run_market_scan_unlocked(market,force=False):
     # Enforce the broad market breadth direction: a bearish market publishes
     # SELL setups only; a bullish market publishes BUY setups only. Neutral
     # breadth does not invent a directional filter.
-    # Higher-frame direction is the setup gate; lower-frame opposite signals are valid reversals.\n    direction_rejected=0
+    # Higher-frame direction is the setup gate; lower-frame opposite signals are valid reversals.
+    direction_rejected=0
     app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,len(found),
                     freshness["rejected_stale_candle"],freshness["rejected_late_price"],market_bias)
