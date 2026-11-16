@@ -54,6 +54,14 @@ class ICTInverseStrategyTests(unittest.TestCase):
         self.assertEqual(strategy.TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
         self.assertEqual(set(strategy.FRAME_PROFILES), set(strategy.TIMEFRAMES))
 
+    def test_frame_specific_risk_limits_are_used_by_inverse_engine(self):
+        self.assertEqual(strategy.FRAME_PROFILES["15m"]["max_risk_pct"], 0.035)
+        self.assertEqual(strategy.FRAME_PROFILES["1h"]["max_risk_pct"], 0.040)
+        self.assertEqual(strategy.FRAME_PROFILES["4h"]["max_risk_pct"], 0.050)
+        self.assertEqual(strategy.FRAME_PROFILES["1d"]["max_risk_pct"], 0.070)
+        self.assertEqual(strategy.FRAME_PROFILES["1w"]["max_risk_pct"], 0.120)
+        self.assertEqual(strategy.FRAME_PROFILES["1M"]["max_risk_pct"], 0.200)
+
     def test_diagnostic_self_test(self):
         self.assertTrue(strategy.diagnostic_self_test()["ok"])
 
