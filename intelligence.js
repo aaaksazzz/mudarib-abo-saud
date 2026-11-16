@@ -77,7 +77,7 @@ async function loadEngineFingerprint(){
  try{
   const s=await getJSON("/api/strategy-status");
   const el=$("#engineFingerprint");
-  if(el)el.textContent=(s.strategy_fingerprint||"V7 غير متاح")+(s.strategy_ready?" · جاهز":" · يحتاج مراجعة")+" | "+(s.secondary_fingerprint||"SMART MONEY غير متاح")+(s.secondary_ready?" · جاهز":" · يحتاج مراجعة");
+  if(el)el.textContent=(s.engine||"STP ICT/SMC REVERSAL")+" · "+(s.strategy_fingerprint||"بصمة غير متاحة")+(s.strategy_ready?" · جاهز":" · يحتاج مراجعة")+" · تشغيل يدوي فقط";
  }catch(_){const el=$("#engineFingerprint");if(el)el.textContent="تعذر قراءة بصمة المحرك"}
 }
 function smartMoneySignalCard(x){
