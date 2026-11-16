@@ -190,8 +190,9 @@ def analyze(market, symbol, rows, timeframe="15m", diagnostics=None):
     stop = entry + (entry-source_stop)
     risk = abs(entry-stop)
     risk_pct = risk/entry if entry > 0 else float("inf")
-    if risk <= 0 or not math.isfinite(risk_pct) or risk_pct > 0.05:
-        return reject("mirrored_structural_stop_outside_risk_limit")
+    frame_risk_limit = FRAME_PROFILES[timeframe]["max_risk_pct"]
+    if risk <= 0 or not math.isfinite(risk_pct) or risk_pct > frame_risk_limit:
+        return reject("mirrored_structural_stop_outside_frame_risk_limit")
     targets = _target_prices(entry, side, stop)
     if not targets:
         return reject("invalid_inverse_target_geometry")
