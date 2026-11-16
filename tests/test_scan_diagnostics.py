@@ -110,6 +110,15 @@ class ScanDiagnosticsTests(unittest.TestCase):
         self.assertFalse(platform_app.trade_passes_frame_risk(intraday))
         self.assertFalse(platform_app.trade_passes_frame_risk(wrong_side))
 
+    def test_higher_timeframe_direction_maps_to_requested_execution_frame(self):
+        mapping = platform_app.capital_shield_strategy.DIRECTION_TO_EXECUTION
+        self.assertEqual(mapping, {"4h":"15m", "1d":"1h", "1w":"4h", "1M":"1d"})
+        self.assertEqual(platform_app.market_scan_timeframes("futures"), ("15m","1h","4h","1d"))
+        self.assertEqual(platform_app.capital_shield_strategy.EXECUTION_TO_DIRECTION["15m"], "4h")
+        self.assertEqual(platform_app.capital_shield_strategy.EXECUTION_TO_DIRECTION["1h"], "1d")
+        self.assertEqual(platform_app.capital_shield_strategy.EXECUTION_TO_DIRECTION["4h"], "1w")
+        self.assertEqual(platform_app.capital_shield_strategy.EXECUTION_TO_DIRECTION["1d"], "1M")
+
     def test_scan_filters_signals_against_market_bias(self):
         signals = [
             {"symbol": "LONG", "side": "BUY", "timeframe": "15m"},
