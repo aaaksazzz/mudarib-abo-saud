@@ -886,13 +886,42 @@ def record_scan_failure(frame_stats,frame,item,code):
 def build_signal(market,item,timeframe):
     """STP Capital Shield V10 single strategy; no legacy or fallback engine."""
     symbol=item["symbol"]
+    direction_frame=capital_shield_strategy.EXECUTION_TO_DIRECTION.get(timeframe)
+    if not direction_frame:
+        return {"_strategy_rejected":True,"_strategy_rejection_reasons":{"unmapped_execution_timeframe":1}}
+    # Confirm the higher-timeframe directional setup first, then inspect the
+    # mapped lower timeframe for an entry. An opposite lower-frame setup is
+    # retained as an explicit reversal rather than vetoed.
+    direction_rows=klines(market,symbol,direction_frame,250)
+    direction_required=capital_shield_strategy.MIN_BARS.get(direction_frame,30)+1
+    if not isinstance(direction_rows,list) or len(direction_rows)<direction_required:
+        received=len(direction_rows) if isinstance(direction_rows,list) else 0
+        reason=("invalid_direction_candle_payload" if not isinstance(direction_rows,list)
+                else "empty_direction_candle_response" if received==0
+                else "insufficient_direction_history")
+        return {"_data_incomplete":True,"_candles_received":received,
+                "_diagnostic_code":reason}
+    direction_rejections={}
+    try:
+        direction_setup=capital_shield_strategy.analyze(
+            market,symbol,direction_rows,timeframe=direction_frame,
+            diagnostics=direction_rejections
+        )
+    except Exception:
+        app.logger.exception("V10 higher-timeframe analysis failed: %s %s %s",market,symbol,direction_frame)
+        return {"_strategy_rejected":True,"_strategy_rejection_reasons":{"direction_analysis_error":1}}
+    if not direction_setup:
+        return {"_strategy_rejected":True,
+                "_strategy_rejection_reasons":{"direction_frame_no_confirmed_setup":1,
+                                               **direction_rejections},
+                "_smart_money_setup":None,"_smart_money_rejection_reasons":{}}
     rows=klines(market,symbol,timeframe,250)
     required_rows=capital_shield_strategy.MIN_BARS.get(timeframe,30)+1
     if not isinstance(rows,list) or len(rows)<required_rows:
         received=len(rows) if isinstance(rows,list) else 0
-        reason=("invalid_candle_payload" if not isinstance(rows,list)
-                else "empty_candle_response" if received==0
-                else "insufficient_history")
+        reason=("invalid_execution_candle_payload" if not isinstance(rows,list)
+                else "empty_execution_candle_response" if received==0
+                else "insufficient_execution_history")
         return {"_data_incomplete":True,"_candles_received":received,
                 "_diagnostic_code":reason}
     rejections={}
@@ -901,12 +930,15 @@ def build_signal(market,item,timeframe):
             market,symbol,rows,timeframe=timeframe,diagnostics=rejections
         )
     except Exception:
-        app.logger.exception("V10 CAPITAL SHIELD analysis failed: %s %s %s",market,symbol,timeframe)
+        app.logger.exception("V10 execution analysis failed: %s %s %s",market,symbol,timeframe)
         return {"_strategy_rejected":True,"_strategy_rejection_reasons":{"strategy_analysis_error":1}}
     if not setup:
         return {"_strategy_rejected":True,
-                "_strategy_rejection_reasons":rejections or {"no_valid_setup":1},
+                "_strategy_rejection_reasons":rejections or {"no_valid_execution_setup":1},
                 "_smart_money_setup":None,"_smart_money_rejection_reasons":{}}
+    setup["direction_side"]=direction_setup["side"]
+    setup["direction_signal_candle_time"]=direction_setup["signal_candle_time"]
+    setup["countertrend_reversal"]=setup["side"]!=direction_setup["side"]
     setup["quote_volume"]=item.get("quote_volume",0)
     setup["signal_timeframe"]=timeframe
     setup["direction_timeframe"]=capital_shield_strategy.EXECUTION_TO_DIRECTION.get(timeframe)
@@ -1498,7 +1530,7 @@ def _run_market_scan_unlocked(market,force=False):
     # Enforce the broad market breadth direction: a bearish market publishes
     # SELL setups only; a bullish market publishes BUY setups only. Neutral
     # breadth does not invent a directional filter.
-    found,direction_rejected=align_signals_with_market_bias(found,market_bias)
+    # Higher-frame direction is the setup gate; lower-frame opposite signals are valid reversals.\n    direction_rejected=0
     app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,len(found),
                     freshness["rejected_stale_candle"],freshness["rejected_late_price"],market_bias)
