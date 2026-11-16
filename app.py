@@ -126,7 +126,7 @@ def trade_json(trade):
         "entry":trade.entry,"stop":trade.stop,"tp1":trade.tp1,"tp2":trade.tp2,
         "tp3":trade.tp3,"score":trade.score,"timeframe":trade.timeframe,
         "reward_risk":(round(abs(trade.tp3-trade.entry)/abs(trade.entry-trade.stop),2) if abs(trade.entry-trade.stop)>0 else None),
-        "reason":"إعداد فني مؤكد","status":trade.status,
+        "reason":"إعداد فني مؤكد","direction_timeframe":capital_shield_strategy.EXECUTION_TO_DIRECTION.get(trade.timeframe),"execution_timeframe":trade.timeframe,"status":trade.status,
         "created_at":iso(trade.created_at),"expires_at":iso(trade.expires_at),
         "result_pct":trade.result_pct,"change_pct":trade.change_15m_pct,
     }
@@ -939,6 +939,7 @@ def build_signal(market,item,timeframe):
     setup["direction_side"]=direction_setup["side"]
     setup["direction_signal_candle_time"]=direction_setup["signal_candle_time"]
     setup["countertrend_reversal"]=setup["side"]!=direction_setup["side"]
+    setup["reason"]=setup.get("reason","")+" | HTF="+direction_frame+":"+direction_setup["side"]+" | EXEC="+timeframe+":"+setup["side"]+" | COUNTERTREND_REVERSAL="+str(setup["side"]!=direction_setup["side"]).lower()
     setup["quote_volume"]=item.get("quote_volume",0)
     setup["signal_timeframe"]=timeframe
     setup["direction_timeframe"]=capital_shield_strategy.EXECUTION_TO_DIRECTION.get(timeframe)
