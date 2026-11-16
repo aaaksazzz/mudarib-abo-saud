@@ -8,6 +8,10 @@ import math
 
 STRATEGY_FINGERPRINT = "STP-CAPITAL-SHIELD-V10-20261116"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
+# Higher-timeframe direction is mapped to the lower execution timeframe.
+DIRECTION_TO_EXECUTION = {"4h": "15m", "1d": "1h", "1w": "4h", "1M": "1d"}
+EXECUTION_TO_DIRECTION = {execution: direction for direction, execution in DIRECTION_TO_EXECUTION.items()}
+SCAN_TIMEFRAMES = tuple(DIRECTION_TO_EXECUTION.values())
 MARKETS = ("spot", "futures", "alpha", "us-stocks", "us-contracts", "saudi", "forex")
 MIN_BARS = {"15m": 105, "1h": 102, "4h": 88, "1d": 88, "1w": 68, "1M": 42}
 MAX_RISK_PCT = {"15m": 0.035, "1h": 0.04, "4h": 0.05, "1d": 0.07, "1w": 0.12, "1M": 0.20}
@@ -186,6 +190,11 @@ def diagnostic_self_test():
         "fingerprint_matches": STRATEGY_FINGERPRINT == "STP-CAPITAL-SHIELD-V10-20261116",
         "all_seven_markets": len(MARKETS) == 7,
         "six_timeframes": len(TIMEFRAMES) == 6,
+        "four_mapped_execution_frames": SCAN_TIMEFRAMES == ("15m", "1h", "4h", "1d"),
+        "4h_maps_to_15m": DIRECTION_TO_EXECUTION.get("4h") == "15m",
+        "daily_maps_to_1h": DIRECTION_TO_EXECUTION.get("1d") == "1h",
+        "weekly_maps_to_4h": DIRECTION_TO_EXECUTION.get("1w") == "4h",
+        "monthly_maps_to_1d": DIRECTION_TO_EXECUTION.get("1M") == "1d",
         "completed_candles_only": len(_bars(sample("BUY"))) == 106,
         "bullish_sweep_detected": bool(buy and buy["side"] == "BUY"),
         "bearish_sweep_detected": bool(sell and sell["side"] == "SELL"),
