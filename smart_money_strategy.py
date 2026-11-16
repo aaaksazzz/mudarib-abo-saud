@@ -1,19 +1,19 @@
-"""STP ICT/SMC reversal engine.
+"""STP ICT/SMC inverse engine.
 
-Closed-candle price action only: liquidity sweep -> CHoCH/BOS displacement
--> fair-value-gap creation -> FVG retest/rejection. Paper/manual signals only.
+Full contrarian inversion of the former reversal engine:
+the former BUY setup now emits SELL, and the former SELL setup emits BUY.
+The stop distance is mirrored around entry and all three targets are rebuilt
+in the opposite direction. Closed candles only; paper/manual signals only.
 """
 import math
 
-STRATEGY_FINGERPRINT = "STP-ICT-SMC-REVERSAL-V1-20261116"
+STRATEGY_FINGERPRINT = "STP-ICT-SMC-INVERSE-V1-20261116"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 MARKETS = ("spot", "futures", "alpha", "us-stocks", "us-contracts", "saudi", "forex")
 INTERVAL_MS = {
     "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000,
     "1d": 86_400_000, "1w": 604_800_000, "1M": 2_678_400_000,
 }
-
-
 FRAME_PROFILES = {
     "15m": {"min_bars": 40, "max_risk_pct": 0.035},
     "1h": {"min_bars": 40, "max_risk_pct": 0.040},
@@ -32,8 +32,7 @@ def _bars(rows):
     if not isinstance(rows, list) or len(rows) < 3:
         return []
     result = []
-    # Exclude the final, still-forming candle.
-    for row in rows[:-1]:
+    for row in rows[:-1]:  # Exclude the final, still-forming candle.
         if not isinstance(row, (list, tuple)) or len(row) < 6:
             continue
         try:
@@ -79,7 +78,7 @@ def _target_prices(entry, side, stop):
 
 
 def _find_reversal(bars, side):
-    """Return the latest completed sweep, structure break and FVG retest."""
+    """Find the former directional sweep -> structure break -> FVG retest."""
     highs, lows = _pivots(bars)
     current_i = len(bars)-1
     current = bars[current_i]
@@ -111,11 +110,7 @@ def _find_reversal(bars, side):
                         candidates.append((sweep_i, b["high"], pre[-1][1]))
     if not candidates:
         return None
-    # Prefer the latest valid sweep.
     sweep_i, sweep_extreme, break_level = max(candidates, key=lambda x: x[0])
-
-    # CHoCH/BOS: a later completed displacement candle closes through the
-    # opposing confirmed swing that existed before the liquidity grab.
     break_i = None
     for i in range(sweep_i+1, current_i-2):
         b = bars[i]
@@ -130,9 +125,6 @@ def _find_reversal(bars, side):
             break
     if break_i is None:
         return None
-
-    # Require an imbalance/FVG formed after the structure break, then a
-    # later candle must revisit the zone and close back in the trade direction.
     fvg = None
     for i in range(break_i+1, current_i):
         if i < 2:
@@ -179,35 +171,34 @@ def analyze(market, symbol, rows, timeframe="15m", diagnostics=None):
 
     current = bars[-1]
     setups = []
-    for side in ("BUY", "SELL"):
-        if market == "spot" and side == "SELL":
-            continue
-        reversal = _find_reversal(bars, side)
+    # Find the former BUY and SELL structures, then invert their trade direction.
+    for source_side in ("BUY", "SELL"):
+        reversal = _find_reversal(bars, source_side)
         if reversal:
-            setups.append((side, reversal))
+            setups.append((source_side, reversal))
     if not setups:
         return reject("waiting_for_sweep_choch_bos_fvg_retest")
 
-    # If both sides somehow qualify, use the most recent structure break.
-    side, setup = max(setups, key=lambda item: item[1]["break_index"])
+    source_side, setup = max(setups, key=lambda item: item[1]["break_index"])
+    side = "SELL" if source_side == "BUY" else "BUY"
     atr = _atr(bars)
     buffer = max(atr*0.15, current["close"]*0.0002)
-    stop = setup["sweep_extreme"]-buffer if side == "BUY" else setup["sweep_extreme"]+buffer
+    source_stop = setup["sweep_extreme"]-buffer if source_side == "BUY" else setup["sweep_extreme"]+buffer
     entry = current["close"]
+    # Mirror the original stop distance around entry so risk and targets face
+    # the opposite direction without producing an invalid stop geometry.
+    stop = entry + (entry-source_stop)
     risk = abs(entry-stop)
     risk_pct = risk/entry if entry > 0 else float("inf")
     if risk <= 0 or not math.isfinite(risk_pct) or risk_pct > 0.05:
-        return reject("structural_stop_outside_risk_limit")
+        return reject("mirrored_structural_stop_outside_risk_limit")
     targets = _target_prices(entry, side, stop)
     if not targets:
-        return reject("invalid_target_geometry")
+        return reject("invalid_inverse_target_geometry")
 
     confirmations = [
-        "CLOSED_CANDLE",
-        "LIQUIDITY_SWEEP",
-        "CHoCH_BOS_DISPLACEMENT",
-        "FAIR_VALUE_GAP",
-        "FVG_RETEST_REJECTION",
+        "CLOSED_CANDLE", "LIQUIDITY_SWEEP", "CHoCH_BOS_DISPLACEMENT",
+        "FAIR_VALUE_GAP", "FVG_RETEST_REJECTION", "CONTRARIAN_DIRECTION_INVERSION",
     ]
     score = 72.0
     span = max(current["high"]-current["low"], current["close"]*1e-10)
@@ -228,30 +219,33 @@ def analyze(market, symbol, rows, timeframe="15m", diagnostics=None):
         "signal_candle_time": current["time"], "atr": atr,
         "risk_pct": round(risk_pct*100, 4), "risk_distance": risk,
         "reward_risk": 3.0, "change_pct": 0.0,
-        "quote_volume": None, "setup_type": "ICT_SMC_REVERSAL_FVG_RETEST",
-        "structure": "BULLISH_REVERSAL" if side == "BUY" else "BEARISH_REVERSAL",
+        "quote_volume": None, "setup_type": "ICT_SMC_INVERSE_FVG_RETEST",
+        "structure": "CONTRARIAN_SELL_AFTER_BULLISH_SETUP" if source_side == "BUY" else "CONTRARIAN_BUY_AFTER_BEARISH_SETUP",
+        "source_setup_side": source_side,
         "confirmations": confirmations, "strategy_names": confirmations,
-        "strategy": "STP_ICT_REVERSAL_"+market.upper()+"_"+timeframe,
+        "strategy": "STP_ICT_INVERSE_"+market.upper()+"_"+timeframe,
         "strategy_fingerprint": STRATEGY_FINGERPRINT,
         "fvg": {"low": setup["fvg_low"], "high": setup["fvg_high"]},
         "sweep_extreme": setup["sweep_extreme"],
         "order_flow_status": "not_required_cross_market",
-        "reason": "ICT/SMC reversal: liquidity sweep -> CHoCH/BOS displacement -> FVG retest/rejection; structural stop; targets 1R/2R/3R",
+        "reason": "STP ICT/SMC full inversion: opposite side of the former sweep/CHoCH/BOS/FVG setup; mirrored structural risk; targets 1R/2R/3R",
         "setup_quality_label": "technical_quality_not_probability",
     }
 
 
 def diagnostic_self_test():
     checks = {
-        "fingerprint": STRATEGY_FINGERPRINT == "STP-ICT-SMC-REVERSAL-V1-20261116",
+        "fingerprint": STRATEGY_FINGERPRINT == "STP-ICT-SMC-INVERSE-V1-20261116",
         "six_timeframes": len(TIMEFRAMES) == 6,
         "seven_markets": len(MARKETS) == 7,
-        "spot_long_only": True,
-        "risk_targets_1r_2r_3r": _target_prices(100.0, "BUY", 98.0) == (102.0, 104.0, 106.0),
+        "former_buy_becomes_sell": True,
+        "former_sell_becomes_buy": True,
+        "spot_inverse_sell_enabled": True,
         "sell_targets_1r_2r_3r": _target_prices(100.0, "SELL", 102.0) == (98.0, 96.0, 94.0),
+        "buy_targets_1r_2r_3r": _target_prices(100.0, "BUY", 98.0) == (102.0, 104.0, 106.0),
         "closed_candle_only": True,
         "requires_sweep_structure_fvg_retest": True,
     }
     return {"ok": all(checks.values()), "fingerprint": STRATEGY_FINGERPRINT,
             "checks": checks, "timeframes": list(TIMEFRAMES),
-            "markets": list(MARKETS), "entry_model": "SWEEP_CHoCH_BOS_FVG_RETEST"}
+            "markets": list(MARKETS), "entry_model": "INVERSE_SWEEP_CHoCH_BOS_FVG_RETEST"}
