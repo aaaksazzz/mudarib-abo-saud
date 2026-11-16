@@ -429,7 +429,7 @@ def strategy_status():
     diagnostic=smart_money_strategy.diagnostic_self_test()
     return jsonify({
         "ok":bool(diagnostic.get("ok")),
-        "engine":"STP ICT/SMC REVERSAL",
+        "engine":"STP ICT/SMC INVERSE",
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
         "strategy_ready":bool(diagnostic.get("ok")),
         "strategy_checks":diagnostic.get("checks",{}),
@@ -792,16 +792,16 @@ STRATEGY_FINGERPRINT=smart_money_strategy.STRATEGY_FINGERPRINT
 def strategy_status_summary():
     active_current=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.like("STP ICT/SMC REVERSAL MTF:%")
+        Trade.reason.like("STP ICT/SMC INVERSE MTF:%")
     ).count()
     active_legacy=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.not_like("STP ICT/SMC REVERSAL MTF:%")
+        Trade.reason.not_like("STP ICT/SMC INVERSE MTF:%")
     ).count()
     primary=smart_money_strategy.diagnostic_self_test()
     active_scheduler=globals().get("scheduler")
     return jsonify({
-        "ok":True,"engine":"STP ICT/SMC REVERSAL",
+        "ok":True,"engine":"STP ICT/SMC INVERSE",
         "current_active":active_current,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
@@ -909,18 +909,18 @@ def build_signal(market,item,timeframe):
             market,symbol,rows,timeframe=timeframe,diagnostics=rejections
         )
     except Exception:
-        app.logger.exception("ICT/SMC reversal analysis failed: %s %s %s",market,symbol,timeframe)
+        app.logger.exception("ICT/SMC inverse analysis failed: %s %s %s",market,symbol,timeframe)
         return {"_strategy_rejected":True,"_strategy_rejection_reasons":{"engine_error":1}}
     if not setup:
         return {"_strategy_rejected":True,
-                "_strategy_rejection_reasons":rejections or {"no_confirmed_reversal":1}}
+                "_strategy_rejection_reasons":rejections or {"no_confirmed_inverse":1}}
     setup["signal_timeframe"]=timeframe
     setup["strategy_fingerprint"]=STRATEGY_FINGERPRINT
-    setup["strategy"]="STP_ICT_REVERSAL_"+market.upper()+"_"+timeframe
+    setup["strategy"]="STP_ICT_INVERSE_"+market.upper()+"_"+timeframe
     setup["strategy_names"]=list(setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
     setup["strategy_total"]=5
-    setup["reason"]="STP ICT/SMC REVERSAL MTF: "+timeframe+"; "+setup.get("reason","")
+    setup["reason"]="STP ICT/SMC INVERSE MTF: "+timeframe+"; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -1276,7 +1276,7 @@ def _run_market_scan_unlocked(market,force=False):
                     meta=json.loads(meta_row.value) if meta_row else {}
                 except (ValueError,TypeError):
                     meta={}
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("STP ICT/SMC REVERSAL MTF:%")).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("STP ICT/SMC INVERSE MTF:%")).all()
                 bias=meta.get("market_bias")
                 if bias in ("BUY","SELL"):
                     active=[trade for trade in active if trade.side==bias]
@@ -1456,7 +1456,7 @@ def _run_market_scan_unlocked(market,force=False):
         active=Trade.query.filter(
             Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
             Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-            Trade.reason.like("STP ICT/SMC REVERSAL MTF:%")
+            Trade.reason.like("STP ICT/SMC INVERSE MTF:%")
         ).order_by(Trade.score.desc()).limit(18).all()
         return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],
                 "updated_at":iso(now),"cached":False,"data_status":"unavailable",
@@ -1510,7 +1510,7 @@ def _run_market_scan_unlocked(market,force=False):
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("STP ICT/SMC REVERSAL MTF:%"),
+        Trade.reason.like("STP ICT/SMC INVERSE MTF:%"),
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
@@ -1544,7 +1544,7 @@ def _run_market_scan_unlocked(market,force=False):
             new_signals.append(signal)
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("STP ICT/SMC REVERSAL MTF:%")).update({"status":"superseded"},synchronize_session=False)
+        Trade.reason.not_like("STP ICT/SMC INVERSE MTF:%")).update({"status":"superseded"},synchronize_session=False)
     # Do not erase a live setup just because the latest completed scan found
     # no replacement. Replace only frames that produced at least one fresh,
     # direction-aligned candidate; otherwise keep the prior trade until expiry.
@@ -1552,7 +1552,7 @@ def _run_market_scan_unlocked(market,force=False):
                         if any(signal.get("timeframe")==frame for signal in found)}
     if replacement_frames:
         active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-            Trade.timeframe.in_(replacement_frames),Trade.reason.like("STP ICT/SMC REVERSAL MTF:%"))
+            Trade.timeframe.in_(replacement_frames),Trade.reason.like("STP ICT/SMC INVERSE MTF:%"))
         if retained_ids:
             active_query=active_query.filter(~Trade.id.in_(retained_ids))
         active_query.update({"status":"superseded"},synchronize_session=False)
@@ -1662,9 +1662,9 @@ def _run_market_scan_unlocked(market,force=False):
     db.session.commit()
     active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-        Trade.reason.like("STP ICT/SMC REVERSAL MTF:%")).all()
+        Trade.reason.like("STP ICT/SMC INVERSE MTF:%")).all()
     active=[trade for trade in active if trade_passes_frame_risk(trade)
-            and (market_bias not in ("BUY","SELL") or trade.side==market_bias)]
+            and (market_bias not in ("BUY","SELL") or trade.side!=market_bias)]
     active.sort(key=lambda trade:trade.score,reverse=True)
     active=active[:18]
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
