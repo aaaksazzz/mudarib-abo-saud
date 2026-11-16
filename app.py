@@ -1279,7 +1279,7 @@ def _run_market_scan_unlocked(market,force=False):
                 active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("STP ICT/SMC INVERSE MTF:%")).all()
                 bias=meta.get("market_bias")
                 if bias in ("BUY","SELL"):
-                    active=[trade for trade in active if trade.side==bias]
+                    active=[trade for trade in active if trade.side!=bias]
                 active=[trade for trade in active if trade_passes_frame_risk(trade)]
                 active.sort(key=lambda trade:trade.score,reverse=True)
                 active=active[:18]
@@ -1499,9 +1499,8 @@ def _run_market_scan_unlocked(market,force=False):
     freshness={key:sum(value[key] for value in freshness_by_frame.values())
                for key in ("rejected_stale_candle","rejected_late_price")}
     fresh_matches=len(found)
-    # Enforce the broad market breadth direction: a bearish market publishes
-    # SELL setups only; a bullish market publishes BUY setups only. Neutral
-    # breadth does not invent a directional filter.
+    # Inverse engine: publish only signals opposite to broad market breadth.
+    # Neutral breadth does not invent a directional filter.
     found,direction_rejected=align_signals_with_market_bias(found,market_bias)
     app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,len(found),
