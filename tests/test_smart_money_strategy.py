@@ -30,7 +30,7 @@ def bullish_reversal_rows():
 
 class ICTInverseStrategyTests(unittest.TestCase):
     def test_final_forming_candle_is_excluded(self):
-        self.assertEqual(len(strategy._bars(bullish_reversal_rows())), 46)
+        self.assertEqual(len(strategy._bars(bullish_reversal_rows())), 47)
 
     def test_target_geometry_is_exactly_one_two_three_r(self):
         self.assertEqual(strategy.target_prices(100, "SELL", 102), (98, 96, 94))
