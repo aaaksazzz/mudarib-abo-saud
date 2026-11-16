@@ -1,4 +1,4 @@
-"""Tests for the single active ICT/SMC reversal strategy."""
+"""Tests for the fully inverted ICT/SMC strategy."""
 import unittest
 import smart_money_strategy as strategy
 
@@ -18,36 +18,36 @@ def bullish_reversal_rows():
     pattern[18] = candle(18, 102.5, 103.0, 102.4, 102.8)
     pattern[19] = candle(19, 102.8, 103.0, 102.2, 102.6)
     pattern[20] = candle(20, 102.3, 103.0, 101.9, 102.7)
-    # Add enough closed history for the production minimum without changing the setup.
     prefix = [candle(i) for i in range(25)]
     shifted = [[row[0] + 25, *row[1:]] for row in pattern]
     bars = prefix + shifted
-    # Final row is intentionally forming and must be ignored.
     bars.append(candle(46, 102.7, 102.9, 102.5, 102.8))
     return bars
 
 
-class ICTReversalStrategyTests(unittest.TestCase):
+class ICTInverseStrategyTests(unittest.TestCase):
     def test_final_forming_candle_is_excluded(self):
         self.assertEqual(len(strategy._bars(bullish_reversal_rows())), 46)
 
     def test_target_geometry_is_exactly_one_two_three_r(self):
-        self.assertEqual(strategy.target_prices(100, "BUY", 98), (102, 104, 106))
         self.assertEqual(strategy.target_prices(100, "SELL", 102), (98, 96, 94))
+        self.assertEqual(strategy.target_prices(100, "BUY", 98), (102, 104, 106))
 
-    def test_sweep_choch_bos_fvg_retest_generates_buy(self):
+    def test_former_bullish_setup_now_generates_sell_with_mirrored_risk(self):
         signal = strategy.analyze("futures", "TESTUSDT", bullish_reversal_rows(), "15m")
         self.assertIsNotNone(signal)
-        self.assertEqual(signal["side"], "BUY")
-        self.assertEqual(signal["setup_type"], "ICT_SMC_REVERSAL_FVG_RETEST")
-        self.assertEqual(signal["confirmations"][:5], [
-            "CLOSED_CANDLE", "LIQUIDITY_SWEEP", "CHoCH_BOS_DISPLACEMENT",
-            "FAIR_VALUE_GAP", "FVG_RETEST_REJECTION"
-        ])
+        self.assertEqual(signal["side"], "SELL")
+        self.assertGreater(signal["stop"], signal["entry"])
+        self.assertLess(signal["tp1"], signal["entry"])
+        self.assertGreater(signal["tp1"], signal["tp2"])
+        self.assertGreater(signal["tp2"], signal["tp3"])
+        self.assertEqual(signal["setup_type"], "ICT_SMC_INVERSE_FVG_RETEST")
+        self.assertIn("CONTRARIAN_DIRECTION_INVERSION", signal["confirmations"])
 
-    def test_spot_does_not_emit_short_signals(self):
+    def test_spot_can_emit_inverse_sell_signal(self):
         signal = strategy.analyze("spot", "TEST", bullish_reversal_rows(), "15m")
-        self.assertTrue(signal is None or signal["side"] == "BUY")
+        self.assertIsNotNone(signal)
+        self.assertEqual(signal["side"], "SELL")
 
     def test_all_supported_markets_and_six_timeframes(self):
         self.assertEqual(len(strategy.MARKETS), 7)
