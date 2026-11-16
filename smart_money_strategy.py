@@ -125,6 +125,9 @@ def _find_reversal(bars, side):
             break
     if break_i is None:
         return None
+    # Select the latest FVG that the completed retest candle actually
+    # trades into and rejects. Selecting the latest FVG unconditionally can
+    # hide an older, valid retest behind a newer untouched gap.
     fvg = None
     for i in range(break_i+1, current_i):
         if i < 2:
@@ -135,20 +138,20 @@ def _find_reversal(bars, side):
         else:
             gap_low, gap_high = bars[i]["high"], bars[i-2]["low"]
             valid_gap = gap_high > gap_low
-        if valid_gap:
+        if not valid_gap:
+            continue
+        touched = current["low"] <= gap_high and current["high"] >= gap_low
+        midpoint = (gap_low+gap_high)/2
+        if side == "BUY":
+            rejected = current["close"] > current["open"] and current["close"] >= midpoint
+        else:
+            rejected = current["close"] < current["open"] and current["close"] <= midpoint
+        if touched and rejected:
             fvg = (i, gap_low, gap_high)
     if fvg is None:
         return None
     fvg_i, gap_low, gap_high = fvg
     if current_i <= fvg_i:
-        return None
-    touched = current["low"] <= gap_high and current["high"] >= gap_low
-    midpoint = (gap_low+gap_high)/2
-    if side == "BUY":
-        rejected = current["close"] > current["open"] and current["close"] >= midpoint
-    else:
-        rejected = current["close"] < current["open"] and current["close"] <= midpoint
-    if not touched or not rejected:
         return None
     return {
         "sweep_index": sweep_i, "sweep_extreme": sweep_extreme,
