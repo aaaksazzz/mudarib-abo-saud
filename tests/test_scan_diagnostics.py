@@ -32,12 +32,13 @@ class ScanDiagnosticsTests(unittest.TestCase):
     def test_build_signal_uses_timeframe_specific_history_requirement(self):
         monthly_rows=[[i, 100, 101, 99, 100, 10] for i in range(43)]
         with patch.object(platform_app, "klines", return_value=monthly_rows), patch.object(
-            platform_app.market_strategies, "analyze_all", return_value=None
+            platform_app.smart_money_strategy, "analyze", return_value=None
         ) as analyze:
             result=platform_app.build_signal("alpha", {"symbol":"ALPHAUSDT"}, "1M")
         self.assertNotIn("_data_incomplete", result)
         self.assertTrue(result["_strategy_rejected"])
         analyze.assert_called_once()
+        self.assertEqual(analyze.call_args.args[:2], ("alpha", "ALPHAUSDT"))
         self.assertEqual(analyze.call_args.kwargs["timeframe"], "1M")
         self.assertIn("diagnostics", analyze.call_args.kwargs)
 
