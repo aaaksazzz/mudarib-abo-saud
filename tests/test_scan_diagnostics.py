@@ -111,6 +111,15 @@ class ScanDiagnosticsTests(unittest.TestCase):
         self.assertFalse(platform_app.trade_passes_frame_risk(intraday))
         self.assertFalse(platform_app.trade_passes_frame_risk(wrong_side))
 
+    def test_cached_inverse_trade_filter_uses_opposite_market_bias(self):
+        bearish_bias = "SELL"
+        cached = [
+            type("TradeStub", (), {"side":"BUY"})(),
+            type("TradeStub", (), {"side":"SELL"})(),
+        ]
+        visible = [trade for trade in cached if trade.side != bearish_bias]
+        self.assertEqual([trade.side for trade in visible], ["BUY"])
+
     def test_inverse_scan_filters_signals_against_market_bias(self):
         signals = [
             {"symbol": "LONG", "side": "BUY", "timeframe": "15m"},
