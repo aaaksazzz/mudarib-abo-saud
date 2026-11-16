@@ -37,8 +37,8 @@ class ICTInverseStrategyTests(unittest.TestCase):
         self.assertEqual(strategy.target_prices(100, "BUY", 98), (102, 104, 106))
 
     def test_former_bullish_setup_now_generates_sell_with_mirrored_risk(self):
-        # The fixture's structural risk is above the 15m cap but inside the 1h cap.
-        signal = strategy.analyze("futures", "TESTUSDT", bullish_reversal_rows(), "1h")
+        # This fixture has ~4.07% mirrored structural risk: above 15m/1h caps, within 4h.
+        signal = strategy.analyze("futures", "TESTUSDT", bullish_reversal_rows(), "4h")
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "SELL")
         self.assertGreater(signal["stop"], signal["entry"])
@@ -49,7 +49,7 @@ class ICTInverseStrategyTests(unittest.TestCase):
         self.assertIn("CONTRARIAN_DIRECTION_INVERSION", signal["confirmations"])
 
     def test_spot_can_emit_inverse_sell_signal(self):
-        signal = strategy.analyze("spot", "TEST", bullish_reversal_rows(), "1h")
+        signal = strategy.analyze("spot", "TEST", bullish_reversal_rows(), "4h")
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "SELL")
 
