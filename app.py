@@ -1273,9 +1273,6 @@ def _run_market_scan_unlocked(market,force=False):
                 except (ValueError,TypeError):
                     meta={}
                 active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("STP PRICE ACTION QUANT V2:%")).all()
-                bias=meta.get("market_bias")
-                if bias in ("BUY","SELL"):
-                    active=[trade for trade in active if trade.side==bias]
                 active=[trade for trade in active if trade_passes_frame_risk(trade)]
                 active.sort(key=lambda trade:trade.score,reverse=True)
                 active=active[:18]
@@ -1488,15 +1485,11 @@ def _run_market_scan_unlocked(market,force=False):
         frame_diagnostics[frame]["fresh_matches"]=len(frame_found)
         frame_diagnostics[frame]["rejected_stale_candle"]=frame_freshness["rejected_stale_candle"]
         frame_diagnostics[frame]["rejected_late_price"]=frame_freshness["rejected_late_price"]
-        frame_diagnostics[frame]["direction_rejected"]=(
-            sum(1 for signal in frame_found if signal.get("side")==market_bias)
-            if market_bias in ("BUY","SELL") else 0
-        )
+        frame_diagnostics[frame]["direction_rejected"]=0
     freshness={key:sum(value[key] for value in freshness_by_frame.values())
                for key in ("rejected_stale_candle","rejected_late_price")}
     fresh_matches=len(found)
-    # Trend-following engine: publish only same-direction confirmed signals.
-    # Neutral breadth publishes no directional trade.
+    # Direction is determined by each setup and Saudi session mode, not market breadth.
     found,direction_rejected=align_signals_with_market_bias(found,market_bias)
     app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,len(found),
@@ -1658,8 +1651,7 @@ def _run_market_scan_unlocked(market,force=False):
     active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
         Trade.reason.like("STP PRICE ACTION QUANT V2:%")).all()
-    active=[trade for trade in active if trade_passes_frame_risk(trade)
-            and market_bias in ("BUY","SELL") and trade.side==market_bias]
+    active=[trade for trade in active if trade_passes_frame_risk(trade)]
     active.sort(key=lambda trade:trade.score,reverse=True)
     active=active[:18]
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
