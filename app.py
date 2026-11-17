@@ -1249,7 +1249,7 @@ def _run_market_scan_unlocked(market,force=False):
     # Retire all still-open signals produced by the replaced single-timeframe engine.
     Trade.query.filter(
         Trade.market==market, Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.expires_at>now, Trade.reason.like("SMART FLOW QUANT:%") | Trade.reason.like("STP ICT/SMC TREND MTF:%")
+        Trade.expires_at>now, Trade.reason.like("SMART FLOW QUANT:%") | Trade.reason.like("STP ICT/SMC TREND MTF:%") | Trade.reason.like("STP ICT/SMC DAY-NIGHT MTF:%")
     ).update({"status":"superseded"}, synchronize_session=False)
     db.session.commit()
     expire_stale_trades(market)
@@ -1272,9 +1272,8 @@ def _run_market_scan_unlocked(market,force=False):
                     meta=json.loads(meta_row.value) if meta_row else {}
                 except (ValueError,TypeError):
                     meta={}
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("STP ICT/SMC TREND MTF:%")).all()
-                bias=meta.get("market_bias")
-                                active=[trade for trade in active if trade_passes_frame_risk(trade)]
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("STP ICT/SMC DAY-NIGHT MTF:%")).all()
+                active=[trade for trade in active if trade_passes_frame_risk(trade)]
                 active.sort(key=lambda trade:trade.score,reverse=True)
                 active=active[:18]
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True,**meta}
