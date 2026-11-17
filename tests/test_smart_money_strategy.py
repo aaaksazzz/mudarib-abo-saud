@@ -61,8 +61,8 @@ class IndependentDayNightStrategyTests(unittest.TestCase):
         self.assertEqual(signal["session_mode"], "NIGHT")
         self.assertGreater(signal["stop"], signal["entry"])
         self.assertLess(signal["tp1"], signal["entry"])
-        self.assertLess(signal["tp1"], signal["tp2"])
-        self.assertLess(signal["tp2"], signal["tp3"])
+        self.assertGreater(signal["tp1"], signal["tp2"])
+        self.assertGreater(signal["tp2"], signal["tp3"])
         self.assertIn("SIDE_INVERTED_BY_SAUDI_SESSION", signal["confirmations"])
 
     def test_neutral_or_missing_market_bias_does_not_block_signal(self):
