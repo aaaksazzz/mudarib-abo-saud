@@ -1,13 +1,15 @@
-"""STP ICT/SMC market-bias trend-following engine.
+"""STP ICT/SMC day-night independent strategy.
 
-Only analyze setups matching the market-wide breadth direction. Never invert
-an opposite-side signal. Rebuild entry, structural stop and 1R/2R/3R targets
-from a genuine same-direction sweep/CHoCH/BOS/FVG retest.
+Technical direction is derived only from each instrument's own completed candles.
+Saudi time 06:00-17:59: execute the detected setup direction normally.
+Saudi time 18:00-05:59: invert BUY/SELL and rebuild valid risk/target geometry.
+Market breadth is descriptive metadata only and never gates a trade.
 Closed candles only; paper/manual signals only.
 """
 import math
+from datetime import datetime, timedelta, timezone
 
-STRATEGY_FINGERPRINT = "STP-ICT-SMC-TREND-FOLLOW-V1-20261117"
+STRATEGY_FINGERPRINT = "STP-ICT-SMC-INDEPENDENT-DAY-NIGHT-REVERSE-V2-20261117"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 MARKETS = ("spot", "futures", "alpha", "us-stocks", "us-contracts", "saudi", "forex")
 INTERVAL_MS = {
@@ -160,7 +162,14 @@ def _find_reversal(bars, side):
     }
 
 
-def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics=None):
+def saudi_session_mode(now=None):
+    """Return DAY (06:00-17:59) or NIGHT (18:00-05:59) in Saudi UTC+3."""
+    saudi_tz = timezone(timedelta(hours=3))
+    local_now = (now or datetime.now(saudi_tz)).astimezone(saudi_tz)
+    return "DAY" if 6 <= local_now.hour < 18 else "NIGHT"
+
+
+def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics=None, now=None):
     def reject(reason):
         if diagnostics is not None:
             diagnostics[reason] = diagnostics.get(reason, 0)+1
@@ -172,30 +181,41 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
     if len(bars) < 40:
         return reject("insufficient_completed_candles")
 
-    if market_bias not in ("BUY", "SELL"):
-        return reject("market_bias_neutral_or_unavailable")
     current = bars[-1]
-    setup = _find_reversal(bars, market_bias)
-    if not setup:
-        return reject("no_confirmed_setup_in_market_direction")
-    side = market_bias
+    # Evaluate both technical directions independently; breadth never gates trades.
+    candidates = []
+    for source_side in ("BUY", "SELL"):
+        setup = _find_reversal(bars, source_side)
+        if setup:
+            candidates.append((setup["sweep_index"], source_side, setup))
+    if not candidates:
+        return reject("no_confirmed_instrument_setup")
+    _, source_side, setup = max(candidates, key=lambda item: item[0])
+
+    session = saudi_session_mode(now)
+    side = source_side if session == "DAY" else ("SELL" if source_side == "BUY" else "BUY")
     atr = _atr(bars)
     buffer = max(atr*0.15, current["close"]*0.0002)
     entry = current["close"]
-    stop = setup["sweep_extreme"]-buffer if side == "BUY" else setup["sweep_extreme"]+buffer
-    risk = abs(entry-stop)
+    source_stop = setup["sweep_extreme"]-buffer if source_side == "BUY" else setup["sweep_extreme"]+buffer
+    risk = abs(entry-source_stop)
+    # Mirror risk around entry at night; never leave invalid stop/target geometry.
+    stop = entry-risk if side == "BUY" else entry+risk
     risk_pct = risk/entry if entry > 0 else float("inf")
     frame_risk_limit = FRAME_PROFILES[timeframe]["max_risk_pct"]
     if risk <= 0 or not math.isfinite(risk_pct) or risk_pct > frame_risk_limit:
         return reject("structural_stop_outside_frame_risk_limit")
     targets = _target_prices(entry, side, stop)
     if not targets:
-        return reject("invalid_trend_target_geometry")
+        return reject("invalid_reversed_trade_geometry")
 
     confirmations = [
         "CLOSED_CANDLE", "LIQUIDITY_SWEEP", "CHoCH_BOS_DISPLACEMENT",
-        "FAIR_VALUE_GAP", "FVG_RETEST_REJECTION", "MARKET_BIAS_ALIGNMENT",
+        "FAIR_VALUE_GAP", "FVG_RETEST_REJECTION", "INSTRUMENT_ONLY_DIRECTION",
+        "SAUDI_DAY_SESSION" if session == "DAY" else "SAUDI_NIGHT_REVERSED",
     ]
+    if source_side != side:
+        confirmations.append("SIDE_INVERTED_BY_SAUDI_SESSION")
     score = 72.0
     span = max(current["high"]-current["low"], current["close"]*1e-10)
     if abs(current["close"]-current["open"])/span >= 0.55:
@@ -215,30 +235,31 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
         "signal_candle_time": current["time"], "atr": atr,
         "risk_pct": round(risk_pct*100, 4), "risk_distance": risk,
         "reward_risk": 3.0, "change_pct": 0.0,
-        "quote_volume": None, "setup_type": "ICT_SMC_TREND_FVG_RETEST",
+        "quote_volume": None, "setup_type": "ICT_SMC_FVG_RETEST_DAY_NIGHT",
         "structure": "BULLISH_SWEEP_RETEST" if side == "BUY" else "BEARISH_SWEEP_RETEST",
-        "source_setup_side": side,
+        "source_setup_side": source_side, "session_mode": session,
+        "session_timezone": "Asia/Riyadh", "market_bias_context": market_bias,
         "confirmations": confirmations, "strategy_names": confirmations,
-        "strategy": "STP_ICT_TREND_"+market.upper()+"_"+timeframe,
+        "strategy": "STP_ICT_SMC_INDEPENDENT_"+session+"_"+market.upper()+"_"+timeframe,
         "strategy_fingerprint": STRATEGY_FINGERPRINT,
         "fvg": {"low": setup["fvg_low"], "high": setup["fvg_high"]},
         "sweep_extreme": setup["sweep_extreme"],
         "order_flow_status": "not_required_cross_market",
-        "reason": "STP ICT/SMC trend-following: genuine same-direction sweep/CHoCH/BOS/FVG retest; structural stop; targets 1R/2R/3R",
+        "reason": "STP ICT/SMC independent setup; Saudi day normal / night reversed; market breadth informational only; structural stop; targets 1R/2R/3R",
         "setup_quality_label": "technical_quality_not_probability",
     }
 
 
 def diagnostic_self_test():
+    day = datetime(2026, 11, 17, 17, 59, tzinfo=timezone(timedelta(hours=3)))
+    night = datetime(2026, 11, 17, 18, 0, tzinfo=timezone(timedelta(hours=3)))
     checks = {
-        "fingerprint": STRATEGY_FINGERPRINT == "STP-ICT-SMC-TREND-FOLLOW-V1-20261117",
+        "fingerprint": STRATEGY_FINGERPRINT == "STP-ICT-SMC-INDEPENDENT-DAY-NIGHT-REVERSE-V2-20261117",
         "six_timeframes": len(TIMEFRAMES) == 6,
         "seven_markets": len(MARKETS) == 7,
-        "bullish_bias_allows_buy_only": True,
-        "bearish_bias_allows_sell_only": True,
-        "neutral_bias_rejects_all": True,
-        "buy_stop_below_entry": 98.0 < 100.0,
-        "sell_stop_above_entry": 102.0 > 100.0,
+        "day_session_until_1759": saudi_session_mode(day) == "DAY",
+        "night_session_from_1800": saudi_session_mode(night) == "NIGHT",
+        "market_bias_is_informational": True,
         "sell_targets_1r_2r_3r": _target_prices(100.0, "SELL", 102.0) == (98.0, 96.0, 94.0),
         "buy_targets_1r_2r_3r": _target_prices(100.0, "BUY", 98.0) == (102.0, 104.0, 106.0),
         "closed_candle_only": True,
@@ -246,4 +267,4 @@ def diagnostic_self_test():
     }
     return {"ok": all(checks.values()), "fingerprint": STRATEGY_FINGERPRINT,
             "checks": checks, "timeframes": list(TIMEFRAMES),
-            "markets": list(MARKETS), "entry_model": "MARKET_BIAS_SWEEP_CHoCH_BOS_FVG_RETEST"}
+            "markets": list(MARKETS), "entry_model": "INDEPENDENT_SWEEP_CHoCH_BOS_FVG_RETEST_DAY_NIGHT_REVERSE"}

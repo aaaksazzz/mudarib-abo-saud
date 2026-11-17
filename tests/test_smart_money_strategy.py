@@ -1,5 +1,6 @@
-"""Tests for market-bias-aligned ICT/SMC trend following."""
+"""Tests for independent Saudi day/night ICT/SMC strategy."""
 import unittest
+from datetime import datetime, timedelta, timezone
 import smart_money_strategy as strategy
 
 
@@ -21,14 +22,17 @@ def bullish_reversal_rows():
     prefix = [candle(i) for i in range(25)]
     shifted = [[row[0] + 25, *row[1:]] for row in pattern]
     bars = prefix + shifted
-    # The last completed candle must actually retest the bullish FVG and reject upward.
     bars.append(candle(45, 102.1, 102.5, 102.1, 102.35))
-    # This final candle remains forming and must be excluded by the engine.
     bars.append(candle(46, 102.7, 102.9, 102.5, 102.8))
     return bars
 
 
-class ICTTrendFollowingStrategyTests(unittest.TestCase):
+TZ = timezone(timedelta(hours=3))
+DAY = datetime(2026, 11, 17, 12, 0, tzinfo=TZ)
+NIGHT = datetime(2026, 11, 17, 20, 0, tzinfo=TZ)
+
+
+class IndependentDayNightStrategyTests(unittest.TestCase):
     def test_final_forming_candle_is_excluded(self):
         self.assertEqual(len(strategy._bars(bullish_reversal_rows())), 47)
 
@@ -36,39 +40,49 @@ class ICTTrendFollowingStrategyTests(unittest.TestCase):
         self.assertEqual(strategy.target_prices(100, "SELL", 102), (98, 96, 94))
         self.assertEqual(strategy.target_prices(100, "BUY", 98), (102, 104, 106))
 
-    def test_bullish_market_bias_generates_buy_with_structural_risk(self):
-        # The genuine bullish sweep setup is retained; stop remains below entry.
-        signal = strategy.analyze("futures", "TESTUSDT", bullish_reversal_rows(), "4h", market_bias="BUY")
+    def test_day_uses_detected_direction_even_against_bearish_market_bias(self):
+        signal = strategy.analyze("futures", "TESTUSDT", bullish_reversal_rows(),
+                                  "4h", market_bias="SELL", now=DAY)
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "BUY")
+        self.assertEqual(signal["source_setup_side"], "BUY")
+        self.assertEqual(signal["session_mode"], "DAY")
         self.assertLess(signal["stop"], signal["entry"])
         self.assertGreater(signal["tp1"], signal["entry"])
-        self.assertLess(signal["tp1"], signal["tp2"])
-        self.assertLess(signal["tp2"], signal["tp3"])
-        self.assertEqual(signal["setup_type"], "ICT_SMC_TREND_FVG_RETEST")
-        self.assertIn("MARKET_BIAS_ALIGNMENT", signal["confirmations"])
+        self.assertEqual(signal["reward_risk"], 3.0)
+        self.assertNotIn("MARKET_BIAS_ALIGNMENT", signal["confirmations"])
 
-    def test_spot_can_emit_same_direction_buy_signal(self):
-        signal = strategy.analyze("spot", "TEST", bullish_reversal_rows(), "4h", market_bias="BUY")
+    def test_night_reverses_buy_to_sell_and_rebuilds_levels(self):
+        signal = strategy.analyze("spot", "TEST", bullish_reversal_rows(),
+                                  "4h", market_bias="BUY", now=NIGHT)
         self.assertIsNotNone(signal)
-        self.assertEqual(signal["side"], "BUY")
+        self.assertEqual(signal["source_setup_side"], "BUY")
+        self.assertEqual(signal["side"], "SELL")
+        self.assertEqual(signal["session_mode"], "NIGHT")
+        self.assertGreater(signal["stop"], signal["entry"])
+        self.assertLess(signal["tp1"], signal["entry"])
+        self.assertGreater(signal["tp1"], signal["tp2"])
+        self.assertGreater(signal["tp2"], signal["tp3"])
+        self.assertIn("SIDE_INVERTED_BY_SAUDI_SESSION", signal["confirmations"])
 
-    def test_neutral_bias_emits_no_trade(self):
-        diagnostics = {}
-        signal = strategy.analyze("spot", "TEST", bullish_reversal_rows(), "4h", diagnostics=diagnostics)
-        self.assertIsNone(signal)
-        self.assertIn("market_bias_neutral_or_unavailable", diagnostics)
+    def test_neutral_or_missing_market_bias_does_not_block_signal(self):
+        for bias in (None, "NEUTRAL", "BUY", "SELL"):
+            signal = strategy.analyze("spot", "TEST", bullish_reversal_rows(),
+                                      "4h", market_bias=bias, now=DAY)
+            self.assertIsNotNone(signal, msg=f"bias={bias}")
 
-    def test_bullish_setup_is_not_inverted_when_bias_is_bearish(self):
-        signal = strategy.analyze("spot", "TEST", bullish_reversal_rows(), "4h", market_bias="SELL")
-        self.assertIsNone(signal)
+    def test_session_boundaries_use_saudi_time(self):
+        self.assertEqual(strategy.saudi_session_mode(datetime(2026, 1, 1, 5, 59, tzinfo=TZ)), "NIGHT")
+        self.assertEqual(strategy.saudi_session_mode(datetime(2026, 1, 1, 6, 0, tzinfo=TZ)), "DAY")
+        self.assertEqual(strategy.saudi_session_mode(datetime(2026, 1, 1, 17, 59, tzinfo=TZ)), "DAY")
+        self.assertEqual(strategy.saudi_session_mode(datetime(2026, 1, 1, 18, 0, tzinfo=TZ)), "NIGHT")
 
     def test_all_supported_markets_and_six_timeframes(self):
         self.assertEqual(len(strategy.MARKETS), 7)
         self.assertEqual(strategy.TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
         self.assertEqual(set(strategy.FRAME_PROFILES), set(strategy.TIMEFRAMES))
 
-    def test_frame_specific_risk_limits_are_used_by_trend_engine(self):
+    def test_frame_specific_risk_limits_are_used(self):
         self.assertEqual(strategy.FRAME_PROFILES["15m"]["max_risk_pct"], 0.035)
         self.assertEqual(strategy.FRAME_PROFILES["1h"]["max_risk_pct"], 0.040)
         self.assertEqual(strategy.FRAME_PROFILES["4h"]["max_risk_pct"], 0.050)
