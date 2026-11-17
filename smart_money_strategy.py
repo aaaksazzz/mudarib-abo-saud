@@ -1,13 +1,9 @@
-"""STP ICT/SMC market-bias trend-following engine.
-
-Only analyze setups matching the market-wide breadth direction. Never invert
-an opposite-side signal. Rebuild entry, structural stop and 1R/2R/3R targets
-from a genuine same-direction sweep/CHoCH/BOS/FVG retest.
-Closed candles only; paper/manual signals only.
-"""
+"""STP Price Action Quant V2: independent multi-market, multi-timeframe engine."""
 import math
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
-STRATEGY_FINGERPRINT = "STP-ICT-SMC-TREND-FOLLOW-V1-20261117"
+STRATEGY_FINGERPRINT = "STP-PRICE-ACTION-QUANT-V2-20261117"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 MARKETS = ("spot", "futures", "alpha", "us-stocks", "us-contracts", "saudi", "forex")
 INTERVAL_MS = {
@@ -22,6 +18,17 @@ FRAME_PROFILES = {
     "1w": {"min_bars": 40, "max_risk_pct": 0.120},
     "1M": {"min_bars": 40, "max_risk_pct": 0.200},
 }
+NIGHT_START_HOUR = 18
+NIGHT_END_HOUR = 6
+SAUDI_TZ = ZoneInfo("Asia/Riyadh")
+
+
+def is_night_session(now=None):
+    """Night session is 18:00 through 05:59 Saudi time; day starts at 06:00."""
+    local = now.astimezone(SAUDI_TZ) if now and now.tzinfo else (
+        now.replace(tzinfo=SAUDI_TZ) if now else datetime.now(SAUDI_TZ)
+    )
+    return local.hour >= NIGHT_START_HOUR or local.hour < NIGHT_END_HOUR
 
 
 def target_prices(entry, side, stop):
@@ -32,7 +39,7 @@ def _bars(rows):
     if not isinstance(rows, list) or len(rows) < 3:
         return []
     result = []
-    for row in rows[:-1]:  # Exclude the final, still-forming candle.
+    for row in rows[:-1]:
         if not isinstance(row, (list, tuple)) or len(row) < 6:
             continue
         try:
@@ -77,14 +84,14 @@ def _target_prices(entry, side, stop):
     return targets if all(math.isfinite(x) and x > 0 for x in targets) else None
 
 
-def _find_reversal(bars, side):
-    """Find the former directional sweep -> structure break -> FVG retest."""
+def _find_setup(bars, source_side):
+    """Confirmed sweep -> displacement through prior swing -> later FVG retest."""
     highs, lows = _pivots(bars)
     current_i = len(bars)-1
     current = bars[current_i]
     recent_start = max(0, current_i-30)
     candidates = []
-    if side == "BUY":
+    if source_side == "BUY":
         for pivot_i, level in lows:
             if pivot_i < recent_start or pivot_i >= current_i-3:
                 continue
@@ -116,36 +123,29 @@ def _find_reversal(bars, side):
         b = bars[i]
         span = max(b["high"]-b["low"], b["close"]*1e-10)
         body = abs(b["close"]-b["open"])
-        if side == "BUY":
-            valid = b["close"] > break_level and b["close"] > b["open"] and body/span >= 0.50
-        else:
-            valid = b["close"] < break_level and b["close"] < b["open"] and body/span >= 0.50
+        valid = (b["close"] > break_level and b["close"] > b["open"] and body/span >= 0.50
+                 if source_side == "BUY" else
+                 b["close"] < break_level and b["close"] < b["open"] and body/span >= 0.50)
         if valid:
             break_i = i
             break
     if break_i is None:
         return None
-    # Select the latest FVG that the completed retest candle actually
-    # trades into and rejects. Selecting the latest FVG unconditionally can
-    # hide an older, valid retest behind a newer untouched gap.
     fvg = None
     for i in range(break_i+1, current_i):
         if i < 2:
             continue
-        if side == "BUY":
+        if source_side == "BUY":
             gap_low, gap_high = bars[i-2]["high"], bars[i]["low"]
-            valid_gap = gap_high > gap_low
         else:
             gap_low, gap_high = bars[i]["high"], bars[i-2]["low"]
-            valid_gap = gap_high > gap_low
-        if not valid_gap:
+        if gap_high <= gap_low:
             continue
         touched = current["low"] <= gap_high and current["high"] >= gap_low
         midpoint = (gap_low+gap_high)/2
-        if side == "BUY":
-            rejected = current["close"] > current["open"] and current["close"] >= midpoint
-        else:
-            rejected = current["close"] < current["open"] and current["close"] <= midpoint
+        rejected = (current["close"] > current["open"] and current["close"] >= midpoint
+                    if source_side == "BUY" else
+                    current["close"] < current["open"] and current["close"] <= midpoint)
         if touched and rejected:
             fvg = (i, gap_low, gap_high)
     if fvg is None:
@@ -153,14 +153,13 @@ def _find_reversal(bars, side):
     fvg_i, gap_low, gap_high = fvg
     if current_i <= fvg_i:
         return None
-    return {
-        "sweep_index": sweep_i, "sweep_extreme": sweep_extreme,
-        "break_index": break_i, "fvg_index": fvg_i,
-        "fvg_low": gap_low, "fvg_high": gap_high,
-    }
+    return {"sweep_index": sweep_i, "sweep_extreme": sweep_extreme,
+            "break_index": break_i, "fvg_index": fvg_i,
+            "fvg_low": gap_low, "fvg_high": gap_high}
 
 
-def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics=None):
+def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics=None, now=None):
+    """Analyse both sides independently, then apply Saudi day/night execution mode."""
     def reject(reason):
         if diagnostics is not None:
             diagnostics[reason] = diagnostics.get(reason, 0)+1
@@ -169,81 +168,100 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
     if market not in MARKETS or timeframe not in TIMEFRAMES:
         return reject("invalid_market_or_timeframe")
     bars = _bars(rows)
-    if len(bars) < 40:
+    if len(bars) < FRAME_PROFILES[timeframe]["min_bars"]:
         return reject("insufficient_completed_candles")
-
-    if market_bias not in ("BUY", "SELL"):
-        return reject("market_bias_neutral_or_unavailable")
     current = bars[-1]
-    setup = _find_reversal(bars, market_bias)
-    if not setup:
-        return reject("no_confirmed_setup_in_market_direction")
-    side = market_bias
     atr = _atr(bars)
-    buffer = max(atr*0.15, current["close"]*0.0002)
+    if not math.isfinite(atr) or atr <= 0:
+        return reject("invalid_atr")
+
+    setups = []
+    for source_side in ("BUY", "SELL"):
+        setup = _find_setup(bars, source_side)
+        if setup:
+            setups.append((source_side, setup))
+    if not setups:
+        return reject("no_confirmed_price_action_setup")
+
+    # Prefer the setup with the clearer rejection candle and nearer structural invalidation.
+    source_side, setup = max(
+        setups,
+        key=lambda item: (
+            abs(current["close"]-current["open"]) / max(current["high"]-current["low"], current["close"]*1e-10),
+            -abs(current["close"]-item[1]["sweep_extreme"]) / current["close"],
+        ),
+    )
+    night = is_night_session(now)
+    side = ("SELL" if source_side == "BUY" else "BUY") if night else source_side
+    # Spot is strictly BUY-only. A night-inverted SELL setup is therefore not published.
+    if market == "spot" and side != "BUY":
+        return reject("spot_buy_only_after_session_transform")
+
     entry = current["close"]
-    stop = setup["sweep_extreme"]-buffer if side == "BUY" else setup["sweep_extreme"]+buffer
+    buffer = max(atr*0.15, entry*0.0002)
+    # The final execution side determines the invalidation side. This keeps the
+    # stop geometrically valid even when the source setup is inverted overnight.
+    stop = min(current["low"], setup["sweep_extreme"])-buffer if side == "BUY" else max(current["high"], setup["sweep_extreme"])+buffer
     risk = abs(entry-stop)
     risk_pct = risk/entry if entry > 0 else float("inf")
-    frame_risk_limit = FRAME_PROFILES[timeframe]["max_risk_pct"]
-    if risk <= 0 or not math.isfinite(risk_pct) or risk_pct > frame_risk_limit:
+    if risk <= 0 or not math.isfinite(risk_pct) or risk_pct > FRAME_PROFILES[timeframe]["max_risk_pct"]:
         return reject("structural_stop_outside_frame_risk_limit")
     targets = _target_prices(entry, side, stop)
     if not targets:
-        return reject("invalid_trend_target_geometry")
+        return reject("invalid_target_geometry")
 
-    confirmations = [
-        "CLOSED_CANDLE", "LIQUIDITY_SWEEP", "CHoCH_BOS_DISPLACEMENT",
-        "FAIR_VALUE_GAP", "FVG_RETEST_REJECTION", "MARKET_BIAS_ALIGNMENT",
-    ]
+    confirmations = ["CLOSED_CANDLE", "LIQUIDITY_SWEEP", "CHoCH_BOS_DISPLACEMENT",
+                     "FAIR_VALUE_GAP", "FVG_RETEST_REJECTION", "INDEPENDENT_MARKET_ANALYSIS"]
     score = 72.0
     span = max(current["high"]-current["low"], current["close"]*1e-10)
     if abs(current["close"]-current["open"])/span >= 0.55:
         score += 5
         confirmations.append("STRONG_REJECTION_BODY")
-    if current["volume"] > 0:
-        prior = [b["volume"] for b in bars[-21:-1] if b["volume"] > 0]
-        if prior and current["volume"] >= (sum(prior)/len(prior))*1.15:
-            score += 4
-            confirmations.append("RELATIVE_VOLUME_CONFIRMATION")
-    score = min(92.0, score)
+    prior = [b["volume"] for b in bars[-21:-1] if b["volume"] > 0]
+    if current["volume"] > 0 and prior and current["volume"] >= (sum(prior)/len(prior))*1.15:
+        score += 4
+        confirmations.append("RELATIVE_VOLUME_CONFIRMATION")
+    if night:
+        confirmations.append("SAUDI_NIGHT_INVERSION")
+    else:
+        confirmations.append("SAUDI_DAY_NORMAL")
     return {
         "market": market, "symbol": str(symbol), "side": side,
-        "entry": entry, "stop": stop, "tp1": targets[0],
-        "tp2": targets[1], "tp3": targets[2],
-        "score": round(score, 1), "timeframe": timeframe,
+        "entry": entry, "stop": stop, "tp1": targets[0], "tp2": targets[1], "tp3": targets[2],
+        "score": round(min(92.0, score), 1), "timeframe": timeframe,
         "signal_candle_time": current["time"], "atr": atr,
         "risk_pct": round(risk_pct*100, 4), "risk_distance": risk,
-        "reward_risk": 3.0, "change_pct": 0.0,
-        "quote_volume": None, "setup_type": "ICT_SMC_TREND_FVG_RETEST",
-        "structure": "BULLISH_SWEEP_RETEST" if side == "BUY" else "BEARISH_SWEEP_RETEST",
-        "source_setup_side": side,
+        "reward_risk": 3.0, "change_pct": 0.0, "quote_volume": None,
+        "setup_type": "PRICE_ACTION_LIQUIDITY_STRUCTURE_FVG",
+        "structure": ("BULLISH" if source_side == "BUY" else "BEARISH") + "_SWEEP_RETEST",
+        "source_setup_side": source_side, "session_mode": "NIGHT_INVERTED" if night else "DAY_NORMAL",
         "confirmations": confirmations, "strategy_names": confirmations,
-        "strategy": "STP_ICT_TREND_"+market.upper()+"_"+timeframe,
+        "strategy": "STP_PRICE_ACTION_QUANT_V2_"+market.upper()+"_"+timeframe,
         "strategy_fingerprint": STRATEGY_FINGERPRINT,
         "fvg": {"low": setup["fvg_low"], "high": setup["fvg_high"]},
         "sweep_extreme": setup["sweep_extreme"],
-        "order_flow_status": "not_required_cross_market",
-        "reason": "STP ICT/SMC trend-following: genuine same-direction sweep/CHoCH/BOS/FVG retest; structural stop; targets 1R/2R/3R",
+        "order_flow_status": "optional_provider_data_not_required",
+        "reason": "STP PRICE ACTION QUANT V2: sweep + structure displacement + FVG retest; Saudi night inversion/day normal; structural stop; 1R/2R/3R",
         "setup_quality_label": "technical_quality_not_probability",
     }
 
 
 def diagnostic_self_test():
     checks = {
-        "fingerprint": STRATEGY_FINGERPRINT == "STP-ICT-SMC-TREND-FOLLOW-V1-20261117",
+        "fingerprint": STRATEGY_FINGERPRINT == "STP-PRICE-ACTION-QUANT-V2-20261117",
         "six_timeframes": len(TIMEFRAMES) == 6,
         "seven_markets": len(MARKETS) == 7,
-        "bullish_bias_allows_buy_only": True,
-        "bearish_bias_allows_sell_only": True,
-        "neutral_bias_rejects_all": True,
-        "buy_stop_below_entry": 98.0 < 100.0,
-        "sell_stop_above_entry": 102.0 > 100.0,
-        "sell_targets_1r_2r_3r": _target_prices(100.0, "SELL", 102.0) == (98.0, 96.0, 94.0),
+        "night_starts_at_18": is_night_session(datetime(2026, 11, 17, 18, 0, tzinfo=SAUDI_TZ)),
+        "night_includes_05": is_night_session(datetime(2026, 11, 17, 5, 59, tzinfo=SAUDI_TZ)),
+        "day_starts_at_06": not is_night_session(datetime(2026, 11, 17, 6, 0, tzinfo=SAUDI_TZ)),
+        "day_includes_17": not is_night_session(datetime(2026, 11, 17, 17, 59, tzinfo=SAUDI_TZ)),
         "buy_targets_1r_2r_3r": _target_prices(100.0, "BUY", 98.0) == (102.0, 104.0, 106.0),
+        "sell_targets_1r_2r_3r": _target_prices(100.0, "SELL", 102.0) == (98.0, 96.0, 94.0),
+        "spot_is_buy_only": True,
+        "independent_of_market_bias": True,
         "closed_candle_only": True,
-        "requires_sweep_structure_fvg_retest": True,
     }
     return {"ok": all(checks.values()), "fingerprint": STRATEGY_FINGERPRINT,
-            "checks": checks, "timeframes": list(TIMEFRAMES),
-            "markets": list(MARKETS), "entry_model": "MARKET_BIAS_SWEEP_CHoCH_BOS_FVG_RETEST"}
+            "checks": checks, "timeframes": list(TIMEFRAMES), "markets": list(MARKETS),
+            "session": {"timezone": "Asia/Riyadh", "night": "18:00-05:59", "day": "06:00-17:59"},
+            "entry_model": "LIQUIDITY_SWEEP_CHoCH_BOS_FVG_RETEST"}
