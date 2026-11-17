@@ -2,7 +2,7 @@
 import math
 
 
-STRATEGY_FINGERPRINT = "STP-PRICE-ACTION-QUANT-V2-20261117"
+STRATEGY_FINGERPRINT = "STP-PRICE-ACTION-QUANT-V2-20261117-NO-SESSION"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 MARKETS = ("spot", "futures", "alpha", "us-stocks", "us-contracts", "saudi", "forex")
 INTERVAL_MS = {
