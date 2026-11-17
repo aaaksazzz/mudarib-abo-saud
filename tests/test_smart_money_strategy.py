@@ -1,6 +1,5 @@
 """Regression tests for STP Price Action Quant V2."""
 import unittest
-from datetime import datetime
 import smart_money_strategy as strategy
 
 
@@ -35,50 +34,31 @@ class PriceActionQuantV2Tests(unittest.TestCase):
         self.assertEqual(strategy.target_prices(100, "SELL", 102), (98, 96, 94))
         self.assertEqual(strategy.target_prices(100, "BUY", 98), (102, 104, 106))
 
-    def test_day_session_keeps_source_direction_independent_of_market_bias(self):
-        now = datetime(2026, 11, 17, 12, 0, tzinfo=strategy.SAUDI_TZ)
-        buy = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h",
-                               market_bias="SELL", now=now)
-        self.assertIsNotNone(buy)
-        self.assertEqual(buy["side"], "BUY")
-        self.assertEqual(buy["session_mode"], "DAY_NORMAL")
-        self.assertLess(buy["stop"], buy["entry"])
-        self.assertEqual(buy["reward_risk"], 3.0)
+    def test_direction_is_normal_at_all_hours_and_independent_of_market_bias(self):
+        buy_day = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="SELL")
+        buy_night = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="BUY")
+        self.assertIsNotNone(buy_day)
+        self.assertIsNotNone(buy_night)
+        self.assertEqual(buy_day["side"], "BUY")
+        self.assertEqual(buy_night["side"], "BUY")
+        self.assertEqual(buy_day["session_mode"], "NORMAL_ALL_HOURS")
+        self.assertEqual(buy_night["session_mode"], "NORMAL_ALL_HOURS")
+        self.assertLess(buy_day["stop"], buy_day["entry"])
+        self.assertEqual(buy_day["reward_risk"], 3.0)
 
-    def test_night_session_inverts_source_direction(self):
-        now = datetime(2026, 11, 17, 22, 0, tzinfo=strategy.SAUDI_TZ)
-        sell = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h",
-                                market_bias="BUY", now=now)
-        self.assertIsNotNone(sell)
-        self.assertEqual(sell["source_setup_side"], "BUY")
-        self.assertEqual(sell["side"], "SELL")
-        self.assertEqual(sell["session_mode"], "NIGHT_INVERTED")
-        self.assertGreater(sell["stop"], sell["entry"])
-        self.assertLess(sell["tp1"], sell["entry"])
-
-    def test_spot_remains_buy_only_after_night_transform(self):
-        now = datetime(2026, 11, 17, 22, 0, tzinfo=strategy.SAUDI_TZ)
+    def test_spot_buy_only_without_session_dependent_logic(self):
         diagnostics = {}
-        signal = strategy.analyze("spot", "TEST", bullish_reversal_rows(), "4h",
-                                  now=now, diagnostics=diagnostics)
-        self.assertIsNone(signal)
-        self.assertIn("spot_buy_only_after_session_transform", diagnostics)
-
-    def test_session_boundaries_are_saudi_local(self):
-        self.assertTrue(strategy.is_night_session(datetime(2026, 11, 17, 18, 0, tzinfo=strategy.SAUDI_TZ)))
-        self.assertTrue(strategy.is_night_session(datetime(2026, 11, 17, 5, 59, tzinfo=strategy.SAUDI_TZ)))
-        self.assertFalse(strategy.is_night_session(datetime(2026, 11, 17, 6, 0, tzinfo=strategy.SAUDI_TZ)))
-        self.assertFalse(strategy.is_night_session(datetime(2026, 11, 17, 17, 59, tzinfo=strategy.SAUDI_TZ)))
-
+        signal = strategy.analyze("spot", "TEST", bullish_reversal_rows(), "4h", diagnostics=diagnostics)
+        self.assertIsNotNone(signal)
+        self.assertEqual(signal["side"], "BUY")
     def test_all_markets_and_six_timeframes(self):
         self.assertEqual(len(strategy.MARKETS), 7)
         self.assertEqual(strategy.TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
         self.assertEqual(set(strategy.FRAME_PROFILES), set(strategy.TIMEFRAMES))
 
     def test_bias_argument_is_compatibility_only(self):
-        now = datetime(2026, 11, 17, 12, 0, tzinfo=strategy.SAUDI_TZ)
-        a = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="BUY", now=now)
-        b = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="SELL", now=now)
+        a = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="BUY")
+        b = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="SELL")
         self.assertEqual(a["side"], b["side"])
 
     def test_diagnostic_self_test(self):
