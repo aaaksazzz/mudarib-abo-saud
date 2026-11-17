@@ -796,12 +796,12 @@ def strategy_status_summary():
     ).count()
     active_legacy=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.not_like("STP ICT/SMC TREND MTF:%")
+        Trade.reason.not_like("STP ICT/SMC DAY-NIGHT MTF:%")
     ).count()
     primary=smart_money_strategy.diagnostic_self_test()
     active_scheduler=globals().get("scheduler")
     return jsonify({
-        "ok":True,"engine":"STP ICT/SMC TREND FOLLOWING",
+        "ok":True,"engine":"STP ICT/SMC INDEPENDENT DAY-NIGHT REVERSAL",
         "current_active":active_current,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
@@ -920,7 +920,7 @@ def build_signal(market,item,timeframe,market_bias=None):
     setup["strategy_names"]=list(setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
     setup["strategy_total"]=5
-    setup["reason"]="STP ICT/SMC TREND MTF: "+timeframe+"; "+setup.get("reason","")
+    setup["reason"]="STP ICT/SMC DAY-NIGHT MTF: "+timeframe+"; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -1449,7 +1449,7 @@ def _run_market_scan_unlocked(market,force=False):
         active=Trade.query.filter(
             Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
             Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-            Trade.reason.like("STP ICT/SMC TREND MTF:%")
+            Trade.reason.like("STP ICT/SMC DAY-NIGHT MTF:%")
         ).order_by(Trade.score.desc()).limit(18).all()
         return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],
                 "updated_at":iso(now),"cached":False,"data_status":"unavailable",
@@ -1501,7 +1501,7 @@ def _run_market_scan_unlocked(market,force=False):
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("STP ICT/SMC TREND MTF:%"),
+        Trade.reason.like("STP ICT/SMC DAY-NIGHT MTF:%"),
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
@@ -1535,7 +1535,7 @@ def _run_market_scan_unlocked(market,force=False):
             new_signals.append(signal)
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("STP ICT/SMC TREND MTF:%")).update({"status":"superseded"},synchronize_session=False)
+        Trade.reason.not_like("STP ICT/SMC DAY-NIGHT MTF:%")).update({"status":"superseded"},synchronize_session=False)
     # Do not erase a live setup just because the latest completed scan found
     # no replacement. Replace only frames that produced at least one fresh,
     # direction-aligned candidate; otherwise keep the prior trade until expiry.
@@ -1543,7 +1543,7 @@ def _run_market_scan_unlocked(market,force=False):
                         if any(signal.get("timeframe")==frame for signal in found)}
     if replacement_frames:
         active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-            Trade.timeframe.in_(replacement_frames),Trade.reason.like("STP ICT/SMC TREND MTF:%"))
+            Trade.timeframe.in_(replacement_frames),Trade.reason.like("STP ICT/SMC DAY-NIGHT MTF:%"))
         if retained_ids:
             active_query=active_query.filter(~Trade.id.in_(retained_ids))
         active_query.update({"status":"superseded"},synchronize_session=False)
@@ -1653,9 +1653,9 @@ def _run_market_scan_unlocked(market,force=False):
     db.session.commit()
     active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-        Trade.reason.like("STP ICT/SMC TREND MTF:%")).all()
+        Trade.reason.like("STP ICT/SMC DAY-NIGHT MTF:%")).all()
     active=[trade for trade in active if trade_passes_frame_risk(trade)
-            and market_bias in ("BUY","SELL") and trade.side==market_bias]
+            ]
     active.sort(key=lambda trade:trade.score,reverse=True)
     active=active[:18]
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
