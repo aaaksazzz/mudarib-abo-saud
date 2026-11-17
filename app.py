@@ -916,7 +916,7 @@ def build_signal(market,item,timeframe,market_bias=None):
                 "_strategy_rejection_reasons":rejections or {"no_confirmed_trend_setup":1}}
     setup["signal_timeframe"]=timeframe
     setup["strategy_fingerprint"]=STRATEGY_FINGERPRINT
-    setup["strategy"]="STP_ICT_TREND_"+market.upper()+"_"+timeframe
+    setup["strategy"]="STP_ICT_SMC_INDEPENDENT_"+str(setup.get("session_mode") or "UNKNOWN")+"_"+market.upper()+"_"+timeframe
     setup["strategy_names"]=list(setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
     setup["strategy_total"]=len(setup["strategy_names"])
