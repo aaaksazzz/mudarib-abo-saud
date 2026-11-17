@@ -111,26 +111,23 @@ class ScanDiagnosticsTests(unittest.TestCase):
         self.assertFalse(platform_app.trade_passes_frame_risk(intraday))
         self.assertFalse(platform_app.trade_passes_frame_risk(wrong_side))
 
-    def test_cached_trade_filter_keeps_same_market_bias(self):
-        bearish_bias = "SELL"
+    def test_cached_signals_are_not_filtered_by_market_bias(self):
         cached = [
             type("TradeStub", (), {"side":"BUY"})(),
             type("TradeStub", (), {"side":"SELL"})(),
         ]
-        visible = [trade for trade in cached if trade.side == bearish_bias]
-        self.assertEqual([trade.side for trade in visible], ["SELL"])
+        visible = list(cached)
+        self.assertEqual([trade.side for trade in visible], ["BUY", "SELL"])
 
-    def test_scan_keeps_signals_matching_market_bias(self):
+    def test_scan_keeps_both_sides_regardless_of_market_bias(self):
         signals = [
             {"symbol": "LONG", "side": "BUY", "timeframe": "15m"},
             {"symbol": "SHORT", "side": "SELL", "timeframe": "15m"},
         ]
-        aligned, rejected = platform_app.align_signals_with_market_bias(signals, "SELL")
-        self.assertEqual([signal["symbol"] for signal in aligned], ["SHORT"])
-        self.assertEqual(rejected, 1)
-        neutral, neutral_rejected = platform_app.align_signals_with_market_bias(signals, None)
-        self.assertEqual(neutral, [])
-        self.assertEqual(neutral_rejected, 2)
+        for bias in ("BUY", "SELL", None):
+            visible, rejected = platform_app.align_signals_with_market_bias(signals, bias)
+            self.assertEqual([signal["symbol"] for signal in visible], ["LONG", "SHORT"])
+            self.assertEqual(rejected, 0)
 
     def test_legacy_market_signals_route_rejects_unknown_timeframe(self):
         response = platform_app.app.test_client().get(
