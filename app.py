@@ -891,7 +891,7 @@ def record_scan_failure(frame_stats,frame,item,code):
                         "timeframe":frame,"reason":code})
 
 
-def build_signal(market,item,timeframe,market_bias):
+def build_signal(market,item,timeframe,market_bias=None):
     """Single active engine: ICT/SMC reversal across all supported markets."""
     symbol=item["symbol"]
     rows=klines(market,symbol,timeframe,250)
