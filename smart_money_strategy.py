@@ -1,7 +1,6 @@
 """STP Price Action Quant V2: independent multi-market, multi-timeframe engine."""
 import math
-from datetime import datetime
-from zoneinfo import ZoneInfo
+from datetime import datetime, timezone, timedelta
 
 STRATEGY_FINGERPRINT = "STP-PRICE-ACTION-QUANT-V2-20261117"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
@@ -20,7 +19,7 @@ FRAME_PROFILES = {
 }
 NIGHT_START_HOUR = 18
 NIGHT_END_HOUR = 6
-SAUDI_TZ = ZoneInfo("Asia/Riyadh")
+SAUDI_TZ = timezone(timedelta(hours=3), name="Asia/Riyadh")
 
 
 def is_night_session(now=None):
