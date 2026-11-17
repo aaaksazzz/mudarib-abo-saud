@@ -429,11 +429,11 @@ def strategy_status():
     diagnostic=smart_money_strategy.diagnostic_self_test()
     return jsonify({
         "ok":bool(diagnostic.get("ok")),
-        "engine":"STP ICT/SMC TREND FOLLOWING",
+        "engine":"STP ICT/SMC INDEPENDENT DAY-NIGHT REVERSAL",
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
         "strategy_ready":bool(diagnostic.get("ok")),
         "strategy_checks":diagnostic.get("checks",{}),
-        "retired_engines":["REGIME-ADAPTIVE V7","STP ADAPTIVE QUANT V8"],
+        "retired_engines":["REGIME-ADAPTIVE V7","STP ADAPTIVE QUANT V8","STP ICT/SMC TREND FOLLOW V1"],
         "manual_only":True
     })
 
@@ -792,7 +792,7 @@ STRATEGY_FINGERPRINT=smart_money_strategy.STRATEGY_FINGERPRINT
 def strategy_status_summary():
     active_current=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.like("STP ICT/SMC TREND MTF:%")
+        Trade.reason.like("STP ICT/SMC DAY-NIGHT MTF:%")
     ).count()
     active_legacy=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
@@ -1214,12 +1214,8 @@ def market_scan_timeframes(market):
 
 
 def align_signals_with_market_bias(signals, market_bias):
-    """Keep only signals in the market breadth direction; neutral means none."""
-    rows=list(signals or [])
-    if market_bias not in ("BUY","SELL"):
-        return [],len(rows)
-    aligned=[signal for signal in rows if signal.get("side")==market_bias]
-    return aligned,len(rows)-len(aligned)
+    """Compatibility shim: market breadth is descriptive and never filters trades."""
+    return list(signals or []),0
 
 
 def trade_passes_frame_risk(trade):
@@ -1253,7 +1249,7 @@ def _run_market_scan_unlocked(market,force=False):
     # Retire all still-open signals produced by the replaced single-timeframe engine.
     Trade.query.filter(
         Trade.market==market, Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.expires_at>now, Trade.reason.like("SMART FLOW QUANT:%")
+        Trade.expires_at>now, Trade.reason.like("SMART FLOW QUANT:%") | Trade.reason.like("STP ICT/SMC TREND MTF:%")
     ).update({"status":"superseded"}, synchronize_session=False)
     db.session.commit()
     expire_stale_trades(market)
@@ -1278,9 +1274,7 @@ def _run_market_scan_unlocked(market,force=False):
                     meta={}
                 active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("STP ICT/SMC TREND MTF:%")).all()
                 bias=meta.get("market_bias")
-                if bias in ("BUY","SELL"):
-                    active=[trade for trade in active if trade.side==bias]
-                active=[trade for trade in active if trade_passes_frame_risk(trade)]
+                                active=[trade for trade in active if trade_passes_frame_risk(trade)]
                 active.sort(key=lambda trade:trade.score,reverse=True)
                 active=active[:18]
                 return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":scan_row.value,"cached":True,**meta}
@@ -1499,8 +1493,7 @@ def _run_market_scan_unlocked(market,force=False):
     freshness={key:sum(value[key] for value in freshness_by_frame.values())
                for key in ("rejected_stale_candle","rejected_late_price")}
     fresh_matches=len(found)
-    # Trend-following engine: publish only same-direction confirmed signals.
-    # Neutral breadth publishes no directional trade.
+    # Independent technical engine: market breadth is stored for context only.
     found,direction_rejected=align_signals_with_market_bias(found,market_bias)
     app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,len(found),
