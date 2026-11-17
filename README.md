@@ -18,10 +18,10 @@ Production-oriented market intelligence terminal.
 - **Forex & Gold:** public Yahoo symbol list; FX tick volume is not represented as exchange-traded dollar volume.
 
 ## Active engine: STP PRICE ACTION QUANT V2
-- The single active signal engine is `smart_money_strategy.py`, fingerprint `STP-PRICE-ACTION-QUANT-V2-20261117`. The previous ICT/SMC trend-following engine has been replaced, not layered on top.
+- The single active signal engine is `smart_money_strategy.py`, fingerprint `STP-PRICE-ACTION-QUANT-V2-20261117-NO-SESSION`. The previous ICT/SMC trend-following engine has been replaced, not layered on top.
 - Every supported market is scanned independently on six completed-candle timeframes: 15m, 1h, 4h, 1d, 1w and 1M.
 - The entry model combines a confirmed liquidity sweep, displacement through market structure (CHoCH/BOS), fair-value-gap formation and a later retest/rejection. It evaluates BUY and SELL setups independently and does not filter entries by market-wide breadth.
-- Saudi local session transform: 06:00–17:59 uses the source setup direction; 18:00–05:59 reverses BUY and SELL. The session is evaluated using `Asia/Riyadh`. Spot remains BUY-only after this transform, so an inverted SELL is suppressed rather than published.
+- Signal direction is identical at all hours; there is no day/night inversion or Saudi-time session rule. Spot remains BUY-only as a market-specific constraint.
 - Stops are structural and placed beyond the execution-side invalidation extreme with an ATR buffer. Timeframe-specific maximum risk limits remain in force. TP1/TP2/TP3 are 1R/2R/3R.
 - The displayed score is a technical-quality score, not a statistically calibrated win probability. No strategy guarantees profits; historical and out-of-sample performance must be measured after fees and slippage.
 - Signals remain paper/manual only. No account API keys or automatic order execution are used.
