@@ -182,6 +182,14 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
     if not setups:
         return reject("no_confirmed_price_action_setup")
 
+    night = is_night_session(now)
+    # Spot only accepts source-side setups that transform into BUY in the active session.
+    if market == "spot":
+        required_source_side = "SELL" if night else "BUY"
+        setups = [item for item in setups if item[0] == required_source_side]
+        if not setups:
+            return reject("spot_buy_only_after_session_transform")
+
     # Prefer the setup with the clearer rejection candle and nearer structural invalidation.
     source_side, setup = max(
         setups,
@@ -190,11 +198,7 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
             -abs(current["close"]-item[1]["sweep_extreme"]) / current["close"],
         ),
     )
-    night = is_night_session(now)
     side = ("SELL" if source_side == "BUY" else "BUY") if night else source_side
-    # Spot is strictly BUY-only. A night-inverted SELL setup is therefore not published.
-    if market == "spot" and side != "BUY":
-        return reject("spot_buy_only_after_session_transform")
 
     entry = current["close"]
     buffer = max(atr*0.15, entry*0.0002)
