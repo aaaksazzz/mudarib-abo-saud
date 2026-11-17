@@ -17,17 +17,17 @@ Production-oriented market intelligence terminal.
 - **Tadawul:** public Saudi Exchange data is preferred, with Yahoo, a public ticker directory and TradingView fallbacks. Saudi equities are not filtered by the $1M threshold; public-feed coverage can be incomplete during provider restrictions.
 - **Forex & Gold:** public Yahoo symbol list; FX tick volume is not represented as exchange-traded dollar volume.
 
-## Active engine: STP ICT/SMC REVERSAL · single cross-market engine
-- The only active signal engine is smart_money_strategy.py, fingerprinted as STP-ICT-SMC-REVERSAL-V1-20261116. The previous regime-adaptive V7/V8 signal paths have been retired and removed from the runtime.
-- Every supported market is scanned independently on the six supported completed-candle timeframes: 15m, 1h, 4h, 1d, 1w and 1M. Legacy 1m/5m frames are not exposed.
-- Entry sequence: confirmed liquidity sweep, CHoCH/BOS displacement through the opposing swing, fair-value-gap formation, then a later retest and directional rejection candle. A sweep or FVG touch alone is not an entry.
-- Stops are placed beyond the sweep extreme with an ATR-derived buffer and timeframe-specific maximum risk. Spot remains BUY-only; SELL on other markets is a bearish/manual signal and never an automatic short order.
-- TP1, TP2 and TP3 are set at 1R, 2R and 3R. Only completed candles are analysed; stale candles and materially moved/late entries are rejected.
-- The displayed score is a rule-based technical-quality score, not a statistically calibrated win probability. No strategy can guarantee profits or avoid all losses; validate with out-of-sample backtests after fees and slippage.
-- No account API keys or automatic order execution are used. All signals remain paper/manual analysis only.
+## Active engine: STP PRICE ACTION QUANT V2
+- The single active signal engine is `smart_money_strategy.py`, fingerprint `STP-PRICE-ACTION-QUANT-V2-20261117`. The previous ICT/SMC trend-following engine has been replaced, not layered on top.
+- Every supported market is scanned independently on six completed-candle timeframes: 15m, 1h, 4h, 1d, 1w and 1M.
+- The entry model combines a confirmed liquidity sweep, displacement through market structure (CHoCH/BOS), fair-value-gap formation and a later retest/rejection. It evaluates BUY and SELL setups independently and does not filter entries by market-wide breadth.
+- Saudi local session transform: 06:00–17:59 uses the source setup direction; 18:00–05:59 reverses BUY and SELL. The session is evaluated using `Asia/Riyadh`. Spot remains BUY-only after this transform, so an inverted SELL is suppressed rather than published.
+- Stops are structural and placed beyond the execution-side invalidation extreme with an ATR buffer. Timeframe-specific maximum risk limits remain in force. TP1/TP2/TP3 are 1R/2R/3R.
+- The displayed score is a technical-quality score, not a statistically calibrated win probability. No strategy guarantees profits; historical and out-of-sample performance must be measured after fees and slippage.
+- Signals remain paper/manual only. No account API keys or automatic order execution are used.
 
 ## Signal engine
-- A timeframe batch is replaced only when that scan produces at least one fresh, direction-aligned setup; a zero-match scan preserves existing live trades until their normal expiry or outcome. Up to three opportunities per market per timeframe are published. Previous rows remain in trade history and expire after 24 hours.
+- A timeframe batch is replaced only when that scan produces at least one fresh setup matching the active Saudi session mode; a zero-match scan preserves existing live trades until their normal expiry or outcome. Up to three opportunities per market per timeframe are published. Previous rows remain in trade history and expire after 24 hours.
 - Market-page requests only read committed results and never launch heavy scans synchronously.
 - Expired records are also cleaned when the journal is read.
 - No performance claim is made without reproducible per-market backtests.
@@ -38,7 +38,7 @@ Production-oriented market intelligence terminal.
 - Expose port 8080.
 - Prefer a persistent PostgreSQL database through `DATABASE_URL`. SQLite is acceptable only when `DATA_DIR` points to a persistent mounted volume; the default local SQLite path is not production-durable.
 - Configure a persistent random `SECRET_KEY` and `COOKIE_SECURE=true`. The public sentiment dashboard scans on demand and does not require the legacy market scheduler.
-- The active regime-adaptive scanner runs on a staggered 15-minute schedule across markets. It uses public candle data and paper/manual signals only.
+- The active Price Action Quant V2 scanner runs on a staggered 15-minute schedule across markets. It uses public candle data and paper/manual signals only.
 - `/ready` requires a durable database configuration (PostgreSQL or an explicitly configured `DATA_DIR` volume) and a persistent `SECRET_KEY`; no background market scheduler is required.
 - Configure `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` (14+ characters) before first boot if first-admin provisioning is needed.
 - Never commit or share secrets. Rotate credentials after any security incident and update them at the provider and deployment environment.

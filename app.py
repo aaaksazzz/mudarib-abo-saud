@@ -429,11 +429,11 @@ def strategy_status():
     diagnostic=smart_money_strategy.diagnostic_self_test()
     return jsonify({
         "ok":bool(diagnostic.get("ok")),
-        "engine":"STP ICT/SMC TREND FOLLOWING",
+        "engine":"STP PRICE ACTION QUANT V2",
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
         "strategy_ready":bool(diagnostic.get("ok")),
         "strategy_checks":diagnostic.get("checks",{}),
-        "retired_engines":["REGIME-ADAPTIVE V7","STP ADAPTIVE QUANT V8"],
+        "retired_engines":["ICT/SMC TREND FOLLOW V1","REGIME-ADAPTIVE V7","STP ADAPTIVE QUANT V8"],
         "manual_only":True
     })
 
@@ -470,7 +470,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":smart_money_strategy.STRATEGY_FINGERPRINT.startswith("STP-ICT-SMC-TREND-FOLLOW-")}
+            "price_action_engine":smart_money_strategy.STRATEGY_FINGERPRINT.startswith("STP-PRICE-ACTION-QUANT-V2-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -792,16 +792,16 @@ STRATEGY_FINGERPRINT=smart_money_strategy.STRATEGY_FINGERPRINT
 def strategy_status_summary():
     active_current=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.like("STP ICT/SMC TREND MTF:%")
+        Trade.reason.like("STP PRICE ACTION QUANT V2:%")
     ).count()
     active_legacy=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.not_like("STP ICT/SMC TREND MTF:%")
+        Trade.reason.not_like("STP PRICE ACTION QUANT V2:%")
     ).count()
     primary=smart_money_strategy.diagnostic_self_test()
     active_scheduler=globals().get("scheduler")
     return jsonify({
-        "ok":True,"engine":"STP ICT/SMC TREND FOLLOWING",
+        "ok":True,"engine":"STP PRICE ACTION QUANT V2",
         "current_active":active_current,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
@@ -909,7 +909,7 @@ def build_signal(market,item,timeframe,market_bias=None):
             market,symbol,rows,timeframe=timeframe,market_bias=market_bias,diagnostics=rejections
         )
     except Exception:
-        app.logger.exception("ICT/SMC trend-following analysis failed: %s %s %s",market,symbol,timeframe)
+        app.logger.exception("Price Action Quant V2 analysis failed: %s %s %s",market,symbol,timeframe)
         return {"_strategy_rejected":True,"_strategy_rejection_reasons":{"engine_error":1}}
     if not setup:
         return {"_strategy_rejected":True,
@@ -919,8 +919,8 @@ def build_signal(market,item,timeframe,market_bias=None):
     setup["strategy"]="STP_ICT_TREND_"+market.upper()+"_"+timeframe
     setup["strategy_names"]=list(setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
-    setup["strategy_total"]=5
-    setup["reason"]="STP ICT/SMC TREND MTF: "+timeframe+"; "+setup.get("reason","")
+    setup["strategy_total"]=len(setup["strategy_names"])
+    setup["reason"]="STP PRICE ACTION QUANT V2: "+timeframe+"; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -1214,12 +1214,8 @@ def market_scan_timeframes(market):
 
 
 def align_signals_with_market_bias(signals, market_bias):
-    """Keep only signals in the market breadth direction; neutral means none."""
-    rows=list(signals or [])
-    if market_bias not in ("BUY","SELL"):
-        return [],len(rows)
-    aligned=[signal for signal in rows if signal.get("side")==market_bias]
-    return aligned,len(rows)-len(aligned)
+    """Compatibility shim: entries are independent of market-wide breadth."""
+    return list(signals or []),0
 
 
 def trade_passes_frame_risk(trade):
@@ -1263,8 +1259,8 @@ def _run_market_scan_unlocked(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             all_frames_current=all(
-                db.session.get(Setting,f"scan-frame:adaptive-trend:{market}:{frame}") is not None
-                and db.session.get(Setting,f"scan-frame:adaptive-trend:{market}:{frame}").value==str(timeframe_bucket(frame,now))
+                db.session.get(Setting,f"scan-frame:price-action-quant:{market}:{frame}") is not None
+                and db.session.get(Setting,f"scan-frame:price-action-quant:{market}:{frame}").value==str(timeframe_bucket(frame,now))
                 for frame in market_scan_timeframes(market)
             )
             # Throttle repeated failed/partial provider scans too. A healthy
@@ -1276,10 +1272,7 @@ def _run_market_scan_unlocked(market,force=False):
                     meta=json.loads(meta_row.value) if meta_row else {}
                 except (ValueError,TypeError):
                     meta={}
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("STP ICT/SMC TREND MTF:%")).all()
-                bias=meta.get("market_bias")
-                if bias in ("BUY","SELL"):
-                    active=[trade for trade in active if trade.side==bias]
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("STP PRICE ACTION QUANT V2:%")).all()
                 active=[trade for trade in active if trade_passes_frame_risk(trade)]
                 active.sort(key=lambda trade:trade.score,reverse=True)
                 active=active[:18]
@@ -1292,7 +1285,7 @@ def _run_market_scan_unlocked(market,force=False):
     for frame in scan_frames:
         bucket=timeframe_bucket(frame,now)
         frame_buckets[frame]=bucket
-        frame_row=db.session.get(Setting,f"scan-frame:adaptive-trend:{market}:{frame}")
+        frame_row=db.session.get(Setting,f"scan-frame:price-action-quant:{market}:{frame}")
         if frame_row is None or frame_row.value!=str(bucket):
             frames_to_scan.append(frame)
     if not frames_to_scan:
@@ -1456,7 +1449,7 @@ def _run_market_scan_unlocked(market,force=False):
         active=Trade.query.filter(
             Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
             Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-            Trade.reason.like("STP ICT/SMC TREND MTF:%")
+            Trade.reason.like("STP PRICE ACTION QUANT V2:%")
         ).order_by(Trade.score.desc()).limit(18).all()
         return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],
                 "updated_at":iso(now),"cached":False,"data_status":"unavailable",
@@ -1492,15 +1485,11 @@ def _run_market_scan_unlocked(market,force=False):
         frame_diagnostics[frame]["fresh_matches"]=len(frame_found)
         frame_diagnostics[frame]["rejected_stale_candle"]=frame_freshness["rejected_stale_candle"]
         frame_diagnostics[frame]["rejected_late_price"]=frame_freshness["rejected_late_price"]
-        frame_diagnostics[frame]["direction_rejected"]=(
-            sum(1 for signal in frame_found if signal.get("side")==market_bias)
-            if market_bias in ("BUY","SELL") else 0
-        )
+        frame_diagnostics[frame]["direction_rejected"]=0
     freshness={key:sum(value[key] for value in freshness_by_frame.values())
                for key in ("rejected_stale_candle","rejected_late_price")}
     fresh_matches=len(found)
-    # Trend-following engine: publish only same-direction confirmed signals.
-    # Neutral breadth publishes no directional trade.
+    # Direction is determined by each setup and Saudi session mode, not market breadth.
     found,direction_rejected=align_signals_with_market_bias(found,market_bias)
     app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,len(found),
@@ -1509,7 +1498,7 @@ def _run_market_scan_unlocked(market,force=False):
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("STP ICT/SMC TREND MTF:%"),
+        Trade.reason.like("STP PRICE ACTION QUANT V2:%"),
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
@@ -1543,7 +1532,7 @@ def _run_market_scan_unlocked(market,force=False):
             new_signals.append(signal)
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("STP ICT/SMC TREND MTF:%")).update({"status":"superseded"},synchronize_session=False)
+        Trade.reason.not_like("STP PRICE ACTION QUANT V2:%")).update({"status":"superseded"},synchronize_session=False)
     # Do not erase a live setup just because the latest completed scan found
     # no replacement. Replace only frames that produced at least one fresh,
     # direction-aligned candidate; otherwise keep the prior trade until expiry.
@@ -1551,7 +1540,7 @@ def _run_market_scan_unlocked(market,force=False):
                         if any(signal.get("timeframe")==frame for signal in found)}
     if replacement_frames:
         active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-            Trade.timeframe.in_(replacement_frames),Trade.reason.like("STP ICT/SMC TREND MTF:%"))
+            Trade.timeframe.in_(replacement_frames),Trade.reason.like("STP PRICE ACTION QUANT V2:%"))
         if retained_ids:
             active_query=active_query.filter(~Trade.id.in_(retained_ids))
         active_query.update({"status":"superseded"},synchronize_session=False)
@@ -1583,7 +1572,7 @@ def _run_market_scan_unlocked(market,force=False):
     else:
         cursor_row.value=str(next_cursor)
     for frame in frames_to_scan:
-        frame_key=f"scan-frame:adaptive-trend:{market}:{frame}"
+        frame_key=f"scan-frame:price-action-quant:{market}:{frame}"
         frame_row=db.session.get(Setting,frame_key)
         bucket_value=str(frame_buckets[frame])
         if frame_row is None:
@@ -1661,9 +1650,8 @@ def _run_market_scan_unlocked(market,force=False):
     db.session.commit()
     active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-        Trade.reason.like("STP ICT/SMC TREND MTF:%")).all()
-    active=[trade for trade in active if trade_passes_frame_risk(trade)
-            and market_bias in ("BUY","SELL") and trade.side==market_bias]
+        Trade.reason.like("STP PRICE ACTION QUANT V2:%")).all()
+    active=[trade for trade in active if trade_passes_frame_risk(trade)]
     active.sort(key=lambda trade:trade.score,reverse=True)
     active=active[:18]
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
@@ -2055,6 +2043,12 @@ with app.app_context():
         if column_name not in article_columns:
             with db.engine.begin() as connection:
                 connection.execute(text(f"ALTER TABLE {Article.__tablename__} ADD COLUMN {column_name} {column_type}"))
+    # Retire open records from every previous strategy immediately on upgrade.
+    Trade.query.filter(
+        Trade.status.in_(OPEN_TRADE_STATUSES),
+        Trade.reason.not_like("STP PRICE ACTION QUANT V2:%")
+    ).update({"status":"superseded"}, synchronize_session=False)
+    db.session.commit()
     provision_admin_from_env()
 
 
