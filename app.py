@@ -919,7 +919,7 @@ def build_signal(market,item,timeframe,market_bias=None):
     setup["strategy"]="STP_ICT_TREND_"+market.upper()+"_"+timeframe
     setup["strategy_names"]=list(setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
-    setup["strategy_total"]=5
+    setup["strategy_total"]=len(setup["strategy_names"])
     setup["reason"]="STP ICT/SMC DAY-NIGHT MTF: "+timeframe+"; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
@@ -1538,7 +1538,7 @@ def _run_market_scan_unlocked(market,force=False):
         Trade.reason.not_like("STP ICT/SMC DAY-NIGHT MTF:%")).update({"status":"superseded"},synchronize_session=False)
     # Do not erase a live setup just because the latest completed scan found
     # no replacement. Replace only frames that produced at least one fresh,
-    # direction-aligned candidate; otherwise keep the prior trade until expiry.
+    # fresh candidate; otherwise keep the prior trade until expiry.
     replacement_frames={frame for frame in frames_to_scan
                         if any(signal.get("timeframe")==frame for signal in found)}
     if replacement_frames:
@@ -1654,8 +1654,7 @@ def _run_market_scan_unlocked(market,force=False):
     active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
         Trade.reason.like("STP ICT/SMC DAY-NIGHT MTF:%")).all()
-    active=[trade for trade in active if trade_passes_frame_risk(trade)
-            ]
+    active=[trade for trade in active if trade_passes_frame_risk(trade)]
     active.sort(key=lambda trade:trade.score,reverse=True)
     active=active[:18]
     return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],"updated_at":iso(now),
