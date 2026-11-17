@@ -1249,7 +1249,7 @@ def _run_market_scan_unlocked(market,force=False):
     # Retire all still-open signals produced by the replaced single-timeframe engine.
     Trade.query.filter(
         Trade.market==market, Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.expires_at>now, Trade.reason.like("SMART FLOW QUANT:%") | Trade.reason.like("STP ICT/SMC TREND MTF:%") | Trade.reason.like("STP ICT/SMC DAY-NIGHT MTF:%")
+        Trade.expires_at>now, Trade.reason.like("SMART FLOW QUANT:%") | Trade.reason.like("STP ICT/SMC TREND MTF:%")
     ).update({"status":"superseded"}, synchronize_session=False)
     db.session.commit()
     expire_stale_trades(market)
