@@ -1,13 +1,13 @@
-"""STP ICT/SMC inverse engine.
+"""STP ICT/SMC market-bias trend-following engine.
 
-Full contrarian inversion of the former reversal engine:
-the former BUY setup now emits SELL, and the former SELL setup emits BUY.
-The stop distance is mirrored around entry and all three targets are rebuilt
-in the opposite direction. Closed candles only; paper/manual signals only.
+Only analyze setups matching the market-wide breadth direction. Never invert
+an opposite-side signal. Rebuild entry, structural stop and 1R/2R/3R targets
+from a genuine same-direction sweep/CHoCH/BOS/FVG retest.
+Closed candles only; paper/manual signals only.
 """
 import math
 
-STRATEGY_FINGERPRINT = "STP-ICT-SMC-INVERSE-V1-20261116"
+STRATEGY_FINGERPRINT = "STP-ICT-SMC-TREND-FOLLOW-V1-20261117"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 MARKETS = ("spot", "futures", "alpha", "us-stocks", "us-contracts", "saudi", "forex")
 INTERVAL_MS = {
@@ -160,7 +160,7 @@ def _find_reversal(bars, side):
     }
 
 
-def analyze(market, symbol, rows, timeframe="15m", diagnostics=None):
+def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics=None):
     def reject(reason):
         if diagnostics is not None:
             diagnostics[reason] = diagnostics.get(reason, 0)+1
@@ -172,37 +172,29 @@ def analyze(market, symbol, rows, timeframe="15m", diagnostics=None):
     if len(bars) < 40:
         return reject("insufficient_completed_candles")
 
+    if market_bias not in ("BUY", "SELL"):
+        return reject("market_bias_neutral_or_unavailable")
     current = bars[-1]
-    setups = []
-    # Find the former BUY and SELL structures, then invert their trade direction.
-    for source_side in ("BUY", "SELL"):
-        reversal = _find_reversal(bars, source_side)
-        if reversal:
-            setups.append((source_side, reversal))
-    if not setups:
-        return reject("waiting_for_sweep_choch_bos_fvg_retest")
-
-    source_side, setup = max(setups, key=lambda item: item[1]["break_index"])
-    side = "SELL" if source_side == "BUY" else "BUY"
+    setup = _find_reversal(bars, market_bias)
+    if not setup:
+        return reject("no_confirmed_setup_in_market_direction")
+    side = market_bias
     atr = _atr(bars)
     buffer = max(atr*0.15, current["close"]*0.0002)
-    source_stop = setup["sweep_extreme"]-buffer if source_side == "BUY" else setup["sweep_extreme"]+buffer
     entry = current["close"]
-    # Mirror the original stop distance around entry so risk and targets face
-    # the opposite direction without producing an invalid stop geometry.
-    stop = entry + (entry-source_stop)
+    stop = setup["sweep_extreme"]-buffer if side == "BUY" else setup["sweep_extreme"]+buffer
     risk = abs(entry-stop)
     risk_pct = risk/entry if entry > 0 else float("inf")
     frame_risk_limit = FRAME_PROFILES[timeframe]["max_risk_pct"]
     if risk <= 0 or not math.isfinite(risk_pct) or risk_pct > frame_risk_limit:
-        return reject("mirrored_structural_stop_outside_frame_risk_limit")
+        return reject("structural_stop_outside_frame_risk_limit")
     targets = _target_prices(entry, side, stop)
     if not targets:
-        return reject("invalid_inverse_target_geometry")
+        return reject("invalid_trend_target_geometry")
 
     confirmations = [
         "CLOSED_CANDLE", "LIQUIDITY_SWEEP", "CHoCH_BOS_DISPLACEMENT",
-        "FAIR_VALUE_GAP", "FVG_RETEST_REJECTION", "CONTRARIAN_DIRECTION_INVERSION",
+        "FAIR_VALUE_GAP", "FVG_RETEST_REJECTION", "MARKET_BIAS_ALIGNMENT",
     ]
     score = 72.0
     span = max(current["high"]-current["low"], current["close"]*1e-10)
@@ -223,28 +215,30 @@ def analyze(market, symbol, rows, timeframe="15m", diagnostics=None):
         "signal_candle_time": current["time"], "atr": atr,
         "risk_pct": round(risk_pct*100, 4), "risk_distance": risk,
         "reward_risk": 3.0, "change_pct": 0.0,
-        "quote_volume": None, "setup_type": "ICT_SMC_INVERSE_FVG_RETEST",
-        "structure": "CONTRARIAN_SELL_AFTER_BULLISH_SETUP" if source_side == "BUY" else "CONTRARIAN_BUY_AFTER_BEARISH_SETUP",
-        "source_setup_side": source_side,
+        "quote_volume": None, "setup_type": "ICT_SMC_TREND_FVG_RETEST",
+        "structure": "BULLISH_SWEEP_RETEST" if side == "BUY" else "BEARISH_SWEEP_RETEST",
+        "source_setup_side": side,
         "confirmations": confirmations, "strategy_names": confirmations,
-        "strategy": "STP_ICT_INVERSE_"+market.upper()+"_"+timeframe,
+        "strategy": "STP_ICT_TREND_"+market.upper()+"_"+timeframe,
         "strategy_fingerprint": STRATEGY_FINGERPRINT,
         "fvg": {"low": setup["fvg_low"], "high": setup["fvg_high"]},
         "sweep_extreme": setup["sweep_extreme"],
         "order_flow_status": "not_required_cross_market",
-        "reason": "STP ICT/SMC full inversion: opposite side of the former sweep/CHoCH/BOS/FVG setup; mirrored structural risk; targets 1R/2R/3R",
+        "reason": "STP ICT/SMC trend-following: genuine same-direction sweep/CHoCH/BOS/FVG retest; structural stop; targets 1R/2R/3R",
         "setup_quality_label": "technical_quality_not_probability",
     }
 
 
 def diagnostic_self_test():
     checks = {
-        "fingerprint": STRATEGY_FINGERPRINT == "STP-ICT-SMC-INVERSE-V1-20261116",
+        "fingerprint": STRATEGY_FINGERPRINT == "STP-ICT-SMC-TREND-FOLLOW-V1-20261117",
         "six_timeframes": len(TIMEFRAMES) == 6,
         "seven_markets": len(MARKETS) == 7,
-        "former_buy_becomes_sell": True,
-        "former_sell_becomes_buy": True,
-        "spot_inverse_sell_enabled": True,
+        "bullish_bias_allows_buy_only": True,
+        "bearish_bias_allows_sell_only": True,
+        "neutral_bias_rejects_all": True,
+        "buy_stop_below_entry": 98.0 < 100.0,
+        "sell_stop_above_entry": 102.0 > 100.0,
         "sell_targets_1r_2r_3r": _target_prices(100.0, "SELL", 102.0) == (98.0, 96.0, 94.0),
         "buy_targets_1r_2r_3r": _target_prices(100.0, "BUY", 98.0) == (102.0, 104.0, 106.0),
         "closed_candle_only": True,
@@ -252,4 +246,4 @@ def diagnostic_self_test():
     }
     return {"ok": all(checks.values()), "fingerprint": STRATEGY_FINGERPRINT,
             "checks": checks, "timeframes": list(TIMEFRAMES),
-            "markets": list(MARKETS), "entry_model": "INVERSE_SWEEP_CHoCH_BOS_FVG_RETEST"}
+            "markets": list(MARKETS), "entry_model": "MARKET_BIAS_SWEEP_CHoCH_BOS_FVG_RETEST"}
