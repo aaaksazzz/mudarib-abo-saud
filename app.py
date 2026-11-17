@@ -2043,6 +2043,12 @@ with app.app_context():
         if column_name not in article_columns:
             with db.engine.begin() as connection:
                 connection.execute(text(f"ALTER TABLE {Article.__tablename__} ADD COLUMN {column_name} {column_type}"))
+    # Retire open records from every previous strategy immediately on upgrade.
+    Trade.query.filter(
+        Trade.status.in_(OPEN_TRADE_STATUSES),
+        Trade.reason.not_like("STP PRICE ACTION QUANT V2:%")
+    ).update({"status":"superseded"}, synchronize_session=False)
+    db.session.commit()
     provision_admin_from_env()
 
 
