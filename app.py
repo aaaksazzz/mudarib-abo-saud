@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 import html
 import market_adapters
 import smart_money_strategy
-from flask import Flask, request, jsonify, send_from_directory, session, g
+from flask import Flask, request, jsonify, send_from_directory, session, g, redirect
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import func, text, inspect, or_, event
@@ -367,7 +367,7 @@ def site_access_unlock():
     target=request.form.get("next","/")
     if not target.startswith("/") or target.startswith("//") or target.startswith("/site-access/"):
         target="/"
-    return app.redirect(target,code=303)
+    return redirect(target,code=303)
 
 @app.get("/")
 def home(): return send_from_directory(APP_DIR, "index.html")
