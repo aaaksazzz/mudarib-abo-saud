@@ -433,7 +433,7 @@ def strategy_status():
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
         "strategy_ready":bool(diagnostic.get("ok")),
         "strategy_checks":diagnostic.get("checks",{}),
-        "retired_engines":["REGIME-ADAPTIVE V7","STP ADAPTIVE QUANT V8"],
+        "retired_engines":["ICT/SMC TREND FOLLOW V1","REGIME-ADAPTIVE V7","STP ADAPTIVE QUANT V8"],
         "manual_only":True
     })
 
@@ -470,7 +470,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":smart_money_strategy.STRATEGY_FINGERPRINT.startswith("STP-ICT-SMC-TREND-FOLLOW-")}
+            "price_action_engine":smart_money_strategy.STRATEGY_FINGERPRINT.startswith("STP-PRICE-ACTION-QUANT-V2-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
