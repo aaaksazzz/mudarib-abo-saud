@@ -919,7 +919,7 @@ def build_signal(market,item,timeframe,market_bias=None):
     setup["strategy"]="STP_ICT_TREND_"+market.upper()+"_"+timeframe
     setup["strategy_names"]=list(setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
-    setup["strategy_total"]=5
+    setup["strategy_total"]=len(setup["strategy_names"])
     setup["reason"]="STP PRICE ACTION QUANT V2: "+timeframe+"; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
