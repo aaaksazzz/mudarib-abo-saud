@@ -1,6 +1,6 @@
 """STP Price Action Quant V2: independent multi-market, multi-timeframe engine."""
 import math
-from datetime import datetime, timezone, timedelta
+
 
 STRATEGY_FINGERPRINT = "STP-PRICE-ACTION-QUANT-V2-20261117"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
@@ -17,19 +17,6 @@ FRAME_PROFILES = {
     "1w": {"min_bars": 40, "max_risk_pct": 0.120},
     "1M": {"min_bars": 40, "max_risk_pct": 0.200},
 }
-NIGHT_START_HOUR = 18
-NIGHT_END_HOUR = 6
-SAUDI_TZ = timezone(timedelta(hours=3), name="Asia/Riyadh")
-
-
-def is_night_session(now=None):
-    """Night session is 18:00 through 05:59 Saudi time; day starts at 06:00."""
-    local = now.astimezone(SAUDI_TZ) if now and now.tzinfo else (
-        now.replace(tzinfo=SAUDI_TZ) if now else datetime.now(SAUDI_TZ)
-    )
-    return local.hour >= NIGHT_START_HOUR or local.hour < NIGHT_END_HOUR
-
-
 def target_prices(entry, side, stop):
     return _target_prices(float(entry), str(side), float(stop))
 
@@ -158,7 +145,7 @@ def _find_setup(bars, source_side):
 
 
 def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics=None, now=None):
-    """Analyse both sides independently, then apply Saudi day/night execution mode."""
+    """Analyse BUY and SELL price-action setups identically at all hours."""
     def reject(reason):
         if diagnostics is not None:
             diagnostics[reason] = diagnostics.get(reason, 0)+1
@@ -182,13 +169,11 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
     if not setups:
         return reject("no_confirmed_price_action_setup")
 
-    night = is_night_session(now)
-    # Spot only accepts source-side setups that transform into BUY in the active session.
+    # Spot remains BUY-only by market rules; other markets retain natural setup direction.
     if market == "spot":
-        required_source_side = "SELL" if night else "BUY"
-        setups = [item for item in setups if item[0] == required_source_side]
+        setups = [item for item in setups if item[0] == "BUY"]
         if not setups:
-            return reject("spot_buy_only_after_session_transform")
+            return reject("spot_buy_only")
 
     # Prefer the setup with the clearer rejection candle and nearer structural invalidation.
     source_side, setup = max(
@@ -198,12 +183,10 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
             -abs(current["close"]-item[1]["sweep_extreme"]) / current["close"],
         ),
     )
-    side = ("SELL" if source_side == "BUY" else "BUY") if night else source_side
+    side = source_side
 
     entry = current["close"]
     buffer = max(atr*0.15, entry*0.0002)
-    # The final execution side determines the invalidation side. This keeps the
-    # stop geometrically valid even when the source setup is inverted overnight.
     stop = min(current["low"], setup["sweep_extreme"])-buffer if side == "BUY" else max(current["high"], setup["sweep_extreme"])+buffer
     risk = abs(entry-stop)
     risk_pct = risk/entry if entry > 0 else float("inf")
@@ -224,10 +207,6 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
     if current["volume"] > 0 and prior and current["volume"] >= (sum(prior)/len(prior))*1.15:
         score += 4
         confirmations.append("RELATIVE_VOLUME_CONFIRMATION")
-    if night:
-        confirmations.append("SAUDI_NIGHT_INVERSION")
-    else:
-        confirmations.append("SAUDI_DAY_NORMAL")
     return {
         "market": market, "symbol": str(symbol), "side": side,
         "entry": entry, "stop": stop, "tp1": targets[0], "tp2": targets[1], "tp3": targets[2],
@@ -237,14 +216,14 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
         "reward_risk": 3.0, "change_pct": 0.0, "quote_volume": None,
         "setup_type": "PRICE_ACTION_LIQUIDITY_STRUCTURE_FVG",
         "structure": ("BULLISH" if source_side == "BUY" else "BEARISH") + "_SWEEP_RETEST",
-        "source_setup_side": source_side, "session_mode": "NIGHT_INVERTED" if night else "DAY_NORMAL",
+        "source_setup_side": source_side, "session_mode": "NORMAL_ALL_HOURS",
         "confirmations": confirmations, "strategy_names": confirmations,
         "strategy": "STP_PRICE_ACTION_QUANT_V2_"+market.upper()+"_"+timeframe,
         "strategy_fingerprint": STRATEGY_FINGERPRINT,
         "fvg": {"low": setup["fvg_low"], "high": setup["fvg_high"]},
         "sweep_extreme": setup["sweep_extreme"],
         "order_flow_status": "optional_provider_data_not_required",
-        "reason": "STP PRICE ACTION QUANT V2: sweep + structure displacement + FVG retest; Saudi night inversion/day normal; structural stop; 1R/2R/3R",
+        "reason": "STP PRICE ACTION QUANT V2: sweep + structure displacement + FVG retest; same direction at all hours; structural stop; 1R/2R/3R",
         "setup_quality_label": "technical_quality_not_probability",
     }
 
@@ -254,10 +233,7 @@ def diagnostic_self_test():
         "fingerprint": STRATEGY_FINGERPRINT == "STP-PRICE-ACTION-QUANT-V2-20261117",
         "six_timeframes": len(TIMEFRAMES) == 6,
         "seven_markets": len(MARKETS) == 7,
-        "night_starts_at_18": is_night_session(datetime(2026, 11, 17, 18, 0, tzinfo=SAUDI_TZ)),
-        "night_includes_05": is_night_session(datetime(2026, 11, 17, 5, 59, tzinfo=SAUDI_TZ)),
-        "day_starts_at_06": not is_night_session(datetime(2026, 11, 17, 6, 0, tzinfo=SAUDI_TZ)),
-        "day_includes_17": not is_night_session(datetime(2026, 11, 17, 17, 59, tzinfo=SAUDI_TZ)),
+        "no_session_inversion": True,
         "buy_targets_1r_2r_3r": _target_prices(100.0, "BUY", 98.0) == (102.0, 104.0, 106.0),
         "sell_targets_1r_2r_3r": _target_prices(100.0, "SELL", 102.0) == (98.0, 96.0, 94.0),
         "spot_is_buy_only": True,
@@ -266,5 +242,5 @@ def diagnostic_self_test():
     }
     return {"ok": all(checks.values()), "fingerprint": STRATEGY_FINGERPRINT,
             "checks": checks, "timeframes": list(TIMEFRAMES), "markets": list(MARKETS),
-            "session": {"timezone": "Asia/Riyadh", "night": "18:00-05:59", "day": "06:00-17:59"},
+            "session": "NORMAL_ALL_HOURS",
             "entry_model": "LIQUIDITY_SWEEP_CHoCH_BOS_FVG_RETEST"}
