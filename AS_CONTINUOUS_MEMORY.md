@@ -1,26 +1,32 @@
 # AS Continuous Memory
 
-Fingerprint: `AS-CONTINUOUS-MEMORY-HOURLY-V1`
+Fingerprint: `AS-CONTINUOUS-MEMORY-DAILY-V2`
 
-The scheduled GitHub Actions worker runs once per hour (and can be manually dispatched). It keeps a SQLite memory database in the Actions cache and publishes a compact report at `data/as_learning/latest_report.json`.
+The AS application runs its research-memory cycle every 24 hours at **03:07 Saudi time** (00:07 UTC), using the same persistent application database as the paper-trade journal. The scheduler is part of the application process; it is not a separate GitHub Actions cache job.
 
-## What it remembers
-- Every uniquely identified, resolved paper-trade experience supplied to `data/as_learning/paper_experiences.jsonl`.
-- Strategy, market, timeframe and regime performance aggregates.
-- Sample count, wins/losses, net expectancy in R and profit factor.
+## What is recorded
 
-## Paper experience input
-One JSON object per line. Only resolved outcomes are accepted:
+- Only paper trades that reach a fully resolved `tp3_hit` or full `stopped` status.
+- Unique trade ID, strategy identifier, market, symbol, timeframe, side, resolution status and net result in R.
+- Results are aggregated by strategy, market, timeframe and regime and saved in the application `Setting` store under `as-learning:latest-report`.
 
-```json
-{"experience_id":"paper-000001","recorded_at":"2026-11-18T12:00:00Z","strategy_id":"trend_pullback_v1","market":"futures","symbol":"BTCUSDT","timeframe":"15m","regime":"trend","side":"BUY","net_r":1.8,"outcome":"win"}
-```
+## Result integrity
 
-The producer must record actual simulated outcomes after fees/slippage/funding where relevant. Do not insert hypothetical or unresolved trades.
+- A full TP3 result is calculated from the trade's actual TP3 distance divided by its entry-to-stop risk.
+- A full stop is recorded as `-1R`.
+- A path that reaches TP1/TP2 and later stops is **not scored yet**. The app does not currently record partial position sizing or actual partial exit fills, so assigning it a profitable R result would be invented.
+- Expired, superseded, still-open, or otherwise unresolved trades are never counted as wins or losses.
+- A unique database constraint on trade ID prevents duplicate learning records.
 
-## Important limits
-- The hourly worker is a scheduled research-memory cycle, not a continuously running market-data service.
-- It does not fetch exchange candles, news, social feeds, options chains or order books.
-- It does not train an ML model or automatically modify production strategy parameters.
-- SQLite persistence here uses GitHub Actions cache; cache is best-effort and not a substitute for a production persistent database. The deployed app should eventually use its own persistent database volume.
-- No live order execution. No strategy can be called profitable from small samples.
+## Persistence and schedule
+
+The memory lives in the application's configured database. Production must use a persistent `DATABASE_URL` database or a persistent `DATA_DIR` volume. If the service uses an ephemeral filesystem/database, the memory will not survive a replacement or redeploy; configure persistent storage before relying on long-term learning.
+
+The cycle runs at 00:07 UTC (03:07 Asia/Riyadh). Market scanning remains a separate 15-minute application job and is not replaced by the daily memory cycle.
+
+## Safety boundaries
+
+- Paper/manual records only; no live order execution.
+- The worker does not fetch new market data, news, social feeds, order books or options chains.
+- It summarizes historical outcomes; it does not train model weights or automatically change production strategy parameters.
+- Small samples are descriptive only and do not establish a profitable edge.
