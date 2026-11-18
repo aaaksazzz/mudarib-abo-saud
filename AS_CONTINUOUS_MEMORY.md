@@ -1,8 +1,8 @@
 # AS Continuous Memory
 
-Fingerprint: `AS-CONTINUOUS-MEMORY-HOURLY-V1`
+Fingerprint: `AS-CONTINUOUS-MEMORY-DAILY-V1`
 
-The scheduled GitHub Actions worker runs once per hour (and can be manually dispatched). It keeps a SQLite memory database in the Actions cache and publishes a compact report at `data/as_learning/latest_report.json`.
+The scheduled GitHub Actions worker runs once every 24 hours (at 03:07 Saudi time) (and can be manually dispatched). It keeps a SQLite memory database in the Actions cache and publishes a compact report at `data/as_learning/latest_report.json`.
 
 ## What it remembers
 - Every uniquely identified, resolved paper-trade experience supplied to `data/as_learning/paper_experiences.jsonl`.
@@ -19,7 +19,7 @@ One JSON object per line. Only resolved outcomes are accepted:
 The producer must record actual simulated outcomes after fees/slippage/funding where relevant. Do not insert hypothetical or unresolved trades.
 
 ## Important limits
-- The hourly worker is a scheduled research-memory cycle, not a continuously running market-data service.
+- The daily worker is a scheduled research-memory cycle, not a continuously running market-data service.
 - It does not fetch exchange candles, news, social feeds, options chains or order books.
 - It does not train an ML model or automatically modify production strategy parameters.
 - SQLite persistence here uses GitHub Actions cache; cache is best-effort and not a substitute for a production persistent database. The deployed app should eventually use its own persistent database volume.
