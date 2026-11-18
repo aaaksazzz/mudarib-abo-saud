@@ -37,7 +37,7 @@ def bullish_reversal_rows():
     return bars
 
 
-class PriceActionQuantV2Tests(unittest.TestCase):
+class PriceActionQuantV3Tests(unittest.TestCase):
     def test_final_forming_candle_is_excluded(self):
         self.assertEqual(len(strategy._bars(bullish_reversal_rows())), 47)
 
@@ -59,7 +59,7 @@ class PriceActionQuantV2Tests(unittest.TestCase):
 
     def test_spot_buy_only_without_session_dependent_logic(self):
         diagnostics = {}
-        signal = strategy.analyze("spot", "TEST", bullish_reversal_rows(), "4h", diagnostics=diagnostics)
+        signal = strategy.analyze("spot", "TEST", bullish_reversal_rows(), "4h", diagnostics=diagnostics, higher_timeframe_rows=trending_rows())
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "BUY")
     def test_all_markets_and_six_timeframes(self):
@@ -91,8 +91,8 @@ class PriceActionQuantV2Tests(unittest.TestCase):
         self.assertGreater(diagnostics.get("higher_timeframe_trend_unclear", 0), 0)
 
     def test_bias_argument_is_compatibility_only(self):
-        a = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="BUY")
-        b = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="SELL")
+        a = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="BUY", higher_timeframe_rows=trending_rows())
+        b = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="SELL", higher_timeframe_rows=trending_rows())
         self.assertEqual(a["side"], b["side"])
 
     def test_diagnostic_self_test(self):
