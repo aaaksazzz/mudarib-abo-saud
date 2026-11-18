@@ -61,7 +61,7 @@ jobs:
           assert strategy_status["strategy_ready"] is True
           assert strategy_status["manual_only"] is True
           status_summary = client.get("/api/strategy-status").get_json()
-          assert status_summary["strategy_fingerprint"].startswith("STP-PRICE-ACTION-QUANT-V3-"), status_summary
+          assert status_summary["strategy_fingerprint"].startswith("AS-SIGNAL-EXTRACTION-V4-"), status_summary
           assert status_summary["strategy_ready"] is True
           assert status_summary["legacy_removed"] is True, status_summary
           assert status_summary["manual_only"] is True
