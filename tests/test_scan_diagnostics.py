@@ -137,6 +137,26 @@ class ScanDiagnosticsTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_build_signal_preserves_active_engine_fingerprint_and_name(self):
+        rows=[[i, 100, 101, 99, 100, 10] for i in range(45)]
+        engine_signal={
+            "market":"futures","symbol":"BTCUSDT","side":"BUY",
+            "entry":100.0,"stop":99.0,"tp1":101.0,"tp2":102.0,"tp3":103.0,
+            "strategy":"STP_PRICE_ACTION_QUANT_V2_futures_15m",
+            "strategy_fingerprint":platform_app.smart_money_strategy.STRATEGY_FINGERPRINT,
+            "confirmations":["CLOSED_CANDLE","LIQUIDITY_SWEEP"],
+            "reason":"test setup",
+        }
+        with patch.object(platform_app, "klines", return_value=rows), patch.object(
+            platform_app.smart_money_strategy, "analyze", return_value=engine_signal.copy()
+        ):
+            result=platform_app.build_signal("futures", {"symbol":"BTCUSDT"}, "15m")
+        expected=platform_app.smart_money_strategy.STRATEGY_FINGERPRINT
+        self.assertEqual(result["strategy_fingerprint"], expected)
+        self.assertEqual(result["strategy"], expected+"_FUTURES_15m")
+        self.assertNotIn("STP_ICT_TREND_", result["strategy"])
+        self.assertEqual(result["strategy_names"], ["CLOSED_CANDLE","LIQUIDITY_SWEEP"])
+
 
 if __name__ == "__main__":
     unittest.main()
