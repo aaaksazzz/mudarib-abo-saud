@@ -656,7 +656,7 @@ def provider_status(m):
     if not item:
         return {"configured":False,"health":"unknown","source":None,"requires_api_key":False}
     return {**item,"configured":True,"health":"not_probed","health_note":"Adapter presence only; live connectivity is not tested by this endpoint",
-            "requires_api_key":False,"access":"public_no_key","analysis":"regime_adaptive_trend_range_mtf"}
+            "requires_api_key":False,"access":"public_no_key","analysis":"price_action_liquidity_sweep_structure_fvg"}
 def fetch_json(url,params=None):
     last_error=None
     for attempt in range(3):
@@ -892,7 +892,7 @@ def record_scan_failure(frame_stats,frame,item,code):
 
 
 def build_signal(market,item,timeframe,market_bias=None):
-    """Single active engine: ICT/SMC reversal across all supported markets."""
+    """Build one STP Price Action Quant V2 signal; direction is unchanged at all hours."""
     symbol=item["symbol"]
     rows=klines(market,symbol,timeframe,250)
     required_rows=41
@@ -916,7 +916,7 @@ def build_signal(market,item,timeframe,market_bias=None):
                 "_strategy_rejection_reasons":rejections or {"no_confirmed_trend_setup":1}}
     setup["signal_timeframe"]=timeframe
     setup["strategy_fingerprint"]=STRATEGY_FINGERPRINT
-    setup["strategy"]="STP_ICT_TREND_"+market.upper()+"_"+timeframe
+    setup["strategy"]="STP_PRICE_ACTION_QUANT_V2_"+market.upper()+"_"+timeframe
     setup["strategy_names"]=list(setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
     setup["strategy_total"]=len(setup["strategy_names"])
@@ -1489,7 +1489,7 @@ def _run_market_scan_unlocked(market,force=False):
     freshness={key:sum(value[key] for value in freshness_by_frame.values())
                for key in ("rejected_stale_candle","rejected_late_price")}
     fresh_matches=len(found)
-    # Direction is determined by each setup and Saudi session mode, not market breadth.
+    # Direction is determined only by each setup; there is no day/night transform or market-breadth filter.
     found,direction_rejected=align_signals_with_market_bias(found,market_bias)
     app.logger.info("signal validation: market=%s universe=%s scanned=%s completed=%s failed=%s strategy=%s fresh=%s accepted=%s stale=%s late=%s market_breadth=%s",
                     market,len(universe),len(candidates),completed,failed,strategy_matches,fresh_matches,len(found),
@@ -1517,7 +1517,7 @@ def _run_market_scan_unlocked(market,force=False):
         for signal in frame_signals[:3]:
             marker=str(signal["signal_candle_time"])
             key=(signal["symbol"],frame,marker)
-            setting_key=f"signal-candle:adaptive-trend:{market}:{signal['symbol']}:{frame}"
+            setting_key=f"signal-candle:price-action-quant:{market}:{signal['symbol']}:{frame}"
             candle_row=db.session.get(Setting,setting_key)
             previous=existing_by_key.get(key)
             if candle_row and candle_row.value==marker:
@@ -2132,7 +2132,7 @@ def market_scan_initial_delay_seconds(index):
     return SCAN_INITIAL_DELAY_SECONDS+max(0,int(index))*spacing
 
 
-# Run the active adaptive-trend strategy on the staggered 15-minute market schedule.
+# Run the active Price Action Quant V2 strategy on the staggered 15-minute market schedule.
 AUTO_SCAN_ENABLED=os.environ.get("ENABLE_AUTO_SCAN","true").strip().lower() in ("1","true","yes","on")
 scheduler=None
 if AUTO_SCAN_ENABLED:
