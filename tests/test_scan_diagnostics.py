@@ -168,6 +168,7 @@ class ScanDiagnosticsTests(unittest.TestCase):
         expected=platform_app.smart_money_strategy.STRATEGY_FINGERPRINT
         self.assertEqual(result["strategy_fingerprint"], expected)
         self.assertEqual(result["strategy"], expected+"_FUTURES_15m")
+        self.assertEqual(result["reason"], "STP PRICE ACTION QUANT V3: 15m; test setup")
         self.assertNotIn("STP_ICT_TREND_", result["strategy"])
         self.assertEqual(result["strategy_names"], ["CLOSED_CANDLE","LIQUIDITY_SWEEP"])
 
