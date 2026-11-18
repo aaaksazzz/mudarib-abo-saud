@@ -1,4 +1,4 @@
-"""STP Price Action Quant V2: independent multi-market, multi-timeframe engine."""
+"""STP Price Action Quant V3: mandatory multi-timeframe trend-aligned engine."""
 import math
 
 
