@@ -206,11 +206,20 @@ def security_headers(response):
         or request.path.startswith("/market/")
     )
     is_app_asset = request.path.endswith((".js", ".css"))
-    if request.path.startswith("/api/") or is_app_shell or is_app_asset:
+    is_versioned_app_asset = is_app_asset and bool(request.args.get("v"))
+    if request.path.startswith("/api/") or is_app_shell:
         response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, private, max-age=0"
         response.headers["Pragma"]="no-cache"
         response.headers["Expires"]="0"
         response.headers["Vary"]="Cookie"
+    elif is_versioned_app_asset:
+        # Static assets carry an explicit version query; cache them aggressively.
+        # Bump the query version whenever the corresponding asset content changes.
+        response.headers["Cache-Control"]="public, max-age=31536000, immutable"
+    elif is_app_asset:
+        response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, private, max-age=0"
+        response.headers["Pragma"]="no-cache"
+        response.headers["Expires"]="0"
     return response
 @app.before_request
 def security_and_identity():
