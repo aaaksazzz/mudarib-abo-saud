@@ -117,6 +117,21 @@ class Trade(db.Model):
     result_pct=db.Column(db.Float)
     change_15m_pct=db.Column(db.Float)
 
+class PaperExperience(db.Model):
+    __tablename__="as_paper_experiences"
+    id=db.Column(db.Integer,primary_key=True)
+    trade_id=db.Column(db.Integer,nullable=False,unique=True,index=True)
+    strategy_id=db.Column(db.String(80),nullable=False,index=True)
+    market=db.Column(db.String(30),nullable=False,index=True)
+    symbol=db.Column(db.String(40),nullable=False)
+    timeframe=db.Column(db.String(10),nullable=False,index=True)
+    regime=db.Column(db.String(40),nullable=False,default="unknown")
+    side=db.Column(db.String(8),nullable=False)
+    gross_r=db.Column(db.Float,nullable=False)
+    outcome=db.Column(db.String(12),nullable=False)
+    source_status=db.Column(db.String(30),nullable=False)
+    resolved_at=db.Column(db.DateTime,nullable=False,default=lambda: datetime.now(timezone.utc),index=True)
+
 def trade_json(trade):
     """Stable public journal shape for historical paper-trade records."""
     return {
@@ -429,7 +444,7 @@ def strategy_status():
     diagnostic=smart_money_strategy.diagnostic_self_test()
     return jsonify({
         "ok":bool(diagnostic.get("ok")),
-        "engine":"STP PRICE ACTION QUANT V3",
+        "engine":"AS PRACTICAL SIGNAL EXTRACTION V4",
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
         "strategy_ready":bool(diagnostic.get("ok")),
         "strategy_checks":diagnostic.get("checks",{}),
@@ -470,7 +485,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":smart_money_strategy.STRATEGY_FINGERPRINT.startswith("STP-PRICE-ACTION-QUANT-V3-")}
+            "price_action_engine":smart_money_strategy.STRATEGY_FINGERPRINT.startswith("AS-SIGNAL-EXTRACTION-V4-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -801,7 +816,7 @@ def strategy_status_summary():
     primary=smart_money_strategy.diagnostic_self_test()
     active_scheduler=globals().get("scheduler")
     return jsonify({
-        "ok":True,"engine":"STP PRICE ACTION QUANT V2",
+        "ok":True,"engine":"AS PRACTICAL SIGNAL EXTRACTION V4",
         "current_active":active_current,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
@@ -904,20 +919,16 @@ def build_signal(market,item,timeframe,market_bias=None):
         return {"_data_incomplete":True,"_candles_received":received,
                 "_diagnostic_code":reason}
     higher_timeframe=smart_money_strategy.TREND_TIMEFRAME_MAP[timeframe]
-    if higher_timeframe == timeframe:
-        higher_rows=rows
-    else:
+    higher_rows=rows if higher_timeframe == timeframe else None
+    if higher_rows is None:
         try:
-            higher_rows=klines(market,symbol,higher_timeframe,250)
+            candidate_rows=klines(market,symbol,higher_timeframe,250)
+            if isinstance(candidate_rows,list) and len(candidate_rows)>=10:
+                higher_rows=candidate_rows
         except Exception:
-            app.logger.exception("Higher-timeframe data unavailable: %s %s %s",market,symbol,higher_timeframe)
-            return {"_data_incomplete":True,"_diagnostic_code":"higher_timeframe_provider_error",
-                    "_required_timeframe":higher_timeframe}
-    if not isinstance(higher_rows,list) or len(higher_rows)<41:
-        received=len(higher_rows) if isinstance(higher_rows,list) else 0
-        return {"_data_incomplete":True,"_candles_received":received,
-                "_diagnostic_code":"insufficient_higher_timeframe_history",
-                "_required_timeframe":higher_timeframe}
+            # Higher-timeframe data is context, not a hard blocker for a valid local setup.
+            app.logger.warning("Higher-timeframe context unavailable; using local setup: %s %s %s",
+                               market,symbol,higher_timeframe)
     rejections={}
     try:
         setup=smart_money_strategy.analyze(
@@ -937,7 +948,7 @@ def build_signal(market,item,timeframe,market_bias=None):
     setup["strategy_names"]=list(setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
     setup["strategy_total"]=len(setup["strategy_names"])
-    setup["reason"]="STP PRICE ACTION QUANT V2: "+timeframe+"; "+setup.get("reason","")
+    setup["reason"]="STP PRICE ACTION QUANT V2: "+timeframe+"; "+setup.get("reason","")+" | engine="+smart_money_strategy.STRATEGY_FINGERPRINT
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -1188,8 +1199,93 @@ def update_trade_outcomes(market,tickers):
         trade.status=status
         if trade.status!=previous:
             changed+=1
+        # Only full TP3/full-stop outcomes have an exact R result in this paper engine.
+        # Partial-target paths are excluded until actual partial-fill sizing is recorded.
+        record_paper_experience(trade)
     db.session.commit()
     return changed
+
+def record_paper_experience(trade):
+    """Persist one resolved paper outcome without inventing partial-fill P/L."""
+    if trade.status not in ("tp3_hit","stopped") or not trade.id:
+        return False
+    if PaperExperience.query.filter_by(trade_id=trade.id).first() is not None:
+        return False
+    risk=abs(float(trade.entry)-float(trade.stop))
+    if not math.isfinite(risk) or risk<=0:
+        return False
+    if trade.status=="tp3_hit":
+        gross_r=abs(float(trade.tp3)-float(trade.entry))/risk
+        if not math.isfinite(gross_r) or gross_r<=0:
+            return False
+        outcome="win"
+    else:
+        gross_r=-1.0
+        outcome="loss"
+    reason_text=str(trade.reason or "")
+    if "| engine="+smart_money_strategy.STRATEGY_FINGERPRINT in reason_text:
+        strategy_id="as_practical_signal_extraction_v4"
+    elif reason_text.startswith("STP PRICE ACTION QUANT V2:"):
+        strategy_id="legacy_price_action_quant_v2"
+    else:
+        strategy_id="unknown"
+    db.session.add(PaperExperience(trade_id=trade.id,strategy_id=strategy_id,market=trade.market,
+        symbol=trade.symbol,timeframe=trade.timeframe,regime="unknown",side=trade.side,
+        gross_r=round(gross_r,6),outcome=outcome,source_status=trade.status,resolved_at=utcnow()))
+    return True
+
+def run_as_daily_learning():
+    """Build daily memory from resolved paper trades in the app's persistent database."""
+    with app.app_context():
+        rows=db.session.execute(text("""SELECT strategy_id,market,timeframe,regime,COUNT(*) AS sample_size,
+            SUM(CASE WHEN gross_r>0 THEN 1 ELSE 0 END) AS wins,
+            SUM(CASE WHEN gross_r<0 THEN 1 ELSE 0 END) AS losses,
+            AVG(gross_r) AS expectancy_r,
+            SUM(CASE WHEN gross_r>0 THEN gross_r ELSE 0 END) AS gross_profit,
+            ABS(SUM(CASE WHEN gross_r<0 THEN gross_r ELSE 0 END)) AS gross_loss
+            FROM as_paper_experiences GROUP BY strategy_id,market,timeframe,regime
+            ORDER BY sample_size DESC""")).mappings().all()
+        memory=[]
+        total=0
+        for row in rows:
+            total+=int(row["sample_size"] or 0)
+            gross_loss=float(row["gross_loss"] or 0)
+            gross_profit=float(row["gross_profit"] or 0)
+            memory.append({"strategy_id":row["strategy_id"],"market":row["market"],
+                "timeframe":row["timeframe"],"regime":row["regime"],
+                "sample_size":int(row["sample_size"] or 0),"wins":int(row["wins"] or 0),
+                "losses":int(row["losses"] or 0),"gross_expectancy_r":round(float(row["expectancy_r"] or 0),6),
+                "profit_factor":round(gross_profit/gross_loss,6) if gross_loss else (None if not gross_profit else 999.0)})
+        coverage_rows=db.session.execute(text("""SELECT market,timeframe,COUNT(*) AS sample_size
+            FROM as_paper_experiences GROUP BY market,timeframe""")).mappings().all()
+        coverage_lookup={(row["market"],row["timeframe"]):int(row["sample_size"] or 0) for row in coverage_rows}
+        market_timeframe_coverage=[
+            {"market":market,"timeframe":frame,
+             "resolved_experiences":coverage_lookup.get((market,frame),0)}
+            for market in smart_money_strategy.MARKETS
+            for frame in smart_money_strategy.TIMEFRAMES
+        ]
+        report={"fingerprint":"AS-CONTINUOUS-MEMORY-DAILY-V2","generated_at":iso(utcnow()),
+            "timezone":"Asia/Riyadh","schedule_local":"03:07","cycle_interval":"daily",
+            "source":"resolved_paper_trades_in_application_database","total_resolved_experiences":total,
+            "markets":list(smart_money_strategy.MARKETS),
+            "timeframes":list(smart_money_strategy.TIMEFRAMES),
+            "market_timeframe_pairs":len(market_timeframe_coverage),
+            "market_timeframe_coverage":market_timeframe_coverage,
+            "strategy_groups":len(memory),"memory":memory,"production_strategy_modified":False,
+            "live_order_execution":False,"limitations":[
+                "Only fully resolved TP3 and full-stop paper trades are scored.",
+                "Partial-target-then-stop paths are excluded until partial fills are recorded.",
+                "Expired or superseded trades are not treated as wins or losses.",
+                "No production strategy parameters are changed automatically."]}
+        key="as-learning:latest-report"
+        setting=db.session.get(Setting,key)
+        payload=json.dumps(report,ensure_ascii=False)
+        if setting is None: db.session.add(Setting(key=key,value=payload))
+        else: setting.value=payload
+        db.session.commit()
+        app.logger.info("AS daily learning completed: resolved=%s groups=%s",total,len(memory))
+        return report
 
 def select_scan_candidates(universe,offset=0,batch_size=80):
     """Rotate through the full eligible universe without changing signal rules."""
@@ -1227,7 +1323,24 @@ def timeframe_bucket(frame,now):
 
 def market_scan_timeframes(market):
     """Expose the same independently-calculated frames for every supported market."""
+    if market not in smart_money_strategy.MARKETS:
+        raise ValueError("Unknown market "+str(market))
     return smart_money_strategy.TIMEFRAMES
+
+
+def frame_coverage_status(market,frame,stats,candidate_count):
+    """Distinguish a real provider outage from a symbol that has not existed long enough."""
+    required_ratio=0.35 if market=="saudi" else 0.20 if frame=="1M" else 0.80
+    required=min(candidate_count,max(8 if market=="saudi" else 1,
+                                     math.ceil(candidate_count*required_ratio)))
+    actual=int((stats or {}).get("completed",0) or 0)
+    if actual>=required:
+        return "ready",required
+    failures=(stats or {}).get("failure_reasons") or {}
+    history_codes={"insufficient_history","insufficient_higher_timeframe_history","insufficient_candle_data"}
+    if failures and set(failures).issubset(history_codes):
+        return "history_limited",required
+    return "incomplete",required
 
 
 def align_signals_with_market_bias(signals, market_bias):
@@ -1382,12 +1495,12 @@ def _run_market_scan_unlocked(market,force=False):
     # Validate completeness separately for every timeframe. A healthy 15m
     # feed must never hide a broken daily/monthly candle provider.
     incomplete_frames={}
+    frame_coverage={}
     for frame in frames_to_scan:
-        required_ratio=0.35 if market=="saudi" else 0.20 if frame=="1M" else 0.80
-        required=min(len(candidates),max(8 if market=="saudi" else 1,
-                                       math.ceil(len(candidates)*required_ratio)))
+        coverage_status,required=frame_coverage_status(market,frame,frame_stats[frame],len(candidates))
+        frame_coverage[frame]=coverage_status
         actual=frame_stats[frame]["completed"]
-        if actual<required:
+        if coverage_status=="incomplete":
             incomplete_frames[frame]=(actual,required)
     # A provider outage on one timeframe must not discard successful frames
     # or turn the entire market endpoint into HTTP 502. Keep failed frames
@@ -1408,6 +1521,9 @@ def _run_market_scan_unlocked(market,force=False):
                "strategy_rejections":stats.get("strategy_rejections",{})}
         for frame,stats in frame_stats.items()
     }
+    for frame,coverage_status in frame_coverage.items():
+        if frame in frame_diagnostics:
+            frame_diagnostics[frame]["coverage_status"]=coverage_status
     # A scan cycle often has only one timeframe due. Rehydrate the other
     # five from their own persisted metadata so the UI never implies that
     # unscanned timeframes have zero diagnostics or zero activity.
@@ -1617,7 +1733,9 @@ def _run_market_scan_unlocked(market,force=False):
             "rejected_late_price":freshness_by_frame[frame]["rejected_late_price"],
             "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":[frame],
             "frame_diagnostics":frame_diagnostics[frame],
-            "data_status":"partial" if frame_stats[frame]["failed"] else "ready"
+            "data_status":("history_limited" if frame_coverage.get(frame)=="history_limited"
+                           else "partial" if frame_stats[frame]["failed"] else "ready"),
+            "coverage_status":frame_coverage.get(frame,"unknown")
         },ensure_ascii=False)
         if frame_meta_row is None:
             db.session.add(Setting(key=frame_meta_key,value=frame_meta))
@@ -2169,6 +2287,8 @@ if AUTO_SCAN_ENABLED:
             misfire_grace_time=SCAN_MISFIRE_GRACE_SECONDS,
             next_run_time=utcnow()+timedelta(seconds=market_scan_initial_delay_seconds(index))
         )
+    scheduler.add_job(run_as_daily_learning,"cron",hour=0,minute=7,id="as-daily-learning",
+        max_instances=1,coalesce=True,misfire_grace_time=3600)
     scheduler.start()
 
     # Gunicorn sends SIGTERM during deploy/restart. Stop accepting scheduled
