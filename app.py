@@ -892,7 +892,7 @@ def record_scan_failure(frame_stats,frame,item,code):
 
 
 def build_signal(market,item,timeframe,market_bias=None):
-    """Single active engine: ICT/SMC reversal across all supported markets."""
+    """Build a signal while preserving the active Price Action Quant V2 identity."""
     symbol=item["symbol"]
     rows=klines(market,symbol,timeframe,250)
     required_rows=41
@@ -915,8 +915,9 @@ def build_signal(market,item,timeframe,market_bias=None):
         return {"_strategy_rejected":True,
                 "_strategy_rejection_reasons":rejections or {"no_confirmed_trend_setup":1}}
     setup["signal_timeframe"]=timeframe
-    setup["strategy_fingerprint"]=STRATEGY_FINGERPRINT
-    setup["strategy"]="STP_ICT_TREND_"+market.upper()+"_"+timeframe
+    setup["strategy_fingerprint"]=smart_money_strategy.STRATEGY_FINGERPRINT
+    # Keep the exact strategy identity emitted by the engine; do not relabel V2 as retired ICT Trend.
+    setup["strategy"]=smart_money_strategy.STRATEGY_FINGERPRINT+"_"+market.upper()+"_"+timeframe
     setup["strategy_names"]=list(setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
     setup["strategy_total"]=len(setup["strategy_names"])
