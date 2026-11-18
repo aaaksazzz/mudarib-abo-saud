@@ -38,7 +38,7 @@ Production-oriented market intelligence terminal.
 - Expose port 8080.
 - Prefer a persistent PostgreSQL database through `DATABASE_URL`. SQLite is acceptable only when `DATA_DIR` points to a persistent mounted volume; the default local SQLite path is not production-durable.
 - Configure a persistent random `SECRET_KEY` and `COOKIE_SECURE=true`. The public sentiment dashboard scans on demand and does not require the legacy market scheduler.
-- The active Price Action Quant V3 scanner runs on a staggered 15-minute schedule across markets. It uses public candle data and paper/manual signals only.
+- The active Price Action Quant V3 scanner rotates through 20 eligible symbols per market every 15 minutes, staggered across markets to avoid simultaneous provider load. It uses public candle data and paper/manual signals only.
 - `/ready` requires a durable database configuration (PostgreSQL or an explicitly configured `DATA_DIR` volume) and a persistent `SECRET_KEY`; no background market scheduler is required.
 - Configure `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` (14+ characters) before first boot if first-admin provisioning is needed.
 - Never commit or share secrets. Rotate credentials after any security incident and update them at the provider and deployment environment.
