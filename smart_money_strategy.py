@@ -1,8 +1,9 @@
-"""STP Price Action Quant V2: independent multi-market, multi-timeframe engine."""
+"""STP Price Action Quant V3: mandatory multi-timeframe trend-aligned engine."""
 import math
 
 
-STRATEGY_FINGERPRINT = "STP-PRICE-ACTION-QUANT-V2-20261117-NO-SESSION"
+STRATEGY_FINGERPRINT = "STP-PRICE-ACTION-QUANT-V3-20261118-MTF-TREND"
+TREND_TIMEFRAME_MAP = {"15m": "1h", "1h": "4h", "4h": "1d", "1d": "1w", "1w": "1M", "1M": "1M"}
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 MARKETS = ("spot", "futures", "alpha", "us-stocks", "us-contracts", "saudi", "forex")
 INTERVAL_MS = {
@@ -50,6 +51,21 @@ def _pivots(bars, left=2, right=2):
         if all(lo < bars[j]["low"] for j in range(i-left, i)) and all(lo <= bars[j]["low"] for j in range(i+1, i+right+1)):
             lows.append((i, lo))
     return highs, lows
+
+
+def _classify_trend(rows):
+    """Classify confirmed higher-timeframe structure using consecutive swing highs/lows."""
+    bars = _bars(rows)
+    highs, lows = _pivots(bars)
+    if len(highs) < 2 or len(lows) < 2:
+        return "NEUTRAL"
+    previous_high, latest_high = highs[-2][1], highs[-1][1]
+    previous_low, latest_low = lows[-2][1], lows[-1][1]
+    if latest_high > previous_high and latest_low > previous_low:
+        return "BULLISH"
+    if latest_high < previous_high and latest_low < previous_low:
+        return "BEARISH"
+    return "NEUTRAL"
 
 
 def _atr(bars, period=14):
@@ -144,8 +160,8 @@ def _find_setup(bars, source_side):
             "fvg_low": gap_low, "fvg_high": gap_high}
 
 
-def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics=None, now=None):
-    """Analyse BUY and SELL price-action setups identically at all hours."""
+def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics=None, now=None, higher_timeframe_rows=None):
+    """Require lower-timeframe entries to align with confirmed higher-timeframe structure."""
     def reject(reason):
         if diagnostics is not None:
             diagnostics[reason] = diagnostics.get(reason, 0)+1
@@ -157,6 +173,12 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
     if len(bars) < FRAME_PROFILES[timeframe]["min_bars"]:
         return reject("insufficient_completed_candles")
     current = bars[-1]
+    trend_rows = higher_timeframe_rows if timeframe != "1M" else rows
+    if not isinstance(trend_rows, list) or len(trend_rows) < FRAME_PROFILES[timeframe]["min_bars"]:
+        return reject("missing_higher_timeframe_data")
+    trend = _classify_trend(trend_rows)
+    if trend == "NEUTRAL":
+        return reject("higher_timeframe_trend_unclear")
     atr = _atr(bars)
     if not math.isfinite(atr) or atr <= 0:
         return reject("invalid_atr")
@@ -168,6 +190,12 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
             setups.append((source_side, setup))
     if not setups:
         return reject("no_confirmed_price_action_setup")
+
+    # Enforce direction from confirmed higher-timeframe market structure.
+    required_side = "BUY" if trend == "BULLISH" else "SELL"
+    setups = [item for item in setups if item[0] == required_side]
+    if not setups:
+        return reject("setup_against_higher_timeframe_trend")
 
     # Spot remains BUY-only by market rules; other markets retain natural setup direction.
     if market == "spot":
@@ -196,7 +224,7 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
     if not targets:
         return reject("invalid_target_geometry")
 
-    confirmations = ["CLOSED_CANDLE", "LIQUIDITY_SWEEP", "CHoCH_BOS_DISPLACEMENT",
+    confirmations = ["CLOSED_CANDLE", "HIGHER_TIMEFRAME_TREND_ALIGNMENT", "LIQUIDITY_SWEEP", "CHoCH_BOS_DISPLACEMENT",
                      "FAIR_VALUE_GAP", "FVG_RETEST_REJECTION", "INDEPENDENT_MARKET_ANALYSIS"]
     score = 72.0
     span = max(current["high"]-current["low"], current["close"]*1e-10)
@@ -216,6 +244,7 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
         "reward_risk": 3.0, "change_pct": 0.0, "quote_volume": None,
         "setup_type": "PRICE_ACTION_LIQUIDITY_STRUCTURE_FVG",
         "structure": ("BULLISH" if source_side == "BUY" else "BEARISH") + "_SWEEP_RETEST",
+        "higher_timeframe": TREND_TIMEFRAME_MAP[timeframe], "higher_timeframe_trend": trend,
         "source_setup_side": source_side, "session_mode": "NORMAL_ALL_HOURS",
         "confirmations": confirmations, "strategy_names": confirmations,
         "strategy": "STP_PRICE_ACTION_QUANT_V2_"+market.upper()+"_"+timeframe,
@@ -230,7 +259,7 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
 
 def diagnostic_self_test():
     checks = {
-        "fingerprint": STRATEGY_FINGERPRINT == "STP-PRICE-ACTION-QUANT-V2-20261117-NO-SESSION",
+        "fingerprint": STRATEGY_FINGERPRINT == "STP-PRICE-ACTION-QUANT-V3-20261118-MTF-TREND",
         "six_timeframes": len(TIMEFRAMES) == 6,
         "seven_markets": len(MARKETS) == 7,
         "no_session_inversion": True,
@@ -238,6 +267,7 @@ def diagnostic_self_test():
         "sell_targets_1r_2r_3r": _target_prices(100.0, "SELL", 102.0) == (98.0, 96.0, 94.0),
         "spot_is_buy_only": True,
         "independent_of_market_bias": True,
+        "higher_timeframe_trend_required": True,
         "closed_candle_only": True,
     }
     return {"ok": all(checks.values()), "fingerprint": STRATEGY_FINGERPRINT,

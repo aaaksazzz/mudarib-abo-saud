@@ -429,7 +429,7 @@ def strategy_status():
     diagnostic=smart_money_strategy.diagnostic_self_test()
     return jsonify({
         "ok":bool(diagnostic.get("ok")),
-        "engine":"STP PRICE ACTION QUANT V2",
+        "engine":"STP PRICE ACTION QUANT V3",
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
         "strategy_ready":bool(diagnostic.get("ok")),
         "strategy_checks":diagnostic.get("checks",{}),
@@ -470,7 +470,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":smart_money_strategy.STRATEGY_FINGERPRINT.startswith("STP-PRICE-ACTION-QUANT-V2-")}
+            "price_action_engine":smart_money_strategy.STRATEGY_FINGERPRINT.startswith("STP-PRICE-ACTION-QUANT-V3-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -892,7 +892,7 @@ def record_scan_failure(frame_stats,frame,item,code):
 
 
 def build_signal(market,item,timeframe,market_bias=None):
-    """Single active engine: ICT/SMC reversal across all supported markets."""
+    """Build a signal while preserving the active Price Action Quant V2 identity."""
     symbol=item["symbol"]
     rows=klines(market,symbol,timeframe,250)
     required_rows=41
@@ -903,20 +903,37 @@ def build_signal(market,item,timeframe,market_bias=None):
                 else "insufficient_history")
         return {"_data_incomplete":True,"_candles_received":received,
                 "_diagnostic_code":reason}
+    higher_timeframe=smart_money_strategy.TREND_TIMEFRAME_MAP[timeframe]
+    if higher_timeframe == timeframe:
+        higher_rows=rows
+    else:
+        try:
+            higher_rows=klines(market,symbol,higher_timeframe,250)
+        except Exception:
+            app.logger.exception("Higher-timeframe data unavailable: %s %s %s",market,symbol,higher_timeframe)
+            return {"_data_incomplete":True,"_diagnostic_code":"higher_timeframe_provider_error",
+                    "_required_timeframe":higher_timeframe}
+    if not isinstance(higher_rows,list) or len(higher_rows)<41:
+        received=len(higher_rows) if isinstance(higher_rows,list) else 0
+        return {"_data_incomplete":True,"_candles_received":received,
+                "_diagnostic_code":"insufficient_higher_timeframe_history",
+                "_required_timeframe":higher_timeframe}
     rejections={}
     try:
         setup=smart_money_strategy.analyze(
-            market,symbol,rows,timeframe=timeframe,market_bias=market_bias,diagnostics=rejections
+            market,symbol,rows,timeframe=timeframe,market_bias=market_bias,diagnostics=rejections,
+            higher_timeframe_rows=higher_rows
         )
     except Exception:
-        app.logger.exception("Price Action Quant V2 analysis failed: %s %s %s",market,symbol,timeframe)
+        app.logger.exception("Price Action Quant V3 analysis failed: %s %s %s",market,symbol,timeframe)
         return {"_strategy_rejected":True,"_strategy_rejection_reasons":{"engine_error":1}}
     if not setup:
         return {"_strategy_rejected":True,
                 "_strategy_rejection_reasons":rejections or {"no_confirmed_trend_setup":1}}
     setup["signal_timeframe"]=timeframe
-    setup["strategy_fingerprint"]=STRATEGY_FINGERPRINT
-    setup["strategy"]="STP_ICT_TREND_"+market.upper()+"_"+timeframe
+    setup["strategy_fingerprint"]=smart_money_strategy.STRATEGY_FINGERPRINT
+    # Keep the exact strategy identity emitted by the engine; do not relabel V2 as retired ICT Trend.
+    setup["strategy"]=smart_money_strategy.STRATEGY_FINGERPRINT+"_"+market.upper()+"_"+timeframe
     setup["strategy_names"]=list(setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
     setup["strategy_total"]=len(setup["strategy_names"])
