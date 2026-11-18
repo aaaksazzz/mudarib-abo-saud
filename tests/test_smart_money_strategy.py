@@ -61,6 +61,29 @@ class ASPracticalSignalTests(unittest.TestCase):
         self.assertEqual(len(strategy.MARKETS), 7)
         self.assertEqual(strategy.TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
 
+    def test_detects_bull_trap_from_wick_and_close_back_inside(self):
+        bars = [{"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 10.0}
+                for _ in range(20)]
+        bars.append({"open": 100.0, "high": 103.0, "low": 99.5, "close": 100.2, "volume": 25.0})
+        result = strategy.detect_market_deception(bars)
+        self.assertIn("BULL_TRAP_OR_BUY_SIDE_SWEEP", [p["name"] for p in result["patterns"]])
+        self.assertEqual(result["severity"], "HIGH")
+
+    def test_detects_bear_trap_from_wick_and_close_back_inside(self):
+        bars = [{"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 10.0}
+                for _ in range(20)]
+        bars.append({"open": 100.0, "high": 100.5, "low": 97.0, "close": 99.8, "volume": 25.0})
+        result = strategy.detect_market_deception(bars)
+        self.assertIn("BEAR_TRAP_OR_SELL_SIDE_SWEEP", [p["name"] for p in result["patterns"]])
+
+    def test_does_not_claim_spoofing_from_candles(self):
+        result = strategy.detect_market_deception([
+            {"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 10.0}
+            for _ in range(20)
+        ])
+        self.assertIn("spoofing", result["unobservable_without_order_flow"])
+        self.assertIn("wash_trading", result["unobservable_without_order_flow"])
+
     def test_new_fingerprint_and_diagnostics(self):
         self.assertEqual(strategy.STRATEGY_FINGERPRINT, "AS-SIGNAL-EXTRACTION-V4-20261118-ADAPTIVE")
         self.assertTrue(strategy.diagnostic_self_test()["ok"])
