@@ -429,7 +429,7 @@ def strategy_status():
     diagnostic=smart_money_strategy.diagnostic_self_test()
     return jsonify({
         "ok":bool(diagnostic.get("ok")),
-        "engine":"STP PRICE ACTION QUANT V2",
+        "engine":"STP PRICE ACTION QUANT V3",
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
         "strategy_ready":bool(diagnostic.get("ok")),
         "strategy_checks":diagnostic.get("checks",{}),
@@ -470,7 +470,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":smart_money_strategy.STRATEGY_FINGERPRINT.startswith("STP-PRICE-ACTION-QUANT-V2-")}
+            "price_action_engine":smart_money_strategy.STRATEGY_FINGERPRINT.startswith("STP-PRICE-ACTION-QUANT-V3-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -925,7 +925,7 @@ def build_signal(market,item,timeframe,market_bias=None):
             higher_timeframe_rows=higher_rows
         )
     except Exception:
-        app.logger.exception("Price Action Quant V2 analysis failed: %s %s %s",market,symbol,timeframe)
+        app.logger.exception("Price Action Quant V3 analysis failed: %s %s %s",market,symbol,timeframe)
         return {"_strategy_rejected":True,"_strategy_rejection_reasons":{"engine_error":1}}
     if not setup:
         return {"_strategy_rejected":True,
