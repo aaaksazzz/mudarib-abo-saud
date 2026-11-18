@@ -53,3 +53,10 @@ GitHub Actions runs JavaScript syntax validation, dependency installation, Pytho
 - Lifetime access is represented explicitly by `subscription_plan=lifetime` with no expiry date.
 - Configure the administrator's email and a new unique password through Northflank secrets (`ADMIN_EMAIL`, `ADMIN_PASSWORD`); optionally set `ADMIN_USERNAME` for username login. Do not reuse a password posted in chat.
 - The admin panel can save the official HTTPS contact link; the verified-style contact icon appears only after a destination is configured.
+
+
+## AI stock analyst
+- The dedicated `/stock-analysis` page accepts US or Saudi stock symbols, optional chart screenshots (PNG/JPEG/WEBP up to 4 MB), or both.
+- Live public candles are retrieved from Yahoo Finance where available; source coverage and delays may vary.
+- Vision and language analysis require `OPENAI_API_KEY` in the deployment environment. Optional `OPENAI_VISION_MODEL` defaults to `gpt-4o-mini`.
+- The feature is rate-limited and never executes trades. AI output is probabilistic, not guaranteed investment advice.

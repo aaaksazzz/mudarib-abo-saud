@@ -1,4 +1,4 @@
-import os, re, secrets, hashlib, hmac, time, json, math, shutil
+import os, re, secrets, hashlib, hmac, time, json, math, shutil, base64
 from datetime import datetime, timedelta, timezone
 from functools import wraps, lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -40,7 +40,7 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("COOKIE_SECURE", "true").lower() == "true",
     PERMANENT_SESSION_LIFETIME=timedelta(days=7),
-    MAX_CONTENT_LENGTH=2 * 1024 * 1024,
+    MAX_CONTENT_LENGTH=5 * 1024 * 1024,
 )
 SQLITE_DATABASE=database_url.startswith("sqlite:")
 app.config["SQLALCHEMY_ENGINE_OPTIONS"]={
@@ -201,7 +201,7 @@ def security_headers(response):
     # Never let the browser/CDN keep an old app shell or market script after a deploy.
     is_app_shell = (
         request.path == "/"
-        or request.path in ("/intelligence", "/signal-lab", "/login", "/register",
+        or request.path in ("/intelligence", "/signal-lab", "/stock-analysis", "/login", "/register",
                             "/account", "/admin", "/plans", "/journal", "/blog", "/news")
         or request.path.startswith("/market/")
     )
@@ -269,7 +269,7 @@ def count_site_visitor():
     # Count real HTML page visitors only; never count API, assets, health checks or bots.
     path=request.path or "/"
     page_request=(
-        path in ("/","/intelligence","/signal-lab","/login","/register","/account","/admin","/plans","/journal","/blog","/news")
+        path in ("/","/intelligence","/signal-lab","/stock-analysis","/login","/register","/account","/admin","/plans","/journal","/blog","/news")
         or path.startswith("/market/")
         or path.startswith("/blog/")
     )
@@ -355,6 +355,124 @@ def market_page_route(market):
     # Market URLs must serve the dedicated terminal with the six working
     # timeframe controls, not the retired single-page shell.
     return send_from_directory(APP_DIR, "intelligence.html")
+
+@app.get("/stock-analysis")
+def stock_analysis_page():
+    return send_from_directory(APP_DIR, "stock-analysis.html")
+
+@app.get("/stock-analysis.js")
+def stock_analysis_script():
+    return send_from_directory(APP_DIR, "stock-analysis.js")
+
+@app.get("/stock-analysis.css")
+def stock_analysis_stylesheet():
+    return send_from_directory(APP_DIR, "stock-analysis.css")
+
+@app.post("/api/stock-analysis")
+@limiter.limit("8 per hour")
+def analyze_stock_with_ai():
+    api_key=os.environ.get("OPENAI_API_KEY","").strip()
+    if not api_key:
+        return json_error("ميزة الذكاء الاصطناعي تحتاج إضافة OPENAI_API_KEY في أسرار Northflank أولاً.",503)
+    symbol=str(request.form.get("symbol","")).strip().upper()
+    market=str(request.form.get("market","us")).strip().lower()
+    timeframe=str(request.form.get("timeframe","1d")).strip().lower()
+    if market not in ("us","saudi"):
+        return json_error("السوق غير مدعوم.")
+    if timeframe not in ("15m","1h","4h","1d","1w","1m"):
+        return json_error("الفريم غير مدعوم.")
+    if symbol and not re.fullmatch(r"[A-Z0-9.^=_-]{1,24}",symbol):
+        return json_error("رمز السهم غير صالح.")
+    uploaded=request.files.get("chart")
+    image_data=None
+    image_mime=None
+    if uploaded and uploaded.filename:
+        raw=uploaded.read(4*1024*1024+1)
+        if len(raw)>4*1024*1024:
+            return json_error("حجم الصورة أكبر من 4 ميجابايت.")
+        if raw.startswith(b"\xff\xd8\xff"):
+            image_mime="image/jpeg"
+        elif raw.startswith(b"\x89PNG"):
+            image_mime="image/png"
+        elif raw.startswith(b"RIFF") and raw[8:12]==b"WEBP":
+            image_mime="image/webp"
+        else:
+            return json_error("ارفع صورة PNG أو JPG أو WEBP فقط.")
+        image_data=base64.b64encode(raw).decode("ascii")
+    if not symbol and not image_data:
+        return json_error("اكتب رمز السهم أو ارفع صورة الشارت.")
+    market_data=None
+    resolved=symbol
+    if symbol:
+        if market=="saudi" and not symbol.endswith(".SR"):
+            resolved=symbol+".SR"
+        interval={"15m":"15m","1h":"60m","4h":"60m","1d":"1d","1w":"1wk","1m":"1mo"}[timeframe]
+        period="1mo" if interval in ("15m","60m") else "6mo"
+        try:
+            q=requests.get("https://query1.finance.yahoo.com/v8/finance/chart/"+requests.utils.quote(resolved,safe=".^=-"),
+                params={"range":period,"interval":interval},headers={"User-Agent":"Mozilla/5.0 STP/1.0"},timeout=(7,14))
+            q.raise_for_status()
+            payload=q.json().get("chart",{})
+            if payload.get("error") or not payload.get("result"):
+                raise ValueError("symbol unavailable")
+            item=payload["result"][0]
+            quote=(item.get("indicators",{}).get("quote") or [{}])[0]
+            closes=quote.get("close") or []
+            candles=[]
+            for i,c in enumerate(closes):
+                if c is None: continue
+                candles.append({"o":quote.get("open",[None]*len(closes))[i],"h":quote.get("high",[None]*len(closes))[i],
+                    "l":quote.get("low",[None]*len(closes))[i],"c":c,
+                    "v":quote.get("volume",[None]*len(closes))[i]})
+            meta=item.get("meta",{})
+            market_data={"symbol":resolved,"currency":meta.get("currency"),"exchange":meta.get("exchangeName"),
+                "last_price":meta.get("regularMarketPrice"),"previous_close":meta.get("chartPreviousClose"),"candles":candles[-45:]}
+            if timeframe=="4h" and len(candles)>=4:
+                grouped=[]
+                for start in range(0,len(candles)-3,4):
+                    batch=candles[start:start+4]
+                    grouped.append({"o":batch[0]["o"],"h":max((x["h"] for x in batch if x["h"] is not None),default=None),
+                        "l":min((x["l"] for x in batch if x["l"] is not None),default=None),"c":batch[-1]["c"],
+                        "v":sum((x["v"] or 0) for x in batch)})
+                candles=grouped
+                market_data["candles"]=candles[-45:]
+            if not candles and not image_data: raise ValueError("no candle history")
+        except Exception as exc:
+            app.logger.warning("stock analysis data unavailable for %s: %s",resolved,type(exc).__name__)
+            if not image_data:
+                return json_error("تعذر جلب بيانات السهم العامة. تأكد من الرمز أو ارفع صورة الشارت.",502)
+    system_prompt=("أنت محلل أسواق محترف في SMART TRADING PRO. أجب بالعربية الواضحة. حلل السهم على الفريم المطلوب "
+        "اعتماداً فقط على بيانات الشموع والصورة. اعرض ملخصاً، الاتجاه صاعد/هابط/عرضي/غير واضح، هيكل السعر، "
+        "الدعم والمقاومة، منطقة دخول محتملة إن كانت مبررة، مستوى إبطال الفكرة، أهدافاً مشروطة، والمخاطر والتأكيد المطلوب. "
+        "افصل المشاهدات عن الاستنتاجات. لا تخترع أسعاراً أو مستويات أو أخباراً غير موجودة. إذا الصورة غير واضحة أو محور السعر غير ظاهر فقل ذلك. "
+        "لا تضع نسبة نجاح أو ثقة رقمية ولا تصف أي نتيجة بأنها مضمونة. إذا لا توجد فرصة واضحة فقل لا توجد فرصة مؤكدة حالياً. "
+        "هذا تحليل تعليمي وليس أمراً بتنفيذ صفقة.")
+    text_input="السوق: "+("السعودي" if market=="saudi" else "الأمريكي")+"\nالفريم: "+timeframe+"\nالرمز: "+(resolved or "استخرجه من الصورة إن أمكن")+"\nبيانات عامة قد تكون متأخرة:\n"+json.dumps(market_data,ensure_ascii=False) if market_data else "لا توجد بيانات سعرية خارج الصورة؛ لا تستنتج بيانات غير ظاهرة."
+    content=[{"type":"text","text":text_input}]
+    if image_data:
+        content.append({"type":"image_url","image_url":{"url":"data:"+image_mime+";base64,"+image_data,"detail":"high"}})
+    try:
+        ai=requests.post("https://api.openai.com/v1/chat/completions",
+            headers={"Authorization":"Bearer "+api_key,"Content-Type":"application/json"},
+            json={"model":os.environ.get("OPENAI_VISION_MODEL","gpt-4o-mini"),"temperature":0.2,"max_tokens":1200,
+                "messages":[{"role":"system","content":system_prompt},{"role":"user","content":content}]},timeout=(12,60))
+        if ai.status_code==401: return json_error("مفتاح الذكاء الاصطناعي غير صحيح. راجع OPENAI_API_KEY.",503)
+        if ai.status_code==429: return json_error("رصيد أو حد استخدام مزود الذكاء الاصطناعي غير كافٍ حالياً.",503)
+        ai.raise_for_status()
+        answer=ai.json()["choices"][0]["message"]["content"]
+        if isinstance(answer,list): answer="\n".join(str(x.get("text","")) for x in answer if isinstance(x,dict))
+        if not isinstance(answer,str) or not answer.strip(): raise ValueError("empty AI response")
+    except requests.Timeout:
+        return json_error("تأخر رد الذكاء الاصطناعي. جرّب مرة ثانية.",504)
+    except requests.RequestException as exc:
+        app.logger.warning("AI stock provider error: %s",type(exc).__name__)
+        return json_error("تعذر الاتصال بمزود الذكاء الاصطناعي حالياً.",502)
+    except (KeyError,ValueError,TypeError):
+        return json_error("وصل رد غير مكتمل من مزود الذكاء الاصطناعي.",502)
+    return jsonify({"ok":True,"symbol":resolved or "مستخرج من الصورة","market":market,"timeframe":timeframe,
+        "analysis":answer.strip(),"data_source":"Yahoo Finance public chart" if market_data else "صورة المستخدم فقط",
+        "data_price_time":"قد تكون متأخرة حسب المصدر" if market_data else "غير متاح","analyzed_at":iso(utcnow())})
+
 
 @app.get("/signal-lab")
 def signal_lab_page():
