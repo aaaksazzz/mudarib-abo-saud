@@ -1215,17 +1215,17 @@ def record_paper_experience(trade):
     if not math.isfinite(risk) or risk<=0:
         return False
     if trade.status=="tp3_hit":
-        net_r=abs(float(trade.tp3)-float(trade.entry))/risk
-        if not math.isfinite(net_r) or net_r<=0:
+        gross_r=abs(float(trade.tp3)-float(trade.entry))/risk
+        if not math.isfinite(gross_r) or gross_r<=0:
             return False
         outcome="win"
     else:
-        net_r=-1.0
+        gross_r=-1.0
         outcome="loss"
     strategy_id="price_action_quant_v2" if str(trade.reason or "").startswith("STP PRICE ACTION QUANT V2:") else "unknown"
     db.session.add(PaperExperience(trade_id=trade.id,strategy_id=strategy_id,market=trade.market,
         symbol=trade.symbol,timeframe=trade.timeframe,regime="unknown",side=trade.side,
-        gross_r=round(net_r,6),outcome=outcome,source_status=trade.status,resolved_at=utcnow()))
+        gross_r=round(gross_r,6),outcome=outcome,source_status=trade.status,resolved_at=utcnow()))
     return True
 
 def run_as_daily_learning():
