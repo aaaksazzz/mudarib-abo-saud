@@ -91,6 +91,93 @@ def _local_trend(bars):
     return "NEUTRAL"
 
 
+
+def detect_market_deception(bars):
+    """Detect chart-visible trap patterns; never infer intent from price alone.
+
+    Returns evidence labels and heuristic severity, not a probability. Spoofing,
+    wash trading and coordinated manipulation require order-book/trade identity data
+    and are deliberately marked unobservable from OHLCV candles.
+    """
+    if not isinstance(bars, list) or len(bars) < 12:
+        return {"patterns": [], "severity": "UNKNOWN",
+                "unobservable_without_order_flow": ["spoofing", "wash_trading", "layering"]}
+
+    current = bars[-1]
+    window = bars[-21:-1]
+    if len(window) < 10:
+        return {"patterns": [], "severity": "UNKNOWN",
+                "unobservable_without_order_flow": ["spoofing", "wash_trading", "layering"]}
+
+    high_level = max(b["high"] for b in window)
+    low_level = min(b["low"] for b in window)
+    span = max(current["high"]-current["low"], current["close"]*1e-10)
+    upper_wick = current["high"]-max(current["open"], current["close"])
+    lower_wick = min(current["open"], current["close"])-current["low"]
+    body_ratio = abs(current["close"]-current["open"])/span
+    avg_volume = sum(b["volume"] for b in window)/len(window)
+    volume_ratio = current["volume"]/avg_volume if avg_volume > 0 else None
+    patterns = []
+
+    # A wick beyond a well-defined range followed by a close back inside is
+    # a chart-visible failed breakout / liquidity sweep, not proof of intent.
+    if current["high"] > high_level and current["close"] < high_level and upper_wick/span >= 0.30:
+        patterns.append({"name": "BULL_TRAP_OR_BUY_SIDE_SWEEP", "side": "BUYERS_TRAPPED",
+                         "evidence": ["high_above_20_bar_range", "close_back_below_range",
+                                      "upper_wick_rejection"], "volume_ratio": volume_ratio})
+    if current["low"] < low_level and current["close"] > low_level and lower_wick/span >= 0.30:
+        patterns.append({"name": "BEAR_TRAP_OR_SELL_SIDE_SWEEP", "side": "SELLERS_TRAPPED",
+                         "evidence": ["low_below_20_bar_range", "close_back_above_range",
+                                      "lower_wick_rejection"], "volume_ratio": volume_ratio})
+
+    # A close outside the range can still fail if the next completed candle
+    # returns inside. Compare the two most recent completed bars.
+    previous = bars[-2]
+    earlier = bars[-22:-2]
+    if len(earlier) >= 10:
+        prior_high = max(b["high"] for b in earlier)
+        prior_low = min(b["low"] for b in earlier)
+        if previous["close"] > prior_high and current["close"] < prior_high:
+            patterns.append({"name": "FAILED_UPSIDE_BREAKOUT", "side": "BUYERS_TRAPPED",
+                             "evidence": ["prior_close_above_range", "next_close_back_inside"],
+                             "volume_ratio": volume_ratio})
+        if previous["close"] < prior_low and current["close"] > prior_low:
+            patterns.append({"name": "FAILED_DOWNSIDE_BREAKOUT", "side": "SELLERS_TRAPPED",
+                             "evidence": ["prior_close_below_range", "next_close_back_inside"],
+                             "volume_ratio": volume_ratio})
+
+    if volume_ratio is not None and volume_ratio >= 1.8 and body_ratio <= 0.25:
+        wick_ratio = max(upper_wick, lower_wick)/span
+        if wick_ratio >= 0.55:
+            patterns.append({"name": "POSSIBLE_ABSORPTION_OR_EXHAUSTION", "side": "TWO_SIDED",
+                             "evidence": ["volume_at_least_1_8x_average", "small_real_body",
+                                          "long_rejection_wick"], "volume_ratio": round(volume_ratio, 2)})
+
+    # Detect an impulse followed by a sharp opposite close over a short sequence.
+    recent = bars[-6:]
+    if len(recent) == 6 and avg_volume > 0:
+        impulse_move = (recent[3]["close"]-recent[0]["close"])/recent[0]["close"]
+        reversal_move = (recent[5]["close"]-recent[3]["close"])/recent[3]["close"]
+        impulse_volume = sum(b["volume"] for b in recent[1:4])/3
+        if impulse_move >= 0.035 and reversal_move <= -0.025 and impulse_volume >= avg_volume*1.5:
+            patterns.append({"name": "POSSIBLE_PUMP_AND_DUMP_SHAPE", "side": "LATE_BUYERS_AT_RISK",
+                             "evidence": ["rapid_upward_impulse", "volume_expansion",
+                                          "sharp_opposite_reversal"], "volume_ratio": round(impulse_volume/avg_volume, 2)})
+        elif impulse_move <= -0.035 and reversal_move >= 0.025 and impulse_volume >= avg_volume*1.5:
+            patterns.append({"name": "POSSIBLE_DUMP_AND_RECOVERY_SHAPE", "side": "LATE_SELLERS_AT_RISK",
+                             "evidence": ["rapid_downward_impulse", "volume_expansion",
+                                          "sharp_opposite_reversal"], "volume_ratio": round(impulse_volume/avg_volume, 2)})
+
+    severity = "HIGH" if any(p["name"] in (
+        "BULL_TRAP_OR_BUY_SIDE_SWEEP", "BEAR_TRAP_OR_SELL_SIDE_SWEEP",
+        "FAILED_UPSIDE_BREAKOUT", "FAILED_DOWNSIDE_BREAKOUT",
+        "POSSIBLE_PUMP_AND_DUMP_SHAPE", "POSSIBLE_DUMP_AND_RECOVERY_SHAPE"
+    ) for p in patterns) else ("WATCH" if patterns else "NONE")
+    return {"patterns": patterns, "severity": severity,
+            "unobservable_without_order_flow": ["spoofing", "wash_trading", "layering",
+                                                "fake_order_wall", "coordinated_account_activity"]}
+
+
 def _atr(bars, period=14):
     sample = bars[-(period + 1):]
     ranges = []
@@ -287,6 +374,13 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
         score += 3
         confirmations.append("RELATIVE_VOLUME_CONFIRMATION")
 
+    deception = detect_market_deception(bars)
+    for pattern in deception["patterns"]:
+        confirmations.append("DECEPTION_WATCH_" + pattern["name"])
+    # Warning only: don't turn the new detector into another signal-killing gate.
+    if deception["severity"] == "HIGH":
+        score -= 4
+
     return {
         "market": market, "symbol": str(symbol), "side": side,
         "entry": entry, "stop": stop, "tp1": targets[0], "tp2": targets[1], "tp3": targets[2],
@@ -305,7 +399,7 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
         "sweep_extreme": setup.get("sweep_extreme"),
         "order_flow_status": "optional_provider_data_not_required",
         "reason": "AS V4: "+setup_type+"; closed-candle entry; structural stop; targets 1R/2R/3R",
-        "setup_quality_label": "technical_quality_not_probability",
+        "setup_quality_label": "technical_quality_not_probability",\n        "market_deception": deception,
     }
 
 
