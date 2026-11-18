@@ -43,6 +43,11 @@ Production-oriented market intelligence terminal.
 - Configure `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` (14+ characters) before first boot if first-admin provisioning is needed.
 - Never commit or share secrets. Rotate credentials after any security incident and update them at the provider and deployment environment.
 
+## Front-end performance
+- API responses and HTML shells remain non-cacheable so sessions and deployment changes stay current.
+- CSS and JavaScript URLs include an explicit version query and receive long-lived immutable browser caching. Bump the asset query version whenever that file changes; unversioned assets remain non-cacheable.
+- Market data refresh belongs to the server-side scan/cache pipeline; opening a market page should read committed snapshots rather than trigger a full provider scan.
+
 ## Validation
 GitHub Actions runs JavaScript syntax validation, dependency installation, Python compilation, backend regression tests, and route/static-asset smoke checks.
 
