@@ -903,10 +903,26 @@ def build_signal(market,item,timeframe,market_bias=None):
                 else "insufficient_history")
         return {"_data_incomplete":True,"_candles_received":received,
                 "_diagnostic_code":reason}
+    higher_timeframe=smart_money_strategy.TREND_TIMEFRAME_MAP[timeframe]
+    if higher_timeframe == timeframe:
+        higher_rows=rows
+    else:
+        try:
+            higher_rows=klines(market,symbol,higher_timeframe,250)
+        except Exception:
+            app.logger.exception("Higher-timeframe data unavailable: %s %s %s",market,symbol,higher_timeframe)
+            return {"_data_incomplete":True,"_diagnostic_code":"higher_timeframe_provider_error",
+                    "_required_timeframe":higher_timeframe}
+    if not isinstance(higher_rows,list) or len(higher_rows)<41:
+        received=len(higher_rows) if isinstance(higher_rows,list) else 0
+        return {"_data_incomplete":True,"_candles_received":received,
+                "_diagnostic_code":"insufficient_higher_timeframe_history",
+                "_required_timeframe":higher_timeframe}
     rejections={}
     try:
         setup=smart_money_strategy.analyze(
-            market,symbol,rows,timeframe=timeframe,market_bias=market_bias,diagnostics=rejections
+            market,symbol,rows,timeframe=timeframe,market_bias=market_bias,diagnostics=rejections,
+            higher_timeframe_rows=higher_rows
         )
     except Exception:
         app.logger.exception("Price Action Quant V2 analysis failed: %s %s %s",market,symbol,timeframe)
