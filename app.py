@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 import html
 import market_adapters
 import smart_money_strategy
-from flask import Flask, request, jsonify, send_from_directory, session, g
+from flask import Flask, request, jsonify, send_from_directory, session, g, redirect
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import func, text, inspect, or_, event
@@ -212,9 +212,24 @@ def security_headers(response):
         response.headers["Expires"]="0"
         response.headers["Vary"]="Cookie"
     return response
+def site_access_page(message=""):
+    next_path=request.full_path.split("?",1)[0] or "/"
+    if not next_path.startswith("/") or next_path.startswith("//") or next_path.startswith("/site-access/"):
+        next_path="/"
+    safe_next=html.escape(next_path,quote=True)
+    notice=("<p role=\\"alert\\">"+html.escape(message)+"</p>") if message else ""
+    if not os.environ.get("SITE_ACCESS_PASSWORD"):
+        notice="<p role=\\"alert\\">قفل الموقع يحتاج ضبط SITE_ACCESS_PASSWORD في إعدادات الاستضافة.</p>"
+    page="""<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>دخول محمي · SMART TRADING PRO</title></head><body><main><h1>SMART TRADING PRO</h1><h2>الموقع محمي</h2><p>أدخل رمز الدخول للمتابعة.</p>"""+notice+"""<form method="post" action="/site-access/unlock"><label for="site-password">الرقم السري</label><input id="site-password" name="password" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="current-password" required autofocus><input type="hidden" name="next" value="""+safe_next+"""><button type="submit">فتح الموقع</button></form></main></body></html>"""
+    return app.response_class(page,status=503 if not os.environ.get("SITE_ACCESS_PASSWORD") else 200,
+                              headers={"Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store"})
+
 @app.before_request
 def security_and_identity():
     g.user=db.session.get(User, session.get("uid")) if session.get("uid") else None
+    if (request.path not in ("/health","/ready","/site-access/unlock")
+            and not session.get("site_access_granted")):
+        return site_access_page()
     if request.method in ("POST","PUT","PATCH","DELETE") and request.path.startswith("/api/"):
         token=request.headers.get("X-CSRF-Token","")
         if not token or not hmac.compare_digest(token, session.get("csrf","")):
@@ -337,6 +352,22 @@ def visitor_stats():
         "today_unique":DailyVisitor.query.filter_by(visit_date=today).count(),
         "updated_at":iso(utcnow())
     })
+
+@app.post("/site-access/unlock")
+@limiter.limit("5 per minute")
+def site_access_unlock():
+    configured=os.environ.get("SITE_ACCESS_PASSWORD","")
+    supplied=request.form.get("password","")
+    if not configured:
+        return site_access_page()
+    if not supplied or not hmac.compare_digest(supplied,configured):
+        return site_access_page("الرقم السري غير صحيح؛ حاول مرة ثانية.")
+    session["site_access_granted"]=True
+    session.permanent=True
+    target=request.form.get("next","/")
+    if not target.startswith("/") or target.startswith("//") or target.startswith("/site-access/"):
+        target="/"
+    return redirect(target,code=303)
 
 @app.get("/")
 def home(): return send_from_directory(APP_DIR, "index.html")
