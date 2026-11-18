@@ -429,7 +429,7 @@ def strategy_status():
     diagnostic=smart_money_strategy.diagnostic_self_test()
     return jsonify({
         "ok":bool(diagnostic.get("ok")),
-        "engine":"STP PRICE ACTION QUANT V3",
+        "engine":"AS PRACTICAL SIGNAL EXTRACTION V4",
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
         "strategy_ready":bool(diagnostic.get("ok")),
         "strategy_checks":diagnostic.get("checks",{}),
