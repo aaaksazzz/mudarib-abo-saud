@@ -56,8 +56,8 @@ jobs:
           assert client.get("/api/bootstrap").status_code == 200
           assert client.get("/api/trades").status_code == 200
           strategy_status = client.get("/api/strategy/status").get_json()
-          assert strategy_status["strategy_fingerprint"].startswith("STP-PRICE-ACTION-QUANT-V3-"), strategy_status
-          assert strategy_status["engine"] == "STP PRICE ACTION QUANT V3"
+          assert strategy_status["strategy_fingerprint"].startswith("AS-SIGNAL-EXTRACTION-V4-"), strategy_status
+          assert strategy_status["engine"] == "AS PRACTICAL SIGNAL EXTRACTION V4"
           assert strategy_status["strategy_ready"] is True
           assert strategy_status["manual_only"] is True
           status_summary = client.get("/api/strategy-status").get_json()
