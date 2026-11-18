@@ -8,7 +8,8 @@ The AS application runs its research-memory cycle every 24 hours at **03:07 Saud
 
 - Only paper trades that reach a fully resolved `tp3_hit` or full `stopped` status.
 - Unique trade ID, strategy identifier, market, symbol, timeframe, side, resolution status and gross result in R.
-- Results are aggregated by strategy, market, timeframe and regime and saved in the application `Setting` store under `as-learning:latest-report`.
+- Results are aggregated by strategy, market and timeframe and saved in the application `Setting` store under `as-learning:latest-report`.
+- Regime is currently stored as `unknown` because the production trade record does not yet persist a verified regime label; the report does not pretend otherwise.
 
 ## Result integrity
 
