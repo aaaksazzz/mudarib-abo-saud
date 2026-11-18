@@ -665,7 +665,7 @@ def provider_status(m):
     if not item:
         return {"configured":False,"health":"unknown","source":None,"requires_api_key":False}
     return {**item,"configured":True,"health":"not_probed","health_note":"Adapter presence only; live connectivity is not tested by this endpoint",
-            "requires_api_key":False,"access":"public_no_key","analysis":"regime_adaptive_trend_range_mtf"}
+            "requires_api_key":False,"access":"public_no_key","analysis":"stp_price_action_quant_v3_mtf_structure"}
 def fetch_json(url,params=None):
     last_error=None
     for attempt in range(3):
@@ -1200,7 +1200,10 @@ def update_trade_outcomes(market,tickers):
     db.session.commit()
     return changed
 
-def select_scan_candidates(universe,offset=0,batch_size=80):
+SCAN_BATCH_SIZE=20
+
+
+def select_scan_candidates(universe,offset=0,batch_size=SCAN_BATCH_SIZE):
     """Rotate through the full eligible universe without changing signal rules."""
     # Prioritise fast-moving assets first (largest absolute 24h move), then liquidity.
     # Cursor rotation continues into slower assets on subsequent 15m scan cycles.
@@ -1336,7 +1339,7 @@ def _run_market_scan_unlocked(market,force=False):
         cursor=int(cursor_row.value) if cursor_row else 0
     except (TypeError,ValueError):
         cursor=0
-    candidates,next_cursor,scan_offset=select_scan_candidates(universe,cursor,80)
+    candidates,next_cursor,scan_offset=select_scan_candidates(universe,cursor,SCAN_BATCH_SIZE)
     for index,item in enumerate(candidates):
         item["include_microstructure"]=(market in ("spot","futures") and index<12)
     found=[]
@@ -2158,7 +2161,7 @@ def market_scan_initial_delay_seconds(index):
     return SCAN_INITIAL_DELAY_SECONDS+max(0,int(index))*spacing
 
 
-# Run the active adaptive-trend strategy on the staggered 15-minute market schedule.
+# Run the active Price Action Quant V3 strategy on the staggered 15-minute market schedule.
 AUTO_SCAN_ENABLED=os.environ.get("ENABLE_AUTO_SCAN","true").strip().lower() in ("1","true","yes","on")
 scheduler=None
 if AUTO_SCAN_ENABLED:
