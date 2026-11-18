@@ -127,7 +127,7 @@ class PaperExperience(db.Model):
     timeframe=db.Column(db.String(10),nullable=False,index=True)
     regime=db.Column(db.String(40),nullable=False,default="unknown")
     side=db.Column(db.String(8),nullable=False)
-    net_r=db.Column(db.Float,nullable=False)
+    gross_r=db.Column(db.Float,nullable=False)
     outcome=db.Column(db.String(12),nullable=False)
     source_status=db.Column(db.String(30),nullable=False)
     resolved_at=db.Column(db.DateTime,nullable=False,default=lambda: datetime.now(timezone.utc),index=True)
@@ -1225,18 +1225,18 @@ def record_paper_experience(trade):
     strategy_id="price_action_quant_v2" if str(trade.reason or "").startswith("STP PRICE ACTION QUANT V2:") else "unknown"
     db.session.add(PaperExperience(trade_id=trade.id,strategy_id=strategy_id,market=trade.market,
         symbol=trade.symbol,timeframe=trade.timeframe,regime="unknown",side=trade.side,
-        net_r=round(net_r,6),outcome=outcome,source_status=trade.status,resolved_at=utcnow()))
+        gross_r=round(net_r,6),outcome=outcome,source_status=trade.status,resolved_at=utcnow()))
     return True
 
 def run_as_daily_learning():
     """Build daily memory from resolved paper trades in the app's persistent database."""
     with app.app_context():
         rows=db.session.execute(text("""SELECT strategy_id,market,timeframe,regime,COUNT(*) AS sample_size,
-            SUM(CASE WHEN net_r>0 THEN 1 ELSE 0 END) AS wins,
-            SUM(CASE WHEN net_r<0 THEN 1 ELSE 0 END) AS losses,
-            AVG(net_r) AS expectancy_r,
-            SUM(CASE WHEN net_r>0 THEN net_r ELSE 0 END) AS gross_profit,
-            ABS(SUM(CASE WHEN net_r<0 THEN net_r ELSE 0 END)) AS gross_loss
+            SUM(CASE WHEN gross_r>0 THEN 1 ELSE 0 END) AS wins,
+            SUM(CASE WHEN gross_r<0 THEN 1 ELSE 0 END) AS losses,
+            AVG(gross_r) AS expectancy_r,
+            SUM(CASE WHEN gross_r>0 THEN gross_r ELSE 0 END) AS gross_profit,
+            ABS(SUM(CASE WHEN gross_r<0 THEN gross_r ELSE 0 END)) AS gross_loss
             FROM as_paper_experiences GROUP BY strategy_id,market,timeframe,regime
             ORDER BY sample_size DESC""")).mappings().all()
         memory=[]
@@ -1248,7 +1248,7 @@ def run_as_daily_learning():
             memory.append({"strategy_id":row["strategy_id"],"market":row["market"],
                 "timeframe":row["timeframe"],"regime":row["regime"],
                 "sample_size":int(row["sample_size"] or 0),"wins":int(row["wins"] or 0),
-                "losses":int(row["losses"] or 0),"net_expectancy_r":round(float(row["expectancy_r"] or 0),6),
+                "losses":int(row["losses"] or 0),"gross_expectancy_r":round(float(row["expectancy_r"] or 0),6),
                 "profit_factor":round(gross_profit/gross_loss,6) if gross_loss else (None if not gross_profit else 999.0)})
         report={"fingerprint":"AS-CONTINUOUS-MEMORY-DAILY-V2","generated_at":iso(utcnow()),
             "timezone":"Asia/Riyadh","schedule_local":"03:07","cycle_interval":"daily",
