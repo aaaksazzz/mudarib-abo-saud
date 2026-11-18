@@ -51,7 +51,7 @@ class ASContinuousMemoryTests(unittest.TestCase):
         self.assertTrue(record_paper_experience(trade))
         db.session.commit()
         row = PaperExperience.query.filter_by(trade_id=trade.id).one()
-        self.assertEqual(row.net_r, -1.0)
+        self.assertEqual(row.gross_r, -1.0)
         self.assertEqual(row.outcome, "loss")
 
     def test_partial_stop_and_expired_trade_are_not_scored(self):
