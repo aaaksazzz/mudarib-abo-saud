@@ -117,6 +117,21 @@ class Trade(db.Model):
     result_pct=db.Column(db.Float)
     change_15m_pct=db.Column(db.Float)
 
+class PaperExperience(db.Model):
+    __tablename__="as_paper_experiences"
+    id=db.Column(db.Integer,primary_key=True)
+    trade_id=db.Column(db.Integer,nullable=False,unique=True,index=True)
+    strategy_id=db.Column(db.String(80),nullable=False,index=True)
+    market=db.Column(db.String(30),nullable=False,index=True)
+    symbol=db.Column(db.String(40),nullable=False)
+    timeframe=db.Column(db.String(10),nullable=False,index=True)
+    regime=db.Column(db.String(40),nullable=False,default="unknown")
+    side=db.Column(db.String(8),nullable=False)
+    net_r=db.Column(db.Float,nullable=False)
+    outcome=db.Column(db.String(12),nullable=False)
+    source_status=db.Column(db.String(30),nullable=False)
+    resolved_at=db.Column(db.DateTime,nullable=False,default=lambda: datetime.now(timezone.utc),index=True)
+
 def trade_json(trade):
     """Stable public journal shape for historical paper-trade records."""
     return {
@@ -1184,8 +1199,74 @@ def update_trade_outcomes(market,tickers):
         trade.status=status
         if trade.status!=previous:
             changed+=1
+        # Only full TP3/full-stop outcomes have an exact R result in this paper engine.
+        # Partial-target paths are excluded until actual partial-fill sizing is recorded.
+        record_paper_experience(trade)
     db.session.commit()
     return changed
+
+def record_paper_experience(trade):
+    """Persist one resolved paper outcome without inventing partial-fill P/L."""
+    if trade.status not in ("tp3_hit","stopped") or not trade.id:
+        return False
+    if PaperExperience.query.filter_by(trade_id=trade.id).first() is not None:
+        return False
+    risk=abs(float(trade.entry)-float(trade.stop))
+    if not math.isfinite(risk) or risk<=0:
+        return False
+    if trade.status=="tp3_hit":
+        net_r=abs(float(trade.tp3)-float(trade.entry))/risk
+        if not math.isfinite(net_r) or net_r<=0:
+            return False
+        outcome="win"
+    else:
+        net_r=-1.0
+        outcome="loss"
+    strategy_id="price_action_quant_v2" if str(trade.reason or "").startswith("STP PRICE ACTION QUANT V2:") else "unknown"
+    db.session.add(PaperExperience(trade_id=trade.id,strategy_id=strategy_id,market=trade.market,
+        symbol=trade.symbol,timeframe=trade.timeframe,regime="unknown",side=trade.side,
+        net_r=round(net_r,6),outcome=outcome,source_status=trade.status,resolved_at=utcnow()))
+    return True
+
+def run_as_daily_learning():
+    """Build daily memory from resolved paper trades in the app's persistent database."""
+    with app.app_context():
+        rows=db.session.execute(text("""SELECT strategy_id,market,timeframe,regime,COUNT(*) AS sample_size,
+            SUM(CASE WHEN net_r>0 THEN 1 ELSE 0 END) AS wins,
+            SUM(CASE WHEN net_r<0 THEN 1 ELSE 0 END) AS losses,
+            AVG(net_r) AS expectancy_r,
+            SUM(CASE WHEN net_r>0 THEN net_r ELSE 0 END) AS gross_profit,
+            ABS(SUM(CASE WHEN net_r<0 THEN net_r ELSE 0 END)) AS gross_loss
+            FROM as_paper_experiences GROUP BY strategy_id,market,timeframe,regime
+            ORDER BY sample_size DESC""")).mappings().all()
+        memory=[]
+        total=0
+        for row in rows:
+            total+=int(row["sample_size"] or 0)
+            gross_loss=float(row["gross_loss"] or 0)
+            gross_profit=float(row["gross_profit"] or 0)
+            memory.append({"strategy_id":row["strategy_id"],"market":row["market"],
+                "timeframe":row["timeframe"],"regime":row["regime"],
+                "sample_size":int(row["sample_size"] or 0),"wins":int(row["wins"] or 0),
+                "losses":int(row["losses"] or 0),"net_expectancy_r":round(float(row["expectancy_r"] or 0),6),
+                "profit_factor":round(gross_profit/gross_loss,6) if gross_loss else (None if not gross_profit else 999.0)})
+        report={"fingerprint":"AS-CONTINUOUS-MEMORY-DAILY-V2","generated_at":iso(utcnow()),
+            "timezone":"Asia/Riyadh","schedule_local":"03:07","cycle_interval":"daily",
+            "source":"resolved_paper_trades_in_application_database","total_resolved_experiences":total,
+            "strategy_groups":len(memory),"memory":memory,"production_strategy_modified":False,
+            "live_order_execution":False,"limitations":[
+                "Only fully resolved TP3 and full-stop paper trades are scored.",
+                "Partial-target-then-stop paths are excluded until partial fills are recorded.",
+                "Expired or superseded trades are not treated as wins or losses.",
+                "No production strategy parameters are changed automatically."]}
+        key="as-learning:latest-report"
+        setting=db.session.get(Setting,key)
+        payload=json.dumps(report,ensure_ascii=False)
+        if setting is None: db.session.add(Setting(key=key,value=payload))
+        else: setting.value=payload
+        db.session.commit()
+        app.logger.info("AS daily learning completed: resolved=%s groups=%s",total,len(memory))
+        return report
 
 def select_scan_candidates(universe,offset=0,batch_size=80):
     """Rotate through the full eligible universe without changing signal rules."""
@@ -2165,6 +2246,8 @@ if AUTO_SCAN_ENABLED:
             misfire_grace_time=SCAN_MISFIRE_GRACE_SECONDS,
             next_run_time=utcnow()+timedelta(seconds=market_scan_initial_delay_seconds(index))
         )
+    scheduler.add_job(run_as_daily_learning,"cron",hour=0,minute=7,id="as-daily-learning",
+        max_instances=1,coalesce=True,misfire_grace_time=3600)
     scheduler.start()
 
     # Gunicorn sends SIGTERM during deploy/restart. Stop accepting scheduled
