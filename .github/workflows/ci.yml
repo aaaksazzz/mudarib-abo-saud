@@ -74,5 +74,9 @@ jobs:
             assert page.status_code == 200 and b'SMART TRADING PRO' in page.data, (path, page.status_code, page.data[:300])
             assert b'id="timeframeFilters"' in page.data and b'/intelligence.js?' in page.data and b'/intelligence.css?' in page.data, (path, "dedicated timeframe terminal missing")
           assert client.get("/compat.css").status_code == 200
+          cached_asset = client.get("/styles.css?v=20261118.asset-cache-v1")
+          assert "immutable" in cached_asset.headers.get("Cache-Control", ""), cached_asset.headers.get("Cache-Control")
+          uncached_asset = client.get("/styles.css")
+          assert "no-store" in uncached_asset.headers.get("Cache-Control", ""), uncached_asset.headers.get("Cache-Control")
           print("route and static asset smoke tests passed")
           PY

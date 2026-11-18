@@ -8,6 +8,20 @@ import app as platform_app
 
 
 class ScanDiagnosticsTests(unittest.TestCase):
+    def test_scan_batch_rotates_twenty_symbols_without_duplicates(self):
+        universe = [
+            {"symbol": f"ASSET{index:03d}", "change_pct": 100-index, "quote_volume": 1_000_000+index}
+            for index in range(55)
+        ]
+        first, cursor, _ = platform_app.select_scan_candidates(universe, 0)
+        second, cursor, _ = platform_app.select_scan_candidates(universe, cursor)
+        third, cursor, _ = platform_app.select_scan_candidates(universe, cursor)
+        self.assertEqual(platform_app.SCAN_BATCH_SIZE, 20)
+        self.assertEqual([len(first), len(second), len(third)], [20, 20, 20])
+        self.assertTrue({row["symbol"] for row in first}.isdisjoint(row["symbol"] for row in second))
+        self.assertTrue({row["symbol"] for row in second}.isdisjoint(row["symbol"] for row in third))
+        self.assertEqual(cursor, 5)
+
     def test_timeout_is_classified_without_exposing_provider_message(self):
         exc = platform_app.requests.exceptions.Timeout("secret query token")
         self.assertEqual(platform_app.scan_failure_code(exc), "provider_timeout")
@@ -142,7 +156,7 @@ class ScanDiagnosticsTests(unittest.TestCase):
         engine_signal={
             "market":"futures","symbol":"BTCUSDT","side":"BUY",
             "entry":100.0,"stop":99.0,"tp1":101.0,"tp2":102.0,"tp3":103.0,
-            "strategy":"STP_PRICE_ACTION_QUANT_V2_futures_15m",
+            "strategy":"STP_PRICE_ACTION_QUANT_V3_futures_15m",
             "strategy_fingerprint":platform_app.smart_money_strategy.STRATEGY_FINGERPRINT,
             "confirmations":["CLOSED_CANDLE","LIQUIDITY_SWEEP"],
             "reason":"test setup",
@@ -154,6 +168,7 @@ class ScanDiagnosticsTests(unittest.TestCase):
         expected=platform_app.smart_money_strategy.STRATEGY_FINGERPRINT
         self.assertEqual(result["strategy_fingerprint"], expected)
         self.assertEqual(result["strategy"], expected+"_FUTURES_15m")
+        self.assertEqual(result["reason"], "STP PRICE ACTION QUANT V3: 15m; test setup")
         self.assertNotIn("STP_ICT_TREND_", result["strategy"])
         self.assertEqual(result["strategy_names"], ["CLOSED_CANDLE","LIQUIDITY_SWEEP"])
 

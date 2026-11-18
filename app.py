@@ -206,11 +206,20 @@ def security_headers(response):
         or request.path.startswith("/market/")
     )
     is_app_asset = request.path.endswith((".js", ".css"))
-    if request.path.startswith("/api/") or is_app_shell or is_app_asset:
+    is_versioned_app_asset = is_app_asset and bool(request.args.get("v"))
+    if request.path.startswith("/api/") or is_app_shell:
         response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, private, max-age=0"
         response.headers["Pragma"]="no-cache"
         response.headers["Expires"]="0"
         response.headers["Vary"]="Cookie"
+    elif is_versioned_app_asset:
+        # Static assets carry an explicit version query; cache them aggressively.
+        # Bump the query version whenever the corresponding asset content changes.
+        response.headers["Cache-Control"]="public, max-age=31536000, immutable"
+    elif is_app_asset:
+        response.headers["Cache-Control"]="no-store, no-cache, must-revalidate, private, max-age=0"
+        response.headers["Pragma"]="no-cache"
+        response.headers["Expires"]="0"
     return response
 @app.before_request
 def security_and_identity():
@@ -656,7 +665,7 @@ def provider_status(m):
     if not item:
         return {"configured":False,"health":"unknown","source":None,"requires_api_key":False}
     return {**item,"configured":True,"health":"not_probed","health_note":"Adapter presence only; live connectivity is not tested by this endpoint",
-            "requires_api_key":False,"access":"public_no_key","analysis":"regime_adaptive_trend_range_mtf"}
+            "requires_api_key":False,"access":"public_no_key","analysis":"stp_price_action_quant_v3_mtf_structure"}
 def fetch_json(url,params=None):
     last_error=None
     for attempt in range(3):
@@ -792,16 +801,16 @@ STRATEGY_FINGERPRINT=smart_money_strategy.STRATEGY_FINGERPRINT
 def strategy_status_summary():
     active_current=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.like("STP PRICE ACTION QUANT V2:%")
+        or_(Trade.reason.like("STP PRICE ACTION QUANT V2:%"),Trade.reason.like("STP PRICE ACTION QUANT V3:%"))
     ).count()
     active_legacy=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.not_like("STP PRICE ACTION QUANT V2:%")
+        ~or_(Trade.reason.like("STP PRICE ACTION QUANT V2:%"),Trade.reason.like("STP PRICE ACTION QUANT V3:%"))
     ).count()
     primary=smart_money_strategy.diagnostic_self_test()
     active_scheduler=globals().get("scheduler")
     return jsonify({
-        "ok":True,"engine":"STP PRICE ACTION QUANT V2",
+        "ok":True,"engine":"STP PRICE ACTION QUANT V3",
         "current_active":active_current,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
@@ -892,7 +901,7 @@ def record_scan_failure(frame_stats,frame,item,code):
 
 
 def build_signal(market,item,timeframe,market_bias=None):
-    """Build a signal while preserving the active Price Action Quant V2 identity."""
+    """Build a signal while preserving the active Price Action Quant V3 identity."""
     symbol=item["symbol"]
     rows=klines(market,symbol,timeframe,250)
     required_rows=41
@@ -932,12 +941,16 @@ def build_signal(market,item,timeframe,market_bias=None):
                 "_strategy_rejection_reasons":rejections or {"no_confirmed_trend_setup":1}}
     setup["signal_timeframe"]=timeframe
     setup["strategy_fingerprint"]=smart_money_strategy.STRATEGY_FINGERPRINT
-    # Keep the exact strategy identity emitted by the engine; do not relabel V2 as retired ICT Trend.
+    # Keep the exact strategy identity emitted by the engine; do not relabel the active engine as a retired strategy.
     setup["strategy"]=smart_money_strategy.STRATEGY_FINGERPRINT+"_"+market.upper()+"_"+timeframe
     setup["strategy_names"]=list(setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
     setup["strategy_total"]=len(setup["strategy_names"])
-    setup["reason"]="STP PRICE ACTION QUANT V2: "+timeframe+"; "+setup.get("reason","")
+    engine_reason=str(setup.get("reason") or "")
+    engine_prefix="STP PRICE ACTION QUANT V3:"
+    if engine_reason.startswith(engine_prefix):
+        engine_reason=engine_reason[len(engine_prefix):].strip()
+    setup["reason"]=engine_prefix+" "+timeframe+"; "+engine_reason
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -1191,7 +1204,10 @@ def update_trade_outcomes(market,tickers):
     db.session.commit()
     return changed
 
-def select_scan_candidates(universe,offset=0,batch_size=80):
+SCAN_BATCH_SIZE=20
+
+
+def select_scan_candidates(universe,offset=0,batch_size=SCAN_BATCH_SIZE):
     """Rotate through the full eligible universe without changing signal rules."""
     # Prioritise fast-moving assets first (largest absolute 24h move), then liquidity.
     # Cursor rotation continues into slower assets on subsequent 15m scan cycles.
@@ -1289,7 +1305,7 @@ def _run_market_scan_unlocked(market,force=False):
                     meta=json.loads(meta_row.value) if meta_row else {}
                 except (ValueError,TypeError):
                     meta={}
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("STP PRICE ACTION QUANT V2:%")).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,or_(Trade.reason.like("STP PRICE ACTION QUANT V2:%"),Trade.reason.like("STP PRICE ACTION QUANT V3:%"))).all()
                 active=[trade for trade in active if trade_passes_frame_risk(trade)]
                 active.sort(key=lambda trade:trade.score,reverse=True)
                 active=active[:18]
@@ -1327,7 +1343,7 @@ def _run_market_scan_unlocked(market,force=False):
         cursor=int(cursor_row.value) if cursor_row else 0
     except (TypeError,ValueError):
         cursor=0
-    candidates,next_cursor,scan_offset=select_scan_candidates(universe,cursor,80)
+    candidates,next_cursor,scan_offset=select_scan_candidates(universe,cursor,SCAN_BATCH_SIZE)
     for index,item in enumerate(candidates):
         item["include_microstructure"]=(market in ("spot","futures") and index<12)
     found=[]
@@ -1466,7 +1482,7 @@ def _run_market_scan_unlocked(market,force=False):
         active=Trade.query.filter(
             Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
             Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-            Trade.reason.like("STP PRICE ACTION QUANT V2:%")
+            or_(Trade.reason.like("STP PRICE ACTION QUANT V2:%"),Trade.reason.like("STP PRICE ACTION QUANT V3:%"))
         ).order_by(Trade.score.desc()).limit(18).all()
         return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],
                 "updated_at":iso(now),"cached":False,"data_status":"unavailable",
@@ -1515,7 +1531,7 @@ def _run_market_scan_unlocked(market,force=False):
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("STP PRICE ACTION QUANT V2:%"),
+        or_(Trade.reason.like("STP PRICE ACTION QUANT V2:%"),Trade.reason.like("STP PRICE ACTION QUANT V3:%")),
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
@@ -1549,7 +1565,7 @@ def _run_market_scan_unlocked(market,force=False):
             new_signals.append(signal)
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("STP PRICE ACTION QUANT V2:%")).update({"status":"superseded"},synchronize_session=False)
+        ~or_(Trade.reason.like("STP PRICE ACTION QUANT V2:%"),Trade.reason.like("STP PRICE ACTION QUANT V3:%"))).update({"status":"superseded"},synchronize_session=False)
     # Do not erase a live setup just because the latest completed scan found
     # no replacement. Replace only frames that produced at least one fresh,
     # direction-aligned candidate; otherwise keep the prior trade until expiry.
@@ -1557,7 +1573,7 @@ def _run_market_scan_unlocked(market,force=False):
                         if any(signal.get("timeframe")==frame for signal in found)}
     if replacement_frames:
         active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-            Trade.timeframe.in_(replacement_frames),Trade.reason.like("STP PRICE ACTION QUANT V2:%"))
+            Trade.timeframe.in_(replacement_frames),or_(Trade.reason.like("STP PRICE ACTION QUANT V2:%"),Trade.reason.like("STP PRICE ACTION QUANT V3:%")))
         if retained_ids:
             active_query=active_query.filter(~Trade.id.in_(retained_ids))
         active_query.update({"status":"superseded"},synchronize_session=False)
@@ -1667,7 +1683,7 @@ def _run_market_scan_unlocked(market,force=False):
     db.session.commit()
     active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-        Trade.reason.like("STP PRICE ACTION QUANT V2:%")).all()
+        or_(Trade.reason.like("STP PRICE ACTION QUANT V2:%"),Trade.reason.like("STP PRICE ACTION QUANT V3:%"))).all()
     active=[trade for trade in active if trade_passes_frame_risk(trade)]
     active.sort(key=lambda trade:trade.score,reverse=True)
     active=active[:18]
@@ -2063,7 +2079,7 @@ with app.app_context():
     # Retire open records from every previous strategy immediately on upgrade.
     Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("STP PRICE ACTION QUANT V2:%")
+        ~or_(Trade.reason.like("STP PRICE ACTION QUANT V2:%"),Trade.reason.like("STP PRICE ACTION QUANT V3:%"))
     ).update({"status":"superseded"}, synchronize_session=False)
     db.session.commit()
     provision_admin_from_env()
@@ -2149,7 +2165,7 @@ def market_scan_initial_delay_seconds(index):
     return SCAN_INITIAL_DELAY_SECONDS+max(0,int(index))*spacing
 
 
-# Run the active adaptive-trend strategy on the staggered 15-minute market schedule.
+# Run the active Price Action Quant V3 strategy on the staggered 15-minute market schedule.
 AUTO_SCAN_ENABLED=os.environ.get("ENABLE_AUTO_SCAN","true").strip().lower() in ("1","true","yes","on")
 scheduler=None
 if AUTO_SCAN_ENABLED:
