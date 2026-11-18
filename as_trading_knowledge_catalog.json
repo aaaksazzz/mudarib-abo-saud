@@ -1,0 +1,240 @@
+{
+  "schema_version": "1.0",
+  "fingerprint": "AS-TRADING-KNOWLEDGE-CATALOG-V1",
+  "posture": "research_catalog_only_no_live_execution",
+  "domains": [
+    {
+      "id": "price_action",
+      "name": "Price action and classical technical analysis",
+      "methods": [
+        "candlestick_patterns",
+        "market_structure",
+        "support_resistance",
+        "trendlines_channels",
+        "breakout_retest",
+        "false_breakout",
+        "chart_patterns",
+        "pivot_points",
+        "dow_theory",
+        "wyckoff",
+        "volatility_contraction_expansion"
+      ]
+    },
+    {
+      "id": "trend_momentum",
+      "name": "Trend and momentum",
+      "methods": [
+        "sma_ema_systems",
+        "moving_average_crossovers",
+        "macd",
+        "adx_dmi",
+        "donchian_breakout",
+        "channel_breakout",
+        "time_series_momentum",
+        "cross_sectional_momentum",
+        "relative_strength",
+        "pullback_continuation",
+        "volatility_adjusted_trend",
+        "turtle_rules"
+      ]
+    },
+    {
+      "id": "mean_reversion",
+      "name": "Mean reversion and range",
+      "methods": [
+        "rsi_reversion",
+        "stochastic_reversion",
+        "bollinger_reversion",
+        "keltner_reversion",
+        "zscore_reversion",
+        "vwap_reversion",
+        "anchored_vwap_reversion",
+        "pairs_trading",
+        "spread_cointegration",
+        "range_rotation",
+        "failed_auction_reentry"
+      ]
+    },
+    {
+      "id": "liquidity_market_structure",
+      "name": "Liquidity, auction theory and market structure",
+      "methods": [
+        "liquidity_sweep",
+        "stop_run",
+        "failed_auction",
+        "order_block",
+        "fair_value_gap",
+        "bos",
+        "choch",
+        "premium_discount",
+        "opening_range",
+        "session_high_low",
+        "volume_profile",
+        "market_profile",
+        "auction_market_theory",
+        "wyckoff_accumulation_distribution"
+      ]
+    },
+    {
+      "id": "volume_order_flow",
+      "name": "Volume and order flow",
+      "methods": [
+        "relative_volume",
+        "obv",
+        "accumulation_distribution",
+        "vwap",
+        "volume_profile",
+        "footprint",
+        "bid_ask_delta",
+        "cumulative_volume_delta",
+        "absorption",
+        "order_book_imbalance",
+        "trade_flow"
+      ]
+    },
+    {
+      "id": "quant_statistics",
+      "name": "Statistical and quantitative analysis",
+      "methods": [
+        "descriptive_statistics",
+        "robust_statistics",
+        "hypothesis_testing",
+        "bootstrap_intervals",
+        "correlation_covariance",
+        "cointegration",
+        "pairs_statistics",
+        "factor_models",
+        "volatility_forecasting",
+        "garch_family",
+        "regime_switching",
+        "kalman_filters",
+        "monte_carlo",
+        "fractional_kelly"
+      ]
+    },
+    {
+      "id": "machine_learning",
+      "name": "Machine learning and AI",
+      "methods": [
+        "linear_models",
+        "logistic_regression",
+        "random_forest",
+        "gradient_boosting",
+        "clustering",
+        "dimensionality_reduction",
+        "hidden_markov_models",
+        "anomaly_detection",
+        "sequence_models",
+        "deep_learning",
+        "reinforcement_learning_research",
+        "llm_research_assistant"
+      ]
+    },
+    {
+      "id": "fundamental",
+      "name": "Fundamental and company analysis",
+      "methods": [
+        "financial_statements",
+        "cash_flow_quality",
+        "valuation_multiples",
+        "dcf",
+        "growth_quality_factors",
+        "earnings_revisions",
+        "guidance_analysis",
+        "ownership_analysis"
+      ]
+    },
+    {
+      "id": "macro_intermarket",
+      "name": "Macro and intermarket",
+      "methods": [
+        "central_bank_policy",
+        "yield_curve",
+        "inflation",
+        "employment",
+        "liquidity_conditions",
+        "fiscal_policy",
+        "usd_analysis",
+        "commodity_macro",
+        "real_yields",
+        "risk_on_off",
+        "cross_asset_correlation",
+        "economic_event_risk"
+      ]
+    },
+    {
+      "id": "derivatives",
+      "name": "Derivatives and positioning",
+      "methods": [
+        "futures_basis",
+        "funding_rate",
+        "open_interest",
+        "liquidations",
+        "term_structure",
+        "contango_backwardation",
+        "options_greeks",
+        "implied_volatility",
+        "realized_volatility",
+        "volatility_skew",
+        "put_call",
+        "gamma_exposure_data_required"
+      ]
+    },
+    {
+      "id": "sentiment_news",
+      "name": "Sentiment and news",
+      "methods": [
+        "news_classification",
+        "event_extraction",
+        "social_sentiment",
+        "positioning_surveys",
+        "analyst_revisions",
+        "sentiment_breadth"
+      ]
+    },
+    {
+      "id": "risk_execution",
+      "name": "Risk, portfolio construction and execution",
+      "methods": [
+        "fixed_fractional_sizing",
+        "volatility_targeting",
+        "atr_stops",
+        "structural_stops",
+        "risk_reward",
+        "portfolio_heat",
+        "correlation_limits",
+        "drawdown_controls",
+        "exposure_caps",
+        "liquidity_constraints",
+        "execution_simulation",
+        "fees_spread_slippage_funding_borrow",
+        "partial_fill_simulation"
+      ]
+    }
+  ],
+  "required_statuses": [
+    "catalog_only",
+    "data_required",
+    "research_implemented",
+    "tested",
+    "paper_qualified"
+  ],
+  "mandatory_gates": [
+    "point_in_time_data",
+    "chronological_train_validation_test",
+    "fees_and_slippage",
+    "walk_forward",
+    "out_of_sample",
+    "persistent_paper_ledger",
+    "sample_size_and_uncertainty",
+    "max_drawdown_and_net_expectancy",
+    "human_approval"
+  ],
+  "prohibited": [
+    "live_order_execution",
+    "unverified_profitability_claims",
+    "in_sample_only_promotion",
+    "deleting_losing_experiments",
+    "unvalidated_signal_blending"
+  ]
+}
