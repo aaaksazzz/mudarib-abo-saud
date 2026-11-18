@@ -63,7 +63,8 @@ class ASContinuousMemoryTests(unittest.TestCase):
         self.assertEqual(PaperExperience.query.count(), 0)
 
     def test_daily_report_uses_database_and_does_not_change_strategy(self):
-        self.make_trade("tp3_hit")
+        win_trade = self.make_trade("tp3_hit")
+        record_paper_experience(win_trade)
         trade = self.make_trade("stopped", 2)
         record_paper_experience(trade)
         db.session.commit()
