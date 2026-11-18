@@ -470,7 +470,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":smart_money_strategy.STRATEGY_FINGERPRINT.startswith("STP-PRICE-ACTION-QUANT-V3-")}
+            "price_action_engine":smart_money_strategy.STRATEGY_FINGERPRINT.startswith("AS-SIGNAL-EXTRACTION-V4-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
