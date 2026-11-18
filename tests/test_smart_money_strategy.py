@@ -1,4 +1,4 @@
-"""Regression tests for STP Price Action Quant V2."""
+"""Regression tests for STP Price Action Quant V3."""
 import unittest
 import smart_money_strategy as strategy
 
@@ -56,6 +56,9 @@ class PriceActionQuantV3Tests(unittest.TestCase):
         self.assertEqual(buy_night["session_mode"], "NORMAL_ALL_HOURS")
         self.assertLess(buy_day["stop"], buy_day["entry"])
         self.assertEqual(buy_day["reward_risk"], 3.0)
+        self.assertEqual(buy_day["strategy"], "STP_PRICE_ACTION_QUANT_V3_FUTURES_4h")
+        self.assertTrue(buy_day["strategy_fingerprint"].startswith("STP-PRICE-ACTION-QUANT-V3-"))
+        self.assertIn("STP PRICE ACTION QUANT V3:", buy_day["reason"])
 
     def test_spot_buy_only_without_session_dependent_logic(self):
         diagnostics = {}
