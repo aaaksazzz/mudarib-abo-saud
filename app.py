@@ -427,6 +427,14 @@ def analyze_stock_with_ai():
             meta=item.get("meta",{})
             market_data={"symbol":resolved,"currency":meta.get("currency"),"exchange":meta.get("exchangeName"),
                 "last_price":meta.get("regularMarketPrice"),"previous_close":meta.get("chartPreviousClose"),"candles":candles[-45:]}
+            if timeframe=="4h" and len(candles)>=4:
+                grouped=[]
+                for start in range(0,len(candles)-3,4):
+                    batch=candles[start:start+4]
+                    grouped.append({"o":batch[0]["o"],"h":max((x["h"] for x in batch if x["h"] is not None),default=None),
+                        "l":min((x["l"] for x in batch if x["l"] is not None),default=None),"c":batch[-1]["c"],
+                        "v":sum((x["v"] or 0) for x in batch)})
+                candles=grouped
             if not candles and not image_data: raise ValueError("no candle history")
         except Exception as exc:
             app.logger.warning("stock analysis data unavailable for %s: %s",resolved,type(exc).__name__)
