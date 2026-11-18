@@ -946,7 +946,11 @@ def build_signal(market,item,timeframe,market_bias=None):
     setup["strategy_names"]=list(setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
     setup["strategy_total"]=len(setup["strategy_names"])
-    setup["reason"]="STP PRICE ACTION QUANT V3: "+timeframe+"; "+setup.get("reason","")
+    engine_reason=str(setup.get("reason") or "")
+    engine_prefix="STP PRICE ACTION QUANT V3:"
+    if engine_reason.startswith(engine_prefix):
+        engine_reason=engine_reason[len(engine_prefix):].strip()
+    setup["reason"]=engine_prefix+" "+timeframe+"; "+engine_reason
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
