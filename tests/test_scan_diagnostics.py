@@ -42,6 +42,23 @@ class ScanDiagnosticsTests(unittest.TestCase):
         self.assertEqual(analyze.call_args.kwargs["timeframe"], "1M")
         self.assertIn("diagnostics", analyze.call_args.kwargs)
 
+
+    def test_build_signal_labels_the_active_price_action_engine_not_retired_ict(self):
+        setup = {
+            "side": "BUY", "strategy": "old", "confirmations": ["LIQUIDITY_SWEEP"],
+            "reason": "test setup", "timeframe": "15m", "score": 80,
+        }
+        rows = [[i, 100, 101, 99, 100, 10] for i in range(43)]
+        with patch.object(platform_app, "klines", return_value=rows), patch.object(
+            platform_app.smart_money_strategy, "analyze", return_value=setup
+        ):
+            result = platform_app.build_signal(
+                "futures", {"symbol": "BTCUSDT", "quote_volume": 2_000_000}, "15m"
+            )
+        self.assertEqual(result["strategy"], "STP_PRICE_ACTION_QUANT_V2_FUTURES_15m")
+        self.assertEqual(result["strategy_fingerprint"], platform_app.STRATEGY_FINGERPRINT)
+        self.assertEqual(result["session_mode"], "NORMAL_ALL_HOURS") if "session_mode" in result else None
+
     def test_scan_failure_samples_are_bounded_and_counted(self):
         stats = {"15m": {"failure_reasons": {}, "failure_samples": []}}
         for index in range(8):
