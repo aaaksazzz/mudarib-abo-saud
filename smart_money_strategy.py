@@ -2,7 +2,7 @@
 import math
 
 
-STRATEGY_FINGERPRINT = "AS-SIGNAL-EXTRACTION-V4-20261118-ADAPTIVE"
+STRATEGY_FINGERPRINT = "AS-SIGNAL-EXTRACTION-V4-20261118-ADAPTIVE"\nDECEPTION_ENGINE_FINGERPRINT = "AS-MARKET-DECEPTION-LAB-V1-20261118"
 TREND_TIMEFRAME_MAP = {"15m": "1h", "1h": "4h", "4h": "1d", "1d": "1w", "1w": "1M", "1M": "1M"}
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 MARKETS = ("spot", "futures", "alpha", "us-stocks", "us-contracts", "saudi", "forex")
@@ -399,13 +399,13 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
         "sweep_extreme": setup.get("sweep_extreme"),
         "order_flow_status": "optional_provider_data_not_required",
         "reason": "AS V4: "+setup_type+"; closed-candle entry; structural stop; targets 1R/2R/3R",
-        "setup_quality_label": "technical_quality_not_probability",\n        "market_deception": deception,
+        "setup_quality_label": "technical_quality_not_probability",\n        "market_deception": deception,\n        "deception_engine_fingerprint": DECEPTION_ENGINE_FINGERPRINT,
     }
 
 
 def diagnostic_self_test():
     checks = {
-        "fingerprint": STRATEGY_FINGERPRINT == "AS-SIGNAL-EXTRACTION-V4-20261118-ADAPTIVE",
+        "fingerprint": STRATEGY_FINGERPRINT == "AS-SIGNAL-EXTRACTION-V4-20261118-ADAPTIVE",\n        "deception_engine": DECEPTION_ENGINE_FINGERPRINT == "AS-MARKET-DECEPTION-LAB-V1-20261118",
         "six_timeframes": len(TIMEFRAMES) == 6,
         "seven_markets": len(MARKETS) == 7,
         "no_session_inversion": True,
