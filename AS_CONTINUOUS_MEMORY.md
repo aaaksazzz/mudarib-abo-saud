@@ -7,13 +7,13 @@ The AS application runs its research-memory cycle every 24 hours at **03:07 Saud
 ## What is recorded
 
 - Only paper trades that reach a fully resolved `tp3_hit` or full `stopped` status.
-- Unique trade ID, strategy identifier, market, symbol, timeframe, side, resolution status and net result in R.
+- Unique trade ID, strategy identifier, market, symbol, timeframe, side, resolution status and gross result in R.
 - Results are aggregated by strategy, market, timeframe and regime and saved in the application `Setting` store under `as-learning:latest-report`.
 
 ## Result integrity
 
-- A full TP3 result is calculated from the trade's actual TP3 distance divided by its entry-to-stop risk.
-- A full stop is recorded as `-1R`.
+- A full TP3 result is calculated as gross R from the trade's actual TP3 distance divided by its entry-to-stop risk.
+- A full stop is recorded as `-1R`. Fees, slippage and funding are not currently available in the trade ledger, so these are gross results, not net returns.
 - A path that reaches TP1/TP2 and later stops is **not scored yet**. The app does not currently record partial position sizing or actual partial exit fills, so assigning it a profitable R result would be invented.
 - Expired, superseded, still-open, or otherwise unresolved trades are never counted as wins or losses.
 - A unique database constraint on trade ID prevents duplicate learning records.
