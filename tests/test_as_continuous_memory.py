@@ -43,7 +43,7 @@ class ASContinuousMemoryTests(unittest.TestCase):
         self.assertFalse(record_paper_experience(trade))
         db.session.commit()
         row = PaperExperience.query.filter_by(trade_id=trade.id).one()
-        self.assertEqual(row.net_r, 3.0)
+        self.assertEqual(row.gross_r, 3.0)
         self.assertEqual(row.outcome, "win")
 
     def test_full_stop_is_minus_one_r(self):
