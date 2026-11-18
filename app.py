@@ -948,7 +948,7 @@ def build_signal(market,item,timeframe,market_bias=None):
     setup["strategy_names"]=list(setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
     setup["strategy_total"]=len(setup["strategy_names"])
-    setup["reason"]="STP PRICE ACTION QUANT V2: "+timeframe+"; "+setup.get("reason","")
+    setup["reason"]="STP PRICE ACTION QUANT V2: "+timeframe+"; "+setup.get("reason","")+" | engine="+smart_money_strategy.STRATEGY_FINGERPRINT
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -1222,7 +1222,13 @@ def record_paper_experience(trade):
     else:
         gross_r=-1.0
         outcome="loss"
-    strategy_id="price_action_quant_v2" if str(trade.reason or "").startswith("STP PRICE ACTION QUANT V2:") else "unknown"
+    reason_text=str(trade.reason or "")
+    if "| engine="+smart_money_strategy.STRATEGY_FINGERPRINT in reason_text:
+        strategy_id="as_practical_signal_extraction_v4"
+    elif reason_text.startswith("STP PRICE ACTION QUANT V2:"):
+        strategy_id="legacy_price_action_quant_v2"
+    else:
+        strategy_id="unknown"
     db.session.add(PaperExperience(trade_id=trade.id,strategy_id=strategy_id,market=trade.market,
         symbol=trade.symbol,timeframe=trade.timeframe,regime="unknown",side=trade.side,
         gross_r=round(gross_r,6),outcome=outcome,source_status=trade.status,resolved_at=utcnow()))
@@ -1250,9 +1256,22 @@ def run_as_daily_learning():
                 "sample_size":int(row["sample_size"] or 0),"wins":int(row["wins"] or 0),
                 "losses":int(row["losses"] or 0),"gross_expectancy_r":round(float(row["expectancy_r"] or 0),6),
                 "profit_factor":round(gross_profit/gross_loss,6) if gross_loss else (None if not gross_profit else 999.0)})
+        coverage_rows=db.session.execute(text("""SELECT market,timeframe,COUNT(*) AS sample_size
+            FROM as_paper_experiences GROUP BY market,timeframe""")).mappings().all()
+        coverage_lookup={(row["market"],row["timeframe"]):int(row["sample_size"] or 0) for row in coverage_rows}
+        market_timeframe_coverage=[
+            {"market":market,"timeframe":frame,
+             "resolved_experiences":coverage_lookup.get((market,frame),0)}
+            for market in smart_money_strategy.MARKETS
+            for frame in smart_money_strategy.TIMEFRAMES
+        ]
         report={"fingerprint":"AS-CONTINUOUS-MEMORY-DAILY-V2","generated_at":iso(utcnow()),
             "timezone":"Asia/Riyadh","schedule_local":"03:07","cycle_interval":"daily",
             "source":"resolved_paper_trades_in_application_database","total_resolved_experiences":total,
+            "markets":list(smart_money_strategy.MARKETS),
+            "timeframes":list(smart_money_strategy.TIMEFRAMES),
+            "market_timeframe_pairs":len(market_timeframe_coverage),
+            "market_timeframe_coverage":market_timeframe_coverage,
             "strategy_groups":len(memory),"memory":memory,"production_strategy_modified":False,
             "live_order_execution":False,"limitations":[
                 "Only fully resolved TP3 and full-stop paper trades are scored.",
@@ -1304,7 +1323,24 @@ def timeframe_bucket(frame,now):
 
 def market_scan_timeframes(market):
     """Expose the same independently-calculated frames for every supported market."""
+    if market not in smart_money_strategy.MARKETS:
+        raise ValueError("Unknown market "+str(market))
     return smart_money_strategy.TIMEFRAMES
+
+
+def frame_coverage_status(market,frame,stats,candidate_count):
+    """Distinguish a real provider outage from a symbol that has not existed long enough."""
+    required_ratio=0.35 if market=="saudi" else 0.20 if frame=="1M" else 0.80
+    required=min(candidate_count,max(8 if market=="saudi" else 1,
+                                     math.ceil(candidate_count*required_ratio)))
+    actual=int((stats or {}).get("completed",0) or 0)
+    if actual>=required:
+        return "ready",required
+    failures=(stats or {}).get("failure_reasons") or {}
+    history_codes={"insufficient_history","insufficient_higher_timeframe_history","insufficient_candle_data"}
+    if failures and set(failures).issubset(history_codes):
+        return "history_limited",required
+    return "incomplete",required
 
 
 def align_signals_with_market_bias(signals, market_bias):
@@ -1459,12 +1495,12 @@ def _run_market_scan_unlocked(market,force=False):
     # Validate completeness separately for every timeframe. A healthy 15m
     # feed must never hide a broken daily/monthly candle provider.
     incomplete_frames={}
+    frame_coverage={}
     for frame in frames_to_scan:
-        required_ratio=0.35 if market=="saudi" else 0.20 if frame=="1M" else 0.80
-        required=min(len(candidates),max(8 if market=="saudi" else 1,
-                                       math.ceil(len(candidates)*required_ratio)))
+        coverage_status,required=frame_coverage_status(market,frame,frame_stats[frame],len(candidates))
+        frame_coverage[frame]=coverage_status
         actual=frame_stats[frame]["completed"]
-        if actual<required:
+        if coverage_status=="incomplete":
             incomplete_frames[frame]=(actual,required)
     # A provider outage on one timeframe must not discard successful frames
     # or turn the entire market endpoint into HTTP 502. Keep failed frames
@@ -1485,6 +1521,9 @@ def _run_market_scan_unlocked(market,force=False):
                "strategy_rejections":stats.get("strategy_rejections",{})}
         for frame,stats in frame_stats.items()
     }
+    for frame,coverage_status in frame_coverage.items():
+        if frame in frame_diagnostics:
+            frame_diagnostics[frame]["coverage_status"]=coverage_status
     # A scan cycle often has only one timeframe due. Rehydrate the other
     # five from their own persisted metadata so the UI never implies that
     # unscanned timeframes have zero diagnostics or zero activity.
@@ -1694,7 +1733,9 @@ def _run_market_scan_unlocked(market,force=False):
             "rejected_late_price":freshness_by_frame[frame]["rejected_late_price"],
             "market_bias":market_bias,"timeframes":list(TIMEFRAMES),"scanned_timeframes":[frame],
             "frame_diagnostics":frame_diagnostics[frame],
-            "data_status":"partial" if frame_stats[frame]["failed"] else "ready"
+            "data_status":("history_limited" if frame_coverage.get(frame)=="history_limited"
+                           else "partial" if frame_stats[frame]["failed"] else "ready"),
+            "coverage_status":frame_coverage.get(frame,"unknown")
         },ensure_ascii=False)
         if frame_meta_row is None:
             db.session.add(Setting(key=frame_meta_key,value=frame_meta))
