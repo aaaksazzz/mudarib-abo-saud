@@ -27,7 +27,7 @@ Production-oriented market intelligence terminal.
 - Signals remain paper/manual only. No account API keys or automatic order execution are used.
 
 ## Signal engine
-- A timeframe batch is replaced only when that scan produces at least one fresh setup matching the active Saudi session mode; a zero-match scan preserves existing live trades until their normal expiry or outcome. Up to three opportunities per market per timeframe are published. Previous rows remain in trade history and expire after 24 hours.
+- A timeframe batch is replaced only when that scan produces at least one fresh setup that passes candle-freshness and live-price validation; a zero-match scan preserves existing live trades until their normal expiry or outcome. Up to three opportunities per market per timeframe are published. Previous rows remain in trade history and expire after 24 hours.
 - Market-page requests only read committed results and never launch heavy scans synchronously.
 - Expired records are also cleaned when the journal is read.
 - No performance claim is made without reproducible per-market backtests.
