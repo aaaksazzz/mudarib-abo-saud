@@ -3,6 +3,17 @@ import unittest
 import smart_money_strategy as strategy
 
 
+def trending_rows(direction="BULLISH"):
+    rows=[]
+    drift=0.16 if direction=="BULLISH" else -0.16
+    wave=(0, 0.8, 1.4, 0.8, 0, -0.8, -1.4, -0.8)
+    for i in range(80):
+        close=100 + drift*i + wave[i % len(wave)]
+        rows.append([i, close, close+0.25, close-0.25, close, 10])
+    rows.append([80, rows[-1][4], rows[-1][4]+0.2, rows[-1][4]-0.2, rows[-1][4], 10])
+    return rows
+
+
 def candle(i, op=100, high=101, low=99, close=100, volume=10):
     return [i, op, high, low, close, volume]
 
@@ -35,8 +46,8 @@ class PriceActionQuantV2Tests(unittest.TestCase):
         self.assertEqual(strategy.target_prices(100, "BUY", 98), (102, 104, 106))
 
     def test_direction_is_normal_at_all_hours_and_independent_of_market_bias(self):
-        buy_day = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="SELL")
-        buy_night = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="BUY")
+        buy_day = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="SELL", higher_timeframe_rows=trending_rows())
+        buy_night = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="BUY", higher_timeframe_rows=trending_rows())
         self.assertIsNotNone(buy_day)
         self.assertIsNotNone(buy_night)
         self.assertEqual(buy_day["side"], "BUY")
@@ -55,6 +66,29 @@ class PriceActionQuantV2Tests(unittest.TestCase):
         self.assertEqual(len(strategy.MARKETS), 7)
         self.assertEqual(strategy.TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
         self.assertEqual(set(strategy.FRAME_PROFILES), set(strategy.TIMEFRAMES))
+
+    def test_higher_timeframe_trend_classification(self):
+        self.assertEqual(strategy._classify_trend(trending_rows("BULLISH")), "BULLISH")
+        self.assertEqual(strategy._classify_trend(trending_rows("BEARISH")), "BEARISH")
+
+    def test_countertrend_setup_is_rejected(self):
+        diagnostics = {}
+        signal = strategy.analyze(
+            "futures", "TEST", bullish_reversal_rows(), "4h",
+            higher_timeframe_rows=trending_rows("BEARISH"), diagnostics=diagnostics
+        )
+        self.assertIsNone(signal)
+        self.assertGreater(diagnostics.get("setup_against_higher_timeframe_trend", 0), 0)
+
+    def test_unclear_higher_timeframe_is_rejected(self):
+        diagnostics = {}
+        signal = strategy.analyze(
+            "futures", "TEST", bullish_reversal_rows(), "4h",
+            higher_timeframe_rows=[[i,100,101,99,100,10] for i in range(50)],
+            diagnostics=diagnostics
+        )
+        self.assertIsNone(signal)
+        self.assertGreater(diagnostics.get("higher_timeframe_trend_unclear", 0), 0)
 
     def test_bias_argument_is_compatibility_only(self):
         a = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="BUY")
