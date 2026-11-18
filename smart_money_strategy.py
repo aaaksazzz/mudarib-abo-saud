@@ -311,7 +311,7 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
 
 def diagnostic_self_test():
     checks = {
-        "fingerprint": STRATEGY_FINGERPRINT == "STP-PRICE-ACTION-QUANT-V3-20261118-MTF-TREND",
+        "fingerprint": STRATEGY_FINGERPRINT == "AS-SIGNAL-EXTRACTION-V4-20261118-ADAPTIVE",
         "six_timeframes": len(TIMEFRAMES) == 6,
         "seven_markets": len(MARKETS) == 7,
         "no_session_inversion": True,
