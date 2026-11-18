@@ -1,8 +1,8 @@
-"""STP Price Action Quant V3: mandatory multi-timeframe trend-aligned engine."""
+"""AS Practical Signal Extraction V4: accessible multi-setup paper signal engine."""
 import math
 
 
-STRATEGY_FINGERPRINT = "STP-PRICE-ACTION-QUANT-V3-20261118-MTF-TREND"
+STRATEGY_FINGERPRINT = "AS-SIGNAL-EXTRACTION-V4-20261118-ADAPTIVE"
 TREND_TIMEFRAME_MAP = {"15m": "1h", "1h": "4h", "4h": "1d", "1d": "1w", "1w": "1M", "1M": "1M"}
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 MARKETS = ("spot", "futures", "alpha", "us-stocks", "us-contracts", "saudi", "forex")
@@ -64,6 +64,29 @@ def _classify_trend(rows):
     if latest_high > previous_high and latest_low > previous_low:
         return "BULLISH"
     if latest_high < previous_high and latest_low < previous_low:
+        return "BEARISH"
+    return "NEUTRAL"
+
+
+def _ema(values, period):
+    if not values:
+        return 0.0
+    alpha = 2.0 / (period + 1)
+    value = float(values[0])
+    for item in values[1:]:
+        value = alpha * float(item) + (1-alpha) * value
+    return value
+
+
+def _local_trend(bars):
+    closes = [bar["close"] for bar in bars]
+    if len(closes) < 25:
+        return "NEUTRAL"
+    fast = _ema(closes[-min(50, len(closes)):], 20)
+    slow = _ema(closes[-min(100, len(closes)):], 50)
+    if fast > slow and closes[-1] >= fast:
+        return "BULLISH"
+    if fast < slow and closes[-1] <= fast:
         return "BEARISH"
     return "NEUTRAL"
 
@@ -161,10 +184,13 @@ def _find_setup(bars, source_side):
 
 
 def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics=None, now=None, higher_timeframe_rows=None):
-    """Require lower-timeframe entries to align with confirmed higher-timeframe structure."""
-    def reject(reason):
+    """Prefer advanced liquidity setups, but allow simpler valid setups to avoid empty scans."""
+    def note(reason):
         if diagnostics is not None:
-            diagnostics[reason] = diagnostics.get(reason, 0)+1
+            diagnostics[reason] = diagnostics.get(reason, 0) + 1
+
+    def reject(reason):
+        note(reason)
         return None
 
     if market not in MARKETS or timeframe not in TIMEFRAMES:
@@ -173,49 +199,65 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
     if len(bars) < FRAME_PROFILES[timeframe]["min_bars"]:
         return reject("insufficient_completed_candles")
     current = bars[-1]
-    trend_rows = higher_timeframe_rows if timeframe != "1M" else rows
-    if not isinstance(trend_rows, list) or len(trend_rows) < FRAME_PROFILES[timeframe]["min_bars"]:
-        return reject("missing_higher_timeframe_data")
-    trend = _classify_trend(trend_rows)
-    if trend == "NEUTRAL":
-        return reject("higher_timeframe_trend_unclear")
     atr = _atr(bars)
     if not math.isfinite(atr) or atr <= 0:
         return reject("invalid_atr")
 
+    trend_rows = higher_timeframe_rows if timeframe != "1M" else rows
+    higher_trend = _classify_trend(trend_rows) if isinstance(trend_rows, list) and len(trend_rows) >= 10 else "NEUTRAL"
+    local_trend = _local_trend(bars)
+    if higher_trend == "NEUTRAL":
+        note("higher_timeframe_not_decisive_local_context_used")
+
     setups = []
-    for source_side in ("BUY", "SELL"):
-        setup = _find_setup(bars, source_side)
-        if setup:
-            setups.append((source_side, setup))
-    if not setups:
-        return reject("no_confirmed_price_action_setup")
+    for candidate_side in ("BUY", "SELL"):
+        advanced = _find_setup(bars, candidate_side)
+        if advanced:
+            setups.append((candidate_side, advanced, "liquidity_sweep_fvg"))
 
-    # Enforce direction from confirmed higher-timeframe market structure.
-    required_side = "BUY" if trend == "BULLISH" else "SELL"
-    setups = [item for item in setups if item[0] == required_side]
-    if not setups:
-        return reject("setup_against_higher_timeframe_trend")
+    closes = [bar["close"] for bar in bars]
+    ema20 = _ema(closes[-min(60, len(closes)):], 20)
+    prior = bars[-11:-1]
+    prior_high = max(bar["high"] for bar in prior)
+    prior_low = min(bar["low"] for bar in prior)
+    bullish = current["close"] > current["open"]
+    bearish = current["close"] < current["open"]
+    fallback_side, fallback_type = None, None
+    if bullish and local_trend == "BULLISH" and current["close"] >= ema20:
+        fallback_side, fallback_type = "BUY", "trend_pullback"
+    elif bearish and local_trend == "BEARISH" and current["close"] <= ema20:
+        fallback_side, fallback_type = "SELL", "trend_pullback"
+    elif bullish and current["close"] > prior_high:
+        fallback_side, fallback_type = "BUY", "range_breakout"
+    elif bearish and current["close"] < prior_low:
+        fallback_side, fallback_type = "SELL", "range_breakout"
 
-    # Spot remains BUY-only by market rules; other markets retain natural setup direction.
+    if not setups and fallback_side:
+        recent = bars[-7:]
+        extreme = min(b["low"] for b in recent) if fallback_side == "BUY" else max(b["high"] for b in recent)
+        setups.append((fallback_side, {"sweep_extreme": extreme}, fallback_type))
+    if not setups:
+        return reject("no_simple_or_advanced_setup")
+
     if market == "spot":
         setups = [item for item in setups if item[0] == "BUY"]
         if not setups:
-            return reject("spot_buy_only")
+            return reject("spot_buy_only_no_buy_setup")
 
-    # Prefer the setup with the clearer rejection candle and nearer structural invalidation.
-    source_side, setup = max(
+    side, setup, setup_type = max(
         setups,
         key=lambda item: (
+            1 if item[2] == "liquidity_sweep_fvg" else 0,
             abs(current["close"]-current["open"]) / max(current["high"]-current["low"], current["close"]*1e-10),
-            -abs(current["close"]-item[1]["sweep_extreme"]) / current["close"],
         ),
     )
-    side = source_side
-
     entry = current["close"]
-    buffer = max(atr*0.15, entry*0.0002)
-    stop = min(current["low"], setup["sweep_extreme"])-buffer if side == "BUY" else max(current["high"], setup["sweep_extreme"])+buffer
+    buffer = max(atr * 0.15, entry * 0.0002)
+    if setup_type == "liquidity_sweep_fvg":
+        stop = min(current["low"], setup["sweep_extreme"])-buffer if side == "BUY" else max(current["high"], setup["sweep_extreme"])+buffer
+    else:
+        recent = bars[-7:]
+        stop = min(b["low"] for b in recent)-buffer if side == "BUY" else max(b["high"] for b in recent)+buffer
     risk = abs(entry-stop)
     risk_pct = risk/entry if entry > 0 else float("inf")
     if risk <= 0 or not math.isfinite(risk_pct) or risk_pct > FRAME_PROFILES[timeframe]["max_risk_pct"]:
@@ -224,35 +266,45 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
     if not targets:
         return reject("invalid_target_geometry")
 
-    confirmations = ["CLOSED_CANDLE", "HIGHER_TIMEFRAME_TREND_ALIGNMENT", "LIQUIDITY_SWEEP", "CHoCH_BOS_DISPLACEMENT",
-                     "FAIR_VALUE_GAP", "FVG_RETEST_REJECTION", "INDEPENDENT_MARKET_ANALYSIS"]
-    score = 72.0
+    confirmations = ["CLOSED_CANDLE", "LOCAL_PRICE_STRUCTURE"]
+    score = 76.0 if setup_type == "liquidity_sweep_fvg" else 66.0
+    if setup_type == "liquidity_sweep_fvg":
+        confirmations.extend(["LIQUIDITY_SWEEP", "CHoCH_BOS_DISPLACEMENT", "FAIR_VALUE_GAP", "FVG_RETEST_REJECTION"])
+    else:
+        confirmations.append("EMA_TREND_PULLBACK" if setup_type == "trend_pullback" else "10_BAR_RANGE_BREAKOUT")
+    if higher_trend == ("BULLISH" if side == "BUY" else "BEARISH"):
+        score += 5
+        confirmations.append("HIGHER_TIMEFRAME_AGREEMENT")
+    elif higher_trend in ("BULLISH", "BEARISH"):
+        score -= 8
+        confirmations.append("HIGHER_TIMEFRAME_CONFLICT_CAUTION")
     span = max(current["high"]-current["low"], current["close"]*1e-10)
     if abs(current["close"]-current["open"])/span >= 0.55:
-        score += 5
-        confirmations.append("STRONG_REJECTION_BODY")
-    prior = [b["volume"] for b in bars[-21:-1] if b["volume"] > 0]
-    if current["volume"] > 0 and prior and current["volume"] >= (sum(prior)/len(prior))*1.15:
-        score += 4
+        score += 3
+        confirmations.append("STRONG_CLOSED_CANDLE")
+    volumes = [b["volume"] for b in bars[-21:-1] if b["volume"] > 0]
+    if current["volume"] > 0 and volumes and current["volume"] >= sum(volumes)/len(volumes)*1.1:
+        score += 3
         confirmations.append("RELATIVE_VOLUME_CONFIRMATION")
+
     return {
         "market": market, "symbol": str(symbol), "side": side,
         "entry": entry, "stop": stop, "tp1": targets[0], "tp2": targets[1], "tp3": targets[2],
-        "score": round(min(92.0, score), 1), "timeframe": timeframe,
+        "score": round(min(92.0, max(50.0, score)), 1), "timeframe": timeframe,
         "signal_candle_time": current["time"], "atr": atr,
         "risk_pct": round(risk_pct*100, 4), "risk_distance": risk,
         "reward_risk": 3.0, "change_pct": 0.0, "quote_volume": None,
-        "setup_type": "PRICE_ACTION_LIQUIDITY_STRUCTURE_FVG",
-        "structure": ("BULLISH" if source_side == "BUY" else "BEARISH") + "_SWEEP_RETEST",
-        "higher_timeframe": TREND_TIMEFRAME_MAP[timeframe], "higher_timeframe_trend": trend,
-        "source_setup_side": source_side, "session_mode": "NORMAL_ALL_HOURS",
+        "setup_type": "PRICE_ACTION_LIQUIDITY_STRUCTURE_FVG" if setup_type == "liquidity_sweep_fvg" else setup_type.upper(),
+        "structure": ("BULLISH" if side == "BUY" else "BEARISH") + "_" + setup_type.upper(),
+        "higher_timeframe": TREND_TIMEFRAME_MAP[timeframe], "higher_timeframe_trend": higher_trend,
+        "local_trend": local_trend, "source_setup_side": side, "session_mode": "NORMAL_ALL_HOURS",
         "confirmations": confirmations, "strategy_names": confirmations,
-        "strategy": "STP_PRICE_ACTION_QUANT_V2_"+market.upper()+"_"+timeframe,
+        "strategy": "AS_PRACTICAL_SIGNAL_EXTRACTION_V4_"+market.upper()+"_"+timeframe,
         "strategy_fingerprint": STRATEGY_FINGERPRINT,
-        "fvg": {"low": setup["fvg_low"], "high": setup["fvg_high"]},
-        "sweep_extreme": setup["sweep_extreme"],
+        "fvg": {"low": setup.get("fvg_low"), "high": setup.get("fvg_high")} if setup_type == "liquidity_sweep_fvg" else None,
+        "sweep_extreme": setup.get("sweep_extreme"),
         "order_flow_status": "optional_provider_data_not_required",
-        "reason": "STP PRICE ACTION QUANT V2: sweep + structure displacement + FVG retest; same direction at all hours; structural stop; 1R/2R/3R",
+        "reason": "AS V4: "+setup_type+"; closed-candle entry; structural stop; targets 1R/2R/3R",
         "setup_quality_label": "technical_quality_not_probability",
     }
 
@@ -267,10 +319,10 @@ def diagnostic_self_test():
         "sell_targets_1r_2r_3r": _target_prices(100.0, "SELL", 102.0) == (98.0, 96.0, 94.0),
         "spot_is_buy_only": True,
         "independent_of_market_bias": True,
-        "higher_timeframe_trend_required": True,
+        "higher_timeframe_is_context_not_hard_gate": True,
         "closed_candle_only": True,
     }
     return {"ok": all(checks.values()), "fingerprint": STRATEGY_FINGERPRINT,
             "checks": checks, "timeframes": list(TIMEFRAMES), "markets": list(MARKETS),
             "session": "NORMAL_ALL_HOURS",
-            "entry_model": "LIQUIDITY_SWEEP_CHoCH_BOS_FVG_RETEST"}
+            "entry_model": "LIQUIDITY_FVG_WITH_TREND_PULLBACK_AND_RANGE_BREAKOUT_FALLBACK"}
