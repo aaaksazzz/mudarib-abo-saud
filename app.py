@@ -801,7 +801,7 @@ def strategy_status_summary():
     primary=smart_money_strategy.diagnostic_self_test()
     active_scheduler=globals().get("scheduler")
     return jsonify({
-        "ok":True,"engine":"STP PRICE ACTION QUANT V2",
+        "ok":True,"engine":"AS PRACTICAL SIGNAL EXTRACTION V4",
         "current_active":active_current,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
@@ -904,20 +904,16 @@ def build_signal(market,item,timeframe,market_bias=None):
         return {"_data_incomplete":True,"_candles_received":received,
                 "_diagnostic_code":reason}
     higher_timeframe=smart_money_strategy.TREND_TIMEFRAME_MAP[timeframe]
-    if higher_timeframe == timeframe:
-        higher_rows=rows
-    else:
+    higher_rows=rows if higher_timeframe == timeframe else None
+    if higher_rows is None:
         try:
-            higher_rows=klines(market,symbol,higher_timeframe,250)
+            candidate_rows=klines(market,symbol,higher_timeframe,250)
+            if isinstance(candidate_rows,list) and len(candidate_rows)>=10:
+                higher_rows=candidate_rows
         except Exception:
-            app.logger.exception("Higher-timeframe data unavailable: %s %s %s",market,symbol,higher_timeframe)
-            return {"_data_incomplete":True,"_diagnostic_code":"higher_timeframe_provider_error",
-                    "_required_timeframe":higher_timeframe}
-    if not isinstance(higher_rows,list) or len(higher_rows)<41:
-        received=len(higher_rows) if isinstance(higher_rows,list) else 0
-        return {"_data_incomplete":True,"_candles_received":received,
-                "_diagnostic_code":"insufficient_higher_timeframe_history",
-                "_required_timeframe":higher_timeframe}
+            # Higher-timeframe data is context, not a hard blocker for a valid local setup.
+            app.logger.warning("Higher-timeframe context unavailable; using local setup: %s %s %s",
+                               market,symbol,higher_timeframe)
     rejections={}
     try:
         setup=smart_money_strategy.analyze(
