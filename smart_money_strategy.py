@@ -247,12 +247,12 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
         "higher_timeframe": TREND_TIMEFRAME_MAP[timeframe], "higher_timeframe_trend": trend,
         "source_setup_side": source_side, "session_mode": "NORMAL_ALL_HOURS",
         "confirmations": confirmations, "strategy_names": confirmations,
-        "strategy": "STP_PRICE_ACTION_QUANT_V2_"+market.upper()+"_"+timeframe,
+        "strategy": "STP_PRICE_ACTION_QUANT_V3_"+market.upper()+"_"+timeframe,
         "strategy_fingerprint": STRATEGY_FINGERPRINT,
         "fvg": {"low": setup["fvg_low"], "high": setup["fvg_high"]},
         "sweep_extreme": setup["sweep_extreme"],
         "order_flow_status": "optional_provider_data_not_required",
-        "reason": "STP PRICE ACTION QUANT V2: sweep + structure displacement + FVG retest; same direction at all hours; structural stop; 1R/2R/3R",
+        "reason": "STP PRICE ACTION QUANT V3: sweep + structure displacement + FVG retest aligned with confirmed higher-timeframe structure; same direction at all hours; structural stop; 1R/2R/3R",
         "setup_quality_label": "technical_quality_not_probability",
     }
 
