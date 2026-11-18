@@ -435,6 +435,7 @@ def analyze_stock_with_ai():
                         "l":min((x["l"] for x in batch if x["l"] is not None),default=None),"c":batch[-1]["c"],
                         "v":sum((x["v"] or 0) for x in batch)})
                 candles=grouped
+                market_data["candles"]=candles[-45:]
             if not candles and not image_data: raise ValueError("no candle history")
         except Exception as exc:
             app.logger.warning("stock analysis data unavailable for %s: %s",resolved,type(exc).__name__)
