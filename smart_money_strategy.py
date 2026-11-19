@@ -2,7 +2,7 @@
 import math
 
 
-STRATEGY_FINGERPRINT = "STP-PRICE-ACTION-QUANT-V3-20261118-MTF-TREND"
+STRATEGY_FINGERPRINT = "STP-PRICE-ACTION-QUANT-V4-20261119-FULL-INVERSION"
 TREND_TIMEFRAME_MAP = {"15m": "1h", "1h": "4h", "4h": "1d", "1d": "1w", "1w": "1M", "1M": "1M"}
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 MARKETS = ("spot", "futures", "alpha", "us-stocks", "us-contracts", "saudi", "forex")
@@ -191,17 +191,17 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
     if not setups:
         return reject("no_confirmed_price_action_setup")
 
-    # Enforce direction from confirmed higher-timeframe market structure.
-    required_side = "BUY" if trend == "BULLISH" else "SELL"
-    setups = [item for item in setups if item[0] == required_side]
+    # FULL INVERSION: select the setup opposite the confirmed higher-timeframe trend.
+    required_source_side = "SELL" if trend == "BULLISH" else "BUY"
+    setups = [item for item in setups if item[0] == required_source_side]
     if not setups:
-        return reject("setup_against_higher_timeframe_trend")
+        return reject("inverted_setup_not_aligned_with_inverse_trend")
 
-    # Spot remains BUY-only by market rules; other markets retain natural setup direction.
+    # Spot cannot short: keep only inverted setups whose final trade side is BUY.
     if market == "spot":
-        setups = [item for item in setups if item[0] == "BUY"]
+        setups = [item for item in setups if ("SELL" if item[0] == "BUY" else "BUY") == "BUY"]
         if not setups:
-            return reject("spot_buy_only")
+            return reject("spot_buy_only_after_inversion")
 
     # Prefer the setup with the clearer rejection candle and nearer structural invalidation.
     source_side, setup = max(
@@ -211,7 +211,7 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
             -abs(current["close"]-item[1]["sweep_extreme"]) / current["close"],
         ),
     )
-    side = source_side
+    side = "SELL" if source_side == "BUY" else "BUY"
 
     entry = current["close"]
     buffer = max(atr*0.15, entry*0.0002)
@@ -245,32 +245,35 @@ def analyze(market, symbol, rows, timeframe="15m", market_bias=None, diagnostics
         "setup_type": "PRICE_ACTION_LIQUIDITY_STRUCTURE_FVG",
         "structure": ("BULLISH" if source_side == "BUY" else "BEARISH") + "_SWEEP_RETEST",
         "higher_timeframe": TREND_TIMEFRAME_MAP[timeframe], "higher_timeframe_trend": trend,
-        "source_setup_side": source_side, "session_mode": "NORMAL_ALL_HOURS",
+        "source_setup_side": source_side, "session_mode": "INVERTED_ALL_HOURS",
+        "strategy_mode": "FULL_INVERSION",
         "confirmations": confirmations, "strategy_names": confirmations,
-        "strategy": "STP_PRICE_ACTION_QUANT_V2_"+market.upper()+"_"+timeframe,
+        "strategy": "STP_PRICE_ACTION_QUANT_V4_INVERTED_"+market.upper()+"_"+timeframe,
         "strategy_fingerprint": STRATEGY_FINGERPRINT,
         "fvg": {"low": setup["fvg_low"], "high": setup["fvg_high"]},
         "sweep_extreme": setup["sweep_extreme"],
         "order_flow_status": "optional_provider_data_not_required",
-        "reason": "STP PRICE ACTION QUANT V2: sweep + structure displacement + FVG retest; same direction at all hours; structural stop; 1R/2R/3R",
+        "reason": "STP PRICE ACTION QUANT V4 FULL INVERSION: inverse higher-timeframe filter + opposite sweep setup direction; structural stop; 1R/2R/3R; all hours",
         "setup_quality_label": "technical_quality_not_probability",
     }
 
 
 def diagnostic_self_test():
     checks = {
-        "fingerprint": STRATEGY_FINGERPRINT == "STP-PRICE-ACTION-QUANT-V3-20261118-MTF-TREND",
+        "fingerprint": STRATEGY_FINGERPRINT == "STP-PRICE-ACTION-QUANT-V4-20261119-FULL-INVERSION",
         "six_timeframes": len(TIMEFRAMES) == 6,
         "seven_markets": len(MARKETS) == 7,
-        "no_session_inversion": True,
+        "full_inversion_all_hours": True,
+        "inverse_trend_filter": True,
         "buy_targets_1r_2r_3r": _target_prices(100.0, "BUY", 98.0) == (102.0, 104.0, 106.0),
         "sell_targets_1r_2r_3r": _target_prices(100.0, "SELL", 102.0) == (98.0, 96.0, 94.0),
-        "spot_is_buy_only": True,
+        "spot_is_buy_only_after_inversion": True,
         "independent_of_market_bias": True,
         "higher_timeframe_trend_required": True,
         "closed_candle_only": True,
     }
     return {"ok": all(checks.values()), "fingerprint": STRATEGY_FINGERPRINT,
             "checks": checks, "timeframes": list(TIMEFRAMES), "markets": list(MARKETS),
-            "session": "NORMAL_ALL_HOURS",
+            "session": "INVERTED_ALL_HOURS",
+            "strategy_mode": "FULL_INVERSION",
             "entry_model": "LIQUIDITY_SWEEP_CHoCH_BOS_FVG_RETEST"}

@@ -45,23 +45,28 @@ class PriceActionQuantV3Tests(unittest.TestCase):
         self.assertEqual(strategy.target_prices(100, "SELL", 102), (98, 96, 94))
         self.assertEqual(strategy.target_prices(100, "BUY", 98), (102, 104, 106))
 
-    def test_direction_is_normal_at_all_hours_and_independent_of_market_bias(self):
-        buy_day = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="SELL", higher_timeframe_rows=trending_rows())
-        buy_night = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="BUY", higher_timeframe_rows=trending_rows())
-        self.assertIsNotNone(buy_day)
-        self.assertIsNotNone(buy_night)
-        self.assertEqual(buy_day["side"], "BUY")
-        self.assertEqual(buy_night["side"], "BUY")
-        self.assertEqual(buy_day["session_mode"], "NORMAL_ALL_HOURS")
-        self.assertEqual(buy_night["session_mode"], "NORMAL_ALL_HOURS")
-        self.assertLess(buy_day["stop"], buy_day["entry"])
-        self.assertEqual(buy_day["reward_risk"], 3.0)
+    def test_full_inversion_reverses_setup_and_trend_all_hours(self):
+        bearish = [[r[0], 200-r[1], 200-r[3], 200-r[2], 200-r[4], r[5]] for r in bullish_reversal_rows()]
+        inverted_buy = strategy.analyze("futures", "TEST", bearish, "4h", market_bias="SELL", higher_timeframe_rows=trending_rows("BULLISH"))
+        inverted_sell = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="BUY", higher_timeframe_rows=trending_rows("BEARISH"))
+        self.assertIsNotNone(inverted_buy)
+        self.assertIsNotNone(inverted_sell)
+        self.assertEqual(inverted_buy["side"], "BUY")
+        self.assertEqual(inverted_sell["side"], "SELL")
+        self.assertEqual(inverted_buy["session_mode"], "INVERTED_ALL_HOURS")
+        self.assertEqual(inverted_sell["session_mode"], "INVERTED_ALL_HOURS")
+        self.assertLess(inverted_buy["stop"], inverted_buy["entry"])
+        self.assertGreater(inverted_sell["stop"], inverted_sell["entry"])
+        self.assertEqual(inverted_buy["reward_risk"], 3.0)
+        self.assertEqual(inverted_sell["reward_risk"], 3.0)
 
-    def test_spot_buy_only_without_session_dependent_logic(self):
-        diagnostics = {}
-        signal = strategy.analyze("spot", "TEST", bullish_reversal_rows(), "4h", diagnostics=diagnostics, higher_timeframe_rows=trending_rows())
+    def test_spot_only_keeps_executable_buy_after_inversion(self):
+        bearish = [[r[0], 200-r[1], 200-r[3], 200-r[2], 200-r[4], r[5]] for r in bullish_reversal_rows()]
+        signal = strategy.analyze("spot", "TEST", bearish, "4h", higher_timeframe_rows=trending_rows("BULLISH"))
         self.assertIsNotNone(signal)
         self.assertEqual(signal["side"], "BUY")
+        blocked = strategy.analyze("spot", "TEST", bullish_reversal_rows(), "4h", higher_timeframe_rows=trending_rows("BEARISH"))
+        self.assertIsNone(blocked)
     def test_all_markets_and_six_timeframes(self):
         self.assertEqual(len(strategy.MARKETS), 7)
         self.assertEqual(strategy.TIMEFRAMES, ("15m", "1h", "4h", "1d", "1w", "1M"))
@@ -71,14 +76,14 @@ class PriceActionQuantV3Tests(unittest.TestCase):
         self.assertEqual(strategy._classify_trend(trending_rows("BULLISH")), "BULLISH")
         self.assertEqual(strategy._classify_trend(trending_rows("BEARISH")), "BEARISH")
 
-    def test_countertrend_setup_is_rejected(self):
+    def test_natural_trend_aligned_setup_is_rejected_by_inverse_filter(self):
         diagnostics = {}
         signal = strategy.analyze(
             "futures", "TEST", bullish_reversal_rows(), "4h",
             higher_timeframe_rows=trending_rows("BEARISH"), diagnostics=diagnostics
         )
         self.assertIsNone(signal)
-        self.assertGreater(diagnostics.get("setup_against_higher_timeframe_trend", 0), 0)
+        self.assertGreater(diagnostics.get("inverted_setup_not_aligned_with_inverse_trend", 0), 0)
 
     def test_unclear_higher_timeframe_is_rejected(self):
         diagnostics = {}
@@ -90,9 +95,9 @@ class PriceActionQuantV3Tests(unittest.TestCase):
         self.assertIsNone(signal)
         self.assertGreater(diagnostics.get("higher_timeframe_trend_unclear", 0), 0)
 
-    def test_bias_argument_is_compatibility_only(self):
-        a = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="BUY", higher_timeframe_rows=trending_rows())
-        b = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="SELL", higher_timeframe_rows=trending_rows())
+    def test_market_bias_remains_compatibility_only(self):
+        a = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="BUY", higher_timeframe_rows=trending_rows("BEARISH"))
+        b = strategy.analyze("futures", "TEST", bullish_reversal_rows(), "4h", market_bias="SELL", higher_timeframe_rows=trending_rows("BEARISH"))
         self.assertEqual(a["side"], b["side"])
 
     def test_diagnostic_self_test(self):
