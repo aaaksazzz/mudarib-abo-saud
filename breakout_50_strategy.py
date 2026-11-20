@@ -219,7 +219,7 @@ def analyze(market,symbol,rows,timeframe="15m",market_bias=None,diagnostics=None
             "setup_quality_label":"technical_quality_not_probability"}
 
 def diagnostic_self_test():
-    sample=[{"open":100+i*.1,"high":101+i*.1,"low":99+i*.1,"close":100.5+i*.1,"volume":10} for i in range(20)]
+    sample=[{"open":100,"high":101,"low":99,"close":100,"volume":10} for _ in range(20)]
     checks={"fingerprint":STRATEGY_FINGERPRINT=="STP-BREAKOUT-50-VOLUME-PROFILE-V1-20261120",
             "seven_markets":len(MARKETS)==7,"six_timeframes":len(TIMEFRAMES)==6,
             "buy_targets_1r_2r_3r":target_prices(100,"BUY",98)==(102,104,106),
