@@ -34,7 +34,7 @@ jobs:
           node --version
           python -m pip freeze
       - name: Compile backend
-        run: python -m compileall -q app.py market_adapters.py smart_money_strategy.py
+        run: python -m compileall -q app.py market_adapters.py breakout_50_strategy.py
       - name: Run backend regression tests
         env:
           SECRET_KEY: ci-test-secret-key-not-for-production
@@ -45,8 +45,8 @@ jobs:
           python -m unittest discover -s tests -v
           python - <<'PY'
           from app import app, scheduler
-          from smart_money_strategy import diagnostic_self_test as smart_money_diagnostic_self_test
-          assert smart_money_diagnostic_self_test()["ok"], smart_money_diagnostic_self_test()
+          from breakout_50_strategy import diagnostic_self_test as breakout_50_diagnostic_self_test
+          assert breakout_50_diagnostic_self_test()["ok"], breakout_50_diagnostic_self_test()
           assert scheduler is None, "ENABLE_AUTO_SCAN=false must disable background jobs in CI"
           client = app.test_client()
           for path in ("/health", "/ready", "/api/bootstrap", "/api/trades", "/api/strategy/status", "/api/strategy-status", "/", "/plans", "/journal", "/blog", "/news", "/login", "/register", "/account", "/admin", "/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex", "/styles.css", "/pro-theme.css", "/compat.css", "/platform.js", "/intelligence", "/intelligence.js", "/intelligence.css"):
@@ -56,12 +56,12 @@ jobs:
           assert client.get("/api/bootstrap").status_code == 200
           assert client.get("/api/trades").status_code == 200
           strategy_status = client.get("/api/strategy/status").get_json()
-          assert strategy_status["strategy_fingerprint"].startswith("STP-PRICE-ACTION-QUANT-V3-"), strategy_status
-          assert strategy_status["engine"] == "STP PRICE ACTION QUANT V3"
+          assert strategy_status["strategy_fingerprint"].startswith("STP-BREAKOUT-50-VOLUME-PROFILE-V1-"), strategy_status
+          assert strategy_status["engine"] == "STP BREAKOUT 50 + VOLUME PROFILE"
           assert strategy_status["strategy_ready"] is True
           assert strategy_status["manual_only"] is True
           status_summary = client.get("/api/strategy-status").get_json()
-          assert status_summary["strategy_fingerprint"].startswith("STP-PRICE-ACTION-QUANT-V3-"), status_summary
+          assert status_summary["strategy_fingerprint"].startswith("STP-BREAKOUT-50-VOLUME-PROFILE-V1-"), status_summary
           assert status_summary["strategy_ready"] is True
           assert status_summary["legacy_removed"] is True, status_summary
           assert status_summary["manual_only"] is True
