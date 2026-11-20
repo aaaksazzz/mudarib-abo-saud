@@ -130,10 +130,10 @@ class AccountNewsSeoTests(unittest.TestCase):
 
     def test_every_market_has_six_independent_timeframes(self):
         expected = ("15m", "1h", "4h", "1d", "1w", "1M")
-        self.assertEqual(platform_app.smart_money_strategy.TIMEFRAMES, expected)
+        self.assertEqual(platform_app.breakout_50_strategy.TIMEFRAMES, expected)
         for market in platform_app.MARKETS:
             self.assertEqual(platform_app.market_scan_timeframes(market), expected)
-        self.assertEqual(set(platform_app.MARKETS), set(platform_app.smart_money_strategy.MARKETS))
+        self.assertEqual(set(platform_app.MARKETS), set(platform_app.breakout_50_strategy.MARKETS))
 
     def test_build_signal_marks_short_candle_provider_response_incomplete(self):
         with patch.object(platform_app, "klines", return_value=[[i, 100, 101, 99, 100, 10] for i in range(40)]):

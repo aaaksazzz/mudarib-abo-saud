@@ -8,7 +8,7 @@ import requests
 import xml.etree.ElementTree as ET
 import html
 import market_adapters
-import smart_money_strategy
+import breakout_50_strategy
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -426,14 +426,14 @@ def pro_theme(): return send_from_directory(APP_DIR, "pro-theme.css")
 def compat_styles(): return send_from_directory(APP_DIR, "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
-    diagnostic=smart_money_strategy.diagnostic_self_test()
+    diagnostic=breakout_50_strategy.diagnostic_self_test()
     return jsonify({
         "ok":bool(diagnostic.get("ok")),
-        "engine":"STP PRICE ACTION QUANT V3",
+        "engine":"STP BREAKOUT 50 + VOLUME PROFILE",
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
         "strategy_ready":bool(diagnostic.get("ok")),
         "strategy_checks":diagnostic.get("checks",{}),
-        "retired_engines":["ICT/SMC TREND FOLLOW V1","REGIME-ADAPTIVE V7","STP ADAPTIVE QUANT V8"],
+        "retired_engines":["ICT/SMC TREND FOLLOW","SMART MONEY SWEEP/FVG","PRICE ACTION QUANT V2/V3/V4","FULL INVERSION"],
         "manual_only":True
     })
 
@@ -470,7 +470,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "price_action_engine":smart_money_strategy.STRATEGY_FINGERPRINT.startswith("STP-PRICE-ACTION-QUANT-V3-")}
+            "breakout_50_engine":breakout_50_strategy.STRATEGY_FINGERPRINT.startswith("STP-BREAKOUT-50-VOLUME-PROFILE-V1-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -656,7 +656,7 @@ def provider_status(m):
     if not item:
         return {"configured":False,"health":"unknown","source":None,"requires_api_key":False}
     return {**item,"configured":True,"health":"not_probed","health_note":"Adapter presence only; live connectivity is not tested by this endpoint",
-            "requires_api_key":False,"access":"public_no_key","analysis":"regime_adaptive_trend_range_mtf"}
+            "requires_api_key":False,"access":"public_no_key","analysis":"breakout_50_volume_profile"}
 def fetch_json(url,params=None):
     last_error=None
     for attempt in range(3):
@@ -785,63 +785,50 @@ def klines(market,symbol,interval,limit=120):
     base=BINANCE_FUTURES if market=="futures" else BINANCE_SPOT
     path="/fapi/v1/klines" if market=="futures" else "/api/v3/klines"
     return fetch_json(base+path,{"symbol":symbol,"interval":interval,"limit":limit})
-TIMEFRAMES=smart_money_strategy.TIMEFRAMES
+TIMEFRAMES=breakout_50_strategy.TIMEFRAMES
 
-STRATEGY_FINGERPRINT=smart_money_strategy.STRATEGY_FINGERPRINT
+STRATEGY_FINGERPRINT=breakout_50_strategy.STRATEGY_FINGERPRINT
 @app.get("/api/strategy-status")
 def strategy_status_summary():
     active_current=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.like("STP PRICE ACTION QUANT V2:%")
+        Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE:%")
     ).count()
     active_legacy=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.not_like("STP PRICE ACTION QUANT V2:%")
+        Trade.reason.not_like("STP BREAKOUT 50 + VOLUME PROFILE:%")
     ).count()
-    primary=smart_money_strategy.diagnostic_self_test()
+    primary=breakout_50_strategy.diagnostic_self_test()
     active_scheduler=globals().get("scheduler")
     return jsonify({
-        "ok":True,"engine":"STP PRICE ACTION QUANT V2",
+        "ok":True,"engine":"STP BREAKOUT 50 + VOLUME PROFILE",
         "current_active":active_current,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
         "strategy_ready":bool(primary.get("ok")),
         "strategy_checks":primary.get("checks",{}),
-        "retired_engines":["REGIME-ADAPTIVE V7","STP ADAPTIVE QUANT V8"],
+        "retired_engines":["ICT/SMC TREND FOLLOW","SMART MONEY SWEEP/FVG","PRICE ACTION QUANT V2/V3/V4","FULL INVERSION"],
         "auto_scan_enabled":bool(globals().get("AUTO_SCAN_ENABLED",False)),
         "scheduler_running":bool(active_scheduler and active_scheduler.running)
     })
 
 
 @app.get("/api/strategy/smart-money")
-def smart_money_strategy_status():
+@app.get("/api/strategy/breakout-50")
+def breakout_50_strategy_status():
     market=str(request.args.get("market","")).strip().lower()
     if market not in MARKETS:
         return json_error("السوق غير معروف",404)
-    row=db.session.get(Setting,"smart-money-signals:"+market)
-    if not row:
-        return jsonify({"ok":True,"market":market,"engine":"SMART MONEY",
-                        "fingerprint":smart_money_strategy.STRATEGY_FINGERPRINT,
-                        "signals":[],"frame_diagnostics":{},"updated_at":None,
-                        "note":"لم تكتمل أول دورة مقارنة لهذا السوق بعد."})
-    try:
-        payload=json.loads(row.value)
-        if not isinstance(payload,dict):
-            raise ValueError("invalid payload")
-    except (TypeError,ValueError):
-        return json_error("تعذر قراءة نتائج محرك SMART MONEY",500)
-    now_ms=int(utcnow().timestamp()*1000)
-    fresh=[]
-    for signal in payload.get("signals",[]):
-        try:
-            interval=smart_money_strategy.INTERVAL_MS.get(signal.get("timeframe"))
-            candle=int(signal.get("signal_candle_time") or 0)
-            if interval and candle and now_ms-(candle+interval)<=interval*1.5+120000:
-                fresh.append(signal)
-        except (TypeError,ValueError,AttributeError):
-            continue
-    payload["signals"]=fresh
-    return jsonify({"ok":True,**payload})
+    now=utcnow()
+    active=Trade.query.filter(
+        Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
+        Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
+        Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE:%")
+    ).order_by(Trade.score.desc()).limit(18).all()
+    return jsonify({"ok":True,"market":market,"engine":"STP BREAKOUT 50 + VOLUME PROFILE",
+                    "fingerprint":breakout_50_strategy.STRATEGY_FINGERPRINT,
+                    "signals":[trade_json(x) for x in active],
+                    "updated_at":iso(now),"manual_only":True})
 
 
 def scan_failure_code(exc):
@@ -892,10 +879,10 @@ def record_scan_failure(frame_stats,frame,item,code):
 
 
 def build_signal(market,item,timeframe,market_bias=None):
-    """Build a signal while preserving the active Price Action Quant V2 identity."""
+    """Build a signal using the single active Breakout 50 + Volume Profile engine."""
     symbol=item["symbol"]
     rows=klines(market,symbol,timeframe,250)
-    required_rows=41
+    required_rows=46
     if not isinstance(rows,list) or len(rows)<required_rows:
         received=len(rows) if isinstance(rows,list) else 0
         reason=("invalid_candle_payload" if not isinstance(rows,list)
@@ -903,41 +890,32 @@ def build_signal(market,item,timeframe,market_bias=None):
                 else "insufficient_history")
         return {"_data_incomplete":True,"_candles_received":received,
                 "_diagnostic_code":reason}
-    higher_timeframe=smart_money_strategy.TREND_TIMEFRAME_MAP[timeframe]
-    if higher_timeframe == timeframe:
-        higher_rows=rows
-    else:
+    microstructure=None
+    if item.get("include_microstructure") and market in ("spot","futures"):
         try:
-            higher_rows=klines(market,symbol,higher_timeframe,250)
+            microstructure=market_adapters.microstructure(market,symbol)
         except Exception:
-            app.logger.exception("Higher-timeframe data unavailable: %s %s %s",market,symbol,higher_timeframe)
-            return {"_data_incomplete":True,"_diagnostic_code":"higher_timeframe_provider_error",
-                    "_required_timeframe":higher_timeframe}
-    if not isinstance(higher_rows,list) or len(higher_rows)<41:
-        received=len(higher_rows) if isinstance(higher_rows,list) else 0
-        return {"_data_incomplete":True,"_candles_received":received,
-                "_diagnostic_code":"insufficient_higher_timeframe_history",
-                "_required_timeframe":higher_timeframe}
+            microstructure=None
     rejections={}
     try:
-        setup=smart_money_strategy.analyze(
+        setup=breakout_50_strategy.analyze(
             market,symbol,rows,timeframe=timeframe,market_bias=market_bias,diagnostics=rejections,
-            higher_timeframe_rows=higher_rows
+            microstructure=microstructure
         )
     except Exception:
-        app.logger.exception("Price Action Quant V3 analysis failed: %s %s %s",market,symbol,timeframe)
+        app.logger.exception("Breakout 50 Volume Profile analysis failed: %s %s %s",market,symbol,timeframe)
         return {"_strategy_rejected":True,"_strategy_rejection_reasons":{"engine_error":1}}
     if not setup:
         return {"_strategy_rejected":True,
                 "_strategy_rejection_reasons":rejections or {"no_confirmed_trend_setup":1}}
     setup["signal_timeframe"]=timeframe
-    setup["strategy_fingerprint"]=smart_money_strategy.STRATEGY_FINGERPRINT
+    setup["strategy_fingerprint"]=breakout_50_strategy.STRATEGY_FINGERPRINT
     # Keep the exact strategy identity emitted by the engine; do not relabel V2 as retired ICT Trend.
-    setup["strategy"]=smart_money_strategy.STRATEGY_FINGERPRINT+"_"+market.upper()+"_"+timeframe
+    setup["strategy"]=breakout_50_strategy.STRATEGY_FINGERPRINT+"_"+market.upper()+"_"+timeframe
     setup["strategy_names"]=list(setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
     setup["strategy_total"]=len(setup["strategy_names"])
-    setup["reason"]="STP PRICE ACTION QUANT V2: "+timeframe+"; "+setup.get("reason","")
+    setup["reason"]="STP BREAKOUT 50 + VOLUME PROFILE: "+timeframe+"; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -966,7 +944,7 @@ def filter_fresh_signals(signals, universe, now=None):
             current=live_prices.get(signal.get("symbol"))
             side=signal.get("side")
             direction=1.0 if side=="BUY" else -1.0
-            interval_ms=smart_money_strategy.INTERVAL_MS.get(signal.get("timeframe"))
+            interval_ms=breakout_50_strategy.INTERVAL_MS.get(signal.get("timeframe"))
             if not interval_ms or not candle_time or now_ms-(candle_time+interval_ms)>interval_ms*1.5+120000:
                 rejected_old+=1
                 continue
@@ -997,7 +975,7 @@ def filter_fresh_signals(signals, universe, now=None):
                 continue
             # Keep TP1 anchored to the previous structural swing. Only the
             # extension targets are recalculated from the live quote.
-            targets=smart_money_strategy.target_prices(current,side,stop)
+            targets=breakout_50_strategy.target_prices(current,side,stop)
             if not targets:
                 rejected_moved+=1
                 continue
@@ -1015,63 +993,6 @@ def filter_fresh_signals(signals, universe, now=None):
     return accepted,{"rejected_stale_candle":rejected_old,"rejected_late_price":rejected_moved}
 
 
-def filter_fresh_smart_money_signals(signals,universe,now=None):
-    """Apply the same closed-candle freshness discipline without indicator dependencies."""
-    now=now or utcnow()
-    now_ms=int(now.timestamp()*1000)
-    prices={}
-    for item in universe:
-        try:
-            price=float(item.get("price") or 0)
-            if item.get("symbol") and math.isfinite(price) and price>0:
-                prices[item["symbol"]]=price
-        except (TypeError,ValueError,OverflowError):
-            continue
-    accepted=[]
-    stale=late=0
-    for signal in signals or []:
-        try:
-            frame=signal.get("timeframe")
-            interval=smart_money_strategy.INTERVAL_MS.get(frame)
-            candle=int(signal.get("signal_candle_time") or 0)
-            entry=float(signal.get("entry") or 0)
-            stop=float(signal.get("stop") or 0)
-            target=float(signal.get("tp1") or 0)
-            side=signal.get("side")
-            current=prices.get(signal.get("symbol"))
-            if not interval or not candle or now_ms-(candle+interval)>interval*1.5+120000:
-                stale+=1
-                continue
-            if current is None or min(entry,stop,target)<=0 or side not in ("BUY","SELL"):
-                late+=1
-                continue
-            risk=abs(entry-stop)
-            target_distance=abs(target-entry)
-            direction=1.0 if side=="BUY" else -1.0
-            favorable=(current-entry)*direction
-            if risk<=0 or target_distance<=0 or favorable>=target_distance*0.80:
-                late+=1
-                continue
-            if abs(current-entry)>max(risk*0.35,target_distance*0.50):
-                late+=1
-                continue
-            if (side=="BUY" and (current<=stop or target<=current)) or (side=="SELL" and (current>=stop or target>=current)):
-                late+=1
-                continue
-            targets=smart_money_strategy.target_prices(current,side,stop)
-            if not targets:
-                late+=1
-                continue
-            signal["entry"]=current
-            signal["tp1"],signal["tp2"],signal["tp3"]=targets
-            signal["risk_distance"]=abs(current-stop)
-            signal["entry_price_source"]="live_market_quote"
-            accepted.append(signal)
-        except (TypeError,ValueError,OverflowError):
-            late+=1
-    return accepted,{"rejected_stale_candle":stale,"rejected_late_price":late}
-
-
 def expire_stale_trades(market=None):
     now=utcnow()
     query=Trade.query.filter(Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at<=now)
@@ -1085,7 +1006,7 @@ def expire_stale_trades(market=None):
 def evaluate_trade_outcome_from_bars(trade,rows,now_ms=None):
     """Replay completed OHLC bars using the trade's own timeframe."""
     now_ms=now_ms if now_ms is not None else int(utcnow().timestamp()*1000)
-    interval_ms=smart_money_strategy.INTERVAL_MS.get(trade.timeframe)
+    interval_ms=breakout_50_strategy.INTERVAL_MS.get(trade.timeframe)
     if not interval_ms:
         return trade.status,0
     try:
@@ -1227,7 +1148,7 @@ def timeframe_bucket(frame,now):
 
 def market_scan_timeframes(market):
     """Expose the same independently-calculated frames for every supported market."""
-    return smart_money_strategy.TIMEFRAMES
+    return breakout_50_strategy.TIMEFRAMES
 
 
 def align_signals_with_market_bias(signals, market_bias):
@@ -1242,7 +1163,7 @@ def trade_passes_frame_risk(trade):
     Keep the strategy's frame-specific structural-risk limits authoritative.
     """
     try:
-        profile=smart_money_strategy.FRAME_PROFILES.get(trade.timeframe)
+        profile=breakout_50_strategy.FRAME_PROFILES.get(trade.timeframe)
         entry=float(trade.entry)
         stop=float(trade.stop)
         side=str(trade.side)
@@ -1276,8 +1197,8 @@ def _run_market_scan_unlocked(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             all_frames_current=all(
-                db.session.get(Setting,f"scan-frame:price-action-quant:{market}:{frame}") is not None
-                and db.session.get(Setting,f"scan-frame:price-action-quant:{market}:{frame}").value==str(timeframe_bucket(frame,now))
+                db.session.get(Setting,f"scan-frame:breakout-50:{market}:{frame}") is not None
+                and db.session.get(Setting,f"scan-frame:breakout-50:{market}:{frame}").value==str(timeframe_bucket(frame,now))
                 for frame in market_scan_timeframes(market)
             )
             # Throttle repeated failed/partial provider scans too. A healthy
@@ -1289,7 +1210,7 @@ def _run_market_scan_unlocked(market,force=False):
                     meta=json.loads(meta_row.value) if meta_row else {}
                 except (ValueError,TypeError):
                     meta={}
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("STP PRICE ACTION QUANT V2:%")).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE:%")).all()
                 active=[trade for trade in active if trade_passes_frame_risk(trade)]
                 active.sort(key=lambda trade:trade.score,reverse=True)
                 active=active[:18]
@@ -1302,7 +1223,7 @@ def _run_market_scan_unlocked(market,force=False):
     for frame in scan_frames:
         bucket=timeframe_bucket(frame,now)
         frame_buckets[frame]=bucket
-        frame_row=db.session.get(Setting,f"scan-frame:price-action-quant:{market}:{frame}")
+        frame_row=db.session.get(Setting,f"scan-frame:breakout-50:{market}:{frame}")
         if frame_row is None or frame_row.value!=str(bucket):
             frames_to_scan.append(frame)
     if not frames_to_scan:
@@ -1331,12 +1252,10 @@ def _run_market_scan_unlocked(market,force=False):
     for index,item in enumerate(candidates):
         item["include_microstructure"]=(market in ("spot","futures") and index<12)
     found=[]
-    smart_money_found=[]
     completed=0
     failed=0
     with ThreadPoolExecutor(max_workers=8) as pool:
         frame_stats={frame:{"completed":0,"failed":0,"matches":0,
-                              "smart_money_matches":0,"smart_money_rejections":{},
                               "failure_reasons":{},"failure_samples":[],
                               "strategy_rejections":{}} for frame in frames_to_scan}
         futures={pool.submit(build_signal,market,item,frame,market_bias):(item,frame) for item in candidates for frame in frames_to_scan}
@@ -1344,16 +1263,6 @@ def _run_market_scan_unlocked(market,force=False):
             item,frame=futures[future]
             try:
                 signal=future.result()
-                if isinstance(signal,dict):
-                    secondary_setup=signal.pop("_smart_money_setup",None)
-                    secondary_rejections=signal.pop("_smart_money_rejection_reasons",{}) or {}
-                    if secondary_setup:
-                        smart_money_found.append(secondary_setup)
-                        frame_stats[frame]["smart_money_matches"]+=1
-                    else:
-                        reasons=frame_stats[frame]["smart_money_rejections"]
-                        for reason,count in secondary_rejections.items():
-                            reasons[reason]=reasons.get(reason,0)+int(count or 0)
                 if isinstance(signal,dict) and signal.get("_data_incomplete"):
                     failed+=1
                     frame_stats[frame]["failed"]+=1
@@ -1401,8 +1310,6 @@ def _run_market_scan_unlocked(market,force=False):
     frame_diagnostics={
         frame:{"completed":stats["completed"],"failed":stats["failed"],
                "matches":stats["matches"],
-               "smart_money_matches":stats.get("smart_money_matches",0),
-               "smart_money_rejections":stats.get("smart_money_rejections",{}),
                "failure_reasons":stats.get("failure_reasons",{}),
                "failure_samples":stats.get("failure_samples",[]),
                "strategy_rejections":stats.get("strategy_rejections",{})}
@@ -1466,7 +1373,7 @@ def _run_market_scan_unlocked(market,force=False):
         active=Trade.query.filter(
             Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
             Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-            Trade.reason.like("STP PRICE ACTION QUANT V2:%")
+            Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE:%")
         ).order_by(Trade.score.desc()).limit(18).all()
         return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],
                 "updated_at":iso(now),"cached":False,"data_status":"unavailable",
@@ -1474,13 +1381,6 @@ def _run_market_scan_unlocked(market,force=False):
                 "incomplete_timeframes":meta_value and json.loads(meta_value)["incomplete_timeframes"],
                 "frame_diagnostics":frame_diagnostics,
                 "timeframes":list(TIMEFRAMES),"scanned_timeframes":[]}
-    smart_money_fresh,smart_money_freshness=filter_fresh_smart_money_signals(
-        [signal for signal in smart_money_found if signal.get("timeframe") in frames_to_scan],
-        universe,utcnow()
-    )
-    smart_money_fresh,smart_money_direction_rejected=align_signals_with_market_bias(
-        smart_money_fresh,market_bias
-    )
     if failed:
         app.logger.warning(
             "market scan partial data: market=%s completed=%s failed=%s requested=%s diagnostics=%s",
@@ -1515,7 +1415,7 @@ def _run_market_scan_unlocked(market,force=False):
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("STP PRICE ACTION QUANT V2:%"),
+        Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE:%"),
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
@@ -1534,7 +1434,7 @@ def _run_market_scan_unlocked(market,force=False):
         for signal in frame_signals[:3]:
             marker=str(signal["signal_candle_time"])
             key=(signal["symbol"],frame,marker)
-            setting_key=f"signal-candle:adaptive-trend:{market}:{signal['symbol']}:{frame}"
+            setting_key=f"signal-candle:breakout-50:{market}:{signal['symbol']}:{frame}"
             candle_row=db.session.get(Setting,setting_key)
             previous=existing_by_key.get(key)
             if candle_row and candle_row.value==marker:
@@ -1549,7 +1449,7 @@ def _run_market_scan_unlocked(market,force=False):
             new_signals.append(signal)
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("STP PRICE ACTION QUANT V2:%")).update({"status":"superseded"},synchronize_session=False)
+        Trade.reason.not_like("STP BREAKOUT 50 + VOLUME PROFILE:%")).update({"status":"superseded"},synchronize_session=False)
     # Do not erase a live setup just because the latest completed scan found
     # no replacement. Replace only frames that produced at least one fresh,
     # direction-aligned candidate; otherwise keep the prior trade until expiry.
@@ -1557,7 +1457,7 @@ def _run_market_scan_unlocked(market,force=False):
                         if any(signal.get("timeframe")==frame for signal in found)}
     if replacement_frames:
         active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-            Trade.timeframe.in_(replacement_frames),Trade.reason.like("STP PRICE ACTION QUANT V2:%"))
+            Trade.timeframe.in_(replacement_frames),Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE:%"))
         if retained_ids:
             active_query=active_query.filter(~Trade.id.in_(retained_ids))
         active_query.update({"status":"superseded"},synchronize_session=False)
@@ -1589,7 +1489,7 @@ def _run_market_scan_unlocked(market,force=False):
     else:
         cursor_row.value=str(next_cursor)
     for frame in frames_to_scan:
-        frame_key=f"scan-frame:price-action-quant:{market}:{frame}"
+        frame_key=f"scan-frame:breakout-50:{market}:{frame}"
         frame_row=db.session.get(Setting,frame_key)
         bucket_value=str(frame_buckets[frame])
         if frame_row is None:
@@ -1623,51 +1523,10 @@ def _run_market_scan_unlocked(market,force=False):
             db.session.add(Setting(key=frame_meta_key,value=frame_meta))
         else:
             frame_meta_row.value=frame_meta
-    # Keep a separate, inspectable paper-signal snapshot for the independent engine.
-    smart_key="smart-money-signals:"+market
-    smart_row=db.session.get(Setting,smart_key)
-    previous_smart={}
-    try:
-        previous_smart=json.loads(smart_row.value) if smart_row else {}
-        smart_frames=dict(previous_smart.get("signals_by_frame") or {})
-    except (TypeError,ValueError,AttributeError):
-        previous_smart={}
-        smart_frames={}
-    smart_frame_diagnostics=dict(previous_smart.get("frame_diagnostics") or {}) if isinstance(previous_smart,dict) else {}
-    for frame in frames_to_scan:
-        frame_rows=[x for x in smart_money_fresh if x.get("timeframe")==frame]
-        frame_rows.sort(key=lambda x:(x.get("score",0),x.get("quote_volume",0) or 0),reverse=True)
-        smart_frames[frame]=frame_rows[:3]
-        smart_frame_diagnostics[frame]={
-            "completed":frame_stats[frame]["completed"],
-            "matches":frame_stats[frame].get("smart_money_matches",0),
-            "fresh_matches":len(frame_rows),
-            "rejections":frame_stats[frame].get("smart_money_rejections",{}),
-            "rejected_stale_candle":smart_money_freshness["rejected_stale_candle"],
-            "rejected_late_price":smart_money_freshness["rejected_late_price"],
-            "direction_rejected":smart_money_direction_rejected,
-        }
-    smart_payload={
-        "market":market,"engine":"SMART MONEY",
-        "fingerprint":smart_money_strategy.STRATEGY_FINGERPRINT,
-        "updated_at":iso(now),"market_bias":market_bias,
-        "signals_by_frame":smart_frames,
-        "signals":[signal for frame in TIMEFRAMES for signal in smart_frames.get(frame,[])],
-        "frame_diagnostics":smart_frame_diagnostics,
-        "scanned_timeframes":frames_to_scan,
-        "order_flow_note":"ضغط الصفقات المنفذة متاح فقط عندما يرسله مزود الشموع (مثل Binance taker-buy volume)؛ وإلا يظهر غير متاح.",
-        "volume_profile_note":"ملف الحجم محسوب كتقريب موزون بحجم الشمعة، وليس بيانات حجم منفذة على كل مستوى سعري.",
-        "comparison_note":"هذه إشارات ورقية مستقلة؛ لا تمثل نسبة نجاح أو مقارنة أداء تاريخية."
-    }
-    smart_value=json.dumps(smart_payload,ensure_ascii=False,allow_nan=False)
-    if smart_row is None:
-        db.session.add(Setting(key=smart_key,value=smart_value))
-    else:
-        smart_row.value=smart_value
     db.session.commit()
     active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-        Trade.reason.like("STP PRICE ACTION QUANT V2:%")).all()
+        Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE:%")).all()
     active=[trade for trade in active if trade_passes_frame_risk(trade)]
     active.sort(key=lambda trade:trade.score,reverse=True)
     active=active[:18]
@@ -2063,7 +1922,7 @@ with app.app_context():
     # Retire open records from every previous strategy immediately on upgrade.
     Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("STP PRICE ACTION QUANT V2:%")
+        Trade.reason.not_like("STP BREAKOUT 50 + VOLUME PROFILE:%")
     ).update({"status":"superseded"}, synchronize_session=False)
     db.session.commit()
     provision_admin_from_env()

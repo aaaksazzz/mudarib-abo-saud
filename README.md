@@ -17,20 +17,23 @@ Production-oriented market intelligence terminal.
 - **Tadawul:** public Saudi Exchange data is preferred, with Yahoo, a public ticker directory and TradingView fallbacks. Saudi equities are not filtered by the $1M threshold; public-feed coverage can be incomplete during provider restrictions.
 - **Forex & Gold:** public Yahoo symbol list; FX tick volume is not represented as exchange-traded dollar volume.
 
-## Active engine: STP PRICE ACTION QUANT V2
-- The single active signal engine is `smart_money_strategy.py`, fingerprint `STP-PRICE-ACTION-QUANT-V2-20261117-NO-SESSION`. The previous ICT/SMC trend-following engine has been replaced, not layered on top.
-- Every supported market is scanned independently on six completed-candle timeframes: 15m, 1h, 4h, 1d, 1w and 1M.
-- The entry model combines a confirmed liquidity sweep, displacement through market structure (CHoCH/BOS), fair-value-gap formation and a later retest/rejection. It evaluates BUY and SELL setups independently and does not filter entries by market-wide breadth.
-- Signal direction is identical at all hours; there is no day/night inversion or Saudi-time session rule. Spot remains BUY-only as a market-specific constraint.
-- Stops are structural and placed beyond the execution-side invalidation extreme with an ATR buffer. Timeframe-specific maximum risk limits remain in force. TP1/TP2/TP3 are 1R/2R/3R.
-- The displayed score is a technical-quality score, not a statistically calibrated win probability. No strategy guarantees profits; historical and out-of-sample performance must be measured after fees and slippage.
+## Active engine: STP BREAKOUT 50 + VOLUME PROFILE
+- The single active signal engine is `breakout_50_strategy.py`, fingerprint `STP-BREAKOUT-50-VOLUME-PROFILE-V1-20261120`. The previous Price Action Quant / ICT-SMC / liquidity-sweep-FVG / full-inversion entry engines are retired and are not layered into this engine.
+- Every market is scanned independently on six completed-candle timeframes: 15m, 1h, 4h, 1d, 1w and 1M. The engine has no day/night inversion and no higher-timeframe direction gate.
+- BUY setup: confirmed close above a confirmed swing high, measure the breakout impulse, wait for a 50% retracement, require the retest to overlap the Volume Profile value area or be close to POC, then require a bullish post-retest structure confirmation.
+- SELL setup is the exact inverse: confirmed close below a swing low, 50% upward retracement, Volume Profile confluence and bearish post-retest structure confirmation. Spot remains BUY-only because spot short selling is not supported by this terminal.
+- Volume Profile provides POC, VAH and VAL. With OHLCV candles it is an explicitly labelled candle-volume approximation, not exchange-grade volume-at-price. VWAP is calculated from available candle volume.
+- Binance Spot/Futures may add public aggregate-trade taker delta and order-book imbalance for a small prioritized subset. Other markets use a clearly labelled candle-delta proxy; it is not presented as true CVD or centralized FX volume.
+- RSI momentum and ATR are supporting checks. ATR places the structural stop beyond the retest/impulse invalidation area. TP1/TP2/TP3 are 1R/2R/3R.
+- The displayed score is a technical confluence score, not a statistically calibrated win probability. No strategy guarantees profits; no performance claim is made without reproducible per-market out-of-sample tests after fees, spread, slippage and contract-specific costs.
 - Signals remain paper/manual only. No account API keys or automatic order execution are used.
 
 ## Signal engine
-- A timeframe batch is replaced only when that scan produces at least one fresh setup matching the active Saudi session mode; a zero-match scan preserves existing live trades until their normal expiry or outcome. Up to three opportunities per market per timeframe are published. Previous rows remain in trade history and expire after 24 hours.
-- Market-page requests only read committed results and never launch heavy scans synchronously.
-- Expired records are also cleaned when the journal is read.
-- No performance claim is made without reproducible per-market backtests.
+- Each market and timeframe is evaluated independently. A signal requires a closed-candle breakout, 50% retracement, volume-profile confluence and a post-retest confirmation; no single indicator can trigger an entry by itself.
+- A timeframe batch is replaced only when that scan produces at least one fresh setup. Previous rows remain in trade history and expire after 24 hours.
+- Market-page requests only read committed results and never launch heavy scans synchronously. The staggered scanner continues on its configured schedule.
+- Historical engine trades are superseded as the new engine scans each market; old strategy logic is not retained as a secondary signal source.
+- The separate research backtester remains research-only and does not activate candidate strategies.
 
 ## Production deployment
 - Python runtime is pinned by `.python-version` to 3.15.2.
@@ -38,7 +41,7 @@ Production-oriented market intelligence terminal.
 - Expose port 8080.
 - Prefer a persistent PostgreSQL database through `DATABASE_URL`. SQLite is acceptable only when `DATA_DIR` points to a persistent mounted volume; the default local SQLite path is not production-durable.
 - Configure a persistent random `SECRET_KEY` and `COOKIE_SECURE=true`. The public sentiment dashboard scans on demand and does not require the legacy market scheduler.
-- The active Price Action Quant V2 scanner runs on a staggered 15-minute schedule across markets. It uses public candle data and paper/manual signals only.
+- The active Breakout 50 + Volume Profile scanner runs on a staggered 15-minute schedule across markets. It uses public candle data and paper/manual signals only.
 - `/ready` requires a durable database configuration (PostgreSQL or an explicitly configured `DATA_DIR` volume) and a persistent `SECRET_KEY`; no background market scheduler is required.
 - Configure `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` (14+ characters) before first boot if first-admin provisioning is needed.
 - Never commit or share secrets. Rotate credentials after any security incident and update them at the provider and deployment environment.

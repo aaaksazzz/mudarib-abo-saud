@@ -30,9 +30,9 @@ class ScanDiagnosticsTests(unittest.TestCase):
         self.assertEqual(short["_candles_received"], 12)
 
     def test_build_signal_uses_timeframe_specific_history_requirement(self):
-        monthly_rows=[[i, 100, 101, 99, 100, 10] for i in range(43)]
+        monthly_rows=[[i, 100, 101, 99, 100, 10] for i in range(47)]
         with patch.object(platform_app, "klines", return_value=monthly_rows), patch.object(
-            platform_app.smart_money_strategy, "analyze", return_value=None
+            platform_app.breakout_50_strategy, "analyze", return_value=None
         ) as analyze:
             result=platform_app.build_signal("alpha", {"symbol":"ALPHAUSDT"}, "1M")
         self.assertNotIn("_data_incomplete", result)
@@ -41,6 +41,8 @@ class ScanDiagnosticsTests(unittest.TestCase):
         self.assertEqual(analyze.call_args.args[:2], ("alpha", "ALPHAUSDT"))
         self.assertEqual(analyze.call_args.kwargs["timeframe"], "1M")
         self.assertIn("diagnostics", analyze.call_args.kwargs)
+        self.assertNotIn("higher_timeframe_rows", analyze.call_args.kwargs)
+        self.assertIn("microstructure", analyze.call_args.kwargs)
 
     def test_scan_failure_samples_are_bounded_and_counted(self):
         stats = {"15m": {"failure_reasons": {}, "failure_samples": []}}
@@ -138,20 +140,20 @@ class ScanDiagnosticsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_build_signal_preserves_active_engine_fingerprint_and_name(self):
-        rows=[[i, 100, 101, 99, 100, 10] for i in range(45)]
+        rows=[[i, 100, 101, 99, 100, 10] for i in range(46)]
         engine_signal={
             "market":"futures","symbol":"BTCUSDT","side":"BUY",
             "entry":100.0,"stop":99.0,"tp1":101.0,"tp2":102.0,"tp3":103.0,
-            "strategy":"STP_PRICE_ACTION_QUANT_V2_futures_15m",
-            "strategy_fingerprint":platform_app.smart_money_strategy.STRATEGY_FINGERPRINT,
+            "strategy":"STP-BREAKOUT-50-VOLUME-PROFILE-V1_futures_15m",
+            "strategy_fingerprint":platform_app.breakout_50_strategy.STRATEGY_FINGERPRINT,
             "confirmations":["CLOSED_CANDLE","LIQUIDITY_SWEEP"],
             "reason":"test setup",
         }
         with patch.object(platform_app, "klines", return_value=rows), patch.object(
-            platform_app.smart_money_strategy, "analyze", return_value=engine_signal.copy()
+            platform_app.breakout_50_strategy, "analyze", return_value=engine_signal.copy()
         ):
             result=platform_app.build_signal("futures", {"symbol":"BTCUSDT"}, "15m")
-        expected=platform_app.smart_money_strategy.STRATEGY_FINGERPRINT
+        expected=platform_app.breakout_50_strategy.STRATEGY_FINGERPRINT
         self.assertEqual(result["strategy_fingerprint"], expected)
         self.assertEqual(result["strategy"], expected+"_FUTURES_15m")
         self.assertNotIn("STP_ICT_TREND_", result["strategy"])
