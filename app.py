@@ -882,7 +882,7 @@ def build_signal(market,item,timeframe,market_bias=None):
     """Build a signal using the single active Breakout 50 + Volume Profile engine."""
     symbol=item["symbol"]
     rows=klines(market,symbol,timeframe,250)
-    required_rows=41
+    required_rows=46
     if not isinstance(rows,list) or len(rows)<required_rows:
         received=len(rows) if isinstance(rows,list) else 0
         reason=("invalid_candle_payload" if not isinstance(rows,list)
@@ -1197,8 +1197,8 @@ def _run_market_scan_unlocked(market,force=False):
         try:
             last=aware(datetime.fromisoformat(scan_row.value))
             all_frames_current=all(
-                db.session.get(Setting,f"scan-frame:price-action-quant:{market}:{frame}") is not None
-                and db.session.get(Setting,f"scan-frame:price-action-quant:{market}:{frame}").value==str(timeframe_bucket(frame,now))
+                db.session.get(Setting,f"scan-frame:breakout-50:{market}:{frame}") is not None
+                and db.session.get(Setting,f"scan-frame:breakout-50:{market}:{frame}").value==str(timeframe_bucket(frame,now))
                 for frame in market_scan_timeframes(market)
             )
             # Throttle repeated failed/partial provider scans too. A healthy
@@ -1223,7 +1223,7 @@ def _run_market_scan_unlocked(market,force=False):
     for frame in scan_frames:
         bucket=timeframe_bucket(frame,now)
         frame_buckets[frame]=bucket
-        frame_row=db.session.get(Setting,f"scan-frame:price-action-quant:{market}:{frame}")
+        frame_row=db.session.get(Setting,f"scan-frame:breakout-50:{market}:{frame}")
         if frame_row is None or frame_row.value!=str(bucket):
             frames_to_scan.append(frame)
     if not frames_to_scan:
@@ -1434,7 +1434,7 @@ def _run_market_scan_unlocked(market,force=False):
         for signal in frame_signals[:3]:
             marker=str(signal["signal_candle_time"])
             key=(signal["symbol"],frame,marker)
-            setting_key=f"signal-candle:adaptive-trend:{market}:{signal['symbol']}:{frame}"
+            setting_key=f"signal-candle:breakout-50:{market}:{signal['symbol']}:{frame}"
             candle_row=db.session.get(Setting,setting_key)
             previous=existing_by_key.get(key)
             if candle_row and candle_row.value==marker:
@@ -1489,7 +1489,7 @@ def _run_market_scan_unlocked(market,force=False):
     else:
         cursor_row.value=str(next_cursor)
     for frame in frames_to_scan:
-        frame_key=f"scan-frame:price-action-quant:{market}:{frame}"
+        frame_key=f"scan-frame:breakout-50:{market}:{frame}"
         frame_row=db.session.get(Setting,frame_key)
         bucket_value=str(frame_buckets[frame])
         if frame_row is None:
