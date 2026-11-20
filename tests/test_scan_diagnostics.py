@@ -30,7 +30,7 @@ class ScanDiagnosticsTests(unittest.TestCase):
         self.assertEqual(short["_candles_received"], 12)
 
     def test_build_signal_uses_timeframe_specific_history_requirement(self):
-        monthly_rows=[[i, 100, 101, 99, 100, 10] for i in range(43)]
+        monthly_rows=[[i, 100, 101, 99, 100, 10] for i in range(47)]
         with patch.object(platform_app, "klines", return_value=monthly_rows), patch.object(
             platform_app.breakout_50_strategy, "analyze", return_value=None
         ) as analyze:
