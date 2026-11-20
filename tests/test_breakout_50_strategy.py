@@ -2,15 +2,25 @@ import unittest
 import breakout_50_strategy as strategy
 
 
-class Breakout50VolumeProfileTests(unittest.TestCase):
+class InvertedBreakout50VolumeProfileTests(unittest.TestCase):
     def test_last_forming_candle_is_excluded(self):
         rows=[[i,100,101,99,100,10] for i in range(50)]
         self.assertEqual(len(strategy._bars(rows)),49)
 
-    def test_targets_are_one_two_three_r_for_both_sides(self):
+    def test_targets_are_one_two_three_r_for_both_final_sides(self):
         self.assertEqual(strategy.target_prices(100,"BUY",98),(102,104,106))
         self.assertEqual(strategy.target_prices(100,"SELL",102),(98,96,94))
         self.assertIsNone(strategy.target_prices(100,"BUY",101))
+
+    def test_source_directions_are_fully_inverted(self):
+        self.assertEqual(strategy.inverted_side("BUY"),"SELL")
+        self.assertEqual(strategy.inverted_side("SELL"),"BUY")
+        self.assertIsNone(strategy.inverted_side("NEUTRAL"))
+
+    def test_inverted_structural_stops_are_on_correct_side(self):
+        setup={"retest_low":97,"impulse_low":96,"retest_high":103,"impulse_high":104}
+        self.assertLess(strategy.structural_stop(setup,"BUY",2,100),100)
+        self.assertGreater(strategy.structural_stop(setup,"SELL",2,100),100)
 
     def test_volume_profile_returns_poc_and_70_percent_value_area(self):
         bars=[{"open":100+i*.05,"high":101+i*.05,"low":99+i*.05,
@@ -39,7 +49,9 @@ class Breakout50VolumeProfileTests(unittest.TestCase):
         self.assertEqual(set(strategy.FRAME_PROFILES),set(strategy.TIMEFRAMES))
 
     def test_engine_self_test(self):
-        self.assertTrue(strategy.diagnostic_self_test()["ok"])
+        result=strategy.diagnostic_self_test()
+        self.assertTrue(result["ok"],result)
+        self.assertEqual(result["strategy_mode"],"FULL_INVERSION_ALL_HOURS")
 
 
 if __name__=="__main__":
