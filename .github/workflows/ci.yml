@@ -57,7 +57,7 @@ jobs:
           assert client.get("/api/trades").status_code == 200
           strategy_status = client.get("/api/strategy/status").get_json()
           assert strategy_status["strategy_fingerprint"].startswith("STP-BREAKOUT-50-VOLUME-PROFILE-V1-"), strategy_status
-          assert strategy_status["engine"] == "STP BREAKOUT 50 + VOLUME PROFILE"
+          assert strategy_status["engine"] == "STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION"
           assert strategy_status["strategy_ready"] is True
           assert strategy_status["manual_only"] is True
           status_summary = client.get("/api/strategy-status").get_json()
