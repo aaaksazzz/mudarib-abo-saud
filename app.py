@@ -429,11 +429,11 @@ def strategy_status():
     diagnostic=breakout_50_strategy.diagnostic_self_test()
     return jsonify({
         "ok":bool(diagnostic.get("ok")),
-        "engine":"STP BREAKOUT 50 + VOLUME PROFILE",
+        "engine":"STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION",
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
         "strategy_ready":bool(diagnostic.get("ok")),
         "strategy_checks":diagnostic.get("checks",{}),
-        "retired_engines":["ICT/SMC TREND FOLLOW","SMART MONEY SWEEP/FVG","PRICE ACTION QUANT V2/V3/V4","FULL INVERSION"],
+        "retired_engines":["ICT/SMC TREND FOLLOW","SMART MONEY SWEEP/FVG","PRICE ACTION QUANT V2/V3/V4","NORMAL-DIRECTION BREAKOUT 50"],
         "manual_only":True
     })
 
@@ -470,7 +470,7 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "breakout_50_engine":breakout_50_strategy.STRATEGY_FINGERPRINT.startswith("STP-BREAKOUT-50-VOLUME-PROFILE-V1-")}
+            "breakout_50_engine":breakout_50_strategy.STRATEGY_FINGERPRINT.startswith("STP-BREAKOUT-50-VOLUME-PROFILE-INVERSE-V2-")}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -656,7 +656,7 @@ def provider_status(m):
     if not item:
         return {"configured":False,"health":"unknown","source":None,"requires_api_key":False}
     return {**item,"configured":True,"health":"not_probed","health_note":"Adapter presence only; live connectivity is not tested by this endpoint",
-            "requires_api_key":False,"access":"public_no_key","analysis":"breakout_50_volume_profile"}
+            "requires_api_key":False,"access":"public_no_key","analysis":"breakout_50_volume_profile_full_inversion"}
 def fetch_json(url,params=None):
     last_error=None
     for attempt in range(3):
@@ -792,22 +792,22 @@ STRATEGY_FINGERPRINT=breakout_50_strategy.STRATEGY_FINGERPRINT
 def strategy_status_summary():
     active_current=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE:%")
+        Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%")
     ).count()
     active_legacy=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.not_like("STP BREAKOUT 50 + VOLUME PROFILE:%")
+        Trade.reason.not_like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%")
     ).count()
     primary=breakout_50_strategy.diagnostic_self_test()
     active_scheduler=globals().get("scheduler")
     return jsonify({
-        "ok":True,"engine":"STP BREAKOUT 50 + VOLUME PROFILE",
+        "ok":True,"engine":"STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION",
         "current_active":active_current,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
         "strategy_ready":bool(primary.get("ok")),
         "strategy_checks":primary.get("checks",{}),
-        "retired_engines":["ICT/SMC TREND FOLLOW","SMART MONEY SWEEP/FVG","PRICE ACTION QUANT V2/V3/V4","FULL INVERSION"],
+        "retired_engines":["ICT/SMC TREND FOLLOW","SMART MONEY SWEEP/FVG","PRICE ACTION QUANT V2/V3/V4","NORMAL-DIRECTION BREAKOUT 50"],
         "auto_scan_enabled":bool(globals().get("AUTO_SCAN_ENABLED",False)),
         "scheduler_running":bool(active_scheduler and active_scheduler.running)
     })
@@ -823,9 +823,9 @@ def breakout_50_strategy_status():
     active=Trade.query.filter(
         Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-        Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE:%")
+        Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%")
     ).order_by(Trade.score.desc()).limit(18).all()
-    return jsonify({"ok":True,"market":market,"engine":"STP BREAKOUT 50 + VOLUME PROFILE",
+    return jsonify({"ok":True,"market":market,"engine":"STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION",
                     "fingerprint":breakout_50_strategy.STRATEGY_FINGERPRINT,
                     "signals":[trade_json(x) for x in active],
                     "updated_at":iso(now),"manual_only":True})
@@ -915,7 +915,7 @@ def build_signal(market,item,timeframe,market_bias=None):
     setup["strategy_names"]=list(setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
     setup["strategy_total"]=len(setup["strategy_names"])
-    setup["reason"]="STP BREAKOUT 50 + VOLUME PROFILE: "+timeframe+"; "+setup.get("reason","")
+    setup["reason"]="STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION: "+timeframe+"; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -1210,7 +1210,7 @@ def _run_market_scan_unlocked(market,force=False):
                     meta=json.loads(meta_row.value) if meta_row else {}
                 except (ValueError,TypeError):
                     meta={}
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE:%")).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%")).all()
                 active=[trade for trade in active if trade_passes_frame_risk(trade)]
                 active.sort(key=lambda trade:trade.score,reverse=True)
                 active=active[:18]
@@ -1373,7 +1373,7 @@ def _run_market_scan_unlocked(market,force=False):
         active=Trade.query.filter(
             Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
             Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-            Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE:%")
+            Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%")
         ).order_by(Trade.score.desc()).limit(18).all()
         return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],
                 "updated_at":iso(now),"cached":False,"data_status":"unavailable",
@@ -1415,7 +1415,7 @@ def _run_market_scan_unlocked(market,force=False):
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE:%"),
+        Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%"),
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
@@ -1449,7 +1449,7 @@ def _run_market_scan_unlocked(market,force=False):
             new_signals.append(signal)
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("STP BREAKOUT 50 + VOLUME PROFILE:%")).update({"status":"superseded"},synchronize_session=False)
+        Trade.reason.not_like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%")).update({"status":"superseded"},synchronize_session=False)
     # Do not erase a live setup just because the latest completed scan found
     # no replacement. Replace only frames that produced at least one fresh,
     # direction-aligned candidate; otherwise keep the prior trade until expiry.
@@ -1457,7 +1457,7 @@ def _run_market_scan_unlocked(market,force=False):
                         if any(signal.get("timeframe")==frame for signal in found)}
     if replacement_frames:
         active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-            Trade.timeframe.in_(replacement_frames),Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE:%"))
+            Trade.timeframe.in_(replacement_frames),Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%"))
         if retained_ids:
             active_query=active_query.filter(~Trade.id.in_(retained_ids))
         active_query.update({"status":"superseded"},synchronize_session=False)
@@ -1526,7 +1526,7 @@ def _run_market_scan_unlocked(market,force=False):
     db.session.commit()
     active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-        Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE:%")).all()
+        Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%")).all()
     active=[trade for trade in active if trade_passes_frame_risk(trade)]
     active.sort(key=lambda trade:trade.score,reverse=True)
     active=active[:18]
@@ -1922,7 +1922,7 @@ with app.app_context():
     # Retire open records from every previous strategy immediately on upgrade.
     Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("STP BREAKOUT 50 + VOLUME PROFILE:%")
+        Trade.reason.not_like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%")
     ).update({"status":"superseded"}, synchronize_session=False)
     db.session.commit()
     provision_admin_from_env()

@@ -1,7 +1,7 @@
-"""STP Breakout 50 + Volume Profile: the single active market-analysis engine."""
+"""STP fully inverted Breakout 50 + Volume Profile signal engine."""
 import math
 
-STRATEGY_FINGERPRINT = "STP-BREAKOUT-50-VOLUME-PROFILE-V1-20261120"
+STRATEGY_FINGERPRINT = "STP-BREAKOUT-50-VOLUME-PROFILE-INVERSE-V2-20261120"
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 MARKETS = ("spot", "futures", "alpha", "us-stocks", "us-contracts", "saudi", "forex")
 INTERVAL_MS = {"15m":900_000,"1h":3_600_000,"4h":14_400_000,"1d":86_400_000,"1w":604_800_000,"1M":2_678_400_000}
@@ -106,6 +106,19 @@ def _rsi_divergence(bars,side):
     if r1 is None or r2 is None: return False
     return (p2<p1 and r2>r1+2) if side=="BUY" else (p2>p1 and r2<r1-2)
 
+def inverted_side(source_side):
+    """Return the trade direction opposite to the detected breakout setup."""
+    if source_side == "BUY": return "SELL"
+    if source_side == "SELL": return "BUY"
+    return None
+
+def structural_stop(setup, final_side, atr, entry):
+    """Place invalidation beyond the opposite edge of the source impulse/retest."""
+    buffer=max(atr*.15,entry*.0002)
+    if final_side=="BUY": return min(setup["retest_low"],setup["impulse_low"])-buffer
+    if final_side=="SELL": return max(setup["retest_high"],setup["impulse_high"])+buffer
+    return None
+
 def target_prices(entry,side,stop):
     try: entry,stop=float(entry),float(stop)
     except (TypeError,ValueError,OverflowError): return None
@@ -162,23 +175,24 @@ def analyze(market,symbol,rows,timeframe="15m",market_bias=None,diagnostics=None
     vp=_volume_profile(bars); vwap=_vwap(bars)
     if not vp or vwap is None: return reject("volume_profile_unavailable")
     candidates=[]
-    for side in ("BUY","SELL"):
-        if market=="spot" and side=="SELL": continue
-        setup=_find_breakout(bars,side,atr)
-        if setup: candidates.append((side,setup))
-    if not candidates: return reject("no_breakout_50_retest_confirmation")
+    for source_side in ("BUY","SELL"):
+        setup=_find_breakout(bars,source_side,atr)
+        final_side=inverted_side(source_side)
+        # Spot cannot short, so only source SELL setups can become executable BUY trades.
+        if market=="spot" and final_side!="BUY": continue
+        if setup: candidates.append((source_side,final_side,setup))
+    if not candidates: return reject("no_inverted_breakout_50_retest_confirmation")
     def rank(item):
-        midpoint=item[1]["midpoint_50"]
+        midpoint=item[2]["midpoint_50"]
         in_va=vp["val"]-atr*.25<=midpoint<=vp["vah"]+atr*.25
         return (int(in_va),-abs(midpoint-vp["poc"])/atr)
-    side,setup=max(candidates,key=rank); midpoint=setup["midpoint_50"]
+    source_side,side,setup=max(candidates,key=rank); midpoint=setup["midpoint_50"]
     in_va=vp["val"]-atr*.25<=midpoint<=vp["vah"]+atr*.25
     if not in_va and abs(midpoint-vp["poc"])/atr>.60:
         return reject("fifty_percent_not_confluent_with_volume_profile")
-    buffer=max(atr*.15,current["close"]*.0002)
-    stop=min(setup["retest_low"],setup["impulse_low"])-buffer if side=="BUY" else max(setup["retest_high"],setup["impulse_high"])+buffer
-    entry=current["close"]; risk_pct=abs(entry-stop)/entry if entry>0 else float("inf")
-    if not math.isfinite(risk_pct) or risk_pct<=0 or risk_pct>frame["max_risk_pct"]: return reject("structural_stop_outside_frame_risk_limit")
+    entry=current["close"]; stop=structural_stop(setup,side,atr,entry)
+    risk_pct=abs(entry-stop)/entry if entry>0 and stop is not None else float("inf")
+    if not math.isfinite(risk_pct) or risk_pct<=0 or risk_pct>frame["max_risk_pct"]: return reject("inverted_structural_stop_outside_frame_risk_limit")
     targets=target_prices(entry,side,stop)
     if not targets: return reject("invalid_target_geometry")
     delta,delta_source=_flow(bars,microstructure)
@@ -192,11 +206,11 @@ def analyze(market,symbol,rows,timeframe="15m",market_bias=None,diagnostics=None
         book_imbalance=None
     confirmations=["CLOSED_CANDLE","SWING_BREAKOUT_CLOSE","FIFTY_PERCENT_RETRACE",
                    "VOLUME_PROFILE_VALUE_AREA_OR_POC","VWAP","POST_RETEST_STRUCTURE_CONFIRMATION",
-                   "ATR_STRUCTURAL_STOP","THREE_R_TARGETS"]
+                   "ATR_STRUCTURAL_STOP","THREE_R_TARGETS","FULL_SIGNAL_DIRECTION_INVERSION"]
     score=70.0
     if in_va: score+=5; confirmations.append("VP_VALUE_AREA_CONFLUENCE")
     if abs(midpoint-vwap)<=atr*.75: score+=4; confirmations.append("VWAP_CONFLUENCE")
-    if (delta>.05 if side=="BUY" else delta<-.05): score+=4; confirmations.append("BUY_SELL_FLOW_CONFIRMATION")
+    if (delta>.05 if side=="BUY" else delta<-.05): score+=4; confirmations.append("INVERTED_SIDE_FLOW_CONFIRMATION")
     if book_imbalance is not None and (book_imbalance>.08 if side=="BUY" else book_imbalance<-.08):
         score+=2; confirmations.append("ORDER_BOOK_IMBALANCE_SUPPORT")
     if rsi_divergence: score+=3; confirmations.append("RSI_DIVERGENCE_SUPPORT")
@@ -208,24 +222,31 @@ def analyze(market,symbol,rows,timeframe="15m",market_bias=None,diagnostics=None
             "timeframe":timeframe,"signal_candle_time":current["time"],"atr":atr,
             "risk_pct":round(risk_pct*100,4),"risk_distance":abs(entry-stop),"reward_risk":3.0,
             "change_pct":0.0,"quote_volume":None,"setup_type":"BREAKOUT_50_VOLUME_PROFILE",
-            "structure":"BULLISH_BREAKOUT_50_RETEST" if side=="BUY" else "BEARISH_BREAKDOWN_50_RETEST",
+            "structure":"INVERTED_FROM_BEARISH_BREAKDOWN" if side=="BUY" else "INVERTED_FROM_BULLISH_BREAKOUT",
             "breakout_level":setup["break_level"],"retracement_50":midpoint,
             "volume_profile":vp,"vwap":vwap,"taker_delta_ratio":delta,"order_flow_source":delta_source,
             "rsi":rsi,"confirmations":confirmations,"strategy_names":confirmations,
             "strategy":STRATEGY_FINGERPRINT+"_"+market.upper()+"_"+timeframe,
             "strategy_fingerprint":STRATEGY_FINGERPRINT,"session_mode":"ALL_HOURS",
-            "strategy_mode":"BREAKOUT_50_RETEST",
-            "reason":"STP BREAKOUT 50 + VOLUME PROFILE: confirmed breakout, 50% retrace, VP/VWAP confluence, post-retest structure, structural stop, 1R/2R/3R.",
+            "strategy_mode":"FULL_INVERSION_ALL_HOURS","source_setup_side":source_side,
+            "reason":"STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION: detected breakout direction is reversed; inverse-side structural stop; VP/VWAP confluence; 1R/2R/3R.",
             "setup_quality_label":"technical_quality_not_probability"}
 
 def diagnostic_self_test():
     sample=[{"open":100,"high":101,"low":99,"close":100,"volume":10} for _ in range(20)]
-    checks={"fingerprint":STRATEGY_FINGERPRINT=="STP-BREAKOUT-50-VOLUME-PROFILE-V1-20261120",
+    dummy={"retest_low":97.0,"impulse_low":96.0,"retest_high":103.0,"impulse_high":104.0}
+    checks={"fingerprint":STRATEGY_FINGERPRINT=="STP-BREAKOUT-50-VOLUME-PROFILE-INVERSE-V2-20261120",
             "seven_markets":len(MARKETS)==7,"six_timeframes":len(TIMEFRAMES)==6,
             "buy_targets_1r_2r_3r":target_prices(100,"BUY",98)==(102,104,106),
             "sell_targets_1r_2r_3r":target_prices(100,"SELL",102)==(98,96,94),
+            "buy_setup_inverts_to_sell":inverted_side("BUY")=="SELL",
+            "sell_setup_inverts_to_buy":inverted_side("SELL")=="BUY",
+            "inverse_sell_stop_above_entry":structural_stop(dummy,"SELL",2,100)>100,
+            "inverse_buy_stop_below_entry":structural_stop(dummy,"BUY",2,100)<100,
             "volume_profile":_volume_profile(sample) is not None,"vwap":_vwap(sample)==100.0,
-            "spot_buy_only":True,"all_hours":True,"manual_only":True}
+            "spot_buy_only_after_inversion":inverted_side("SELL")=="BUY",
+            "all_hours":True,"manual_only":True}
     return {"ok":all(checks.values()),"fingerprint":STRATEGY_FINGERPRINT,"checks":checks,
             "markets":list(MARKETS),"timeframes":list(TIMEFRAMES),
-            "entry_model":"BREAKOUT_CLOSE_50_PERCENT_RETRACE_VOLUME_PROFILE_VWAP_STRUCTURE_CONFIRMATION"}
+            "session":"INVERTED_ALL_HOURS","strategy_mode":"FULL_INVERSION_ALL_HOURS",
+            "entry_model":"INVERTED_BREAKOUT_CLOSE_50_PERCENT_RETRACE_VOLUME_PROFILE_VWAP_STRUCTURE_CONFIRMATION"}
