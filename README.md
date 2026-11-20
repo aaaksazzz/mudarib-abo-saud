@@ -17,19 +17,19 @@ Production-oriented market intelligence terminal.
 - **Tadawul:** public Saudi Exchange data is preferred, with Yahoo, a public ticker directory and TradingView fallbacks. Saudi equities are not filtered by the $1M threshold; public-feed coverage can be incomplete during provider restrictions.
 - **Forex & Gold:** public Yahoo symbol list; FX tick volume is not represented as exchange-traded dollar volume.
 
-## Active engine: STP BREAKOUT 50 + VOLUME PROFILE
-- The single active signal engine is `breakout_50_strategy.py`, fingerprint `STP-BREAKOUT-50-VOLUME-PROFILE-V1-20261120`. The previous Price Action Quant / ICT-SMC / liquidity-sweep-FVG / full-inversion entry engines are retired and are not layered into this engine.
-- Every market is scanned independently on six completed-candle timeframes: 15m, 1h, 4h, 1d, 1w and 1M. The engine has no day/night inversion and no higher-timeframe direction gate.
-- BUY setup: confirmed close above a confirmed swing high, measure the breakout impulse, wait for a 50% retracement, require the retest to overlap the Volume Profile value area or be close to POC, then require a bullish post-retest structure confirmation.
-- SELL setup is the exact inverse: confirmed close below a swing low, 50% upward retracement, Volume Profile confluence and bearish post-retest structure confirmation. Spot remains BUY-only because spot short selling is not supported by this terminal.
-- Volume Profile provides POC, VAH and VAL. With OHLCV candles it is an explicitly labelled candle-volume approximation, not exchange-grade volume-at-price. VWAP is calculated from available candle volume.
+## Active engine: STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION
+- The single active signal engine is `breakout_50_strategy.py`, fingerprint `STP-BREAKOUT-50-VOLUME-PROFILE-INVERSE-V2-20261120`. The previous normal-direction Breakout 50 engine and all prior entry engines are retired; no old signal engine is layered in.
+- Every market is scanned independently on six completed-candle timeframes: 15m, 1h, 4h, 1d, 1w and 1M. The inversion applies at all hours, with no day/night switch and no higher-timeframe direction gate.
+- Full inversion means a bullish breakout setup produces a SELL trade, while a bearish breakdown setup produces a BUY trade. Setup detection and 50% retracement confirmation remain based on the detected source setup; the final trade direction, structural stop side, flow/RSI support interpretation and targets are reversed.
+- Spot remains BUY-only, therefore only bearish breakdown setups that invert into BUY trades are eligible on Spot.
+- Volume Profile provides POC, VAH and VAL. With OHLCV candles it is a candle-volume approximation, not exchange-grade volume-at-price. VWAP is calculated from available candle volume.
 - Binance Spot/Futures may add public aggregate-trade taker delta and order-book imbalance for a small prioritized subset. Other markets use a clearly labelled candle-delta proxy; it is not presented as true CVD or centralized FX volume.
-- RSI momentum and ATR are supporting checks. ATR places the structural stop beyond the retest/impulse invalidation area. TP1/TP2/TP3 are 1R/2R/3R.
-- The displayed score is a technical confluence score, not a statistically calibrated win probability. No strategy guarantees profits; no performance claim is made without reproducible per-market out-of-sample tests after fees, spread, slippage and contract-specific costs.
+- ATR places the structural stop beyond the inverse trade's invalidation extreme. TP1/TP2/TP3 are 1R/2R/3R from the final inverted trade direction.
+- The displayed score is a technical confluence score, not a statistically calibrated win probability. No strategy guarantees profits; performance must be measured after fees, spread, slippage and contract-specific costs.
 - Signals remain paper/manual only. No account API keys or automatic order execution are used.
 
 ## Signal engine
-- Each market and timeframe is evaluated independently. A signal requires a closed-candle breakout, 50% retracement, volume-profile confluence and a post-retest confirmation; no single indicator can trigger an entry by itself.
+- Each market and timeframe is evaluated independently. A signal requires a closed-candle breakout, 50% retracement, volume-profile confluence and a post-retest confirmation; the detected setup is then fully inverted before publishing the trade.
 - A timeframe batch is replaced only when that scan produces at least one fresh setup. Previous rows remain in trade history and expire after 24 hours.
 - Market-page requests only read committed results and never launch heavy scans synchronously. The staggered scanner continues on its configured schedule.
 - Historical engine trades are superseded as the new engine scans each market; old strategy logic is not retained as a secondary signal source.
