@@ -83,6 +83,29 @@ def _flow(bars,microstructure=None):
         signed+=(b["close"]-b["open"])/span*b["volume"]; total+=b["volume"]
     return (signed/total if total else 0.0),"ohlcv_candle_delta_proxy"
 
+def _cvd_proxy(bars):
+    """Approximate cumulative candle delta; this is not exchange trade-by-trade CVD."""
+    cumulative=0.0
+    total=0.0
+    for b in bars[-30:]:
+        spread=max(b["high"]-b["low"],b["close"]*1e-10)
+        cumulative+=(b["close"]-b["open"])/spread*b["volume"]
+        total+=b["volume"]
+    return {"normalized_delta":cumulative/total if total else 0.0,
+            "source":"ohlcv_candle_delta_proxy"}
+
+def _rsi_divergence(bars,side):
+    """Return a supporting (never mandatory) two-swing RSI divergence flag."""
+    highs,lows=_pivots(bars)
+    pivots=lows if side=="BUY" else highs
+    if len(pivots)<2: return False
+    (i1,p1),(i2,p2)=pivots[-2:]
+    if i2-i1<4: return False
+    closes=[b["close"] for b in bars]
+    r1=_rsi(closes[:i1+1]); r2=_rsi(closes[:i2+1])
+    if r1 is None or r2 is None: return False
+    return (p2<p1 and r2>r1+2) if side=="BUY" else (p2>p1 and r2<r1-2)
+
 def target_prices(entry,side,stop):
     try: entry,stop=float(entry),float(stop)
     except (TypeError,ValueError,OverflowError): return None
@@ -158,7 +181,15 @@ def analyze(market,symbol,rows,timeframe="15m",market_bias=None,diagnostics=None
     if not math.isfinite(risk_pct) or risk_pct<=0 or risk_pct>frame["max_risk_pct"]: return reject("structural_stop_outside_frame_risk_limit")
     targets=target_prices(entry,side,stop)
     if not targets: return reject("invalid_target_geometry")
-    delta,delta_source=_flow(bars,microstructure); rsi=_rsi([b["close"] for b in bars])
+    delta,delta_source=_flow(bars,microstructure)
+    rsi=_rsi([b["close"] for b in bars])
+    cvd=_cvd_proxy(bars)
+    rsi_divergence=_rsi_divergence(bars,side)
+    try:
+        book_imbalance=float(microstructure.get("book_imbalance")) if isinstance(microstructure,dict) else None
+        if book_imbalance is not None and not math.isfinite(book_imbalance): book_imbalance=None
+    except (TypeError,ValueError,OverflowError):
+        book_imbalance=None
     confirmations=["CLOSED_CANDLE","SWING_BREAKOUT_CLOSE","FIFTY_PERCENT_RETRACE",
                    "VOLUME_PROFILE_VALUE_AREA_OR_POC","VWAP","POST_RETEST_STRUCTURE_CONFIRMATION",
                    "ATR_STRUCTURAL_STOP","THREE_R_TARGETS"]
@@ -166,6 +197,9 @@ def analyze(market,symbol,rows,timeframe="15m",market_bias=None,diagnostics=None
     if in_va: score+=5; confirmations.append("VP_VALUE_AREA_CONFLUENCE")
     if abs(midpoint-vwap)<=atr*.75: score+=4; confirmations.append("VWAP_CONFLUENCE")
     if (delta>.05 if side=="BUY" else delta<-.05): score+=4; confirmations.append("BUY_SELL_FLOW_CONFIRMATION")
+    if book_imbalance is not None and (book_imbalance>.08 if side=="BUY" else book_imbalance<-.08):
+        score+=2; confirmations.append("ORDER_BOOK_IMBALANCE_SUPPORT")
+    if rsi_divergence: score+=3; confirmations.append("RSI_DIVERGENCE_SUPPORT")
     if rsi is not None and ((side=="BUY" and 45<=rsi<=72) or (side=="SELL" and 28<=rsi<=55)):
         score+=2; confirmations.append("RSI_MOMENTUM_SUPPORT")
     if abs(current["close"]-current["open"])>=atr*.35: score+=3; confirmations.append("CONFIRMATION_CANDLE_DISPLACEMENT")
