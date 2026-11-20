@@ -140,7 +140,7 @@ class ScanDiagnosticsTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_build_signal_preserves_active_engine_fingerprint_and_name(self):
-        rows=[[i, 100, 101, 99, 100, 10] for i in range(45)]
+        rows=[[i, 100, 101, 99, 100, 10] for i in range(46)]
         engine_signal={
             "market":"futures","symbol":"BTCUSDT","side":"BUY",
             "entry":100.0,"stop":99.0,"tp1":101.0,"tp2":102.0,"tp3":103.0,
