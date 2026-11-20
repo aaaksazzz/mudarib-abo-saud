@@ -807,7 +807,7 @@ def strategy_status_summary():
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
         "strategy_ready":bool(primary.get("ok")),
         "strategy_checks":primary.get("checks",{}),
-        "retired_engines":["ICT/SMC TREND FOLLOW","SMART MONEY SWEEP/FVG","PRICE ACTION QUANT V2/V3/V4","FULL INVERSION"],
+        "retired_engines":["ICT/SMC TREND FOLLOW","SMART MONEY SWEEP/FVG","PRICE ACTION QUANT V2/V3/V4","NORMAL-DIRECTION BREAKOUT 50"],
         "auto_scan_enabled":bool(globals().get("AUTO_SCAN_ENABLED",False)),
         "scheduler_running":bool(active_scheduler and active_scheduler.running)
     })
