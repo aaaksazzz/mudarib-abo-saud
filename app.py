@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 import html
 import market_adapters
 import breakout_50_strategy
+import as_market_tools
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -788,6 +789,11 @@ def klines(market,symbol,interval,limit=120):
 TIMEFRAMES=breakout_50_strategy.TIMEFRAMES
 
 STRATEGY_FINGERPRINT=breakout_50_strategy.STRATEGY_FINGERPRINT
+@app.get("/api/skill-suite/status")
+def trader_skill_suite_status():
+    return jsonify(as_market_tools.status())
+
+
 @app.get("/api/strategy-status")
 def strategy_status_summary():
     active_current=Trade.query.filter(
@@ -908,6 +914,10 @@ def build_signal(market,item,timeframe,market_bias=None):
     if not setup:
         return {"_strategy_rejected":True,
                 "_strategy_rejection_reasons":rejections or {"no_confirmed_trend_setup":1}}
+    setup=as_market_tools.apply_skill_stack(market,timeframe,setup)
+    if not setup:
+        return {"_strategy_rejected":True,
+                "_strategy_rejection_reasons":{"trader_skill_risk_validation":1}}
     setup["signal_timeframe"]=timeframe
     setup["strategy_fingerprint"]=breakout_50_strategy.STRATEGY_FINGERPRINT
     # Keep the exact strategy identity emitted by the engine; do not relabel V2 as retired ICT Trend.
