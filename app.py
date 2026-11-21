@@ -428,12 +428,14 @@ def compat_styles(): return send_from_directory(APP_DIR, "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
     diagnostic=breakout_50_strategy.diagnostic_self_test()
+    us_diagnostic=us_day_trader_strategy.diagnostic_self_test()
     return jsonify({
-        "ok":bool(diagnostic.get("ok")),
-        "engine":"STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION",
+        "ok":bool(diagnostic.get("ok") and us_diagnostic.get("ok")),
+        "engine":"MARKET-SPECIFIC STRATEGY ENGINES",
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
-        "strategy_ready":bool(diagnostic.get("ok")),
+        "strategy_ready":bool(diagnostic.get("ok") and us_diagnostic.get("ok")),
         "strategy_checks":diagnostic.get("checks",{}),
+        "us_day_trader":{"fingerprint":us_day_trader_strategy.STRATEGY_FINGERPRINT,"ready":bool(us_diagnostic.get("ok")),"checks":us_diagnostic.get("checks",{}),"strategies":us_diagnostic.get("strategies",[])},
         "retired_engines":["ICT/SMC TREND FOLLOW","SMART MONEY SWEEP/FVG","PRICE ACTION QUANT V2/V3/V4","NORMAL-DIRECTION BREAKOUT 50"],
         "manual_only":True
     })
@@ -471,7 +473,8 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "breakout_50_engine":breakout_50_strategy.STRATEGY_FINGERPRINT.startswith("STP-BREAKOUT-50-VOLUME-PROFILE-INVERSE-V2-")}
+            "breakout_50_engine":breakout_50_strategy.diagnostic_self_test().get("ok",False),
+            "us_day_trader_engine":us_day_trader_strategy.diagnostic_self_test().get("ok",False)}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -657,7 +660,7 @@ def provider_status(m):
     if not item:
         return {"configured":False,"health":"unknown","source":None,"requires_api_key":False}
     return {**item,"configured":True,"health":"not_probed","health_note":"Adapter presence only; live connectivity is not tested by this endpoint",
-            "requires_api_key":False,"access":"public_no_key","analysis":"breakout_50_volume_profile_full_inversion"}
+            "requires_api_key":False,"access":"public_no_key","analysis":("us_day_trader_multi_setup" if m in us_day_trader_strategy.MARKETS else "breakout_50_volume_profile_full_inversion")}
 def fetch_json(url,params=None):
     last_error=None
     for attempt in range(3):
@@ -1939,8 +1942,8 @@ with app.app_context():
     # Retire open records from every previous strategy immediately on upgrade.
     Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like(strategy_reason_prefix(market)+"%"),
-        Trade.reason.not_like("STP US DAY TRADER MULTI-SETUP:%")
+        Trade.reason.not_like(BREAKOUT_REASON_PREFIX+"%"),
+        Trade.reason.not_like(US_DAY_TRADER_REASON_PREFIX+"%")
     ).update({"status":"superseded"}, synchronize_session=False)
     db.session.commit()
     provision_admin_from_env()
