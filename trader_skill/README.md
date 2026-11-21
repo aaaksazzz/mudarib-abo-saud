@@ -64,3 +64,33 @@ python3 -m unittest discover -s trader_skill/tests -v
 ```
 
 The upstream unittest modules are included under `tests/`. Their offline fixture corpus still needs to be imported before the full upstream suite can be considered runnable; do not interpret a partial test run as validation. Do not run SEC tools until a valid User-Agent is configured locally.
+
+
+## Cross-market / multi-timeframe AS adapter
+
+AS now includes `as_market_tools.py`, wired into `app.py` during signal
+construction. It applies the universal risk geometry checks, budget-sizing
+readiness metadata, alert levels, portfolio proposal policy and manual-ticket
+policy to all seven AS markets and all six supported frames:
+
+- Markets: `spot`, `futures`, `alpha`, `us-stocks`, `us-contracts`, `saudi`, `forex`.
+- Frames: `15m`, `1h`, `4h`, `1d`, `1w`, `1M`.
+
+The endpoint `GET /api/skill-suite/status` exposes the actual coverage matrix.
+Account-based position sizing remains pending an account-equity input; the
+adapter does not invent a balance or position size. Alerts are emitted as
+conditions attached to a validated setup; durable notification delivery still
+requires a notification provider and user alert preferences.
+
+SEC XBRL, institutional 13F, Congress PTR, US financial-statement screening,
+SEC news and US tax-lot / wash-sale functions are explicitly enabled only for
+US common stocks. They are marked not applicable for crypto, futures, FX,
+Saudi shares and generic contracts. The upstream tools remain isolated
+research utilities; the market adapter does not pretend to convert US tax or
+SEC data into signals for other asset classes.
+
+Run the adapter regression checks with:
+
+```bash
+python -m unittest tests.test_as_market_tools -v
+```
