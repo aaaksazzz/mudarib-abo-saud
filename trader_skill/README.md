@@ -63,5 +63,4 @@ python3 trader_skill/trader-screener/screen.py --help
 python3 -m unittest discover -s trader_skill/tests -v
 ```
 
-The last test command becomes usable after the upstream test suite is imported.
-Do not run SEC tools until a valid User-Agent is configured locally.
+The upstream unittest modules are included under `tests/`. Their offline fixture corpus still needs to be imported before the full upstream suite can be considered runnable; do not interpret a partial test run as validation. Do not run SEC tools until a valid User-Agent is configured locally.
