@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 STRATEGY_FINGERPRINT = "STP-US-DAY-TRADER-MULTI-SETUP-V1-20261121"
 STRATEGY_NAME = "STP US DAY TRADER MULTI-SETUP"
+STRATEGY_TOTAL = 8
 MARKETS = ("us-stocks", "us-contracts")
 TIMEFRAMES = ("15m", "1h", "4h", "1d", "1w", "1M")
 FRAME_PROFILES = {
