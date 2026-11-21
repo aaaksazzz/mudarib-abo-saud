@@ -34,7 +34,7 @@ jobs:
           node --version
           python -m pip freeze
       - name: Compile backend
-        run: python -m compileall -q app.py market_adapters.py breakout_50_strategy.py
+        run: python -m compileall -q app.py market_adapters.py breakout_50_strategy.py us_day_trader_strategy.py
       - name: Run backend regression tests
         env:
           SECRET_KEY: ci-test-secret-key-not-for-production
@@ -46,7 +46,9 @@ jobs:
           python - <<'PY'
           from app import app, scheduler
           from breakout_50_strategy import diagnostic_self_test as breakout_50_diagnostic_self_test
+          from us_day_trader_strategy import diagnostic_self_test as us_day_trader_diagnostic_self_test
           assert breakout_50_diagnostic_self_test()["ok"], breakout_50_diagnostic_self_test()
+          assert us_day_trader_diagnostic_self_test()["ok"], us_day_trader_diagnostic_self_test()
           assert scheduler is None, "ENABLE_AUTO_SCAN=false must disable background jobs in CI"
           client = app.test_client()
           for path in ("/health", "/ready", "/api/bootstrap", "/api/trades", "/api/strategy/status", "/api/strategy-status", "/", "/plans", "/journal", "/blog", "/news", "/login", "/register", "/account", "/admin", "/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex", "/styles.css", "/pro-theme.css", "/compat.css", "/platform.js", "/intelligence", "/intelligence.js", "/intelligence.css"):
@@ -57,7 +59,8 @@ jobs:
           assert client.get("/api/trades").status_code == 200
           strategy_status = client.get("/api/strategy/status").get_json()
           assert strategy_status["strategy_fingerprint"].startswith("STP-BREAKOUT-50-VOLUME-PROFILE-INVERSE-V2-"), strategy_status
-          assert strategy_status["engine"] == "STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION"
+          assert strategy_status["engine"] == "MARKET-SPECIFIC STRATEGY ENGINES"
+          assert strategy_status["us_day_trader"]["ready"] is True
           assert strategy_status["strategy_ready"] is True
           assert strategy_status["manual_only"] is True
           status_summary = client.get("/api/strategy-status").get_json()
@@ -66,6 +69,9 @@ jobs:
           assert status_summary["legacy_removed"] is True, status_summary
           assert status_summary["manual_only"] is True
           assert client.get("/api/strategy/smart-money?market=spot").status_code == 200
+          us_status = client.get("/api/strategy/breakout-50?market=us-stocks").get_json()
+          assert us_status["fingerprint"].startswith("STP-US-DAY-TRADER-MULTI-SETUP-V1-"), us_status
+          assert us_status["engine"] == "STP US DAY TRADER MULTI-SETUP"
           assert client.get("/api/strategy/status").get_json()["manual_only"] is True
           home = client.get("/")
           assert home.status_code == 200 and b'SMART TRADING PRO' in home.data and b'/platform.js?' in home.data, ("/", home.status_code, home.data[:300])
