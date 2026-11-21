@@ -17,23 +17,16 @@ Production-oriented market intelligence terminal.
 - **Tadawul:** public Saudi Exchange data is preferred, with Yahoo, a public ticker directory and TradingView fallbacks. Saudi equities are not filtered by the $1M threshold; public-feed coverage can be incomplete during provider restrictions.
 - **Forex & Gold:** public Yahoo symbol list; FX tick volume is not represented as exchange-traded dollar volume.
 
-## Active engine: STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION
-- The single active signal engine is `breakout_50_strategy.py`, fingerprint `STP-BREAKOUT-50-VOLUME-PROFILE-INVERSE-V2-20261120`. The previous normal-direction Breakout 50 engine and all prior entry engines are retired; no old signal engine is layered in.
-- Every market is scanned independently on six completed-candle timeframes: 15m, 1h, 4h, 1d, 1w and 1M. The inversion applies at all hours, with no day/night switch and no higher-timeframe direction gate.
-- Full inversion means a bullish breakout setup produces a SELL trade, while a bearish breakdown setup produces a BUY trade. Setup detection and 50% retracement confirmation remain based on the detected source setup; the final trade direction, structural stop side, flow/RSI support interpretation and targets are reversed.
-- Spot remains BUY-only, therefore only bearish breakdown setups that invert into BUY trades are eligible on Spot.
-- Volume Profile provides POC, VAH and VAL. With OHLCV candles it is a candle-volume approximation, not exchange-grade volume-at-price. VWAP is calculated from available candle volume.
-- Binance Spot/Futures may add public aggregate-trade taker delta and order-book imbalance for a small prioritized subset. Other markets use a clearly labelled candle-delta proxy; it is not presented as true CVD or centralized FX volume.
-- ATR places the structural stop beyond the inverse trade's invalidation extreme. TP1/TP2/TP3 are 1R/2R/3R from the final inverted trade direction.
-- The displayed score is a technical confluence score, not a statistically calibrated win probability. No strategy guarantees profits; performance must be measured after fees, spread, slippage and contract-specific costs.
+## Active engine: AS DAY-TRADER MULTI-SETUP ENGINE
+- The previous inverted Breakout 50 + Volume Profile engine is retired. The single active engine is `breakout_50_strategy.py`, fingerprint `AS-DAYTRADER-MULTI-MARKET-V1-20261121`.
+- Adapted multi-setup scanner evaluates completed candles across seven independent markets and six timeframes: 15m, 1h, 4h, 1d, 1w and 1M.
+- Setups include 20-bar breakout/breakdown, bull/bear flag continuation, EMA20 reclaim/loss, and RSI oversold bounce/overbought rejection. Signals follow the detected direction; no full inversion.
+- Spot is BUY-only. Other supported markets can produce BUY or SELL.
+- Entry is based on the latest completed confirmation candle. Structural swing invalidation plus ATR buffer defines the stop; TP1/TP2/TP3 are 1R/2R/3R.
+- Volume Profile and VWAP use candle OHLCV approximation. Binance aggregate-trade taker delta may support prioritized crypto symbols; other markets use a labelled candle-delta proxy.
+- The score is a technical confluence score, not a calibrated win probability. No strategy guarantees profits. Backtesting and forward paper results after fees, spread, slippage and contract costs are required before relying on signals.
+- The original upstream day-trader scanner/entry modules are US-stock/NYSE-session oriented; their market-specific code is not copied blindly into crypto, FX, Saudi or futures markets. The signal patterns and staged workflow are adapted to the app's existing public market adapters.
 - Signals remain paper/manual only. No account API keys or automatic order execution are used.
-
-## Signal engine
-- Each market and timeframe is evaluated independently. A signal requires a closed-candle breakout, 50% retracement, volume-profile confluence and a post-retest confirmation; the detected setup is then fully inverted before publishing the trade.
-- A timeframe batch is replaced only when that scan produces at least one fresh setup. Previous rows remain in trade history and expire after 24 hours.
-- Market-page requests only read committed results and never launch heavy scans synchronously. The staggered scanner continues on its configured schedule.
-- Historical engine trades are superseded as the new engine scans each market; old strategy logic is not retained as a secondary signal source.
-- The separate research backtester remains research-only and does not activate candidate strategies.
 
 ## Production deployment
 - Python runtime is pinned by `.python-version` to 3.15.2.
