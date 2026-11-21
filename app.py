@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 import html
 import market_adapters
 import breakout_50_strategy
+import us_day_trader_strategy
 from flask import Flask, request, jsonify, send_from_directory, session, g
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -788,15 +789,26 @@ def klines(market,symbol,interval,limit=120):
 TIMEFRAMES=breakout_50_strategy.TIMEFRAMES
 
 STRATEGY_FINGERPRINT=breakout_50_strategy.STRATEGY_FINGERPRINT
+US_DAY_TRADER_REASON_PREFIX="STP US DAY TRADER MULTI-SETUP:"
+BREAKOUT_REASON_PREFIX="STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:"
+
+def strategy_reason_prefix(market):
+    return US_DAY_TRADER_REASON_PREFIX if market in us_day_trader_strategy.MARKETS else BREAKOUT_REASON_PREFIX
+
+def strategy_engine_for_market(market):
+    return us_day_trader_strategy if market in us_day_trader_strategy.MARKETS else breakout_50_strategy
+
+def strategy_engine_name(market):
+    return us_day_trader_strategy.STRATEGY_NAME if market in us_day_trader_strategy.MARKETS else "STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION"
 @app.get("/api/strategy-status")
 def strategy_status_summary():
     active_current=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%")
+        Trade.reason.like(strategy_reason_prefix(market)+"%")
     ).count()
     active_legacy=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.not_like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%")
+        Trade.reason.not_like(strategy_reason_prefix(market)+"%")
     ).count()
     primary=breakout_50_strategy.diagnostic_self_test()
     active_scheduler=globals().get("scheduler")
@@ -897,25 +909,25 @@ def build_signal(market,item,timeframe,market_bias=None):
         except Exception:
             microstructure=None
     rejections={}
+    engine=strategy_engine_for_market(market)
     try:
-        setup=breakout_50_strategy.analyze(
+        setup=engine.analyze(
             market,symbol,rows,timeframe=timeframe,market_bias=market_bias,diagnostics=rejections,
             microstructure=microstructure
         )
     except Exception:
-        app.logger.exception("Breakout 50 Volume Profile analysis failed: %s %s %s",market,symbol,timeframe)
+        app.logger.exception("Market strategy analysis failed: %s %s %s",market,symbol,timeframe)
         return {"_strategy_rejected":True,"_strategy_rejection_reasons":{"engine_error":1}}
     if not setup:
         return {"_strategy_rejected":True,
                 "_strategy_rejection_reasons":rejections or {"no_confirmed_trend_setup":1}}
     setup["signal_timeframe"]=timeframe
-    setup["strategy_fingerprint"]=breakout_50_strategy.STRATEGY_FINGERPRINT
-    # Keep the exact strategy identity emitted by the engine; do not relabel V2 as retired ICT Trend.
-    setup["strategy"]=breakout_50_strategy.STRATEGY_FINGERPRINT+"_"+market.upper()+"_"+timeframe
-    setup["strategy_names"]=list(setup.get("confirmations") or [])
+    setup["strategy_fingerprint"]=engine.STRATEGY_FINGERPRINT
+    setup["strategy"]=engine.STRATEGY_FINGERPRINT+"_"+market.upper()+"_"+timeframe
+    setup["strategy_names"]=list(setup.get("strategy_names") or setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
-    setup["strategy_total"]=len(setup["strategy_names"])
-    setup["reason"]="STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION: "+timeframe+"; "+setup.get("reason","")
+    setup["strategy_total"]=int(setup.get("strategy_total") or len(setup["strategy_names"]))
+    setup["reason"]=strategy_reason_prefix(market)+" "+timeframe+"; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
     return setup
@@ -1922,7 +1934,8 @@ with app.app_context():
     # Retire open records from every previous strategy immediately on upgrade.
     Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%")
+        Trade.reason.not_like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%"),
+        Trade.reason.not_like("STP US DAY TRADER MULTI-SETUP:%")
     ).update({"status":"superseded"}, synchronize_session=False)
     db.session.commit()
     provision_admin_from_env()
