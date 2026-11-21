@@ -804,21 +804,25 @@ def strategy_engine_name(market):
 def strategy_status_summary():
     active_current=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.like(strategy_reason_prefix(market)+"%")
+        or_(Trade.reason.like(BREAKOUT_REASON_PREFIX+"%"),
+            Trade.reason.like(US_DAY_TRADER_REASON_PREFIX+"%"))
     ).count()
     active_legacy=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.not_like(strategy_reason_prefix(market)+"%")
+        Trade.reason.not_like(BREAKOUT_REASON_PREFIX+"%"),
+        Trade.reason.not_like(US_DAY_TRADER_REASON_PREFIX+"%")
     ).count()
     primary=breakout_50_strategy.diagnostic_self_test()
+    us_primary=us_day_trader_strategy.diagnostic_self_test()
     active_scheduler=globals().get("scheduler")
     return jsonify({
-        "ok":True,"engine":"STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION",
+        "ok":True,"engine":"MARKET-SPECIFIC STRATEGY ENGINES",
         "current_active":active_current,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
-        "strategy_ready":bool(primary.get("ok")),
+        "strategy_ready":bool(primary.get("ok") and us_primary.get("ok")),
         "strategy_checks":primary.get("checks",{}),
+        "us_day_trader":{"fingerprint":us_day_trader_strategy.STRATEGY_FINGERPRINT,"ready":bool(us_primary.get("ok")),"checks":us_primary.get("checks",{}),"strategies":us_primary.get("strategies",[])},
         "retired_engines":["ICT/SMC TREND FOLLOW","SMART MONEY SWEEP/FVG","PRICE ACTION QUANT V2/V3/V4","NORMAL-DIRECTION BREAKOUT 50"],
         "auto_scan_enabled":bool(globals().get("AUTO_SCAN_ENABLED",False)),
         "scheduler_running":bool(active_scheduler and active_scheduler.running)
@@ -832,13 +836,14 @@ def breakout_50_strategy_status():
     if market not in MARKETS:
         return json_error("السوق غير معروف",404)
     now=utcnow()
+    engine=strategy_engine_for_market(market)
     active=Trade.query.filter(
         Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-        Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%")
+        Trade.reason.like(strategy_reason_prefix(market)+"%")
     ).order_by(Trade.score.desc()).limit(18).all()
-    return jsonify({"ok":True,"market":market,"engine":"STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION",
-                    "fingerprint":breakout_50_strategy.STRATEGY_FINGERPRINT,
+    return jsonify({"ok":True,"market":market,"engine":strategy_engine_name(market),
+                    "fingerprint":engine.STRATEGY_FINGERPRINT,
                     "signals":[trade_json(x) for x in active],
                     "updated_at":iso(now),"manual_only":True})
 
@@ -1222,7 +1227,7 @@ def _run_market_scan_unlocked(market,force=False):
                     meta=json.loads(meta_row.value) if meta_row else {}
                 except (ValueError,TypeError):
                     meta={}
-                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%")).all()
+                active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,Trade.reason.like(strategy_reason_prefix(market)+"%")).all()
                 active=[trade for trade in active if trade_passes_frame_risk(trade)]
                 active.sort(key=lambda trade:trade.score,reverse=True)
                 active=active[:18]
@@ -1385,7 +1390,7 @@ def _run_market_scan_unlocked(market,force=False):
         active=Trade.query.filter(
             Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
             Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-            Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%")
+            Trade.reason.like(strategy_reason_prefix(market)+"%")
         ).order_by(Trade.score.desc()).limit(18).all()
         return {"ok":True,"market":market,"signals":[trade_json(x) for x in active],
                 "updated_at":iso(now),"cached":False,"data_status":"unavailable",
@@ -1427,7 +1432,7 @@ def _run_market_scan_unlocked(market,force=False):
     existing_rows=Trade.query.filter(
         Trade.market==market,
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%"),
+        Trade.reason.like(strategy_reason_prefix(market)+"%"),
         Trade.timeframe.in_(frames_to_scan),
     ).all()
     existing_by_key={}
@@ -1461,7 +1466,7 @@ def _run_market_scan_unlocked(market,force=False):
             new_signals.append(signal)
     # Retire legacy strategy trades only; preserve valid trades from other frames.
     Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%")).update({"status":"superseded"},synchronize_session=False)
+        Trade.reason.not_like(strategy_reason_prefix(market)+"%")).update({"status":"superseded"},synchronize_session=False)
     # Do not erase a live setup just because the latest completed scan found
     # no replacement. Replace only frames that produced at least one fresh,
     # direction-aligned candidate; otherwise keep the prior trade until expiry.
@@ -1469,7 +1474,7 @@ def _run_market_scan_unlocked(market,force=False):
                         if any(signal.get("timeframe")==frame for signal in found)}
     if replacement_frames:
         active_query=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
-            Trade.timeframe.in_(replacement_frames),Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%"))
+            Trade.timeframe.in_(replacement_frames),Trade.reason.like(strategy_reason_prefix(market)+"%"))
         if retained_ids:
             active_query=active_query.filter(~Trade.id.in_(retained_ids))
         active_query.update({"status":"superseded"},synchronize_session=False)
@@ -1538,7 +1543,7 @@ def _run_market_scan_unlocked(market,force=False):
     db.session.commit()
     active=Trade.query.filter(Trade.market==market,Trade.status.in_(OPEN_TRADE_STATUSES),
         Trade.timeframe.in_(TIMEFRAMES),Trade.expires_at>now,
-        Trade.reason.like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%")).all()
+        Trade.reason.like(strategy_reason_prefix(market)+"%")).all()
     active=[trade for trade in active if trade_passes_frame_risk(trade)]
     active.sort(key=lambda trade:trade.score,reverse=True)
     active=active[:18]
@@ -1934,7 +1939,7 @@ with app.app_context():
     # Retire open records from every previous strategy immediately on upgrade.
     Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),
-        Trade.reason.not_like("STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:%"),
+        Trade.reason.not_like(strategy_reason_prefix(market)+"%"),
         Trade.reason.not_like("STP US DAY TRADER MULTI-SETUP:%")
     ).update({"status":"superseded"}, synchronize_session=False)
     db.session.commit()
