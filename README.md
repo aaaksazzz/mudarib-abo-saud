@@ -60,6 +60,6 @@ GitHub Actions runs JavaScript syntax validation, dependency installation, Pytho
 
 ## Imported research and portfolio toolkit
 - The eleven MIT-licensed utilities from `Jakeschincariol/trader-skill` are preserved under `trader_skill/`: 13F copycat, news, budget sizing, Congress PTRs, SEC XBRL analyst, stock screener, risk checks, manual ticket log, US tax lots, alerts and rebalancing.
-- These are isolated CLI utilities, not a new technical chart strategy and not yet wired into the live web UI or scheduler. Their US-equity-only assumptions are not applied to crypto, futures, FX, Saudi shares or US contracts.
+- The upstream utilities remain isolated CLI research tools. The new `as_market_tools.py` adapter is wired into signal construction across all seven markets and six supported timeframes for generic risk validation, budget-readiness metadata, alert levels, portfolio proposal policy and manual-ticket policy. SEC/13F/Congress/US tax and US equity fundamentals remain US-stocks only. This does not mean all upstream CLI tools are fully exposed in the web UI or scheduler.
 - AS policy is manual / paper only: no broker connection, exchange credentials or automatic order execution. See `trader_skill/AS_POLICY.md` and `trader_skill/README.md`.
 - The upstream MIT license and attribution are preserved in `trader_skill/LICENSE`.
