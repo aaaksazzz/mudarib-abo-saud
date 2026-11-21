@@ -934,7 +934,7 @@ def build_signal(market,item,timeframe,market_bias=None):
     setup["strategy"]=engine.STRATEGY_FINGERPRINT+"_"+market.upper()+"_"+timeframe
     setup["strategy_names"]=list(setup.get("strategy_names") or setup.get("confirmations") or [])
     setup["strategy_count"]=len(setup["strategy_names"])
-    setup["strategy_total"]=int(setup.get("strategy_total") or len(setup["strategy_names"]))
+    setup["strategy_total"]=int(setup.get("strategy_total") or getattr(engine,"STRATEGY_TOTAL",len(setup["strategy_names"])))
     setup["reason"]=strategy_reason_prefix(market)+" "+timeframe+"; "+setup.get("reason","")
     setup.update({"market":market,"symbol":symbol,"quote_volume":item.get("quote_volume",0),
                   "status":"active","timeframe":timeframe})
