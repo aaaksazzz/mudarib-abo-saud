@@ -1,3 +1,5 @@
+> **AS OVERRIDE:** In SMART TRADING PRO this module is disabled for broker connectivity and order submission. `ticket.py` may only format and record paper/manual proposals. Never connect a broker, call an order endpoint, or submit a live or paper order from AS.
+
 ---
 name: trader-broker
 description: >-
