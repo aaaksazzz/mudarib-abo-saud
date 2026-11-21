@@ -56,3 +56,10 @@ GitHub Actions runs JavaScript syntax validation, dependency installation, Pytho
 - Lifetime access is represented explicitly by `subscription_plan=lifetime` with no expiry date.
 - Configure the administrator's email and a new unique password through Northflank secrets (`ADMIN_EMAIL`, `ADMIN_PASSWORD`); optionally set `ADMIN_USERNAME` for username login. Do not reuse a password posted in chat.
 - The admin panel can save the official HTTPS contact link; the verified-style contact icon appears only after a destination is configured.
+
+
+## Imported research and portfolio toolkit
+- The eleven MIT-licensed utilities from `Jakeschincariol/trader-skill` are preserved under `trader_skill/`: 13F copycat, news, budget sizing, Congress PTRs, SEC XBRL analyst, stock screener, risk checks, manual ticket log, US tax lots, alerts and rebalancing.
+- These are isolated CLI utilities, not a new technical chart strategy and not yet wired into the live web UI or scheduler. Their US-equity-only assumptions are not applied to crypto, futures, FX, Saudi shares or US contracts.
+- AS policy is manual / paper only: no broker connection, exchange credentials or automatic order execution. See `trader_skill/AS_POLICY.md` and `trader_skill/README.md`.
+- The upstream MIT license and attribution are preserved in `trader_skill/LICENSE`.
