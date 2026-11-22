@@ -193,6 +193,62 @@ def install(core):
                        {"market": market, "symbol": symbol, "action": action, "analysis": result,
                         "model": model, "paper_trade": trade_json}, tokens)
 
+    DESIGN_PRESETS = {
+        "emerald": {"bg":"#070b12","surface":"#0c1420","surface2":"#101c2b","line":"#1b2a3b","text":"#edf4fb","muted":"#8394a9","accent":"#43d6ad","accent2":"#19a987","blue":"#75a7ff","gold":"#d9b56d","red":"#ff777f"},
+        "blue": {"bg":"#080d17","surface":"#0d1726","surface2":"#142238","line":"#243750","text":"#eef4ff","muted":"#91a4bf","accent":"#65a8ff","accent2":"#347fe0","blue":"#8bc5ff","gold":"#e2bf75","red":"#ff7c88"},
+        "violet": {"bg":"#0b0914","surface":"#151225","surface2":"#1d1931","line":"#37304f","text":"#f3efff","muted":"#a49abf","accent":"#a78bfa","accent2":"#7c5bd6","blue":"#83b9ff","gold":"#e4c17b","red":"#ff8298"}
+    }
+
+    def design_theme_css():
+        row = core.db.session.get(core.Setting, "autopilot:design-preset")
+        name = row.value if row and row.value in DESIGN_PRESETS else "emerald"
+        values = DESIGN_PRESETS[name]
+        declarations = ";".join("--" + key + ":" + value for key, value in values.items())
+        return ":root{" + declarations + "}/* STP AI managed safe palette: " + name + " */"
+
+    DESIGN_SCHEMA = {
+        "type": "object", "additionalProperties": False,
+        "properties": {"preset": {"type": "string", "enum": ["emerald", "blue", "violet"]},
+                       "reason": {"type": "string"}, "confidence": {"type": "integer", "minimum": 0, "maximum": 100}},
+        "required": ["preset", "reason", "confidence"]
+    }
+
+    def design_review():
+        last = core.db.session.get(core.Setting, "autopilot:design-last-change")
+        if last:
+            try:
+                if core.utcnow() - core.aware(core.datetime.fromisoformat(last.value)) < timedelta(days=7):
+                    return log_run("design_review", "skipped", "تم تثبيت لوحة الألوان؛ المراجعة القادمة بعد أسبوع")
+            except Exception:
+                pass
+        current = core.db.session.get(core.Setting, "autopilot:design-preset")
+        current_name = current.value if current and current.value in DESIGN_PRESETS else "emerald"
+        prompt = {"task": "راجع هوية منصة تداول احترافية داكنة RTL. اختر لوحة واحدة فقط من الخيارات المسموحة، مع الحفاظ على التباين والقراءة وعدم تغيير هوية العلامة. لا تغيّر الألوان لمجرد التغيير.",
+                  "current_preset": current_name, "allowed_presets": list(DESIGN_PRESETS.keys()),
+                  "design_constraints": ["تباين عالٍ", "الأخضر للإيجابي والأحمر للسلبي", "وضوح الجداول والبطاقات", "لا تغيّر تخطيط الصفحات أو وظائفها"]}
+        answer, model, usage = ai._call_openai(json.dumps(prompt, ensure_ascii=False), structured=True,
+            instructions="أنت مدير تصميم واجهات. اختر لوحة من القائمة فقط، وقدم سبباً عملياً موجزاً. لا تخترع بيانات استخدام.",
+            schema=DESIGN_SCHEMA, schema_name="stp_design_review")
+        result = json.loads(answer)
+        preset = result.get("preset")
+        if preset not in DESIGN_PRESETS or int(result.get("confidence") or 0) < 85:
+            return log_run("design_review", "skipped", "لم تجتز توصية التصميم حد الثقة", result,
+                           int((usage or {}).get("total_tokens") or 0))
+        if preset != current_name:
+            row = current or core.Setting(key="autopilot:design-preset", value=preset)
+            row.value = preset
+            core.db.session.add(row)
+            changed = core.db.session.get(core.Setting, "autopilot:design-last-change")
+            if changed is None:
+                changed = core.Setting(key="autopilot:design-last-change", value=core.iso(core.utcnow()))
+                core.db.session.add(changed)
+            else:
+                changed.value = core.iso(core.utcnow())
+            core.db.session.commit()
+        return log_run("design_review", "success", "مراجعة التصميم: " + preset,
+                       {"preset": preset, "reason": result.get("reason"), "model": model},
+                       int((usage or {}).get("total_tokens") or 0))
+
     def health_review():
         reports = {}
         for market in core.MARKETS:
@@ -236,6 +292,10 @@ def install(core):
     @core.admin_required
     def styles():
         return send_from_directory(core.APP_DIR, "autopilot.css")
+
+    @bp.get("/api/autopilot/theme.css")
+    def public_theme():
+        return design_theme_css(), 200, {"Content-Type": "text/css; charset=utf-8", "Cache-Control": "public, max-age=300"}
 
     @bp.get("/api/autopilot/status")
     @core.login_required
@@ -286,6 +346,10 @@ def install(core):
             scheduler.add_job(lambda: safe_job("news_digest", news_digest), "cron",
                               hour=13, minute=0, id="stp-autopilot-news",
                               max_instances=1, coalesce=True, misfire_grace_time=3600)
+        if "stp-autopilot-design" not in existing:
+            scheduler.add_job(lambda: safe_job("design_review", design_review), "cron",
+                              day_of_week="sun", hour=8, minute=0, id="stp-autopilot-design",
+                              max_instances=1, coalesce=True, misfire_grace_time=7200)
         if "stp-autopilot-health" not in existing:
             scheduler.add_job(lambda: safe_job("health_review", health_review), "interval",
                               hours=1, id="stp-autopilot-health",
