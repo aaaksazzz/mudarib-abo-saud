@@ -337,29 +337,35 @@ def install(core):
 
     scheduler = core.scheduler
     if scheduler and scheduler.running:
+        from apscheduler.executors.pool import ThreadPoolExecutor
+        if "autopilot" not in scheduler._executors:
+            # Keep remote AI calls isolated from the existing market scanner's single worker.
+            scheduler.add_executor(ThreadPoolExecutor(max_workers=1), alias="autopilot")
         existing = {x.id for x in scheduler.get_jobs()}
-        if "stp-autopilot-editorial" not in existing:
-            scheduler.add_job(lambda: safe_job("daily_editorial", daily_editorial), "cron",
-                              hour=9, minute=0, id="stp-autopilot-editorial",
-                              max_instances=1, coalesce=True, misfire_grace_time=3600)
-        if "stp-autopilot-news" not in existing:
-            scheduler.add_job(lambda: safe_job("news_digest", news_digest), "cron",
-                              hour=13, minute=0, id="stp-autopilot-news",
-                              max_instances=1, coalesce=True, misfire_grace_time=3600)
-        if "stp-autopilot-design" not in existing:
-            scheduler.add_job(lambda: safe_job("design_review", design_review), "cron",
-                              day_of_week="sun", hour=8, minute=0, id="stp-autopilot-design",
-                              max_instances=1, coalesce=True, misfire_grace_time=7200)
         if "stp-autopilot-health" not in existing:
             scheduler.add_job(lambda: safe_job("health_review", health_review), "interval",
                               hours=1, id="stp-autopilot-health",
                               max_instances=1, coalesce=True, misfire_grace_time=300)
-        for index, market in enumerate(ai.MARKETS):
-            job_id = "stp-autopilot-ai-" + market
-            if job_id not in existing:
-                scheduler.add_job(safe_job, "interval", hours=12, id=job_id,
-                                  args=["ai_market_review", ai_market_review, market],
-                                  next_run_time=core.utcnow()+timedelta(minutes=5+index*4),
-                                  max_instances=1, coalesce=True, misfire_grace_time=1800)
+        if os.getenv("OPENAI_API_KEY"):
+            if "stp-autopilot-editorial" not in existing:
+                scheduler.add_job(lambda: safe_job("daily_editorial", daily_editorial), "cron",
+                                  hour=9, minute=0, id="stp-autopilot-editorial", executor="autopilot",
+                                  max_instances=1, coalesce=True, misfire_grace_time=3600)
+            if "stp-autopilot-news" not in existing:
+                scheduler.add_job(lambda: safe_job("news_digest", news_digest), "cron",
+                                  hour=13, minute=0, id="stp-autopilot-news", executor="autopilot",
+                                  max_instances=1, coalesce=True, misfire_grace_time=3600)
+            if "stp-autopilot-design" not in existing:
+                scheduler.add_job(lambda: safe_job("design_review", design_review), "cron",
+                                  day_of_week="sun", hour=8, minute=0, id="stp-autopilot-design",
+                                  executor="autopilot", max_instances=1, coalesce=True, misfire_grace_time=7200)
+            for index, market in enumerate(ai.MARKETS):
+                job_id = "stp-autopilot-ai-" + market
+                if job_id not in existing:
+                    scheduler.add_job(safe_job, "interval", hours=12, id=job_id,
+                                      args=["ai_market_review", ai_market_review, market],
+                                      next_run_time=core.utcnow()+timedelta(minutes=5+index*4),
+                                      executor="autopilot", max_instances=1, coalesce=True,
+                                      misfire_grace_time=1800)
 
     return {"AutopilotRun": AutopilotRun}
