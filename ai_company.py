@@ -351,6 +351,42 @@ def install(core):
             "format": "اكتب محضر اجتماع عربي منظم، ثم في النهاية أضف سطراً يبدأ بقرارات قابلة للمتابعة بصيغة JSON array."
         }, ensure_ascii=False)
         try:
+            panel_notes = []
+            total_tokens = 0
+            panel_models = []
+            for participant in participants:
+                participant_prompt = json.dumps({
+                    "meeting_title": title,
+                    "owner_topic": topic or "مراجعة حالة الشركة وتحديد أهم الأولويات",
+                    "your_role": participant["title"],
+                    "your_department": participant["department_name"],
+                    "question": "قدم موقف إدارتك، الأدلة المطلوبة، المخاطر، واقتراحاً عملياً واحداً. لا تجب نيابة عن الإدارات الأخرى.",
+                }, ensure_ascii=False)
+                note, participant_model, participant_usage = ai._call_openai(
+                    participant_prompt, instructions=agent_instructions(participant)
+                )
+                panel_notes.append({
+                    "employee_id": participant["id"], "role": participant["title"],
+                    "department": participant["department_name"], "statement": str(note)[:5000]
+                })
+                total_tokens += int((participant_usage or {}).get("total_tokens") or 0)
+                if participant_model:
+                    panel_models.append(str(participant_model))
+            ceo_prompt = json.dumps({
+                "meeting_title": title,
+                "owner_topic": topic or "مراجعة حالة الشركة وتحديد أهم الأولويات",
+                "employee_statements": panel_notes,
+                "required_sections": [
+                    "ملخص الاجتماع", "نقاط الاتفاق والاختلاف", "الأدلة الناقصة",
+                    "قرارات المدير التنفيذي", "مهام متابعة مع المسؤول والموعد المقترح"
+                ],
+                "rules": [
+                    "لا تنسب قولاً لموظف لم يرد في مداخلته.",
+                    "لا تحول الافتراضات إلى حقائق.",
+                    "ارفض أي قرار يتطلب وصولاً غير مصرح به أو تنفيذ تداول حقيقي.",
+                    "اجعل القرارات قابلة للقياس والمتابعة."
+                ]
+            }, ensure_ascii=False)
             meeting_schema = {
                 "type": "object", "additionalProperties": False,
                 "properties": {
@@ -365,19 +401,25 @@ def install(core):
                 "required": ["minutes", "decisions", "action_items"]
             }
             meeting_text, model, usage = ai._call_openai(
-                prompt, structured=True,
-                instructions="أنت أمين سر مجلس إدارة STP وتدير محاكاة اجتماع لوكلاء متخصصين. لا تختلق بيانات سوق أو نتائج. اذكر أن المحضر مولد من وكلاء AI. كن عملياً ومختصراً.",
+                ceo_prompt, structured=True,
+                instructions="أنت المدير التنفيذي في STP. راجع مداخلات الموظفين المستقلة، ووازن بينها، واكتب محضراً وقرارات واضحة. اذكر أن الاجتماع بين وكلاء AI. لا تختلق بيانات.",
                 schema=meeting_schema, schema_name="stp_ai_company_meeting"
             )
+            total_tokens += int((usage or {}).get("total_tokens") or 0)
             meeting_output = json.loads(meeting_text)
+            panel_transcript = "\\n\\n".join(
+                "مداخلة " + item["role"] + " (" + item["department"] + "):\\n" + item["statement"]
+                for item in panel_notes
+            )
+            full_minutes = "مداخلات الموظفين المستقلّة:\\n" + panel_transcript + "\\n\\nمحضر المدير التنفيذي:\\n" + str(meeting_output.get("minutes") or "")
             decisions = [{"decision": item, "type": "decision"} for item in meeting_output.get("decisions", [])]
             decisions += [{"decision": item.get("task", ""), "owner": item.get("owner", ""), "due": item.get("due", ""), "type": "action"} for item in meeting_output.get("action_items", [])]
             meeting = CompanyMeeting(
                 title=title,
                 participants=json.dumps([{"id": x["id"], "title": x["title"], "department": x["department_name"]} for x in participants], ensure_ascii=False),
-                minutes=str(meeting_output.get("minutes") or "")[:24000],
+                minutes=full_minutes[:24000],
                 decisions=json.dumps(decisions, ensure_ascii=False)[:12000],
-                tokens=int((usage or {}).get("total_tokens") or 0),
+                tokens=total_tokens,
             )
             core.db.session.add(meeting)
             core.db.session.commit()
