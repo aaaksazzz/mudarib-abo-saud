@@ -240,7 +240,6 @@ setInterval(async()=>{
  marketRefreshBusy.add(market);
  try{await marketPage(root,market,version)}finally{marketRefreshBusy.delete(market)}
 },60*1000);
-+Number(x.amount_usd).toFixed(2)+'</td><td>'+esc(x.method)+'</td><td>'+esc(x.transaction_ref)+'</td><td>'+esc(x.status)+'</td><td>'+(x.status==="pending"?'<button class="mini-btn" data-payment-approve="'+x.id+'">اعتماد بعد التحقق</button><button class="mini-btn" data-payment-reject="'+x.id+'">رفض</button>':'—')+'</td></tr>').join("")+'</tbody></table></div><p class="data-footnote">اعتماد الطلب يعني أنك تحققت بنفسك من وصول المبلغ فعلياً. لا تعتمد على صورة أو رقم مرسل فقط.</p></section>');
 $("#adminContactUrl").value=settings.contact_url||"";
 $("#saveAdminContact").onclick=async()=>{try{const url=$("#adminContactUrl").value.trim();await api("/api/admin/contact",{method:"PUT",body:JSON.stringify({url})});toast("تم حفظ رابط التواصل");configureAdminContact({contact_url:url})}catch(e){toast(e.message)}};
 $("#grantLifetime").onclick=async()=>{try{const email=$("#lifetimeEmail").value.trim();await api("/api/admin/users/subscription-by-email",{method:"POST",body:JSON.stringify({email,lifetime:true})});toast("تم منح الاشتراك المفتوح");adminPage(root)}catch(e){toast(e.message)}};
