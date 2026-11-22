@@ -76,8 +76,8 @@ STABLES={"USDT","USDC","BUSD","FDUSD","TUSD","USDP","DAI","USDE","USDS","USTC"}
 OPEN_TRADE_STATUSES=("active","tp1_hit","tp2_hit")
 PAYMENT_PLANS=[
     {"id":"monthly","name":"شهري","months":1,"price_usd":29.0,"discount_pct":0,"total_usd":29.0},
-    {"id":"six_months","name":"6 أشهر","months":6,"price_usd":171.0,"discount_pct":5,"total_usd":171.0,"regular_usd":180.0},
-    {"id":"yearly","name":"سنوي","months":12,"price_usd":324.0,"discount_pct":10,"total_usd":324.0,"regular_usd":360.0},
+    {"id":"six_months","name":"6 أشهر","months":6,"price_usd":165.3,"discount_pct":5,"total_usd":165.3,"regular_usd":174.0},
+    {"id":"yearly","name":"سنوي","months":12,"price_usd":313.2,"discount_pct":10,"total_usd":313.2,"regular_usd":348.0},
 ]
 PAYMENT_METHODS={
     "usdt_trc20":{"label":"USDT · TRC20","address":"TMWUt7upZhPDtaKDxVzCHh4uhL7ZVM2PN6"},
@@ -565,6 +565,66 @@ def admin_contact_url():
 @app.get("/api/plans")
 def public_plans():
     return jsonify({"ok":True,"currency":"USD","plans":PAYMENT_PLANS,"payment_methods":PAYMENT_METHODS,"contact_url":admin_contact_url(),"contact_label":"تواصل مع الإدارة"})
+
+@app.post("/api/payments/submissions")
+@login_required
+@limiter.limit("5 per hour")
+def submit_payment():
+    data=request.get_json(silent=True) or {}
+    plan_id=str(data.get("plan_id","monthly"))
+    plan=next((p for p in PAYMENT_PLANS if p["id"]==plan_id),None)
+    method=str(data.get("method",""))
+    reference=str(data.get("transaction_ref","")).strip()
+    if not plan or method not in ("usdt_trc20","binance_uid") or not (6<=len(reference)<=180):
+        return json_error("بيانات التحويل غير مكتملة أو غير صحيحة")
+    if PaymentSubmission.query.filter_by(method=method,transaction_ref=reference).first():
+        return json_error("رقم التحويل مسجل مسبقاً",409)
+    item=PaymentSubmission(user_id=g.user.id,plan_id=plan_id,amount_usd=float(plan["total_usd"]),method=method,transaction_ref=reference)
+    db.session.add(item); db.session.commit()
+    audit("payment_submitted",f"{g.user.email}:{plan_id}:{method}")
+    return jsonify({"ok":True,"submission_id":item.id,"status":"pending","message":"تم استلام بيانات التحويل للمراجعة اليدوية؛ لم يتم تفعيل الاشتراك بعد."}),201
+
+@app.get("/api/payments/mine")
+@login_required
+def my_payment_submissions():
+    rows=PaymentSubmission.query.filter_by(user_id=g.user.id).order_by(PaymentSubmission.created_at.desc()).limit(20).all()
+    return jsonify({"ok":True,"submissions":[{"id":x.id,"plan_id":x.plan_id,"amount_usd":x.amount_usd,"method":x.method,"status":x.status,"admin_note":x.admin_note,"created_at":iso(x.created_at)} for x in rows]})
+
+@app.get("/api/admin/payments")
+@login_required
+@admin_required
+def admin_payment_submissions():
+    rows=PaymentSubmission.query.order_by(PaymentSubmission.created_at.desc()).limit(200).all()
+    return jsonify({"ok":True,"submissions":[{"id":x.id,"user_id":x.user_id,"email":db.session.get(User,x.user_id).email if db.session.get(User,x.user_id) else "—","plan_id":x.plan_id,"amount_usd":x.amount_usd,"method":x.method,"transaction_ref":x.transaction_ref,"status":x.status,"admin_note":x.admin_note,"created_at":iso(x.created_at)} for x in rows]})
+
+@app.post("/api/admin/payments/<int:submission_id>/review")
+@login_required
+@admin_required
+def review_payment_submission(submission_id):
+    item=db.session.get(PaymentSubmission,submission_id)
+    if not item: return json_error("طلب الدفع غير موجود",404)
+    if item.status!="pending": return json_error("تمت مراجعة هذا الطلب مسبقاً",409)
+    data=request.get_json(silent=True) or {}
+    decision=str(data.get("decision",""))
+    note=str(data.get("note","")).strip()[:500]
+    if decision not in ("approve","reject"): return json_error("قرار المراجعة غير صحيح")
+    user=db.session.get(User,item.user_id)
+    if not user: return json_error("حساب المستخدم غير موجود",404)
+    if decision=="approve":
+        plan=next((p for p in PAYMENT_PLANS if p["id"]==item.plan_id),None)
+        if not plan: return json_error("الباقة غير موجودة",409)
+        base=max(aware(user.subscription_until) or utcnow(),utcnow())
+        user.subscription_until=base+timedelta(days=int(plan["months"])*30)
+        user.subscription_plan=item.plan_id
+        item.status="approved"
+        audit("payment_verified_subscription_granted",f"{user.email}:{item.amount_usd}USD:{item.method}")
+    else:
+        item.status="rejected"
+        audit("payment_submission_rejected",f"{user.email}:{note}")
+    item.admin_note=note
+    item.reviewed_at=utcnow()
+    db.session.commit()
+    return jsonify({"ok":True,"status":item.status,"user":user_json(user)})
 
 def saudi_market_is_open(now=None):
     """Saudi main-market continuous trading: Sun-Thu, 10:00-15:00 Asia/Riyadh."""
