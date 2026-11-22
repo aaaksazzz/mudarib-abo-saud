@@ -143,7 +143,8 @@ def register_ai_routes(core):
             "reasoning_effort": os.environ.get("OPENAI_REASONING_EFFORT", "max"),
             "reasoning_mode": os.environ.get("OPENAI_REASONING_MODE", "pro"),
             "markets": list(MARKETS), "timeframes": list(FRAMES),
-            "paper_only": True, "auto_execution": False
+            "paper_only": True, "auto_execution": False,
+            "authenticated": bool(core.g.user), "csrf_token": core.csrf_token()
         })
 
     @bp.post("/api/ai-analyst/chat")
@@ -220,6 +221,10 @@ def register_ai_routes(core):
             except ValueError:
                 raise RuntimeError("تعذر قراءة نتيجة التحليل المنظم")
             action = analysis.get("action")
+            if market == "spot" and action == "SELL":
+                action = "WAIT"
+                analysis["action"] = "WAIT"
+                analysis["wait_reason"] = "السوق الفوري لا يدعم البيع على المكشوف؛ لا توجد صفقة بيع هنا."
             entry = analysis.get("entry")
             stop = analysis.get("stop")
             paper_trade = None
