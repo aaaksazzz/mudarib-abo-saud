@@ -10,7 +10,8 @@ os.environ.pop("OPENAI_API_KEY", None)
 import app as platform
 from ai_company import EMPLOYEES, DEPARTMENTS
 
-\nclass AICompanyTests(unittest.TestCase):
+
+class AICompanyTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         platform.app.config.update(TESTING=True)
