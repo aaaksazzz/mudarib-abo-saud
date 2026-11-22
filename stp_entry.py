@@ -4,3 +4,7 @@ from ai_market_analyst import register_ai_routes
 
 register_ai_routes(core)
 app = core.app
+
+from site_autopilot import install as install_site_autopilot
+
+install_site_autopilot(core)
