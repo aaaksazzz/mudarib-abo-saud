@@ -286,10 +286,12 @@ def install(core):
             scheduler.add_job(lambda: safe_job("health_review", health_review), "interval",
                               hours=1, id="stp-autopilot-health",
                               max_instances=1, coalesce=True, misfire_grace_time=300)
-        if "stp-autopilot-ai-markets" not in existing:
-            scheduler.add_job(lambda: safe_job("ai_market_review", ai_market_review,
-                              ai.MARKETS[int(core.time.time() // (12*3600)) % len(ai.MARKETS)]),
-                              "interval", hours=1, id="stp-autopilot-ai-markets",
-                              max_instances=1, coalesce=True, misfire_grace_time=300)
+        for index, market in enumerate(ai.MARKETS):
+            job_id = "stp-autopilot-ai-" + market
+            if job_id not in existing:
+                scheduler.add_job(safe_job, "interval", hours=12, id=job_id,
+                                  args=["ai_market_review", ai_market_review, market],
+                                  next_run_time=core.utcnow()+timedelta(minutes=5+index*4),
+                                  max_instances=1, coalesce=True, misfire_grace_time=1800)
 
     return {"AutopilotRun": AutopilotRun}
