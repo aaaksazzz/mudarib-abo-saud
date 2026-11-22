@@ -1757,7 +1757,7 @@ def live_news():
             if not title:
                 continue
             source=classify_news_headline(title)
-            items.append({"title":title[:500],"source":str(item.get("source") or "")[:120],"url":str(item.get("link") or "")[:1000],
+            items.append({"title":title[:500],"source":str(item.get("source") or "")[:120],
                           "published_at":str(item.get("published_at") or "")[:100],**source})
         return jsonify({"ok":True,"provider":"Google News RSS","language":language,"items":items,"updated_at":iso(utcnow()),"delivery":"in_app_only"})
     except Exception:
