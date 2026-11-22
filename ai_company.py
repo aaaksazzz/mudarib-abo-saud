@@ -174,6 +174,69 @@ for index, (title, mission, kpi) in enumerate(SUBSCRIPTION_SEATS, 1):
         "capabilities": ["research", "analysis", "draft", "review"],
     })
 
+
+# Specialist teams: each market, timeframe, blog and news desk has named AI seats.
+SPECIALIST_TEAMS = []
+_MARKET_TEAMS = [
+    ("spot", "فريق Binance Spot", "Binance Spot", "يركز على أزواج التداول الفوري والسيولة وحظر البيع المكشوف"),
+    ("futures", "فريق Binance Futures", "Binance Futures", "يركز على العقود الدائمة والتمويل والتصفية ومخاطر الرافعة"),
+    ("alpha", "فريق Binance Alpha", "Binance Alpha", "يركز على حداثة الأصول ومخاطر السيولة والتذبذب الحاد"),
+    ("us_stocks", "فريق الأسهم الأمريكية", "الأسهم الأمريكية", "يركز على الجلسات والفجوات والسيولة والأحداث المؤثرة"),
+    ("us_contracts", "فريق العقود الأمريكية", "العقود الأمريكية", "يركز على مواصفات العقد والسيولة وساعات التداول"),
+    ("saudi", "فريق السوق السعودي", "السوق السعودي", "يركز على جلسة تداول والحدود السعرية والإعلانات والسيولة"),
+    ("forex", "فريق الفوركس والذهب", "الفوركس والذهب", "يركز على الجلسات والسبريد والأخبار الاقتصادية والتذبذب"),
+]
+for key, label, market_label, focus in _MARKET_TEAMS:
+    SPECIALIST_TEAMS.append((f"market_{key}", label, [
+        (f"مدير تحليل {market_label}", f"يقود تحليل {market_label} ويحدد أولويات الفحص؛ {focus}", "تغطية السوق وجودة القرارات"),
+        (f"محلل فرص {market_label}", f"يبحث عن فرص دخول مؤكدة في {market_label} ويقارن BUY وSELL وWAIT؛ {focus}", "جودة الفرص بعد التكاليف"),
+        (f"مدقق بيانات {market_label}", f"يتحقق من الشموع والأسعار والسيولة وحداثة البيانات في {market_label}", "صفر أسعار أو بيانات مختلقة"),
+    ]))
+_FRAME_TEAMS = [
+    ("15m", "15 دقيقة", "يركز على بنية الحركة القريبة والاختراق وإعادة الاختبار"),
+    ("1h", "الساعة", "يركز على الاتجاه المتوسط ومناطق التوازن والسيولة"),
+    ("4h", "4 ساعات", "يركز على البنية الرئيسية والتصحيحات والقمم والقيعان"),
+    ("1d", "اليومي", "يركز على الاتجاه اليومي والمستويات الهيكلية"),
+    ("1w", "الأسبوعي", "يركز على الاتجاه الأعلى والمناطق طويلة الأجل"),
+    ("1M", "الشهري", "يركز على السياق الشهري والمستويات الكبرى"),
+]
+for key, label, focus in _FRAME_TEAMS:
+    SPECIALIST_TEAMS.append((f"timeframe_{key}", f"فريق فريم {label}", [
+        (f"قائد فريم {label}", f"يقود قرار الفريم {label}؛ {focus}", "اتساق القرار مع بيانات الفريم"),
+        (f"محلل دخول فريم {label}", f"يحدد شروط التفعيل والدخول والوقف والأهداف على فريم {label}", "دقة مستويات الدخول والإبطال"),
+        (f"مراجع فريم {label}", f"يراجع الشموع المغلقة والتعارضات والتأخر على فريم {label}", "منع الإشارات المتأخرة"),
+    ]))
+SPECIALIST_TEAMS.extend([
+    ("blog_editorial", "فريق المدونة والتحرير", [
+        ("رئيس تحرير المدونة", "يضع خطة تحريرية تعليمية ويعتمد جودة المقالات قبل النشر", "دقة المحتوى وفائدته"),
+        ("باحث المدونة", "يجمع مصادر موثوقة ويثبت الأرقام والادعاءات قبل الكتابة", "نسبة الادعاءات الموثقة"),
+        ("كاتب المدونة", "يكتب مقالات عربية أصلية عن الأسواق والتداول وإدارة المخاطر", "وضوح المقال وأصالته"),
+        ("مدقق المدونة وSEO", "يراجع اللغة والعناوين والوصف والفهرسة وحقوق المحتوى", "جودة التحرير وSEO"),
+    ]),
+    ("newsroom", "غرفة الأخبار", [
+        ("مدير غرفة الأخبار", "يرتب الأخبار حسب الأهمية والتأثير ويمنع نشر الشائعات", "سرعة ودقة التحقق"),
+        ("باحث الأخبار", "يتحقق من الخبر من مصدره وتاريخه ورابطه", "توثيق المصدر والتوقيت"),
+        ("محلل أثر الأخبار", "يشرح الأثر المحتمل على الأسواق دون تحويله إلى حقيقة مؤكدة", "فصل الخبر عن الرأي"),
+        ("محرر الأخبار", "يحرر ملخصاً عربياً واضحاً ويضيف المصدر والتوقيت", "حداثة الخبر ودقة الملخص"),
+    ]),
+])
+for department_id, department_name, seats in SPECIALIST_TEAMS:
+    DEPARTMENTS.append((department_id, department_name, seats))
+    manager_id = None
+    for index, (title, mission, kpi) in enumerate(seats, 1):
+        number = len(EMPLOYEES) + 1
+        employee_id = f"stp-{number:03d}"
+        if index == 1:
+            manager_id = employee_id
+        EMPLOYEES.append({
+            "id": employee_id, "number": number,
+            "name": f"{title} · STP-{number:03d}", "title": title,
+            "department": department_id, "department_name": department_name,
+            "mission": mission, "kpi": kpi,
+            "reports_to": "stp-001" if index == 1 else manager_id,
+            "capabilities": ["research", "analysis", "draft", "review"],
+        })
+
 def install(core):
     bp = Blueprint("ai_company", __name__)
     EmployeeTask = None
