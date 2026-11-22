@@ -1,4 +1,4 @@
-import os, re, secrets, hashlib, hmac, time, json, math, shutil, sys
+import os, re, secrets, hashlib, hmac, time, json, math, shutil
 from datetime import datetime, timedelta, timezone
 from functools import wraps, lru_cache
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -2022,9 +2022,6 @@ with app.app_context():
     db.session.commit()
     provision_admin_from_env()
 
-# Register the owner-only AI company and its dedicated subscription department in production.
-import ai_company
-ai_company.install(sys.modules[__name__])
 
 
 def write_scan_runtime(market,status,started_at=None,finished_at=None,result=None,error_code=None):
