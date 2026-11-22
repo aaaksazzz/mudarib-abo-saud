@@ -149,6 +149,30 @@ for dept_id, dept_name, seats in DEPARTMENTS:
             "capabilities": ["research", "analysis", "draft", "review"],
         })
 
+# Dedicated subscription operations team: 10 additional employees.
+SUBSCRIPTION_SEATS = [
+    ("مدير الاشتراكات", "يقود فريق الاشتراكات ويعتمد سير العمل والتقارير", "دقة التحصيل والتفعيل"),
+    ("نائب مدير الاشتراكات", "يتابع طوابير الطلبات ويغطي مهام المدير", "زمن معالجة الطلبات"),
+    ("مدقق تحويلات TRC20", "يراجع مراجع تحويل USDT على الشبكة قبل اعتمادها", "صفر تفعيل دون تحقق"),
+    ("مدقق تحويلات Binance", "يطابق مراجع تحويل Binance مع سجلات الحساب", "صحة المطابقة"),
+    ("موظف تفعيل الحسابات", "يفعل الاشتراك بعد اعتماد الدفع فقط", "صحة مدد الاشتراك"),
+    ("موظف التجديدات", "يتابع قرب انتهاء الاشتراكات وطلبات التجديد", "معدل التجديد"),
+    ("موظف خدمة المشتركين", "يعالج استفسارات الباقات والحسابات", "سرعة حل الطلبات"),
+    ("محاسب الاشتراكات", "يطابق الإيرادات والطلبات المعتمدة والمرفوضة", "تطابق السجلات المالية"),
+    ("مراجع الاحتيال والتكرار", "يكشف مراجع التحويل المكررة والطلبات المشبوهة", "منع التكرار"),
+    ("محلل تقارير الاشتراكات", "يعد تقارير المشتركين والإيرادات والانتهاء", "دقة التقارير"),
+]
+DEPARTMENTS.append(("subscriptions", "إدارة الاشتراكات", SUBSCRIPTION_SEATS))
+for index, (title, mission, kpi) in enumerate(SUBSCRIPTION_SEATS, 1):
+    number = 100 + index
+    EMPLOYEES.append({
+        "id": f"stp-{number:03d}", "number": number,
+        "name": f"{title} · STP-{number:03d}", "title": title,
+        "department": "subscriptions", "department_name": "إدارة الاشتراكات",
+        "mission": mission, "kpi": kpi,
+        "reports_to": "stp-001" if index == 1 else "stp-101",
+        "capabilities": ["research", "analysis", "draft", "review"],
+    })
 
 def install(core):
     bp = Blueprint("ai_company", __name__)
