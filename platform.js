@@ -170,10 +170,16 @@ async function contentPage(root,kind){
  try{
   const lang=document.documentElement.lang||"ar";
   if(kind==="news"){
-   const d=await api("/api/news?lang="+encodeURIComponent(lang));
-   const items=d.items||[];
+   const [d,generated]=await Promise.all([api("/api/news?lang="+encodeURIComponent(lang)),api("/api/content/news?lang="+encodeURIComponent(lang))]);
+   const items=d.items||[],generatedItems=generated.items||[];
    const sentimentNames={negative:"سلبي · بيع محتمل",positive:"إيجابي · شراء محتمل",neutral:"محايد · بلا اتجاه"};
    root.innerHTML='<section class="panel"><div class="panel-head"><div><span class="section-kicker">IN-APP MARKET INTELLIGENCE</span><h2>أخبار الأسواق واتجاه التأثير</h2></div><span class="status-pending">'+(d.provider||"مصدر الأخبار")+'</span></div>'+(items.length?'<div class="article-grid">'+items.map(a=>'<article class="panel news-card"><div class="panel-head"><span class="section-kicker">'+esc(a.source||"مصدر إخباري")+'</span><span class="trade-tag '+(a.sentiment==="negative"?"sell":a.sentiment==="positive"?"buy":"")+'">'+esc(sentimentNames[a.sentiment]||sentimentNames.neutral)+'</span></div><h3>'+esc(a.title)+'</h3><p class="data-footnote">قراءة آلية للعنوان: '+(a.direction==="SELL"?"يميل إلى ضغط سلبي وقد يدعم البيع":a.direction==="BUY"?"يميل إلى أثر إيجابي وقد يدعم الشراء":"لا يظهر اتجاه واضح")+'</p><small>'+esc(a.published_at||"")+'</small></article>').join("")+'</div>':'<div class="empty-state">لا توجد أخبار متاحة الآن. '+esc(d.error||"أعد المحاولة بعد قليل.")+'</div>')+'</section><p class="data-footnote">تُعرض الأخبار داخل المنصة فقط. تصنيف التأثير آلي ومبني على عنوان الخبر، وليس توصية تداول مؤكدة أو بديلاً عن تحليل السعر.</p>';
+   if(generatedItems.length){
+    const generatedSection=document.createElement("section");
+    generatedSection.className="panel";
+    generatedSection.innerHTML='<div class="panel-head"><h2>أخبار وتحليلات STP الأصلية</h2><span class="status-pending">AI</span></div><div class="article-grid">'+generatedItems.map(a=>'<article class="panel"><span class="section-kicker">STP AI · '+esc((a.language||lang).toUpperCase())+'</span><h3><a href="/news/'+encodeURIComponent(a.slug)+'">'+esc(a.title)+'</a></h3><p>'+esc(a.summary)+'</p><small>'+new Date(a.created_at).toLocaleDateString()+'</small></article>').join("")+'</div>';
+    root.append(generatedSection);
+   }
    return;
   }
   const d=await api("/api/content/blog?lang="+encodeURIComponent(lang));
