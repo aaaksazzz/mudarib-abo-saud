@@ -19,6 +19,8 @@ class AICompanyTests(unittest.TestCase):
     def setUpClass(cls):
         platform.app.config.update(TESTING=True)
 
+    _ip_counter = 100
+
     def setUp(self):
         with platform.app.app_context():
             platform.db.session.remove()
@@ -33,6 +35,8 @@ class AICompanyTests(unittest.TestCase):
             platform.db.session.add(admin)
             platform.db.session.commit()
         self.client = platform.app.test_client()
+        type(self)._ip_counter += 1
+        self.client.environ_base["REMOTE_ADDR"] = f"198.51.100.{type(self)._ip_counter}"
         token = self.client.get("/api/bootstrap").get_json()["csrf"]
         response = self.client.post(
             "/api/auth/login",
