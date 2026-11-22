@@ -45,10 +45,10 @@ class AICompanyTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200, response.get_json())
 
-    def test_registry_has_exactly_100_unique_employees_and_10_departments(self):
-        self.assertEqual(len(EMPLOYEES), 100)
+    def test_registry_has_110_unique_employees_and_11_departments(self):
+        self.assertEqual(len(EMPLOYEES), 110)
         self.assertEqual(len({employee["id"] for employee in EMPLOYEES}), 100)
-        self.assertEqual(len(DEPARTMENTS), 10)
+        self.assertEqual(len(DEPARTMENTS), 11)
         self.assertEqual({employee["department"] for employee in EMPLOYEES}, {d[0] for d in DEPARTMENTS})
         self.assertEqual(EMPLOYEES[0]["title"], "المدير التنفيذي")
 
@@ -58,9 +58,9 @@ class AICompanyTests(unittest.TestCase):
         dashboard = self.client.get("/api/ai-company/dashboard")
         self.assertEqual(dashboard.status_code, 200)
         data = dashboard.get_json()
-        self.assertEqual(data["employee_count"], 100)
-        self.assertEqual(data["department_count"], 10)
-        self.assertEqual(len(data["employees"]), 100)
+        self.assertEqual(data["employee_count"], 110)
+        self.assertEqual(data["department_count"], 11)
+        self.assertEqual(len(data["employees"]), 110)
 
     def test_owner_can_assign_task_to_specific_employee(self):
         csrf = self.client.get("/api/ai-company/dashboard").get_json()["csrf"]
