@@ -54,12 +54,14 @@ jobs:
           assert us_day_trader_diagnostic_self_test()["ok"], us_day_trader_diagnostic_self_test()
           assert scheduler is None, "ENABLE_AUTO_SCAN=false must disable background jobs in CI"
           client = app.test_client()
-          for path in ("/health", "/ready", "/api/bootstrap", "/api/trades", "/api/strategy/status", "/api/strategy-status", "/", "/plans", "/journal", "/blog", "/news", "/login", "/register", "/account", "/admin", "/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex", "/styles.css", "/pro-theme.css", "/compat.css", "/platform.js", "/intelligence", "/intelligence.js", "/intelligence.css", "/ai-analyst", "/ai-analyst.js", "/ai-analyst.css", "/api/ai-analyst/status", "/autopilot", "/autopilot.js", "/autopilot.css"):
+          for path in ("/health", "/ready", "/api/bootstrap", "/api/trades", "/api/strategy/status", "/api/strategy-status", "/", "/plans", "/journal", "/blog", "/news", "/login", "/register", "/account", "/admin", "/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex", "/styles.css", "/pro-theme.css", "/compat.css", "/platform.js", "/intelligence", "/intelligence.js", "/intelligence.css", "/ai-analyst", "/ai-analyst.js", "/ai-analyst.css", "/api/ai-analyst/status"):
             response = client.get(path)
             assert response.status_code in (200, 503), (path, response.status_code, response.data[:300])
           assert client.get("/health").get_json()["ok"] is True
           assert client.get("/api/autopilot/status").status_code == 401
           assert client.get("/autopilot").status_code == 401
+          assert client.get("/autopilot.js").status_code == 401
+          assert client.get("/autopilot.css").status_code == 401
           assert client.get("/api/bootstrap").status_code == 200
           assert client.get("/api/trades").status_code == 200
           strategy_status = client.get("/api/strategy/status").get_json()
