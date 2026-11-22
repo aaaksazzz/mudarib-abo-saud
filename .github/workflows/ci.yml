@@ -1,7 +1,7 @@
 name: Platform CI
 on:
   push:
-    branches: [main, "rebuild/**", "upgrade-runtime-**"]
+    branches: [main, "rebuild/**", "upgrade-runtime-**", "ai-market-analyst-v1"]
   pull_request:
     branches: [main]
 jobs:
@@ -23,6 +23,7 @@ jobs:
         run: |
           node --check platform.js
           node --check intelligence.js
+          node --check ai-analyst.js
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -34,7 +35,7 @@ jobs:
           node --version
           python -m pip freeze
       - name: Compile backend
-        run: python -m compileall -q app.py market_adapters.py breakout_50_strategy.py us_day_trader_strategy.py
+        run: python -m compileall -q app.py market_adapters.py breakout_50_strategy.py us_day_trader_strategy.py ai_market_analyst.py stp_entry.py
       - name: Run backend regression tests
         env:
           SECRET_KEY: ci-test-secret-key-not-for-production
@@ -45,13 +46,14 @@ jobs:
           python -m unittest discover -s tests -v
           python - <<'PY'
           from app import app, scheduler
+          from stp_entry import app as entry_app
           from breakout_50_strategy import diagnostic_self_test as breakout_50_diagnostic_self_test
           from us_day_trader_strategy import diagnostic_self_test as us_day_trader_diagnostic_self_test
           assert breakout_50_diagnostic_self_test()["ok"], breakout_50_diagnostic_self_test()
           assert us_day_trader_diagnostic_self_test()["ok"], us_day_trader_diagnostic_self_test()
           assert scheduler is None, "ENABLE_AUTO_SCAN=false must disable background jobs in CI"
           client = app.test_client()
-          for path in ("/health", "/ready", "/api/bootstrap", "/api/trades", "/api/strategy/status", "/api/strategy-status", "/", "/plans", "/journal", "/blog", "/news", "/login", "/register", "/account", "/admin", "/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex", "/styles.css", "/pro-theme.css", "/compat.css", "/platform.js", "/intelligence", "/intelligence.js", "/intelligence.css"):
+          for path in ("/health", "/ready", "/api/bootstrap", "/api/trades", "/api/strategy/status", "/api/strategy-status", "/", "/plans", "/journal", "/blog", "/news", "/login", "/register", "/account", "/admin", "/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex", "/styles.css", "/pro-theme.css", "/compat.css", "/platform.js", "/intelligence", "/intelligence.js", "/intelligence.css", "/ai-analyst", "/ai-analyst.js", "/ai-analyst.css", "/api/ai-analyst/status"):
             response = client.get(path)
             assert response.status_code in (200, 503), (path, response.status_code, response.data[:300])
           assert client.get("/health").get_json()["ok"] is True
