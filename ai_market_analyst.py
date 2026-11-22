@@ -44,7 +44,7 @@ def _extract_text(payload):
                 chunks.append(part["text"])
     return "\n".join(chunks)
 
-def _call_openai(input_text, *, structured=False):
+def _call_openai(input_text, *, structured=False, instructions=None, schema=None, schema_name="stp_market_analysis"):
     key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not key:
         raise RuntimeError("OPENAI_API_KEY_MISSING")
@@ -53,14 +53,14 @@ def _call_openai(input_text, *, structured=False):
     mode = os.environ.get("OPENAI_REASONING_MODE", "pro").strip()
     body = {
         "model": model,
-        "instructions": SYSTEM_RULES,
+        "instructions": instructions or SYSTEM_RULES,
         "input": input_text,
         "reasoning": {"effort": effort, "mode": mode},
         "max_output_tokens": int(os.environ.get("OPENAI_MAX_OUTPUT_TOKENS", "5000")),
         "store": False
     }
     if structured:
-        body["text"] = {"format": {"type": "json_schema", "name": "stp_market_analysis", "strict": True, "schema": ANALYSIS_SCHEMA}}
+        body["text"] = {"format": {"type": "json_schema", "name": schema_name, "strict": True, "schema": schema or ANALYSIS_SCHEMA}}
     import requests
     response = requests.post(
         "https://api.openai.com/v1/responses",
