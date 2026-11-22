@@ -65,6 +65,10 @@ def install(core):
         item = json.loads(text)
         title = str(item.get("title") or "").strip()[:220]
         body = str(item.get("body") or "").strip()
+        if kind == "news":
+            refs = payload.get("headlines") or []
+            source_lines = ["مصادر الخبر للتحقق والمتابعة:"] + [str(x.get("publisher") or "مصدر") + " — " + str(x.get("source_url") or "") for x in refs[:8] if str(x.get("source_url") or "").startswith("https://")]
+            body += "\\n\\n" + "\\n".join(source_lines)
         summary = str(item.get("summary") or "").strip()[:500]
         if len(title) < 12 or len(body) < 700 or len(summary) < 40:
             raise ValueError("المقال المولّد لم يجتز حد الجودة والطول")
