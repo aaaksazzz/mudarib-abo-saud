@@ -351,15 +351,32 @@ def install(core):
             "format": "اكتب محضر اجتماع عربي منظم، ثم في النهاية أضف سطراً يبدأ بقرارات قابلة للمتابعة بصيغة JSON array."
         }, ensure_ascii=False)
         try:
-            minutes, model, usage = ai._call_openai(
-                prompt,
-                instructions="أنت أمين سر مجلس إدارة STP وتدير محاكاة اجتماع لوكلاء متخصصين. لا تختلق بيانات سوق أو نتائج. اذكر أن المحضر مولد من وكلاء AI. كن عملياً ومختصراً."
+            meeting_schema = {
+                "type": "object", "additionalProperties": False,
+                "properties": {
+                    "minutes": {"type": "string"},
+                    "decisions": {"type": "array", "items": {"type": "string"}},
+                    "action_items": {"type": "array", "items": {
+                        "type": "object", "additionalProperties": False,
+                        "properties": {"task": {"type": "string"}, "owner": {"type": "string"}, "due": {"type": "string"}},
+                        "required": ["task", "owner", "due"]
+                    }}
+                },
+                "required": ["minutes", "decisions", "action_items"]
+            }
+            meeting_text, model, usage = ai._call_openai(
+                prompt, structured=True,
+                instructions="أنت أمين سر مجلس إدارة STP وتدير محاكاة اجتماع لوكلاء متخصصين. لا تختلق بيانات سوق أو نتائج. اذكر أن المحضر مولد من وكلاء AI. كن عملياً ومختصراً.",
+                schema=meeting_schema, schema_name="stp_ai_company_meeting"
             )
+            meeting_output = json.loads(meeting_text)
+            decisions = [{"decision": item, "type": "decision"} for item in meeting_output.get("decisions", [])]
+            decisions += [{"decision": item.get("task", ""), "owner": item.get("owner", ""), "due": item.get("due", ""), "type": "action"} for item in meeting_output.get("action_items", [])]
             meeting = CompanyMeeting(
                 title=title,
                 participants=json.dumps([{"id": x["id"], "title": x["title"], "department": x["department_name"]} for x in participants], ensure_ascii=False),
-                minutes=str(minutes)[:24000],
-                decisions="[]",
+                minutes=str(meeting_output.get("minutes") or "")[:24000],
+                decisions=json.dumps(decisions, ensure_ascii=False)[:12000],
                 tokens=int((usage or {}).get("total_tokens") or 0),
             )
             core.db.session.add(meeting)
