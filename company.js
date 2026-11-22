@@ -57,7 +57,7 @@
   }
   function renderMeetings(d) {
     $("meetingList").innerHTML = d.meetings.length ? d.meetings.map(m =>
-      '<article class="meeting"><b>'+esc(m.title)+'</b><div class="detail-meta">'+new Date(m.created_at).toLocaleString("ar-SA")+' · '+m.participants.length+' مشاركين</div><pre>'+esc(m.minutes)+'</pre></article>'
+      '<article class="meeting"><b>'+esc(m.title)+'</b><div class="detail-meta">'+new Date(m.created_at).toLocaleString("ar-SA")+' · '+m.participants.length+' مشاركين</div><pre>'+esc(m.minutes)+'</pre>'+(m.decisions.length ? '<p><strong>القرارات والتكليفات:</strong></p><ul>'+m.decisions.map(x=>'<li>'+esc(x.decision)+(x.owner?' · '+esc(x.owner):'')+(x.due?' · '+esc(x.due):'')+'</li>').join('')+'</ul>' : '')+'</article>'
     ).join("") : '<div class="empty">لم تعقد اجتماعات بعد.</div>';
   }
   async function load() {
