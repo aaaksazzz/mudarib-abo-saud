@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#080d17">
+  <title>شركة STP للذكاء الاصطناعي</title>
+  <link rel="stylesheet" href="/company.css">
+  <script src="/company.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-mark">STP</span><span><b>SMART TRADING PRO</b><small>AI COMPANY · OWNER CONSOLE</small></span></a>
+    <div class="top-actions"><span id="connection" class="status-pill">جاري الاتصال</span><a href="/autopilot" class="subtle-link">مدير الموقع</a></div>
+  </header>
+  <main class="shell">
+    <section class="hero">
+      <div><p class="eyebrow">OWNER CONTROL CENTER</p><h1>شركة الذكاء الاصطناعي</h1><p class="muted">100 موظف متخصص · 10 إدارات · مدير تنفيذي يراجع كل مهمة</p></div>
+      <div class="hero-actions"><button id="meetingBtn" class="btn secondary">عقد اجتماع للشركة</button><button id="refreshBtn" class="btn primary">تحديث البيانات</button></div>
+    </section>
+    <section class="stats-grid">
+      <article class="stat"><span>الموظفون</span><strong id="employeeCount">100</strong><small>موظف متخصص مسجل</small></article>
+      <article class="stat"><span>الإدارات</span><strong id="departmentCount">10</strong><small>لكل إدارة اختصاص واضح</small></article>
+      <article class="stat"><span>مهام اليوم</span><strong id="dailyTasks">—</strong><small id="taskLimit">ضمن الحد اليومي</small></article>
+      <article class="stat"><span>استهلاك AI</span><strong id="dailyTokens">—</strong><small id="tokenLimit">رمز خلال آخر 24 ساعة</small></article>
+    </section>
+    <section class="panel ai-status">
+      <div><span class="eyebrow">EXECUTIVE OFFICE</span><h2>المدير التنفيذي · STP-001</h2><p class="muted">يوزع المهام، يراجع مخرجات الموظفين، ويعتمد أو يعيد العمل للمراجعة.</p></div>
+      <span id="aiStatus" class="status-pill">فحص إعداد الذكاء الاصطناعي</span>
+    </section>
+    <section class="layout">
+      <div class="main-column">
+        <section class="panel">
+          <div class="section-heading"><div><span class="eyebrow">ORGANIZATION</span><h2>هيكل الشركة والموظفون</h2></div><input id="employeeSearch" class="search" placeholder="ابحث عن موظف أو تخصص"></div>
+          <div id="departmentFilters" class="filters"></div>
+          <div id="employeeGrid" class="employee-grid"><div class="empty">جاري تحميل الموظفين…</div></div>
+        </section>
+        <section class="panel">
+          <div class="section-heading"><div><span class="eyebrow">WORK QUEUE</span><h2>المهام وسجل الإنجاز</h2></div></div>
+          <div id="taskList" class="task-list"><div class="empty">لا توجد مهام بعد.</div></div>
+        </section>
+        <section class="panel">
+          <div class="section-heading"><div><span class="eyebrow">BOARDROOM</span><h2>الاجتماعات والقرارات</h2></div></div>
+          <div id="meetingList" class="meeting-list"><div class="empty">لم تعقد اجتماعات بعد.</div></div>
+        </section>
+      </div>
+      <aside class="side-column">
+        <section class="panel task-form">
+          <span class="eyebrow">ASSIGN WORK</span><h2>تكليف موظف بمهمة</h2>
+          <label for="taskTitle">عنوان المهمة</label><input id="taskTitle" maxlength="220" placeholder="مثال: راجع جودة بيانات السوق السعودي">
+          <label for="taskEmployee">الموظف المسؤول</label><select id="taskEmployee"></select>
+          <label for="taskBrief">تفاصيل المهمة</label><textarea id="taskBrief" rows="5" maxlength="6000" placeholder="اكتب المطلوب والنتيجة المتوقعة وأي قيود مهمة…"></textarea>
+          <button id="createTaskBtn" class="btn primary full">إرسال المهمة للموظف</button>
+          <p id="taskFeedback" class="feedback"></p>
+        </section>
+        <section class="panel rules">
+          <span class="eyebrow">SAFE OPERATIONS</span><h2>حدود الصلاحيات</h2>
+          <ul><li>كل موظف يعمل ضمن اختصاصه وتعليماته.</li><li>المدير التنفيذي يراجع كل مخرج.</li><li>لا توجد أوامر تداول حقيقية.</li><li>لا وصول إلى كلمات المرور أو مفاتيح العملاء.</li><li>تغييرات الكود والنشر تحتاج مسار مراجعة مستقل.</li></ul>
+        </section>
+      </aside>
+    </section>
+    <footer>STP AI COMPANY · لوحة المالك خاصة بالمدير · جميع النتائج المولدة تحتاج تحققاً بشرياً عند القرارات الحساسة.</footer>
+  </main>
+  <div id="detailModal" class="modal hidden"><div class="modal-card"><button id="closeModal" class="close">×</button><div id="detailContent"></div></div></div>
+</body>
+</html>
