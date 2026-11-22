@@ -272,7 +272,7 @@ def count_site_visitor():
     page_request=(
         path in ("/","/intelligence","/signal-lab","/login","/register","/account","/admin","/plans","/journal","/blog","/news")
         or path.startswith("/market/")
-        or path.startswith("/blog/")
+        or path.startswith("/blog/") or path.startswith("/news/")
     )
     if request.method!="GET" or not page_request:
         return
@@ -379,17 +379,19 @@ def signal_lab_klines():
     return json_error("واجهة المختبر القديمة متوقفة؛ استخدم تحليل حركة السعر",410)
 
 @app.get("/blog/<slug>")
+@app.get("/news/<slug>")
 def public_article_page(slug):
-    article=Article.query.filter_by(kind="blog",slug=slug,published=True).first()
+    article_kind="news" if request.path.startswith("/news/") else "blog"
+    article=Article.query.filter_by(kind=article_kind,slug=slug,published=True).first()
     if not article:
         return json_error("المقال غير موجود",404)
     title=html.escape(article.meta_title or article.title)
     description=html.escape(article.meta_description or article.summary)
     body="".join("<p>"+html.escape(part.strip())+"</p>" for part in (article.body or "").split("\n\n") if part.strip())
     base=os.environ.get("PUBLIC_BASE_URL",request.url_root.rstrip("/")).rstrip("/")
-    canonical=base+"/blog/"+article.slug
+    canonical=base+("/news/" if article_kind=="news" else "/blog/")+article.slug
     locale=(article.language or "ar").replace("_","-")
-    siblings=Article.query.filter_by(kind="blog",published=True,canonical_slug=article.canonical_slug or article.slug).all()
+    siblings=Article.query.filter_by(kind=article_kind,published=True,canonical_slug=article.canonical_slug or article.slug).all()
     alternates="".join('<link rel="alternate" hreflang="'+html.escape((x.language or "ar").replace("_","-"))+'" href="'+html.escape(base+"/blog/"+x.slug)+'">' for x in siblings)
     page=f"""<!doctype html><html lang="{html.escape(locale)}" dir="{'rtl' if locale.startswith('ar') else 'ltr'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><meta name="description" content="{description}"><link rel="canonical" href="{html.escape(canonical)}">{alternates}<meta property="og:type" content="article"><meta property="og:title" content="{title}"><meta property="og:description" content="{description}"><meta property="og:url" content="{html.escape(canonical)}"><meta name="robots" content="index,follow"><script type="application/ld+json">{{"@context":"https://schema.org","@type":"Article","headline":{json.dumps(article.title,ensure_ascii=False)},"description":{json.dumps(article.meta_description or article.summary,ensure_ascii=False)},"datePublished":{json.dumps(iso(article.created_at))},"mainEntityOfPage":{json.dumps(canonical)}}}</script></head><body><main><article><h1>{html.escape(article.title)}</h1><p>{description}</p>{body}</article></main></body></html>"""
     return page,200,{"Content-Type":"text/html; charset=utf-8","X-Robots-Tag":"index, follow"}
@@ -397,8 +399,8 @@ def public_article_page(slug):
 @app.get("/sitemap.xml")
 def sitemap_xml():
     base=os.environ.get("PUBLIC_BASE_URL",request.url_root.rstrip("/")).rstrip("/")
-    rows=Article.query.filter_by(kind="blog",published=True).order_by(Article.created_at.desc()).limit(5000).all()
-    entries="".join("<url><loc>"+html.escape(base+"/blog/"+html.escape(x.slug))+"</loc><lastmod>"+(x.created_at.date().isoformat() if x.created_at else utcnow().date().isoformat())+"</lastmod></url>" for x in rows)
+    rows=Article.query.filter(Article.kind.in_(("blog","news")),Article.published.is_(True)).order_by(Article.created_at.desc()).limit(5000).all()
+    entries="".join("<url><loc>"+html.escape(base+("/news/" if x.kind=="news" else "/blog/")+x.slug)+"</loc><lastmod>"+(x.created_at.date().isoformat() if x.created_at else utcnow().date().isoformat())+"</lastmod></url>" for x in rows)
     xml='<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'+entries+"</urlset>"
     return xml,200,{"Content-Type":"application/xml; charset=utf-8"}
 @app.get("/robots.txt")
@@ -1755,7 +1757,7 @@ def live_news():
             if not title:
                 continue
             source=classify_news_headline(title)
-            items.append({"title":title[:500],"source":str(item.get("source") or "")[:120],
+            items.append({"title":title[:500],"source":str(item.get("source") or "")[:120],"url":str(item.get("link") or "")[:1000],
                           "published_at":str(item.get("published_at") or "")[:100],**source})
         return jsonify({"ok":True,"provider":"Google News RSS","language":language,"items":items,"updated_at":iso(utcnow()),"delivery":"in_app_only"})
     except Exception:
