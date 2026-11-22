@@ -75,7 +75,7 @@ BINANCE_FUTURES="https://fapi.binance.com"
 STABLES={"USDT","USDC","BUSD","FDUSD","TUSD","USDP","DAI","USDE","USDS","USTC"}
 OPEN_TRADE_STATUSES=("active","tp1_hit","tp2_hit")
 PAYMENT_PLANS=[
-    {"id":"monthly","name":"شهري","months":1,"price_usd":30.0,"discount_pct":0,"total_usd":30.0},
+    {"id":"monthly","name":"شهري","months":1,"price_usd":29.0,"discount_pct":0,"total_usd":29.0},
     {"id":"six_months","name":"6 أشهر","months":6,"price_usd":171.0,"discount_pct":5,"total_usd":171.0,"regular_usd":180.0},
     {"id":"yearly","name":"سنوي","months":12,"price_usd":324.0,"discount_pct":10,"total_usd":324.0,"regular_usd":360.0},
 ]
@@ -94,6 +94,18 @@ class User(db.Model):
     created_at=db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     subscription_until=db.Column(db.DateTime)
     subscription_plan=db.Column(db.String(40), default="free")
+
+class PaymentSubmission(db.Model):
+    id=db.Column(db.Integer, primary_key=True)
+    user_id=db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    plan_id=db.Column(db.String(30), nullable=False, default="monthly")
+    amount_usd=db.Column(db.Float, nullable=False, default=29.0)
+    method=db.Column(db.String(30), nullable=False)
+    transaction_ref=db.Column(db.String(180), nullable=False)
+    status=db.Column(db.String(20), nullable=False, default="pending", index=True)
+    admin_note=db.Column(db.String(500), nullable=False, default="")
+    created_at=db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
+    reviewed_at=db.Column(db.DateTime)
 
 class Setting(db.Model):
     key=db.Column(db.String(100), primary_key=True)
