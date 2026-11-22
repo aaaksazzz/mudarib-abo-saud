@@ -163,8 +163,24 @@ def register_ai_routes(core):
             content = str(item.get("content") or "")[:2500]
             if content:
                 safe_history.append({"role": item["role"], "content": content})
-        context = {"market": body.get("market"), "symbol": body.get("symbol"), "timeframe": body.get("timeframe")}
-        prompt = "سياق الجلسة: " + json.dumps(context, ensure_ascii=False) + "\nالمحادثة السابقة: " + json.dumps(safe_history, ensure_ascii=False) + "\nسؤال المستخدم: " + message
+        market = str(body.get("market") or "").strip().lower()
+        symbol = str(body.get("symbol") or "").strip().upper()
+        timeframe = str(body.get("timeframe") or "15m").strip()
+        context = {"market": market or None, "symbol": symbol or None, "timeframe": timeframe}
+        if symbol:
+            if market not in MARKETS or timeframe not in FRAMES or not re.fullmatch(r"[A-Z0-9._=:-]{2,40}", symbol):
+                return core.json_error("بيانات السوق أو الرمز غير صالحة", 400)
+            if symbol not in core.market_symbols(market):
+                return core.json_error("الرمز غير موجود ضمن رموز هذا السوق", 404)
+            frames = {}
+            for frame in FRAMES:
+                raw = core.klines(market, symbol, frame, 100)
+                closed = raw[:-1] if isinstance(raw, list) and len(raw) > 1 else []
+                frames[frame] = _bar_summary(closed)
+            context["real_market_data"] = {"as_of_utc": core.iso(core.utcnow()), "frames": frames}
+        else:
+            context["real_market_data"] = "لم يحدد المستخدم رمزاً؛ لا تفترض أسعاراً أو بيانات مباشرة."
+        prompt = "سياق الجلسة وبيانات السوق: " + json.dumps(context, ensure_ascii=False) + "\\nالمحادثة السابقة: " + json.dumps(safe_history, ensure_ascii=False) + "\\nسؤال المستخدم: " + message
         try:
             answer, model, usage = _call_openai(prompt)
             return jsonify({"ok": True, "answer": answer, "model": model, "usage": usage})
