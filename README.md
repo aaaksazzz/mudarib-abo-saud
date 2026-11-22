@@ -35,6 +35,14 @@ Production-oriented market intelligence terminal.
 - Historical engine trades are superseded as the new engine scans each market; old strategy logic is not retained as a secondary signal source.
 - The separate research backtester remains research-only and does not activate candidate strategies.
 
+## Autonomous site manager
+- The private administrator console is available at `/autopilot` after admin login.
+- With `OPENAI_API_KEY` configured, the scheduler creates one original trading education article and one market-news digest per day from current Google News RSS headlines; publication is skipped when sources or model output fail validation.
+- The AI reviewer checks one high-liquidity candidate per market twice daily across 15m, 1h, 4h, 1d, 1w and 1M. Any created trade is paper-only, uses structural validation and 1R/2R/3R targets, and expires after 24 hours.
+- Hourly health checks record each market scanner state. A weekly design review may select one of three constrained, contrast-checked palettes; it cannot rewrite page source or deploy arbitrary code.
+- AI jobs use a dedicated single-worker executor so remote model calls do not block the existing market scanner. Daily limits default to 14 AI market reviews and 120,000 total tokens; tune with `AI_AUTOPILOT_MAX_ANALYSES_PER_DAY` and `AI_AUTOPILOT_DAILY_TOKEN_LIMIT`.
+- The site agent does not change user permissions, payments, credentials, subscription state, broker orders, or source code. Source-code/page-structure changes remain controlled GitHub deployments.
+
 ## Production deployment
 - Python runtime is pinned by `.python-version` to 3.15.2.
 - Buildpack startup uses `Procfile`; Docker deployment is also supported.
