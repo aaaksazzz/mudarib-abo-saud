@@ -44,23 +44,22 @@ def _extract_text(payload):
                 chunks.append(part["text"])
     return "\n".join(chunks)
 
-def _call_openai(input_text, *, structured=False):
+def _call_openai(input_text, *, structured=False, instructions=None, schema=None, schema_name="stp_market_analysis"):
     key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not key:
         raise RuntimeError("OPENAI_API_KEY_MISSING")
     model = os.environ.get("OPENAI_MODEL", MODEL_DEFAULT).strip() or MODEL_DEFAULT
     effort = os.environ.get("OPENAI_REASONING_EFFORT", "max").strip()
-    mode = os.environ.get("OPENAI_REASONING_MODE", "pro").strip()
     body = {
         "model": model,
-        "instructions": SYSTEM_RULES,
+        "instructions": instructions or SYSTEM_RULES,
         "input": input_text,
-        "reasoning": {"effort": effort, "mode": mode},
+        "reasoning": {"effort": effort},
         "max_output_tokens": int(os.environ.get("OPENAI_MAX_OUTPUT_TOKENS", "5000")),
         "store": False
     }
     if structured:
-        body["text"] = {"format": {"type": "json_schema", "name": "stp_market_analysis", "strict": True, "schema": ANALYSIS_SCHEMA}}
+        body["text"] = {"format": {"type": "json_schema", "name": schema_name, "strict": True, "schema": schema or ANALYSIS_SCHEMA}}
     import requests
     response = requests.post(
         "https://api.openai.com/v1/responses",
@@ -141,7 +140,6 @@ def register_ai_routes(core):
             "configured": bool(os.environ.get("OPENAI_API_KEY")),
             "model": os.environ.get("OPENAI_MODEL", MODEL_DEFAULT),
             "reasoning_effort": os.environ.get("OPENAI_REASONING_EFFORT", "max"),
-            "reasoning_mode": os.environ.get("OPENAI_REASONING_MODE", "pro"),
             "markets": list(MARKETS), "timeframes": list(FRAMES),
             "paper_only": True, "auto_execution": False,
             "authenticated": bool(core.g.user), "csrf_token": core.csrf_token()
