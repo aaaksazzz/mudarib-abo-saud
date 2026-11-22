@@ -44,7 +44,7 @@ class AICompanyTests(unittest.TestCase):
 
     def test_registry_has_110_unique_employees_and_11_departments(self):
         self.assertEqual(len(EMPLOYEES), 110)
-        self.assertEqual(len({employee["id"] for employee in EMPLOYEES}), 100)
+        self.assertEqual(len({employee["id"] for employee in EMPLOYEES}), 110)
         self.assertEqual(len(DEPARTMENTS), 11)
         self.assertEqual({employee["department"] for employee in EMPLOYEES}, {d[0] for d in DEPARTMENTS})
         self.assertEqual(EMPLOYEES[0]["title"], "المدير التنفيذي")
