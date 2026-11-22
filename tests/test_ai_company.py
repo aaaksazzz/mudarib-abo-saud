@@ -8,7 +8,9 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///ci-market-tests.db")
 os.environ.pop("OPENAI_API_KEY", None)
 
 import app as platform
-from ai_company import EMPLOYEES, DEPARTMENTS
+from ai_company import EMPLOYEES, DEPARTMENTS, install
+
+install(platform)
 
 
 class AICompanyTests(unittest.TestCase):
