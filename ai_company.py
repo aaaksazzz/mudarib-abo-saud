@@ -403,4 +403,8 @@ def install(core):
         return send_from_directory(os.path.dirname(__file__), "company.html")
 
     core.app.register_blueprint(bp, url_prefix="/api/ai-company")
+    # Owner-friendly page and protected static assets; the API remains namespaced.
+    core.app.add_url_rule("/company", endpoint="ai_company_owner_page", view_func=company_page)
+    core.app.add_url_rule("/company.css", endpoint="ai_company_owner_css", view_func=company_css)
+    core.app.add_url_rule("/company.js", endpoint="ai_company_owner_js", view_func=company_js)
     return {"CompanyTask": CompanyTask, "CompanyMeeting": CompanyMeeting, "employees": EMPLOYEES}
