@@ -240,26 +240,3 @@ setInterval(async()=>{
  marketRefreshBusy.add(market);
  try{await marketPage(root,market,version)}finally{marketRefreshBusy.delete(market)}
 },60*1000);
-$("#adminContactUrl").value=settings.contact_url||"";
-$("#saveAdminContact").onclick=async()=>{try{const url=$("#adminContactUrl").value.trim();await api("/api/admin/contact",{method:"PUT",body:JSON.stringify({url})});toast("تم حفظ رابط التواصل");configureAdminContact({contact_url:url})}catch(e){toast(e.message)}};
-$("#grantLifetime").onclick=async()=>{try{const email=$("#lifetimeEmail").value.trim();await api("/api/admin/users/subscription-by-email",{method:"POST",body:JSON.stringify({email,lifetime:true})});toast("تم منح الاشتراك المفتوح");adminPage(root)}catch(e){toast(e.message)}};
-root.querySelectorAll("[data-lifetime]").forEach(x=>x.addEventListener("click",async()=>{try{await api("/api/admin/users/"+x.dataset.lifetime+"/subscription",{method:"POST",body:JSON.stringify({lifetime:true})});toast("تم منح الاشتراك المفتوح");adminPage(root)}catch(e){toast(e.message)}}));
-root.querySelectorAll("[data-section]").forEach(x=>x.addEventListener("change",async()=>{try{await api("/api/admin/sections/"+x.dataset.section,{method:"PUT",body:JSON.stringify({enabled:x.checked})});toast("تم تحديث صلاحية القسم")}catch(e){x.checked=!x.checked;toast(e.message)}}));
-root.querySelectorAll("[data-toggle-user]").forEach(x=>x.addEventListener("click",async()=>{try{await api("/api/admin/users/"+x.dataset.toggleUser,{method:"PATCH",body:JSON.stringify({active:x.dataset.active==="true"})});toast("تم تحديث حالة المستخدم");adminPage(root)}catch(e){toast(e.message)}}));
-root.querySelectorAll("[data-grant]").forEach(x=>x.addEventListener("click",async()=>{try{const days=Number($("#days-"+x.dataset.grant).value);await api("/api/admin/users/"+x.dataset.grant+"/subscription",{method:"POST",body:JSON.stringify({days,plan:"pro"})});toast("تم منح الاشتراك");adminPage(root)}catch(e){toast(e.message)}}));
-$("#publishContent").onclick=async()=>{try{await api("/api/admin/content",{method:"POST",body:JSON.stringify({kind:$("#contentKind").value,language:$("#contentLanguage").value,title:$("#contentTitle").value,meta_title:$("#contentMetaTitle").value,summary:$("#contentSummary").value,meta_description:$("#contentMetaDescription").value,body:$("#contentBody").value,published:$("#contentPublish").checked})});toast("تم حفظ المحتوى");adminPage(root)}catch(e){toast(e.message)}}
-}catch(e){root.innerHTML='<div class="panel empty-state">'+esc(e.message)+'</div>'}}
-if(localStorage.getItem("stp-theme")==="light")document.body.classList.add("light");
-$("#languageSelect").value=localStorage.getItem("stp-language")||"ar";
-applyLanguage($("#languageSelect").value);
-init();
-const marketRefreshBusy=new Set();
-setInterval(async()=>{
- const market=currentPage;
- if(!marketNames[market]||marketRefreshBusy.has(market))return;
- const root=$("#dynamicContent");
- if(!root)return;
- const version=renderVersion;
- marketRefreshBusy.add(market);
- try{await marketPage(root,market,version)}finally{marketRefreshBusy.delete(market)}
-},60*1000);
