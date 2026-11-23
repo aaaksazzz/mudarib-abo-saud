@@ -17,16 +17,14 @@ Production-oriented market intelligence terminal.
 - **Tadawul:** public Saudi Exchange data is preferred, with Yahoo, a public ticker directory and TradingView fallbacks. Saudi equities are not filtered by the $1M threshold; public-feed coverage can be incomplete during provider restrictions.
 - **Forex & Gold:** public Yahoo symbol list; FX tick volume is not represented as exchange-traded dollar volume.
 
-## Active engine: STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION
-- The single active signal engine is `breakout_50_strategy.py`, fingerprint `STP-BREAKOUT-50-VOLUME-PROFILE-INVERSE-V2-20261120`. The previous normal-direction Breakout 50 engine and all prior entry engines are retired; no old signal engine is layered in.
-- Every market is scanned independently on six completed-candle timeframes: 15m, 1h, 4h, 1d, 1w and 1M. The inversion applies at all hours, with no day/night switch and no higher-timeframe direction gate.
-- Full inversion means a bullish breakout setup produces a SELL trade, while a bearish breakdown setup produces a BUY trade. Setup detection and 50% retracement confirmation remain based on the detected source setup; the final trade direction, structural stop side, flow/RSI support interpretation and targets are reversed.
-- Spot remains BUY-only, therefore only bearish breakdown setups that invert into BUY trades are eligible on Spot.
-- Volume Profile provides POC, VAH and VAL. With OHLCV candles it is a candle-volume approximation, not exchange-grade volume-at-price. VWAP is calculated from available candle volume.
-- Binance Spot/Futures may add public aggregate-trade taker delta and order-book imbalance for a small prioritized subset. Other markets use a clearly labelled candle-delta proxy; it is not presented as true CVD or centralized FX volume.
-- ATR places the structural stop beyond the inverse trade's invalidation extreme. TP1/TP2/TP3 are 1R/2R/3R from the final inverted trade direction.
-- The displayed score is a technical confluence score, not a statistically calibrated win probability. No strategy guarantees profits; performance must be measured after fees, spread, slippage and contract-specific costs.
-- Signals remain paper/manual only. No account API keys or automatic order execution are used.
+## Active engine: STP FALSE BREAKOUT CLOSE REVERSAL
+- The single active entry logic is `breakout_50_strategy.py`, fingerprint `STP-FALSE-BREAKOUT-CLOSE-REVERSAL-V1-20261123`. Previous inverted Breakout 50 + Volume Profile logic and the separate US multi-setup entry logic are retired.
+- All seven markets (Spot, Futures, Alpha, US stocks, US contracts, Saudi and Forex/Gold) use the same reversal rules on six completed-candle timeframes: 15m, 1h, 4h, 1d, 1w and 1M.
+- BUY reversal: identify a confirmed prior swing low; require a later completed candle to break below that low and close below it; then wait for a subsequent completed candle to close above the high of that exact break candle. Only then is a BUY setup eligible.
+- SELL reversal is the exact opposite: identify a confirmed prior swing high; require a later completed candle to break and close above it; then wait for a subsequent completed candle to close below the low of that exact break candle. Only then is a SELL setup eligible.
+- The break candle's low/high defines structural invalidation, with an ATR-based safety buffer. Excessive stop distance is rejected using the timeframe's existing risk-distance ceiling.
+- TP1/TP2/TP3 are 1R/2R/3R from the confirmed entry close. Signals use completed candles only and remain paper/manual; no account API keys or automatic order execution are used.
+- The engine fingerprint and strategy diagnostics identify the new logic. Technical score is not a calibrated win probability and no strategy guarantees profits; validate with fees, spread, slippage and out-of-sample testing.
 
 ## Signal engine
 - Each market and timeframe is evaluated independently. A signal requires a closed-candle breakout, 50% retracement, volume-profile confluence and a post-retest confirmation; the detected setup is then fully inverted before publishing the trade.

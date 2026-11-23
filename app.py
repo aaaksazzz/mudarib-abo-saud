@@ -734,7 +734,7 @@ def provider_status(m):
     if not item:
         return {"configured":False,"health":"unknown","source":None,"requires_api_key":False}
     return {**item,"configured":True,"health":"not_probed","health_note":"Adapter presence only; live connectivity is not tested by this endpoint",
-            "requires_api_key":False,"access":"public_no_key","analysis":("us_day_trader_multi_setup" if m in us_day_trader_strategy.MARKETS else "breakout_50_volume_profile_full_inversion")}
+            "requires_api_key":False,"access":"public_no_key","analysis":("false_breakout_close_reversal" if m in us_day_trader_strategy.MARKETS else "false_breakout_close_reversal")}
 def fetch_json(url,params=None):
     last_error=None
     for attempt in range(3):
@@ -866,8 +866,8 @@ def klines(market,symbol,interval,limit=120):
 TIMEFRAMES=breakout_50_strategy.TIMEFRAMES
 
 STRATEGY_FINGERPRINT=breakout_50_strategy.STRATEGY_FINGERPRINT
-US_DAY_TRADER_REASON_PREFIX="STP US DAY TRADER MULTI-SETUP:"
-BREAKOUT_REASON_PREFIX="STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION:"
+US_DAY_TRADER_REASON_PREFIX="STP FALSE BREAKOUT CLOSE REVERSAL:"
+BREAKOUT_REASON_PREFIX="STP FALSE BREAKOUT CLOSE REVERSAL:"
 
 def strategy_reason_prefix(market):
     return US_DAY_TRADER_REASON_PREFIX if market in us_day_trader_strategy.MARKETS else BREAKOUT_REASON_PREFIX
@@ -876,7 +876,7 @@ def strategy_engine_for_market(market):
     return us_day_trader_strategy if market in us_day_trader_strategy.MARKETS else breakout_50_strategy
 
 def strategy_engine_name(market):
-    return us_day_trader_strategy.STRATEGY_NAME if market in us_day_trader_strategy.MARKETS else "STP BREAKOUT 50 + VOLUME PROFILE FULL INVERSION"
+    return us_day_trader_strategy.STRATEGY_NAME if market in us_day_trader_strategy.MARKETS else "STP FALSE BREAKOUT CLOSE REVERSAL"
 @app.get("/api/strategy-status")
 def strategy_status_summary():
     active_current=Trade.query.filter(
