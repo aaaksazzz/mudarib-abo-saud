@@ -78,7 +78,9 @@ def analyze(market,symbol,rows,timeframe="15m",market_bias=None,diagnostics=None
     if not math.isfinite(atr) or atr<=0: return reject("invalid_atr")
     setup=_find_reversal(bars,atr)
     if not setup: return reject("no_break_candle_opposite_close_confirmation")
-    current=bars[-1]; side=setup["side"]; entry=current["close"]; stop=setup["stop"]
+    current=bars[-1]; side=setup["side"]
+    if market=="spot" and side!="BUY": return reject("spot_market_buy_only")
+    entry=current["close"]; stop=setup["stop"]
     risk=abs(entry-stop); risk_pct=risk/entry if entry>0 else float("inf")
     if not math.isfinite(risk_pct) or risk<=0 or risk_pct>profile["max_risk_pct"]:
         return reject("break_candle_structural_stop_outside_frame_risk_limit")
