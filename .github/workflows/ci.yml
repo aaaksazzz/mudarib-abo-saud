@@ -49,7 +49,7 @@ jobs:
           from app import app, scheduler
           from stp_entry import app as entry_app
           from breakout_50_strategy import diagnostic_self_test as breakout_50_diagnostic_self_test
-                    assert breakout_50_diagnostic_self_test()["ok"], breakout_50_diagnostic_self_test()
+          assert breakout_50_diagnostic_self_test()["ok"], breakout_50_diagnostic_self_test()
           assert scheduler is None, "ENABLE_AUTO_SCAN=false must disable background jobs in CI"
           client = app.test_client()
           for path in ("/health", "/ready", "/api/bootstrap", "/api/trades", "/api/strategy/status", "/api/strategy-status", "/", "/plans", "/journal", "/blog", "/news", "/login", "/register", "/account", "/admin", "/market/spot", "/market/futures", "/market/alpha", "/market/us-stocks", "/market/us-contracts", "/market/saudi", "/market/forex", "/styles.css", "/pro-theme.css", "/compat.css", "/platform.js", "/intelligence", "/intelligence.js", "/intelligence.css", "/ai-analyst", "/ai-analyst.js", "/ai-analyst.css", "/api/ai-analyst/status", "/api/autopilot/theme.css"):
