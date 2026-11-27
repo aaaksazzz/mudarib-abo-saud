@@ -32,7 +32,7 @@ class UnifiedMarketStrategyTests(unittest.TestCase):
         payload = {
             "market": "us-stocks", "symbol": "AAPL", "side": "BUY",
             "entry": 100.2, "stop": 99.2, "tp1": 101.2, "tp2": 102.2, "tp3": 103.2,
-            "score": 88, "timeframe": "15m", "signal_candle_time": rows[-2][0],
+            "score": 88, "timeframe": "15m", "signal_candle_time": rows[-2][0], "strategy_total": 7,
             "atr": 2, "risk_pct": 1, "risk_distance": 1, "reward_risk": 3,
             "strategy_names": ["CLOSED_CANDLE_ENTRY_TIMING"],
             "confirmations": ["CLOSED_CANDLE_ENTRY_TIMING"],
