@@ -26,11 +26,11 @@ Production-oriented market intelligence terminal.
 - TP1/TP2/TP3 are 1R/2R/3R from the confirmed entry close. Signals use completed candles only and remain paper/manual; no account API keys or automatic order execution are used.
 - The engine fingerprint and strategy diagnostics identify the new logic. Technical score is not a calibrated win probability and no strategy guarantees profits; validate with fees, spread, slippage and out-of-sample testing.
 
-## Signal engine
-- Each market and timeframe is evaluated independently. A signal requires a closed-candle breakout, 50% retracement, volume-profile confluence and a post-retest confirmation; the detected setup is then fully inverted before publishing the trade.
+## Signal lifecycle
+- Every market and timeframe is evaluated independently by the same false-breakout close-reversal engine.
 - A timeframe batch is replaced only when that scan produces at least one fresh setup. Previous rows remain in trade history and expire after 24 hours.
 - Market-page requests only read committed results and never launch heavy scans synchronously. The staggered scanner continues on its configured schedule.
-- Historical engine trades are superseded as the new engine scans each market; old strategy logic is not retained as a secondary signal source.
+- Historical engine trades are superseded as the new engine scans each market; retired strategy modules are not used to publish live signals.
 - The separate research backtester remains research-only and does not activate candidate strategies.
 
 ## Autonomous site manager
@@ -47,7 +47,7 @@ Production-oriented market intelligence terminal.
 - Expose port 8080.
 - Prefer a persistent PostgreSQL database through `DATABASE_URL`. SQLite is acceptable only when `DATA_DIR` points to a persistent mounted volume; the default local SQLite path is not production-durable.
 - Configure a persistent random `SECRET_KEY` and `COOKIE_SECURE=true`. The public sentiment dashboard scans on demand and does not require the legacy market scheduler.
-- The active Breakout 50 + Volume Profile scanner runs on a staggered 15-minute schedule across markets. It uses public candle data and paper/manual signals only.
+- The active False Breakout Close Reversal scanner runs on a staggered 15-minute schedule across markets. It uses public candle data and paper/manual signals only.
 - `/ready` requires a durable database configuration (PostgreSQL or an explicitly configured `DATA_DIR` volume) and a persistent `SECRET_KEY`; no background market scheduler is required.
 - Configure `ADMIN_EMAIL` and a unique `ADMIN_PASSWORD` (14+ characters) before first boot if first-admin provisioning is needed.
 - Never commit or share secrets. Rotate credentials after any security incident and update them at the provider and deployment environment.
