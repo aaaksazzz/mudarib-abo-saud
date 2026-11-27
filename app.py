@@ -442,15 +442,14 @@ def compat_styles(): return send_from_directory(APP_DIR, "compat.css")
 @app.get("/api/strategy/status")
 def strategy_status():
     diagnostic=breakout_50_strategy.diagnostic_self_test()
-    us_diagnostic=us_day_trader_strategy.diagnostic_self_test()
+    ready=bool(diagnostic.get("ok"))
     return jsonify({
-        "ok":bool(diagnostic.get("ok") and us_diagnostic.get("ok")),
-        "engine":"MARKET-SPECIFIC STRATEGY ENGINES",
+        "ok":ready,
+        "engine":"STP FALSE BREAKOUT CLOSE REVERSAL",
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
-        "strategy_ready":bool(diagnostic.get("ok") and us_diagnostic.get("ok")),
+        "strategy_ready":ready,
         "strategy_checks":diagnostic.get("checks",{}),
-        "us_day_trader":{"fingerprint":us_day_trader_strategy.STRATEGY_FINGERPRINT,"ready":bool(us_diagnostic.get("ok")),"checks":us_diagnostic.get("checks",{}),"strategies":us_diagnostic.get("strategies",[])},
-        "retired_engines":["ICT/SMC TREND FOLLOW","SMART MONEY SWEEP/FVG","PRICE ACTION QUANT V2/V3/V4","NORMAL-DIRECTION BREAKOUT 50"],
+        "retired_engines":["US DAY TRADER MULTI-SETUP","ICT/SMC TREND FOLLOW","SMART MONEY SWEEP/FVG","PRICE ACTION QUANT V2/V3/V4","NORMAL-DIRECTION BREAKOUT 50"],
         "manual_only":True
     })
 
@@ -487,8 +486,8 @@ def persistent_secret_configured(value):
 def readiness():
     checks={"database":False,"persistent_database":False,
             "persistent_secret":persistent_secret_configured(os.environ.get("SECRET_KEY")),
-            "breakout_50_engine":breakout_50_strategy.diagnostic_self_test().get("ok",False),
-            "us_day_trader_engine":us_day_trader_strategy.diagnostic_self_test().get("ok",False)}
+            "false_breakout_engine":breakout_50_strategy.diagnostic_self_test().get("ok",False),
+            "legacy_us_engine_retired":True}
     try:
         db.session.execute(text("SELECT 1"))
         checks["database"]=True
@@ -870,37 +869,34 @@ US_DAY_TRADER_REASON_PREFIX="STP FALSE BREAKOUT CLOSE REVERSAL:"
 BREAKOUT_REASON_PREFIX="STP FALSE BREAKOUT CLOSE REVERSAL:"
 
 def strategy_reason_prefix(market):
-    return US_DAY_TRADER_REASON_PREFIX if market in us_day_trader_strategy.MARKETS else BREAKOUT_REASON_PREFIX
+    return BREAKOUT_REASON_PREFIX
 
 def strategy_engine_for_market(market):
-    return us_day_trader_strategy if market in us_day_trader_strategy.MARKETS else breakout_50_strategy
+    # One active, auditable entry engine for every supported market.
+    return breakout_50_strategy
 
 def strategy_engine_name(market):
-    return us_day_trader_strategy.STRATEGY_NAME if market in us_day_trader_strategy.MARKETS else "STP FALSE BREAKOUT CLOSE REVERSAL"
+    return "STP FALSE BREAKOUT CLOSE REVERSAL"
 @app.get("/api/strategy-status")
 def strategy_status_summary():
     active_current=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        or_(Trade.reason.like(BREAKOUT_REASON_PREFIX+"%"),
-            Trade.reason.like(US_DAY_TRADER_REASON_PREFIX+"%"))
+        Trade.reason.like(BREAKOUT_REASON_PREFIX+"%")
     ).count()
     active_legacy=Trade.query.filter(
         Trade.status.in_(OPEN_TRADE_STATUSES),Trade.expires_at>utcnow(),
-        Trade.reason.not_like(BREAKOUT_REASON_PREFIX+"%"),
-        Trade.reason.not_like(US_DAY_TRADER_REASON_PREFIX+"%")
+        Trade.reason.not_like(BREAKOUT_REASON_PREFIX+"%")
     ).count()
     primary=breakout_50_strategy.diagnostic_self_test()
-    us_primary=us_day_trader_strategy.diagnostic_self_test()
     active_scheduler=globals().get("scheduler")
     return jsonify({
-        "ok":True,"engine":"MARKET-SPECIFIC STRATEGY ENGINES",
+        "ok":bool(primary.get("ok")),"engine":"STP FALSE BREAKOUT CLOSE REVERSAL",
         "current_active":active_current,"legacy_active":active_legacy,
         "legacy_removed":active_legacy==0,"manual_only":True,
         "strategy_fingerprint":STRATEGY_FINGERPRINT,
-        "strategy_ready":bool(primary.get("ok") and us_primary.get("ok")),
+        "strategy_ready":bool(primary.get("ok")),
         "strategy_checks":primary.get("checks",{}),
-        "us_day_trader":{"fingerprint":us_day_trader_strategy.STRATEGY_FINGERPRINT,"ready":bool(us_primary.get("ok")),"checks":us_primary.get("checks",{}),"strategies":us_primary.get("strategies",[])},
-        "retired_engines":["ICT/SMC TREND FOLLOW","SMART MONEY SWEEP/FVG","PRICE ACTION QUANT V2/V3/V4","NORMAL-DIRECTION BREAKOUT 50"],
+        "retired_engines":["US DAY TRADER MULTI-SETUP","ICT/SMC TREND FOLLOW","SMART MONEY SWEEP/FVG","PRICE ACTION QUANT V2/V3/V4","NORMAL-DIRECTION BREAKOUT 50"],
         "auto_scan_enabled":bool(globals().get("AUTO_SCAN_ENABLED",False)),
         "scheduler_running":bool(active_scheduler and active_scheduler.running)
     })
